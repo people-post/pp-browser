@@ -21,6 +21,8 @@ struct RowMarkResult {
   bool changed = false;
   /** It changed to failed now: its reason is told (the "did not go out" line). */
   bool failed = false;
+  /** It is delivered now and was not before: the first copy out (what follows a delivery happens once). */
+  bool delivered_now = false;
 };
 
 RowMarkResult ApplyOutcomeToRow(IThreadTranscript& store, const DeliveryOutcome& outcome, bool still_under_way);

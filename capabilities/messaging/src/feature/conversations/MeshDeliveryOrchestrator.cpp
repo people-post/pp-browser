@@ -382,9 +382,29 @@ void MeshDeliveryOrchestrator::NudgeSiblings() {
   }
 }
 
+void MeshDeliveryOrchestrator::MirrorDelivered(const std::string& thread_id, const std::string& message_id) {
+  auto thread = store_.GetThread(thread_id);
+  auto row = store_.GetMessage(thread_id, message_id);
+  if (!thread || !*thread || !row || !*row || (*row)->sender_contact_id != kLocalSelfContactId ||
+      (*row)->sender_device) {
+    return; // ours, sent from this device (a sibling's copy is not mirrored back)
+  }
+  ThreadMessage sent = **row;
+  sent.thread_id = thread_id;
+  if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
+    MirrorToSiblings(sent, SentCopyTarget{.group_id = *(*thread)->group_id});
+  } else if ((*thread)->kind == ThreadKind::Direct && (*thread)->channel == ThreadChannel::E2ePublic) {
+    // Public chats only: a private Secure chat stays on its device (M014).
+    MirrorToSiblings(sent, SentCopyTarget{.peer_account = (*thread)->peer_identity_value});
+  }
+}
+
 void MeshDeliveryOrchestrator::MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target) {
   if (!sent_copy::Mirrored(sent)) {
     return;
+  }
+  if (on_mirror_for_test_) {
+    on_mirror_for_test_(sent, target);
   }
   AppRuntime::PostWorkerNormal([this, sent, target = std::move(target)]() {
     if (auto card = own_cards_.Card(util::NowUnixMs()); !card || card->devices.size() < 2) {
@@ -1634,6 +1654,9 @@ void MeshDeliveryOrchestrator::ApplySendOutcome(const DeliveryOutcome& outcome) 
   // back words blanked since (a voided edit of ours).
   const bool still_under_way = outbox_.SendStartedMs(outcome.message_id).has_value();
   const RowMarkResult row = ApplyOutcomeToRow(store_, outcome, still_under_way);
+  if (row.delivered_now) {
+    MirrorDelivered(outcome.thread_id, outcome.message_id);
+  }
   if (row.failed) {
     if (auto thread = store_.GetThread(outcome.thread_id); thread && *thread) {
       NotifyDeliveryIssue(**thread, outcome.message_id, outcome.failure, outcome.detail);
@@ -1761,8 +1784,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   }
   if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
     (void)public_lock_.NoteTraffic(thread_id);
-    // Public chats only: a private Secure chat stays on its device (M014).
-    MirrorToSiblings(wire, SentCopyTarget{.peer_account = (*thread)->peer_identity_value});
+    // Our other devices get their copy once the recipient's is accepted (MirrorDelivered), not now (B236).
   }
   return *appended;
 }
@@ -1990,7 +2012,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
-  MirrorToSiblings(message, SentCopyTarget{.group_id = *(*thread)->group_id});
+  // Our other devices get their copy once a member's is accepted (MirrorDelivered), not now (B236).
   return *appended;
 }
 
@@ -2176,7 +2198,11 @@ void MeshDeliveryOrchestrator::ApplyGroupMemberOutcome(const DeliveryOutcome& ou
     groups_->ClearMemberUnreachable(*group_id, outcome.group_member);
   }
   // The first copy out marks the row; one member's failure does not unmark it.
-  if (ApplyOutcomeToRow(store_, outcome, false).changed && on_messages_changed_) {
+  const RowMarkResult row = ApplyOutcomeToRow(store_, outcome, false);
+  if (row.delivered_now) {
+    MirrorDelivered(outcome.thread_id, outcome.message_id);
+  }
+  if (row.changed && on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }

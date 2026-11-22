@@ -827,5 +827,91 @@ TEST_F(StoredResendTest, AfterARestartAChatsQueuedMessagesGoInTheOrderWritten) {
   }
 }
 
+// --- B236: our other devices get a message only once it is through ------------------------------------------------
+
+class MirrorTest : public StoredResendTest {
+protected:
+  void SetUp() override {
+    StoredResendTest::SetUp();
+    mesh_->SetOnMirrorForTest([this](const ThreadMessage& sent, const SentCopyTarget& target) {
+      std::lock_guard lock(mirror_mu_);
+      mirrored_.push_back({sent, target});
+    });
+  }
+  size_t MirroredCount(const std::string& id) {
+    std::lock_guard lock(mirror_mu_);
+    return static_cast<size_t>(
+        std::count_if(mirrored_.begin(), mirrored_.end(), [&](const auto& entry) { return entry.first.id == id; }));
+  }
+  std::mutex mirror_mu_;
+  std::vector<std::pair<ThreadMessage, SentCopyTarget>> mirrored_;
+};
+
+TEST_F(MirrorTest, AMessageAcceptedAtOnceIsMirroredOnceAfterTheRelayTookIt) {
+  relay_->Hold();
+  auto sent = mesh_->SendUserMessage(chat_.id, "hello", SendRelayOptions{});
+  ASSERT_TRUE(sent) << sent.error().message;
+  ASSERT_TRUE(relay_->WaitForSends(1));
+  EXPECT_EQ(MirroredCount(sent->id), 0u) << "not while the relay has not answered";
+  relay_->Release();
+  Drain();
+  EXPECT_EQ(MirroredCount(sent->id), 1u);
+  std::lock_guard lock(mirror_mu_);
+  EXPECT_EQ(mirrored_.front().second.peer_account, bob_.account_id);
+  EXPECT_EQ(mirrored_.front().first.text, "hello");
+}
+
+TEST_F(MirrorTest, RefusedThenAcceptedIsMirroredOnceAfterTheAcceptance) {
+  relay_->SetRefusal(kStrangerQuota);
+  auto sent = mesh_->SendUserMessage(chat_.id, "hello", SendRelayOptions{});
+  ASSERT_TRUE(sent);
+  Drain();
+  EXPECT_EQ(MirroredCount(sent->id), 0u) << "queued (held): our other devices show nothing yet";
+  relay_->SetRefusal(std::nullopt);
+  mesh_->OnGrantReceived(bob_.account_id);
+  Drain();
+  EXPECT_EQ(MirroredCount(sent->id), 1u);
+  mesh_->ResumeQueuedSends();
+  Drain();
+  EXPECT_EQ(MirroredCount(sent->id), 1u) << "once";
+}
+
+TEST_F(MirrorTest, AMessageThatFailsForGoodIsNeverMirrored) {
+  relay_->SetFail(true);
+  auto sent = mesh_->SendUserMessage(chat_.id, "hello", SendRelayOptions{});
+  ASSERT_TRUE(sent);
+  Drain();
+  EXPECT_EQ(Delivery(chat_.id, sent->id), MessageDelivery::Failed);
+  EXPECT_EQ(MirroredCount(sent->id), 0u) << "a sibling never shows as sent what did not go out";
+}
+
+TEST_F(MirrorTest, AResumedMessageIsMirroredOnceItIsThroughAndAPictureCarriesItsPayload) {
+  Add(chat_.id, "q1", MessageDelivery::Pending, 60'000, ChatContentType::Attachment);
+  ThreadMessage row = *(*store_.GetMessage(chat_.id, "q1"));
+  row.payload_json = R"({"url":"https://r/api/relay/v1/blob/b1/download?t=x","mime":"image/jpeg"})";
+  ASSERT_TRUE(store_.UpdateMessage(row));
+  mesh_->ResumeQueuedSends();
+  Drain();
+  mesh_->ResumeQueuedSends();
+  Drain();
+  ASSERT_EQ(MirroredCount("q1"), 1u);
+  std::lock_guard lock(mirror_mu_);
+  EXPECT_EQ(mirrored_.front().first.payload_json, row.payload_json) << "what the sibling needs to download it";
+}
+
+TEST_F(MirrorTest, AGroupMessageIsMirroredOnceAMemberGotIt) {
+  const Thread group = MakeGroup(GroupSyncState::Active);
+  relay_->Hold();
+  auto sent = mesh_->SendGroupMessage(group.id, "hi all", SendRelayOptions{});
+  ASSERT_TRUE(sent) << sent.error().message;
+  ASSERT_TRUE(relay_->WaitForSends(1));
+  EXPECT_EQ(MirroredCount(sent->id), 0u);
+  relay_->Release();
+  Drain();
+  ASSERT_EQ(MirroredCount(sent->id), 1u);
+  std::lock_guard lock(mirror_mu_);
+  EXPECT_EQ(mirrored_.front().second.group_id, "g1");
+}
+
 } // namespace
 } // namespace pbr
