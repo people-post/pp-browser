@@ -300,6 +300,7 @@ void PinGateController::ShowIdentityFork() {
   pin_state_.identity_fork_mode = true;
   pin_state_.title = Tr("pin.identity_fork_title").c_str();
   pin_state_.message = Tr("pin.identity_fork_message").c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -318,6 +319,7 @@ void PinGateController::ShowChooser() {
   pin_state_.chooser_mode = true;
   pin_state_.title = Tr("pin.chooser_title").c_str();
   pin_state_.message = Tr("pin.chooser_message").c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -335,6 +337,7 @@ void PinGateController::ShowLinkChooser() {
   pin_state_.chooser_mode = true;
   pin_state_.title = Tr("pin.link_chooser_title").c_str();
   pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_chooser_message") : Tr("pin.link_chooser_message")).c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -476,22 +479,26 @@ void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change,
   Remount();
 }
 
+bool PinGateController::ChoiceTooSoon() const {
+  return Now() - choice_shown_at_ < kChoiceTapGuard;
+}
+
 void PinGateController::OnIdentityNew() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   ShowChooser();
 }
 
 void PinGateController::OnIdentityLink() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   ShowLinkChooser();
 }
 
 void PinGateController::OnIdentityPhrase() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   phrase_flow_ = true;
@@ -555,7 +562,7 @@ void PinGateController::OnSetPin() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
-  if (!pin_state_.active || !pin_state_.chooser_mode) {
+  if (!pin_state_.active || !pin_state_.chooser_mode || ChoiceTooSoon()) {
     return;
   }
   ShowCreate();
@@ -565,7 +572,7 @@ void PinGateController::OnUseDefaultPin() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
-  if (!pin_state_.active || !pin_state_.chooser_mode) {
+  if (!pin_state_.active || !pin_state_.chooser_mode || ChoiceTooSoon()) {
     return;
   }
   if (link_flow_) {
