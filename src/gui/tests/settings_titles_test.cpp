@@ -247,6 +247,24 @@ TEST(SettingsTitlesTest, TheStorageResetActionsSitApartAtTheEndInPlainWords) {
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+// After Reset my data the first-run page comes up at once (no relaunch): the reset asks the unlock gate, once every
+// store is back, which with no vault left shows the identity fork (ProfileUnlockGate test
+// AProfileResetInTheRunningAppShowsTheIdentityFork).
+TEST(SettingsTitlesTest, ResetMyDataBringsUpTheFirstRunPageInTheRunningApp) {
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/app/Application.cpp");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string app = buffer.str();
+  const size_t begin = app.find("Roe<void> Application::ResetActiveProfile() {");
+  ASSERT_NE(begin, std::string::npos);
+  const std::string body = app.substr(begin, app.find("\n}\n", begin) - begin);
+  const size_t reloaded = body.find("chat_->OnProfileDataReset();");
+  const size_t asked = body.find("unlock_gate_->EnsureUnlocked(");
+  ASSERT_NE(reloaded, std::string::npos);
+  ASSERT_NE(asked, std::string::npos);
+  EXPECT_LT(reloaded, asked) << "asked only after the stores and controllers are back";
+}
+
 TEST(SettingsTitlesTest, SettingsPagesScrollTheirLastRowsClearOfTheFloatingAiButton) {
   // The button is up to 76dp; both mounts (the page sheet and the pushed pane) keep that much (plus air) at the end.
   const std::string css = ReadAsset("themes/components.rcss");

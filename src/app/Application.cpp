@@ -602,6 +602,10 @@ Roe<void> Application::ResetActiveProfile() {
 
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
+  // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
+  // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
+  unlock_gate_->EnsureUnlocked(nullptr);
   return {};
 }
 
