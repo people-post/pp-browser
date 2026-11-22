@@ -21,8 +21,8 @@ so far: pp-cpp-common 1.5.0 (`ExtArea`), pp-cpp-crypto 1.4.0 (`AlgId`, typed blo
 on main. As of 2026-11-21: pp-cpp-mesh v10.0.0 (DHT record v2, typed directory rows) and pp-cpp-crypto v1.4.1 released
 and pinned on pp-browser's integration branch; **pp-browser W0–W6 merged** there (CI green at a452cd116) and **W7 on
 `main`** (#692); pp-relay-apis R1a, R1b (sign v4, no legacy window), R2a, R2b, R3 and R4 merged on its integration branch, and **R5**
-(Support's formats, an item the plan had missed) merging; then the lab (L), then merge day, which waits for
-Leo's qa operator set, certificate and secrets ([CUTOVER_PLAN § Leo](CUTOVER_PLAN.md#infrastructure-and-keys-leo)).
+(Support's formats, an item the plan had missed) merged; the app lab passed on both branches (L); then merge day to dev, which waits for
+dev's operator set, certificate and secrets, then staging from a re-cut `release/1.0` ([CUTOVER_PLAN § Leo](CUTOVER_PLAN.md#infrastructure-and-keys-leo)).
 
 ## Open questions for Kenneth and Leo
 
