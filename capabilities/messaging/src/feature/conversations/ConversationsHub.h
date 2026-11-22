@@ -97,6 +97,7 @@ namespace pbr {
 class IPeerSessionStore;
 class ProfileSecretsEngine;
 class ContactProfileRefresh;
+class OwnProfileIconSync;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -715,6 +716,8 @@ private:
   void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
+  /** After a locker sync: fetch our own photo when another device of the account set a new one (off the UI thread). */
+  void RefreshOwnProfileIconSoon();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
   bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
@@ -938,6 +941,8 @@ private:
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
+  /** Our own photo when it was set on another device of the account (after a locker sync). */
+  std::unique_ptr<OwnProfileIconSync> own_icon_sync_;
   std::unique_ptr<ContactRefreshWorkflow> contact_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;

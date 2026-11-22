@@ -86,7 +86,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
                             # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches, the org relay's certificate); no schema_version (a file from
                             # before it): read as it is; a newer one is no cache and never written over
-  cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
+  cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours: written when this device uploads it, and on a device that did not, fetched after an account-locker sync from our own directory entry by Account ID) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
                             # fetched_at_ms, local_filename} beside icon-<hash>.<ext> (named after its bytes); a cache, fetched again when its url or blob_id
                             # changes or the file is gone; plaintext, unversioned; optional
   home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
