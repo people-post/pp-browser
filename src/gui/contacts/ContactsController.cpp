@@ -642,6 +642,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.Bind("contact_index", &controller.contact_index_);
         ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
         ctor.Bind("search_query", &controller.search_query_);
+        ctor.Bind("account_sync_syncing", &controller.account_sync_syncing_);
+        ctor.Bind("account_sync_delayed", &controller.account_sync_delayed_);
         ctor.Bind("add_query", &controller.add_query_);
         ctor.Bind("add_rows", &controller.add_rows_);
         ctor.Bind("add_searching", &controller.add_searching_);
@@ -967,6 +969,16 @@ void ContactsController::SyncLists() {
     SyncBlocked();
     DirtyBlocked();
   }
+}
+
+void ContactsController::SetAccountSync(const bool syncing, const bool delayed) {
+  if (account_sync_syncing_ == syncing && account_sync_delayed_ == delayed) {
+    return;
+  }
+  account_sync_syncing_ = syncing;
+  account_sync_delayed_ = delayed;
+  DataModelHost::Instance().Dirty("contacts", "account_sync_syncing");
+  DataModelHost::Instance().Dirty("contacts", "account_sync_delayed");
 }
 
 void ContactsController::OnContactsChanged() {

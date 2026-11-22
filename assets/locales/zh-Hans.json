@@ -753,6 +753,8 @@
     "contacts.block_confirm_title": "屏蔽这个人？",
     "contacts.block_confirm_body": "屏蔽后收不到 {name} 的消息和来电，对方不会被告知。随时可以取消。",
     "contacts.empty_hint": "暂无联系人。点按 + 添加，或在网络上找人，也可以问问助手。",
+    "account_sync.pending": "正在同步你的联系人…",
+    "account_sync.delayed": "同步还没完成，稍后会自动再试。",
     "contacts.find_someone": "找人",
     "contacts.you": "我的设置",
     "contacts.display_name": "备注",

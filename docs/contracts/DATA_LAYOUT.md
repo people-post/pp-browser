@@ -231,6 +231,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `pin_digits` | Optional (no schema bump); the PIN's kind, not a secret: absent = unknown, `0` = text PIN, `4`–`8` = digit PIN of that length (the phone gate's number pad). Written after each unlock with an own PIN and on Change PIN |
 | `preferences.json` → `composer_voice_mode_last` | Additive optional boolean (no schema bump); default false = keyboard, absent reads false, old readers ignore it. The phone chat composer's last input mode (true = voice). Device-local, not synced, phone only |
+| `preferences.json` → `account_sync_pending` | Additive optional boolean (no schema bump); absent reads false = not pending, old readers ignore it. Set when an account is brought over (linking code or recovery phrase) and cleared when the first account-locker sync succeeds; while set, the Contacts and Chats pages show "Syncing…" instead of the empty state. Device-local, not synced |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.

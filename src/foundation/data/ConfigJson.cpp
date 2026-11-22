@@ -845,6 +845,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("recovery_reminder_dismissals", static_cast<int64_t>(prefs.recovery_reminder_dismissals));
   object.set("recovery_reminder_dismissed_ms", prefs.recovery_reminder_dismissed_ms);
   object.set("composer_voice_mode_last", prefs.composer_voice_mode_last);
+  object.set("account_sync_pending", prefs.account_sync_pending);
   object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
@@ -924,6 +925,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   prefs.recovery_reminder_dismissed_ms =
       std::max<int64_t>(0, ReadI64(object, "recovery_reminder_dismissed_ms").value_or(0));
   prefs.composer_voice_mode_last = object.getIf<bool>("composer_voice_mode_last").value_or(false);
+  prefs.account_sync_pending = object.getIf<bool>("account_sync_pending").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes = (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 ||
                                 grace_minutes == 60 || grace_minutes == kUnlockGraceAlways)

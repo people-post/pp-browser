@@ -131,6 +131,8 @@ public:
    * transcript's sender avatars, the chat header, the chats list, Home's widgets and an open group info sheet.
    */
   void OnPeerIconsChanged();
+  /** An imported account's first sync is running / late (AccountSyncState): the empty Chats list shows it. */
+  void SetAccountSync(bool syncing, bool delayed);
 
   ChatController();
   ~ChatController() override = default;

@@ -227,6 +227,8 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
   ctor.Bind("show_reconnect_banner", &state.show_reconnect_banner);
   ctor.Bind("sessions_more", &state.sessions_more);
+  ctor.Bind("account_sync_syncing", &state.account_sync_syncing);
+  ctor.Bind("account_sync_delayed", &state.account_sync_delayed);
   ctor.Bind("sessions_query", &state.sessions_query);
   ctor.Bind("ai_sessions_query", &state.ai_sessions_query);
   ctor.Bind("ai_sessions_count_label", &state.ai_sessions_count_label);

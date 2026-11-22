@@ -72,7 +72,12 @@
         </div>
       </div>
 
-      <div class="contacts-empty stack" data-if="contacts.size == 0 && search_query == ''">
+      <div class="sync-pending" data-if="contacts.size == 0 && search_query == '' && (account_sync_syncing || account_sync_delayed)">
+        <div class="sync-pending-spinner" data-if="account_sync_syncing"></div>
+        <p class="text muted" data-if="account_sync_syncing">{{i18n:account_sync.pending}}</p>
+        <p class="text muted" data-if="!account_sync_syncing && account_sync_delayed">{{i18n:account_sync.delayed}}</p>
+      </div>
+      <div class="contacts-empty stack" data-if="contacts.size == 0 && search_query == '' && !account_sync_syncing && !account_sync_delayed">
         <p class="text muted">{{i18n:contacts.empty_hint}}</p>
         <button class="chat-suggestion btn-icon" type="button" data-event-click="find_someone()">
           <svg src="../icons/sparkle.svg" width="14" height="14" crop-to-content="true"></svg>

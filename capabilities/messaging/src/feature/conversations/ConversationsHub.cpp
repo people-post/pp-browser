@@ -2705,7 +2705,8 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
         return; // M021 d4: a signed-out device no longer speaks for the account
       }
-      if (auto published = account_locker_->Publish(); !published) {
+      auto published = account_locker_->Publish();
+      if (!published) {
         log().info << "Account locker not published: " << published.error().message;
       }
     });
@@ -2719,6 +2720,14 @@ void ConversationsHub::ApplyRestoredCardFloors() {
     restored.swap(restored_.card_floors);
   }
   if (restored.empty() || !peer_cards_) {
+      std::function<void(bool)> on_result;
+      {
+        std::lock_guard lock(account_sync_result_mu_);
+        on_result = on_account_sync_result_;
+      }
+      if (on_result) {
+        on_result(static_cast<bool>(published));
+      }
     return;
   }
   std::vector<PeerCardFloor> floors;
@@ -4528,6 +4537,11 @@ void ConversationsHub::RetryOwnCardRecoverySoon() {
 void ConversationsHub::WireOwnCardRecovery() {
   OwnCards& own = mesh_messaging_->OwnAccountCards();
   own.SetOwnCardLookup([this](const std::string& account_id, std::function<void(OwnCardAnswers)> done) {
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
+  std::lock_guard lock(account_sync_result_mu_);
+  on_account_sync_result_ = std::move(callback);
+}
+
     AppRuntime::PostWorkerNormal([this, account_id, done = std::move(done)]() {
       done(shutdown_requested_.load(std::memory_order_acquire) ? OwnCardAnswers{} : AskOurRelaysForOwnCard(account_id));
     });

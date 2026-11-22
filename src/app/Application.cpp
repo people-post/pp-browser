@@ -600,6 +600,10 @@ Roe<void> Application::ResetActiveProfile() {
     return prefs.error();
   }
 
+  // The old account's pending first sync is gone with its preferences: a new account starts with none.
+  account_sync_ = AccountSyncState([this](const bool pending) { PersistAccountSyncPending(pending); });
+  account_sync_retries_ = 0;
+  ApplyAccountSyncView();
   chat_->OnProfileDataReset();
   contacts_->Refresh();
   // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
@@ -1868,6 +1872,13 @@ void Application::WireUnlockPinAndFlow() {
     if (secrets_ && secrets_->IsUnlocked() && settings_) {
       settings_->OnProfileUnlocked();
     }
+    // A relaunch before an imported account's first sync finished shows its indicator again (a new account: none).
+    if (secrets_ && secrets_->IsUnlocked() && store_.IsInitialized()) {
+      if (account_sync_.OnProfileOpened(store_.Snapshot().profile_prefs.account_sync_pending)) {
+        ArmAccountSyncTimeout();
+      }
+      ApplyAccountSyncView();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();
@@ -1903,6 +1914,11 @@ void Application::WireUnlockPinAndFlow() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
+    // Its contacts come over with the first account sync, a few seconds from now: the empty pages say so.
+    if (account_sync_.OnImported()) {
+      ArmAccountSyncTimeout();
+    }
+    ApplyAccountSyncView();
     // Import runs before EnsureMessagingReady; push attach after the vault is open. Off the UI thread, in the same
     // one-at-a-time run as the messaging-ready binding (ChatController / MessagingReadyTasks).
     if (chat_) {
@@ -2588,6 +2604,68 @@ void Application::SeedAndRefreshUiDemo() {
   }
 }
 
+void Application::PersistAccountSyncPending(const bool pending) {
+  if (!store_.IsInitialized()) {
+    return;
+  }
+  ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+  if (prefs.account_sync_pending == pending) {
+    return;
+  }
+  prefs.account_sync_pending = pending;
+  if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Account sync flag not saved: " << saved.error().message;
+  }
+}
+
+void Application::ApplyAccountSyncView() {
+  const AccountSyncView view = account_sync_.View();
+  const bool syncing = view == AccountSyncView::Syncing;
+  const bool delayed = view == AccountSyncView::Delayed;
+  if (contacts_) {
+    contacts_->SetAccountSync(syncing, delayed);
+  }
+  if (chat_) {
+    chat_->SetAccountSync(syncing, delayed);
+  }
+}
+
+void Application::ArmAccountSyncTimeout() {
+  // The spinner never runs forever: after this the page says the sync is late (the next success still clears it).
+  constexpr auto kSpinnerTimeout = std::chrono::seconds(60);
+  AppRuntime::ScheduleCoordinatorOneShot(kSpinnerTimeout, [this]() {
+    AppRuntime::PostUI([this]() {
+      account_sync_.OnTimeout();
+      ApplyAccountSyncView();
+    });
+  });
+}
+
+void Application::OnAccountSyncResult(const bool ok) {
+  if (ok) {
+    account_sync_retries_ = 0;
+    account_sync_.OnSyncSucceeded();
+    PersistAccountSyncPending(false); // also when the relaunch's opening has not marked it yet
+    ApplyAccountSyncView();
+    return;
+  }
+  account_sync_.OnSyncFailed();
+  ApplyAccountSyncView();
+  // "It will try again on its own": the 10-minute round is far off, so a pending account asks again sooner (three
+  // times, 30 s apart) before leaving it to that round.
+  constexpr int kMaxRetries = 3;
+  if (account_sync_.Pending() && account_sync_retries_ < kMaxRetries) {
+    ++account_sync_retries_;
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(30), [this]() {
+      AppRuntime::PostUI([this]() {
+        if (messaging_ && account_sync_.Pending()) {
+          messaging_->PublishAccountLockerSoon();
+        }
+      });
+    });
+  }
+}
+
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   const auto on_ready = [this]() {
@@ -2704,6 +2782,9 @@ void Application::WireHubCallbacks() {
   messaging.SetOnContactsChanged([this]() {
     // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
     // blocked list) shows it at once. A burst (an import, a card and its profile) is one rebuild.
+  messaging.SetOnAccountSyncResult([this](const bool ok) {
+    AppRuntime::PostUI([this, ok]() { OnAccountSyncResult(ok); }); // a worker thread → the UI thread
+  });
     if (contacts_sync_posted_.exchange(true)) {
       return;
     }
@@ -3182,6 +3263,7 @@ void Application::Shutdown() {
     messaging_->SetOnCallWake(nullptr);
   }
 
+    messaging_->SetOnAccountSyncResult(nullptr);
   // Join notification watcher first so it cannot PostTask during teardown, and
   // so process exit does not std::terminate on an unjoined std::thread.
   {

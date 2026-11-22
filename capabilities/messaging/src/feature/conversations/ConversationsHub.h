@@ -355,6 +355,12 @@ public:
    */
   void SetOnContactsChanged(std::function<void()> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
+  /**
+   * An account-locker sync (the account's contacts and groups across its devices) ended: true when it completed (with
+   * changes or without), false when it failed (the locker could not be read or written). Not called when the sync did
+   * not run (messaging down, no recovery seed, not registered, signed out). Runs on a worker thread.
+   */
+  void SetOnAccountSyncResult(std::function<void(bool ok)> callback);
   Roe<OurRelaysStatus> OurRelays();
   /**
    * Adds the relay the user pasted: its relay link (`https://host#<PeerId>`, MR008; a bare origin, plain http:// or a
@@ -861,6 +867,8 @@ private:
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
+  std::mutex account_sync_result_mu_;
+  std::function<void(bool ok)> on_account_sync_result_;
   std::shared_ptr<MyRelaysWorkflow> my_relays_;
   mutable std::mutex my_relays_mu_;
   std::shared_ptr<MyRelaysWorkflow> MyRelays() const;
