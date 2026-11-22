@@ -182,6 +182,10 @@ jobs:
         run: ./scripts/check/check_shareable_channels.sh
       - name: Release relay id check (SIGNED_FORMATS § 3.5)
         run: ./scripts/check/check_relay_ids.sh --self-test
+      - name: No private relay deployment detail (public repository)
+        run: |
+          ./scripts/check/check_private_infra.sh --self-test
+          ./scripts/check/check_private_infra.sh
       # Only the self-test: the check itself still fails on main (hard-coded colours in components.rcss).
       - name: Theme colour check (self-test)
         run: python3 ./scripts/check/check_theme_colors.py --self-test

@@ -1,0 +1,10 @@
+# Files that named the relay's private deployment before check_private_infra.sh, and how many lines: lower a count,
+# or drop the line, as the detail moves to pp-relay-apis; never add a file or raise a count. "path count".
+projects/multi-relay/CURRENT_STATE.md 2
+projects/multi-relay/DESIGN.md 4
+projects/multi-relay/PHASES.md 5
+projects/release-compatibility/CUTOVER_PLAN.md 4
+projects/release-compatibility/DECISIONS.md 3
+projects/release-compatibility/DESIGN.md 1
+projects/release-compatibility/PHASES.md 2
+projects/release-compatibility/SIGNED_FORMATS.md 1
