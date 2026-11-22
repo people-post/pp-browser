@@ -9,6 +9,7 @@
 #include "app/node/StatusHttpServer.h"
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/crypto/SignedBytes.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "common/runtime/AppRuntime.h"
@@ -199,12 +200,15 @@ void ShutdownNode(pbr::NodeBootstrapResult& boot) {
 }
 
 /**
- * The node's relay identity (multi-relay MR007, MR008): the relay it registers at is expected to answer to
- * `registration.peer_id` (PP_NODE_REGISTRATION_PEER_ID; the compiled prod relay's with the compiled URL), kept in
- * `relay_pins.json` in its data directory. With none named a release build refuses to register there (logged as an
- * ERROR naming the setting) and a developer build pins that relay's first answer, with a warning. An
- * identity answer naming another PeerId stops the relay calls (registration, heartbeat) — the mesh services keep
- * running — and is logged as an ERROR, until the relay answers to its address again or the operator names its new one.
+ * The node's relay identity (multi-relay MR007, MR008; SIGNED_FORMATS § 3): the relay it registers at is expected to
+ * prove `registration.relay_id` (PP_NODE_REGISTRATION_RELAY_ID; the compiled prod relay's with the compiled URL, whose
+ * build certificate is the floor), kept in `relay_pins.json` in its data directory with the highest certificate seen
+ * (`relay-identity`, `client-compat`, the build): its transport key's PeerId is the audience. With none named a
+ * release build refuses to register there (logged as an ERROR naming the setting) and a developer build pins that
+ * relay's first valid certificate, with a warning; the build's placeholder (`pending`) is refused in every build. A
+ * relay that serves another relay's certificate, none valid, or one not listing its origin stops the relay calls
+ * (registration, heartbeat) — the mesh services keep running — and is logged as an ERROR, until it proves its
+ * address again.
  */
 std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult& boot) {
   auto pins = std::make_shared<pbr::RelayPins>(boot.profile_data_dir);
@@ -217,9 +221,11 @@ std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult
     const auto held = weak.lock();
     const auto pin = held ? held->PinFor(origin) : std::nullopt;
     if (pin && pin->Mismatched()) {
-      pbr::logging::getLogger("pp-node").error << "relay identity mismatch: expected " << pin->peer_id << ", presented "
-                                               << pin->presented_peer_id << " (" << origin
-                                               << "); relay calls stop (registration.peer_id names the relay)";
+      pbr::logging::getLogger("pp-node").error
+          << "relay identity mismatch: expected " << pin->relay_id.ToString() << ", "
+          << pbr::RelayMismatchName(pin->mismatch)
+          << (pin->presented_relay_id.empty() ? std::string() : " " + pin->presented_relay_id.ToString()) << " ("
+          << origin << "); relay calls stop (registration.relay_id names the relay)";
     }
   });
   if (registration.base_url.empty()) {
@@ -227,18 +233,24 @@ std::shared_ptr<pbr::RelayPins> OpenNodeRelayPins(const pbr::NodeBootstrapResult
   }
   if (const std::string problem = pbr::NodeRegistrationIdProblem(registration, pbr::kDeveloperRelaysAllowed);
       !problem.empty()) {
-    // MR008 item 5: a release build signs nothing for a relay its address names no PeerId for (no registration, no
-    // heartbeat); the mesh keeps running.
+    // MR008 item 5: a release build signs nothing for a relay its address names no relay id for (no registration,
+    // no heartbeat); the mesh keeps running.
     pbr::logging::getLogger("pp-node").error << problem;
-  } else if (registration.peer_id.empty()) {
-    pbr::logging::getLogger("pp-node").warning << "registration.peer_id is not set: the relay at "
+  } else if (registration.relay_id.empty()) {
+    pbr::logging::getLogger("pp-node").warning << "registration.relay_id is not set: the relay at "
                                                << registration.base_url
-                                               << " is pinned on its first answer (a developer build; set "
-                                                  "registration.peer_id or PP_NODE_REGISTRATION_PEER_ID)";
+                                               << " is pinned on its first valid certificate (a developer build; set "
+                                                  "registration.relay_id or PP_NODE_REGISTRATION_RELAY_ID)";
     pins->SetFirstUse(
         [relay = registration.base_url](const std::string& origin) { return pbr::SameRelay(origin, relay); });
-  } else if (auto expected = pins->Expect(registration.base_url, registration.peer_id); !expected) {
-    pbr::logging::getLogger("pp-node").error << "registration.peer_id not used: " << expected.error().message;
+  } else if (const auto relay_id = pbr::RelayId::Parse(registration.relay_id); !relay_id) {
+    pbr::logging::getLogger("pp-node").error << "registration.relay_id is not a relay ID: not used";
+  } else if (auto expected = pins->Expect(registration.base_url, *relay_id); !expected) {
+    pbr::logging::getLogger("pp-node").error << "registration.relay_id not used: " << expected.error().message;
+  } else if (registration.relay_id == pbr::CompiledDefaultRelayId() &&
+             *pbr::CompiledDefaultRelayCertificate() != '\0') {
+    // The build's certificate for the compiled prod relay: the floor, so the node signs offline at start (Q10).
+    (void)pins->OfferCertificate(*relay_id, pbr::CompiledDefaultRelayCertificate(), "the build");
   }
   return pins;
 }
@@ -261,14 +273,17 @@ pbr::NodeHeartbeatDeps MakeHeartbeatDeps(pbr::NodeBootstrapResult& boot,
                                    int64_t timestamp) -> pbr::Roe<pbr::HeartbeatSignature> {
     auto signed_heartbeat = pbr::SignRelayCommand(
         audience.get(), [identity](const std::vector<uint8_t>& bytes) { return identity->SignBytes(bytes); }, timestamp,
-        [&](const std::string& peer) {
-          return pbr::BuildRelayHeartbeatSignBytes(peer, account_id, peer_id, state, timestamp);
+        [&](const std::string& peer, const pp::ExtArea& ext) {
+          return pbr::BuildRelayHeartbeatSignBytes(peer, account_id, peer_id, state, timestamp, ext);
         });
     if (!signed_heartbeat) {
       return signed_heartbeat.error();
     }
+    pbr::Object ext;
+    pbr::WriteExtB64(ext, signed_heartbeat->ext);
     return pbr::HeartbeatSignature{.sign_version = signed_heartbeat->sign_version,
                                    .audience = signed_heartbeat->audience,
+                                   .ext_b64 = ext.getString(pbr::kExtB64Key).value_or(""),
                                    .signature = signed_heartbeat->signature};
   };
   deps.refused = [audience](const std::string& code) { audience->Refused(code); };
@@ -318,12 +333,23 @@ void NotePublishFailure(pbr::logging::Logger& log, const char* what, const pbr::
   }
 }
 
-/** The relay's client-compat, read for its node floor (A2); none without a registration URL. */
-pbr::NodeCompatFloor MakeNodeCompatFloor(const pbr::NodeBootstrapResult& boot) {
+/**
+ * The relay's client-compat, read for its node floor (A2); none without a registration URL. Its certificate
+ * (`relay_certificate_b64`) is offered to the pins for the relay id the node names (SIGNED_FORMATS § 3.4: a channel
+ * the highest is kept from).
+ */
+pbr::NodeCompatFloor MakeNodeCompatFloor(const pbr::NodeBootstrapResult& boot, std::shared_ptr<pbr::RelayPins> pins) {
   pbr::NodeCompatFloor::Fetch fetch;
   if (const std::string& relay = boot.config.registration.base_url; !relay.empty()) {
     auto client = std::make_shared<pbr::HttpClientCompatClient>(relay);
-    fetch = [client]() { return client->Fetch(); };
+    const auto relay_id = pbr::RelayId::Parse(boot.config.registration.relay_id);
+    fetch = [client, pins = std::move(pins), relay_id]() {
+      auto document = client->Fetch();
+      if (document && pins && relay_id && !document->relay_certificate_b64.empty()) {
+        (void)pins->OfferCertificate(*relay_id, document->relay_certificate_b64, "client-compat");
+      }
+      return document;
+    };
   }
   return pbr::NodeCompatFloor(std::move(fetch), pbr::AppVersionString(), []() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -541,7 +567,7 @@ int main(int argc, char** argv) {
   schedule_probe();
 
   // The relay's node floor (A2): below it, no registration and no heartbeat there (one ERROR); the mesh runs on.
-  pbr::NodeCompatFloor node_floor = MakeNodeCompatFloor(*boot);
+  pbr::NodeCompatFloor node_floor = MakeNodeCompatFloor(*boot, relay_pins);
   bool relay_calls_allowed = node_floor.RelayCallsAllowed();
 
   // Publish/renew mesh_node listing when advertise multiaddrs configured (N027); a failed first

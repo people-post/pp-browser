@@ -25,6 +25,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   PeerDisplayLabel.cpp
   RegistrationStatus.cpp
   AccountCard.cpp
+  CardKeys.cpp
   DevicePeerId.cpp
   PeerCards.cpp
   AccountCardRequest.cpp

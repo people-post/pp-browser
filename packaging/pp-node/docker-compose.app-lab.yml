@@ -50,6 +50,11 @@ services:
       PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP_ADVERTISE:-}
       PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP_PUBLISH:-false}
       PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
+      # The relay id that relay proves (SIGNED_FORMATS § 3: a relay address is its origin and its relay id), as the
+      # fleet's config names it: pp_local_test.sh reads it from the relay's /_local/status once the relay is up
+      # (PP_APP_LAB_RELAY_ID) and starts the seeds again with it. Empty until then: a developer build pins the relay's
+      # first valid certificate.
+      PP_NODE_REGISTRATION_RELAY_ID: ${PP_APP_LAB_RELAY_ID:-}
       # As the fleet runs it: the relay's CDN refuses a POST without x-amz-content-sha256.
       PP_NODE_RELAY_CONTENT_SHA256: "true"
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
@@ -78,6 +83,7 @@ services:
       PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP2_ADVERTISE:-}
       PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP2_PUBLISH:-false}
       PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
+      PP_NODE_REGISTRATION_RELAY_ID: ${PP_APP_LAB_RELAY_ID:-}
       # As the fleet runs it: the relay's CDN refuses a POST without x-amz-content-sha256.
       PP_NODE_RELAY_CONTENT_SHA256: "true"
       PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
@@ -96,6 +102,10 @@ services:
     environment:
       LOCAL_PORT: 9097
       LOCAL_PUBLIC_URL: http://198.51.100.20:9097
+      # Every origin the lab's clients use for this relay, which its certificate lists (SIGNED_FORMATS § 3.5): a client
+      # refuses the relay at an origin it does not (origin_not_listed). The NAT users' and the seeds' address, the
+      # host users' port mapping, and the TLS front's (the multi-relay scenarios and relay links).
+      LOCAL_RELAY_ORIGINS: http://198.51.100.20:9097/api/relay,http://127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}/api/relay,https://127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}/api/relay
       LOCAL_CDN_ORIGIN: https://198.51.100.21/_local/cdn
       LOCAL_DYNAMODB_ENDPOINT: http://relay-dynamodb:8000
       LOCAL_S3_ENDPOINT: http://relay-s3:7070
@@ -140,6 +150,7 @@ services:
     environment:
       LOCAL_PORT: 9097
       LOCAL_PUBLIC_URL: http://198.51.100.23:9097
+      LOCAL_RELAY_ORIGINS: http://198.51.100.23:9097/api/relay,http://127.0.0.1:${PP_APP_LAB_RELAY2_PORT:-18729}/api/relay,https://127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}/api/relay
       LOCAL_CDN_ORIGIN: https://198.51.100.22/_local/cdn
       LOCAL_DYNAMODB_ENDPOINT: http://relay2-dynamodb:8000
       LOCAL_S3_ENDPOINT: http://relay2-s3:7070

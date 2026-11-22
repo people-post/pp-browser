@@ -27,14 +27,15 @@ def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
 if (ppApiUrlQa && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
 }
-// The org relays' PeerIds beside their origins (multi-relay MR008).
-def ppRelayPeerIdProd = System.getenv('PP_RELAY_PEER_ID_PROD') ?: ''
-if (ppRelayPeerIdProd && !ppBrowserUiDemo) {
-    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_PROD=${ppRelayPeerIdProd}"]
+// The org relays' ids beside their origins (SIGNED_FORMATS § 3.5); unset: CMake's "pending" (fails closed). Their
+// certificates are config/relay-certs/<env>.cert, read by CMake.
+def ppRelayIdProd = System.getenv('PP_RELAY_ID_PROD') ?: ''
+if (ppRelayIdProd && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_ID_PROD=${ppRelayIdProd}"]
 }
-def ppRelayPeerIdQa = System.getenv('PP_RELAY_PEER_ID_QA') ?: ''
-if (ppRelayPeerIdQa && !ppBrowserUiDemo) {
-    ppBrowserCmakeArgs += ["-DPP_RELAY_PEER_ID_QA=${ppRelayPeerIdQa}"]
+def ppRelayIdQa = System.getenv('PP_RELAY_ID_QA') ?: ''
+if (ppRelayIdQa && !ppBrowserUiDemo) {
+    ppBrowserCmakeArgs += ["-DPP_RELAY_ID_QA=${ppRelayIdQa}"]
 }
 def ppRelayContentSha256 = (System.getenv('PP_RELAY_CONTENT_SHA256') ?: 'OFF').toUpperCase()
 ppBrowserCmakeArgs += ["-DPP_RELAY_CONTENT_SHA256=${ppRelayContentSha256}"]

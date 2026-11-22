@@ -104,6 +104,21 @@ TEST(ClientCompatParse, TheReleaseOneFieldsAreRead) {
   EXPECT_TRUE(bare->relay_version.empty());
 }
 
+// SIGNED_FORMATS § 3.4: `relay_certificate_b64` (additive at schema_version 1) is taken as it came; the relay pins
+// check it against the relay id the build names.
+TEST(ClientCompatParse, TheRelayCertificateIsTakenAsItCame) {
+  auto doc = ParseClientCompatDocument(R"({"schema_version": 1, "relay_certificate_b64": "AQIDBA=="})");
+  ASSERT_TRUE(doc);
+  EXPECT_EQ(doc->relay_certificate_b64, "AQIDBA==");
+  auto none = ParseClientCompatDocument(R"({"schema_version": 1, "relay_certificate_b64": 7})");
+  ASSERT_TRUE(none) << "a malformed field does not fail the document";
+  EXPECT_TRUE(none->relay_certificate_b64.empty());
+  const std::string huge = R"({"schema_version": 1, "relay_certificate_b64": ")" + std::string(400 * 1024, 'A') + "\"}";
+  auto bounded = ParseClientCompatDocument(huge);
+  ASSERT_TRUE(bounded);
+  EXPECT_TRUE(bounded->relay_certificate_b64.empty()) << "over the bound: not kept";
+}
+
 TEST(ClientCompatParse, AtMostSixtyFourSwitchesAreKept) {
   std::string json = R"({"schema_version": 1, "switches": {)";
   for (int i = 0; i < 80; ++i) {
@@ -321,6 +336,7 @@ TEST(ClientCompatCache, KeepsTheReleaseOneFieldsAndItsFileVersion) {
   entry.document.node_range = ClientCompatRange{.min = "10.0.0", .max = "10.9.0"};
   entry.document.min_node_version = "10.0.0";
   entry.document.switches = {{"a", true}, {"b", false}};
+  entry.document.relay_certificate_b64 = "AQIDBA==";
   ASSERT_TRUE(SaveClientCompatCache(dir.string(), entry));
 
   std::string text;
@@ -342,6 +358,7 @@ TEST(ClientCompatCache, KeepsTheReleaseOneFieldsAndItsFileVersion) {
   EXPECT_EQ(loaded->document.node_range->max, "10.9.0");
   EXPECT_EQ(loaded->document.min_node_version, "10.0.0");
   EXPECT_EQ(loaded->document.switches, entry.document.switches);
+  EXPECT_EQ(loaded->document.relay_certificate_b64, "AQIDBA==");
 
   {
     std::ofstream newer(dir / "client_compat.json", std::ios::trunc);

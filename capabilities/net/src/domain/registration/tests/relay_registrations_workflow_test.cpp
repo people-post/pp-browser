@@ -34,9 +34,8 @@ class CardRecordingClient : public MockRegistrationClient {
 public:
   Roe<RegistrationResult> FinishRegistration(const std::string& challenge, const std::string& public_key_b64,
                                              const std::string& nickname, const SignedRelayCommand& signed_finish,
-                                             const std::string& signature_alg, const std::string& kem_public_key_b64,
-                                             const std::string& kem_binding_signature_b64, const std::string& peer_id,
-                                             const std::vector<std::string>& multiaddrs,
+                                             const std::string& kem_public_key_b64, const std::string& kem_binding_b64,
+                                             const std::string& peer_id, const std::vector<std::string>& multiaddrs,
                                              const RegistrationPublishOpts& publish) override {
     ++finish_calls;
     events.push_back("finish");
@@ -53,9 +52,9 @@ public:
     if (refusal) {
       return *refusal;
     }
-    auto result = MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
-                                                             signature_alg, kem_public_key_b64,
-                                                             kem_binding_signature_b64, peer_id, multiaddrs, publish);
+    auto result =
+        MockRegistrationClient::FinishRegistration(challenge, public_key_b64, nickname, signed_finish,
+                                                   kem_public_key_b64, kem_binding_b64, peer_id, multiaddrs, publish);
     if (result) {
       result->expires_at = expires_at;
       result->llm_token = llm_key;

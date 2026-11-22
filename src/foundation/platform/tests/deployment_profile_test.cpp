@@ -116,22 +116,43 @@ TEST(DeploymentProfileTest, QaBackendUsesQaOriginAndEnvStillWins) {
             "https://backend.example.test");
 }
 
-// Multi-relay MR008: the org relay's address carries its PeerId, shipped with the build beside its origin
-// (PP_RELAY_PEER_ID_PROD / PP_RELAY_PEER_ID_QA); a developer's PP_BROWSER_ORIGIN names none (first use, warned).
-TEST(DeploymentProfileTest, TheOrgRelaysPeerIdShipsWithItsBackend) {
+// Multi-relay MR008, SIGNED_FORMATS § 3.5: the org relay's address carries its relay id, shipped with the build beside
+// its origin (PP_RELAY_ID_PROD / PP_RELAY_ID_QA), with its certificate at build time as the floor
+// (config/relay-certs/<env>.cert); a developer's PP_BROWSER_ORIGIN names its own (PP_BROWSER_RELAY_ID) and no
+// certificate (fetched), or none (first use, warned).
+TEST(DeploymentProfileTest, TheOrgRelaysIdAndCertificateShipWithItsBackend) {
   const pbr::CompiledOrigins compiled{.prod = "https://prod.example.test",
                                       .qa = "https://qa.example.test",
-                                      .prod_relay_peer_id = "QmProd",
-                                      .qa_relay_peer_id = "QmQa"};
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Prod, compiled), "QmProd");
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, nullptr, pbr::BackendEnv::Qa, compiled), "QmQa");
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, "", pbr::BackendEnv::Prod, compiled), "QmProd") << "an empty override";
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled), "")
-      << "another origin: not the build's relay";
-  EXPECT_EQ(pbr::ResolveRelayPeerId(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled, "QmDev"),
-            "QmDev")
-      << "PP_BROWSER_RELAY_PEER_ID names the override's relay";
-  EXPECT_EQ(pbr::ResolveRelayPeerId(true, nullptr, pbr::BackendEnv::Prod, compiled), "") << "the UI demo app";
+                                      .prod_relay_id = "relay:prod",
+                                      .qa_relay_id = "relay:qa",
+                                      .prod_relay_certificate = "cHJvZA==",
+                                      .qa_relay_certificate = "cWE="};
+  const auto prod = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Prod, compiled);
+  EXPECT_EQ(prod.relay_id, "relay:prod");
+  EXPECT_EQ(prod.certificate_b64, "cHJvZA==");
+  const auto qa = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Qa, compiled);
+  EXPECT_EQ(qa.relay_id, "relay:qa");
+  EXPECT_EQ(qa.certificate_b64, "cWE=");
+  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, "", pbr::BackendEnv::Prod, compiled).relay_id, "relay:prod")
+      << "an empty override";
+  const auto other = pbr::ResolveOrgRelayIdentity(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled);
+  EXPECT_EQ(other.relay_id, "") << "another origin: not the build's relay";
+  EXPECT_EQ(other.certificate_b64, "") << "nor its certificate";
+  EXPECT_EQ(
+      pbr::ResolveOrgRelayIdentity(false, "https://dev.example.test", pbr::BackendEnv::Prod, compiled, "relay:dev")
+          .relay_id,
+      "relay:dev")
+      << "PP_BROWSER_RELAY_ID names the override's relay";
+  const auto demo = pbr::ResolveOrgRelayIdentity(true, nullptr, pbr::BackendEnv::Prod, compiled);
+  EXPECT_TRUE(demo.relay_id.empty() && demo.certificate_b64.empty()) << "the UI demo app";
+}
+
+// The prod and qa operator sets are not made yet (Leo): the build's default is a placeholder that fails closed.
+TEST(DeploymentProfileTest, ThePendingPlaceholderIsNoRelayId) {
+  EXPECT_TRUE(pbr::IsPendingRelayId(pbr::kPendingRelayId));
+  EXPECT_TRUE(pbr::IsPendingRelayId("pending"));
+  EXPECT_FALSE(pbr::IsPendingRelayId(""));
+  EXPECT_FALSE(pbr::IsPendingRelayId("relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"));
 }
 
 // MR008 item 4: first use of the org's relay only in a developer build or on the compiled backend (a dogfood build

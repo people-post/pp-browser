@@ -313,7 +313,7 @@ TEST(PeopleDiscoveryBlocksTest, SeventeenKeyedHitsFitTheStoredMessage) {
     hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true}};
     hit.signing_public_key_b64 = std::string(2604, 'S'); // ML-DSA-65 public key, base64
     hit.kem_public_key_b64 = std::string(1580, 'K');     // ML-KEM-768 public key, base64
-    hit.kem_binding_signature_b64 = std::string(4412, 'B');
+    hit.kem_binding_b64 = std::string(4412, 'B');
     hit.endpoints.push_back(mesh::DirectoryEndpoint{.peer_id = "Qm" + std::string(44, 'p')});
     hits.push_back(hit);
   }
@@ -335,7 +335,7 @@ TEST(PeopleDiscoveryBlocksTest, ThreeHundredKeyedHitsStayUnderTheStoreLimitAndOf
     hit.ids = {{mesh::ContactIdKind::Account, *hit.account_id, true}};
     hit.signing_public_key_b64 = std::string(2604, 'S');
     hit.kem_public_key_b64 = std::string(1580, 'K');
-    hit.kem_binding_signature_b64 = std::string(4412, 'B');
+    hit.kem_binding_b64 = std::string(4412, 'B');
     hits.push_back(hit);
   }
   const pbr::PeopleDiscoveryBuildOptions options;

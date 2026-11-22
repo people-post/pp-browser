@@ -4,6 +4,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/RecoverySeed.h"
+#include "foundation/error/AppError.h"
 #include "common/AtomicFileWrite.h"
 #include "common/DeviceName.h"
 #include "common/Utilities.h"
@@ -22,8 +23,11 @@ namespace {
 constexpr const char kStateFile[] = "account_locker.json";
 /** `account_locker.json`'s schema (INVENTORY S3): a file without one is this one; a newer one is never written over. */
 constexpr uint64_t kStateSchemaVersion = 1;
-/** An exported locker file (M023 §6): the provider record as the relay stores it. */
+/** An exported locker file (M023 §6): the provider record as the relay stores it. Its shape is unchanged by record v2. */
 constexpr const char kLockerFileFormat[] = "pp-browser-account-locker-file-v1";
+/** What a device says when a newer app wrote the locker (SIGNED_FORMATS § 2.6): it reads nothing and writes nothing. */
+constexpr const char kNewerLockerMessage[] =
+    "Your account's locker was saved by a newer version of the app: update this app to sync it";
 
 Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
   auto recovery = DeriveRecoveryKeys(seed);
@@ -33,53 +37,14 @@ Roe<LockerKeys> LockerKeysOf(const ByteVector& seed) {
   return account_locker::KeysFrom(*recovery);
 }
 
-Roe<ByteVector> HexToBytes(const std::string& hex) {
-  if (hex.size() % 2 != 0) {
-    return Error("odd-length hex");
-  }
-  ByteVector out;
-  out.reserve(hex.size() / 2);
-  for (size_t i = 0; i < hex.size(); i += 2) {
-    const auto nibble = [](char c) -> int {
-      if (c >= '0' && c <= '9')
-        return c - '0';
-      if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-      return -1;
-    };
-    const int hi = nibble(hex[i]);
-    const int lo = nibble(hex[i + 1]);
-    if (hi < 0 || lo < 0) {
-      return Error("not lowercase hex");
-    }
-    out.push_back(static_cast<uint8_t>(hi * 16 + lo));
-  }
-  return out;
-}
-
 } // namespace
 
 LockerRecord LockerRecordFromSnapshot(const LockerSnapshot& snapshot) {
-  return LockerRecord{.locker_id = BytesToHex(snapshot.locker_id),
-                      .version = snapshot.version,
-                      .signing_public_key_b64 = Base64Encode(snapshot.signing_public_key),
-                      .sealed_b64 = Base64Encode(snapshot.sealed),
-                      .signature_b64 = Base64Encode(snapshot.signature)};
+  return LockerRecordFromJson(account_locker::RecordToJson(snapshot));
 }
 
 Roe<LockerSnapshot> LockerSnapshotFromRecord(const LockerRecord& record) {
-  auto id = HexToBytes(record.locker_id);
-  auto pk = Base64Decode(record.signing_public_key_b64);
-  auto sealed = Base64Decode(record.sealed_b64);
-  auto signature = Base64Decode(record.signature_b64);
-  if (!id || !pk || !sealed || !signature) {
-    return Error("account locker: a malformed record");
-  }
-  return LockerSnapshot{.locker_id = std::move(*id),
-                        .version = record.version,
-                        .signing_public_key = std::move(*pk),
-                        .sealed = std::move(*sealed),
-                        .signature = std::move(*signature)};
+  return account_locker::RecordFromJson(LockerRecordToJson(record));
 }
 
 AccountLockerWorkflow::AccountLockerWorkflow(IdentityStore& identity, ContactsStore& contacts, Sources sources)
@@ -331,7 +296,15 @@ Roe<uint64_t> AccountLockerWorkflow::Publish() {
   }
   auto stored = Fetch(**seed);
   if (!stored) {
+    if (AppError::IsNewerFormat(stored.error())) {
+      return AppError::NewerFormat(kNewerLockerMessage);
+    }
     return Error("Locker not read, not published: " + stored.error().message);
+  }
+  if (*stored && (*stored)->newer_format) {
+    // A newer app wrote the locker (SIGNED_FORMATS § 2.6): what it holds is not read, so it is not written over.
+    log().warning << "Account locker not published: a newer app wrote it";
+    return AppError::NewerFormat(kNewerLockerMessage);
   }
   // 1. What changed here since the last sync, then 2. what changed on another device (newer registers win).
   auto local = contacts_.List();
@@ -470,6 +443,7 @@ Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
   const std::string locker_id = BytesToHex(keys->locker_id);
   // Every copy within reach — the provider's and any saved file — and the newest valid one wins (M023 §5).
   std::vector<LockerSnapshot> candidates;
+  bool newer_format = false; // a copy a newer app wrote: skipped, and the locker not written over
   for (const std::string& file_json : saved_copies) {
     auto record = LockerRecordFromFileJson(file_json);
     if (!record) {
@@ -477,6 +451,8 @@ Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
     }
     if (auto snapshot = LockerSnapshotFromRecord(*record)) {
       candidates.push_back(std::move(*snapshot));
+    } else if (AppError::IsNewerFormat(snapshot.error())) {
+      newer_format = true;
     } else {
       return Error("The saved copy is damaged: " + snapshot.error().message);
     }
@@ -490,27 +466,35 @@ Roe<std::optional<AccountLockerWorkflow::Fetched>> AccountLockerWorkflow::Fetch(
       log().warning << "Locker provider not read, using the saved copy: " << record.error().message;
     } else if (*record) {
       auto snapshot = LockerSnapshotFromRecord(**record);
-      if (!snapshot) {
+      if (snapshot) {
+        candidates.push_back(std::move(*snapshot));
+      } else if (AppError::IsNewerFormat(snapshot.error())) {
+        newer_format = true;
+      } else {
         return snapshot.error();
       }
-      candidates.push_back(std::move(*snapshot));
     }
   }
-  if (candidates.empty()) {
+  if (candidates.empty() && !newer_format) {
     return std::optional<Fetched>{};
   }
-  auto newest = account_locker::PickNewest(candidates, *keys, HighestSeen(locker_id));
-  if (!newest) {
+  const account_locker::PickedSnapshot picked = account_locker::PickNewest(candidates, *keys, HighestSeen(locker_id));
+  newer_format = newer_format || picked.newer_format;
+  if (!picked.newest) {
+    if (newer_format) {
+      return AppError::NewerFormat(kNewerLockerMessage);
+    }
     return Error(saved_copies.empty()
                      ? "The provider's locker does not verify, or is older than one this device has seen"
                      : "No copy belongs to this recovery phrase, or every copy is older than one this device has seen");
   }
-  auto opened = account_locker::Open(*newest, *keys);
+  auto opened = account_locker::Open(*picked.newest, *keys);
   if (!opened) {
     return opened.error();
   }
-  RaiseHighestSeen(locker_id, newest->version);
-  return std::optional<Fetched>(Fetched{.state = std::move(*opened), .version = newest->version});
+  RaiseHighestSeen(locker_id, picked.newest->version);
+  return std::optional<Fetched>(
+      Fetched{.state = std::move(*opened), .version = picked.newest->version, .newer_format = newer_format});
 }
 
 Roe<std::string> AccountLockerWorkflow::ExportFileJson() {

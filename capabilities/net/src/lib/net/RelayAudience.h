@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/ExtArea.h"
 #include "common/Value.h"
 
 #include <cstdint>
@@ -13,14 +14,19 @@
 
 namespace pbr {
 
-/** Signs relay command bytes with the account key (base64 out). */
+/**
+ * Signs relay command bytes with the account key: standard base64 of the raw ML-DSA-65 signature the key holders give
+ * (`IdentityStore::SignBytes`). `SignRelayCommand` sends it typed (lib/people/CardKeys.h `TypedSignatureB64`).
+ */
 using RelayAuthSigner = std::function<Roe<std::string>(const std::vector<uint8_t>&)>;
 
 /**
  * Who a signed command to one relay is for (multi-relay MR007; docs/contracts/SERVICE_ENDPOINTS.md § The audience):
- * the relay's PeerId, named in the command's bytes and body, and where the relay's refusals that concern its identity
- * or our registration there go. Every client of one relay of ours shares one (RelayPins::AudienceFor); a send into a
- * contact's relay names the PeerId its card signed (FixedRelayAudience). Thread-safe.
+ * the relay's PeerId — the PeerId of the transport key its certificate names (release-compatibility SIGNED_FORMATS
+ * § 3.4; never taken from an unsigned answer) — named in the command's bytes and body, and where the relay's refusals
+ * that concern its identity or our registration there go. Every client of one relay of ours shares one
+ * (RelayPins::AudienceFor); a send into a contact's relay signs for the PeerId that relay's certificate proves for the
+ * relay id the contact names (RelayPins::ContactAudience). Thread-safe.
  */
 class IRelayAudience {
 public:
@@ -40,7 +46,9 @@ public:
   virtual void Refused(const std::string& code) = 0;
 };
 
-/** A PeerId given, not pinned (a contact's card or QR code names it; tests). Refusals go to `on_refused` when set. */
+/**
+ * A PeerId given, not proved by a certificate (tests). Refusals go to `on_refused` when set.
+ */
 class FixedRelayAudience : public IRelayAudience {
 public:
   explicit FixedRelayAudience(std::string peer_id, std::function<void(const std::string& code)> on_refused = nullptr)
@@ -71,27 +79,33 @@ inline constexpr const char* kAccountCardRefusalCodes[] = {"invalid_account_card
                                                            "account_card_too_large", "invalid_card_relays"};
 
 /**
- * What a signed command's JSON body carries beside its fields: the version byte it was signed with (`sign_version`),
- * the audience, the timestamp and the signature.
+ * What a signed command's JSON body carries beside its fields (release-compatibility SIGNED_FORMATS § 2.8): the version
+ * byte it was signed with (`sign_version`, 4), the audience, the timestamp, the extension area it signed (`ext_b64`,
+ * left out when empty) and the typed signature (its algorithm id first: no `signature_alg`).
  */
 struct SignedRelayCommand {
   int sign_version = 0;
   std::string audience;
   int64_t timestamp = 0;
+  pp::ExtArea ext;
   std::string signature;
 };
 
-/** The command's bytes for the relay `audience` names (empty: they could not be built). */
-using RelayCommandBytes = std::function<std::vector<uint8_t>(const std::string& audience)>;
+/** The command's bytes for the relay `audience` names, with `ext` as their area (empty: they could not be built). */
+using RelayCommandBytes = std::function<std::vector<uint8_t>(const std::string& audience, const pp::ExtArea& ext)>;
 
 /**
  * Signs one command for the relay `audience` names, at `timestamp`: its PeerId first (the audience's error when none
- * is in force; an error when no audience is set), then the bytes `build` makes for it, signed by `signer`.
+ * is in force; an error when no audience is set), then the bytes `build` makes for it with `ext` as their area (an
+ * error when they do not end with it), signed by `signer` and typed.
  */
 Roe<SignedRelayCommand> SignRelayCommand(IRelayAudience* audience, const RelayAuthSigner& signer, int64_t timestamp,
-                                         const RelayCommandBytes& build);
+                                         const RelayCommandBytes& build, const pp::ExtArea& ext = {});
 
-/** Puts `sign_version`, `audience`, `timestamp` and `signature` into `body` (top level, beside the command's fields). */
+/**
+ * Puts `sign_version`, `audience`, `timestamp`, `ext_b64` (when the area is not empty) and `signature` into `body`
+ * (top level, beside the command's fields).
+ */
 void PutSignedRelayCommand(Object& body, const SignedRelayCommand& command);
 
 /** The relay's machine-readable reason (`code` beside `error`) in an answer body; empty when none. */

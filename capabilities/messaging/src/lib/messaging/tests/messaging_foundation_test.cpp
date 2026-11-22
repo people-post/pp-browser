@@ -6,6 +6,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/PeopleDiscoveryBlocks.h"
 #include "lib/delivery/RelayWirePayload.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 
 #include <functional>
 #include "lib/messaging/tests/TestAccount.h"
@@ -45,7 +46,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   envelope.sender_device = "QmTestDevice";
   envelope.route.kind = "direct";
   envelope.route.channel = ThreadChannel::E2e;
-  envelope.body.e2e.payload_b64 = *payload_b64;
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64(); // the wire carries AEAD blobs only (envelope v4)
   envelope.timestamp = 1;
   const auto roundtrip = ParseRelayEnvelope(RelayEnvelopeToJson(envelope));
   ASSERT_TRUE(static_cast<bool>(roundtrip));
@@ -144,7 +145,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
-  direct.body.e2e.payload_b64 = "AQID";
+  direct.body.e2e.payload_b64 = test::FakePayloadB64();
   direct.timestamp = 1;
   ASSERT_TRUE(static_cast<bool>(ParseRelayEnvelope(RelayEnvelopeToJson(direct))));
 
@@ -207,7 +208,7 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRejectsOutOfRangeFields) {
   direct.sender_device = "QmTestDevice";
   direct.route.kind = kRelayRouteDirect;
   direct.route.channel = ThreadChannel::E2ePublic;
-  direct.body.e2e.payload_b64 = "AQID";
+  direct.body.e2e.payload_b64 = test::FakePayloadB64();
   direct.timestamp = 1;
   const auto with = [&](const std::function<void(Object&)>& edit) {
     Object json = RelayEnvelopeToJson(direct);
@@ -237,21 +238,21 @@ TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsOnlyKeysTheAccountBound) {
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount mallory = test::TestAccount::Make();
   const std::string account = ContactIdKindToString(mesh::ContactIdKind::Account);
-  const PeerKemKeyRecord bound{.kem_public_key_b64 = alice.KemPublicB64(),
-                               .signing_public_key_b64 = alice.SigningPublicB64(),
-                               .binding_signature_b64 = alice.KemBindingB64(),
+  const PeerKemKeyRecord bound{.kem_public_key_b64 = alice.TypedKemPublicB64(),
+                               .signing_public_key_b64 = alice.TypedSigningPublicB64(),
+                               .kem_binding_b64 = alice.KemBindingB64(),
                                .source = "test"};
   PeerKemKeyStore store;
 
   PeerKemKeyRecord unbound = bound;
-  unbound.binding_signature_b64.clear();
+  unbound.kem_binding_b64.clear();
   EXPECT_FALSE(store.Put(account, alice.account_id, unbound));
   PeerKemKeyRecord substituted = bound;
-  substituted.kem_public_key_b64 = mallory.KemPublicB64();
+  substituted.kem_public_key_b64 = mallory.TypedKemPublicB64();
   EXPECT_FALSE(store.Put(account, alice.account_id, substituted)) << "another key under Alice's binding";
-  const PeerKemKeyRecord mallory_own{.kem_public_key_b64 = mallory.KemPublicB64(),
-                                     .signing_public_key_b64 = mallory.SigningPublicB64(),
-                                     .binding_signature_b64 = mallory.KemBindingB64(),
+  const PeerKemKeyRecord mallory_own{.kem_public_key_b64 = mallory.TypedKemPublicB64(),
+                                     .signing_public_key_b64 = mallory.TypedSigningPublicB64(),
+                                     .kem_binding_b64 = mallory.KemBindingB64(),
                                      .source = "test"};
   EXPECT_FALSE(store.Put(account, alice.account_id, mallory_own)) << "Mallory's own binding, claimed for Alice";
   EXPECT_FALSE(store.Put("peer_id", alice.account_id, bound)) << "accounts only";
@@ -259,7 +260,7 @@ TEST(MessagingFoundationTest, PeerKemKeyStoreKeepsOnlyKeysTheAccountBound) {
 
   EXPECT_TRUE(store.Put(account, alice.account_id, bound));
   ASSERT_TRUE(store.Get(account, alice.account_id).has_value());
-  EXPECT_EQ(store.Get(account, alice.account_id)->kem_public_key_b64, alice.KemPublicB64());
+  EXPECT_EQ(store.Get(account, alice.account_id)->kem_public_key_b64, alice.TypedKemPublicB64());
 }
 
 } // namespace pbr

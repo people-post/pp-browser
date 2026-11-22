@@ -2,6 +2,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 
 #include "common/directory/DirectoryJson.h"
+#include "foundation/error/AppError.h"
 #include "lib/people/tests/TestAccount.h"
 
 #include <gtest/gtest.h>
@@ -48,9 +49,9 @@ private:
 mesh::DirectoryHit EntryFor(const test::TestAccount& account) {
   mesh::DirectoryHit hit;
   hit.account_id = account.account_id;
-  hit.signing_public_key_b64 = account.SigningPublicB64();
-  hit.kem_public_key_b64 = account.KemPublicB64();
-  hit.kem_binding_signature_b64 = account.KemBindingB64();
+  hit.signing_public_key_b64 = account.TypedSigningPublicB64();
+  hit.kem_public_key_b64 = account.TypedKemPublicB64();
+  hit.kem_binding_b64 = account.KemBindingB64();
   return hit;
 }
 
@@ -85,10 +86,10 @@ TEST_F(AccountKeyResolverTest, TakesTheDirectorysKeysOnceAndKeepsThemAsACard) {
   directory_.hit = EntryFor(alice_);
   auto kem = resolver_->Kem().Resolve(kind_, alice_.account_id);
   ASSERT_TRUE(kem) << kem.error().message;
-  EXPECT_EQ(kem->kem_public_key_b64, alice_.KemPublicB64());
+  EXPECT_EQ(kem->kem_public_key_b64, alice_.TypedKemPublicB64());
   auto signing = resolver_->Signing().Resolve(kind_, alice_.account_id);
   ASSERT_TRUE(signing) << signing.error().message;
-  EXPECT_EQ(signing->signing_public_key_b64, alice_.SigningPublicB64());
+  EXPECT_EQ(signing->signing_public_key_b64, alice_.TypedSigningPublicB64());
   EXPECT_EQ(directory_.lookups, 1) << "one lookup brings both keys";
 
   // A later run (empty key stores) finds the kept card without the directory.
@@ -101,13 +102,23 @@ TEST_F(AccountKeyResolverTest, TakesTheDirectorysKeysOnceAndKeepsThemAsACard) {
   EXPECT_TRUE(after.Kem().Resolve(kind_, alice_.account_id));
 }
 
+// A row whose keys need a newer app (mesh v10's `keys_update_needed`) is refused as NewerFormat, never as bad keys.
+TEST_F(AccountKeyResolverTest, AnEntryWhoseKeysNeedANewerAppIsUpdateNeeded) {
+  directory_.hit = EntryFor(alice_);
+  directory_.hit.keys_update_needed = true;
+  const auto kept = resolver_->AddDirectoryHit(directory_.hit);
+  ASSERT_FALSE(kept);
+  EXPECT_TRUE(AppError::IsNewerFormat(kept.error())) << kept.error().message;
+  EXPECT_FALSE(cards_->Get(alice_.account_id).value().has_value()) << "nothing kept";
+}
+
 TEST_F(AccountKeyResolverTest, RefusesAnEntryWhoseKeysAreNotTheAccounts) {
   directory_.hit = EntryFor(alice_);
-  directory_.hit.kem_public_key_b64 = mallory_.KemPublicB64(); // a substituted KEM key
+  directory_.hit.kem_public_key_b64 = mallory_.TypedKemPublicB64(); // a substituted KEM key
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
   directory_.hit = EntryFor(alice_);
-  directory_.hit.kem_binding_signature_b64.reset(); // no binding at all
+  directory_.hit.kem_binding_b64.reset(); // no binding at all
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
   directory_.hit = EntryFor(mallory_); // someone else's entry under Alice's id
@@ -122,9 +133,9 @@ TEST_F(AccountKeyResolverTest, WithNoDirectoryOnlyKeptCardsAnswer) {
   EXPECT_FALSE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 
   ASSERT_TRUE(cards_->AddKeyCard(KeyCard{.account_id = alice_.account_id,
-                                         .signing_public_key_b64 = alice_.SigningPublicB64(),
-                                         .kem_public_key_b64 = alice_.KemPublicB64(),
-                                         .kem_binding_signature_b64 = alice_.KemBindingB64()},
+                                         .signing_public_key_b64 = alice_.TypedSigningPublicB64(),
+                                         .kem_public_key_b64 = alice_.TypedKemPublicB64(),
+                                         .kem_binding_b64 = alice_.KemBindingB64()},
                                  "contact_card"));
   EXPECT_TRUE(resolver_->Kem().Resolve(kind_, alice_.account_id));
 }
@@ -138,7 +149,7 @@ TEST_F(AccountKeyResolverTest, KeepsACarriedCardOnlyForTheAccountItWasCarriedFor
   EXPECT_FALSE(cards_->Get(alice_.account_id).value().has_value());
 
   KeyCard swapped = alice_.Card();
-  swapped.kem_public_key_b64 = mallory_.KemPublicB64();
+  swapped.kem_public_key_b64 = mallory_.TypedKemPublicB64();
   EXPECT_FALSE(resolver_->AddCarriedCard(KeyCardToJson(swapped), 0, "group_roster", alice_.account_id))
       << "a KEM key Alice never bound";
 

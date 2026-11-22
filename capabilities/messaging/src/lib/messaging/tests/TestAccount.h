@@ -7,6 +7,8 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/people/tests/TestAccount.h"
 
+#include <gtest/gtest.h>
+
 #include <map>
 #include <optional>
 #include <string>
@@ -28,7 +30,8 @@ inline void SignEnvelopeAs(const TestAccount& account, RelayEnvelope& envelope) 
                                           .payload_b64 = envelope.body.e2e.payload_b64}};
   }
   envelope.sender_device = account.device.peer_id;
-  envelope.signature = account.device.Sign(EnvelopeSigner::BuildSignBytes(envelope).value()).value();
+  EXPECT_TRUE(
+      EnvelopeSigner::Sign(envelope, [&](const std::vector<uint8_t>& bytes) { return account.device.Sign(bytes); }));
 }
 
 /** The receive pipeline's view of `account` (and its device) as the local one. */

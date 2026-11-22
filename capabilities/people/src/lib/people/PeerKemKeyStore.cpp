@@ -15,7 +15,7 @@ bool PeerKemKeyStore::Put(const std::string& peer_identity_kind, const std::stri
                           PeerKemKeyRecord record) {
   if (peer_identity_kind != ContactIdKindToString(mesh::ContactIdKind::Account) ||
       !VerifyKemBinding(peer_identity_value, record.signing_public_key_b64, record.kem_public_key_b64,
-                        record.binding_signature_b64)) {
+                        record.kem_binding_b64)) {
     return false;
   }
   std::lock_guard lock(mutex_);

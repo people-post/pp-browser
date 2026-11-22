@@ -1,6 +1,7 @@
 #include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/E2eIngestClassifier.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
@@ -982,7 +983,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMembe
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope = WithSingleRelayCopy(std::move(envelope),
-                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = test::FakePayloadB64()});
   const RelayReceiveOutcome outcome = party.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -1014,7 +1015,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope = WithSingleRelayCopy(std::move(envelope),
-                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = test::FakePayloadB64()});
   const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
@@ -1032,7 +1033,7 @@ RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& gr
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope = WithSingleRelayCopy(std::move(envelope),
-                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
+                                 RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = test::FakePayloadB64()});
   return envelope;
 }
 

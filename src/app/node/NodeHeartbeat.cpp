@@ -132,6 +132,9 @@ NodeHeartbeat::Outcome NodeHeartbeat::Send(const HeartbeatState state, const lon
   body.set("sign_version", static_cast<int64_t>(signature->sign_version));
   body.set("audience", signature->audience);
   body.set("timestamp", timestamp);
+  if (!signature->ext_b64.empty()) {
+    body.set("ext_b64", signature->ext_b64);
+  }
   body.set("signature", signature->signature);
 
   const auto response = deps_.post(deps_.base_url + "/v1/mesh/heartbeat", DumpJson(body),

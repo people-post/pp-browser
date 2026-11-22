@@ -24,6 +24,12 @@ struct MessagingCompatPorts {
    * client_upgrade_required` (any thread; ConversationsHub::SetOnOrgRelayRequiresUpgrade).
    */
   std::function<void(std::function<void()> upgrade_required)> watch_upgrade_required;
+  /**
+   * The org relay's certificate a document carried (`relay_certificate_b64`, SIGNED_FORMATS § 3.4): offered to the
+   * relay pins, which keep it when it verifies against the relay id the build names and is higher than the one held
+   * (ConversationsHub::OfferOrgRelayCertificate).
+   */
+  std::function<void(const std::string& certificate_b64)> relay_certificate;
 };
 
 class ConversationsHub;

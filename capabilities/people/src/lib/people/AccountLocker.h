@@ -5,8 +5,11 @@
 #include "lib/people/ContactTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/RecoverySeed.h"
+#include "foundation/crypto/SignedReceive.h"
 
 #include "common/Error.h"
+#include "common/ExtArea.h"
+#include "common/Value.h"
 
 #include <cstdint>
 #include <optional>
@@ -30,8 +33,21 @@ inline constexpr size_t kMaxDeviceNameEntries = 8;
 inline constexpr size_t kMaxLockerGrants = 32;
 /** The relays a locker's `relays` carries at most (a fifth and on are dropped on read; MR004 bounds a list to 4). */
 inline constexpr size_t kMaxLockerRelays = 4;
-/** Longest grant field read from a locker (an Account ID, a base64 ML-DSA-65 signature fits): longer drops the grant. */
+/** Longest grant field read from a locker (an Account ID, a typed ML-DSA-65 signature's base64 fits): longer drops it. */
 inline constexpr size_t kMaxLockerGrantFieldBytes = 8192;
+
+/**
+ * The locker record's version (release-compatibility SIGNED_FORMATS § 2.6): outside, the record's `record_version`;
+ * inside, the byte after the signing domain. Release 1 reads this one only.
+ */
+inline constexpr uint8_t kLockerRecordVersion = 2;
+/** The record's signing domain (no `-vN`: the version is the byte after it). */
+inline constexpr char kLockerRecordDomain[] = "pp-browser:account-locker";
+/**
+ * The state JSON's version (`state_version`, inside the seal; INVENTORY T7): read first once a snapshot opens. A
+ * higher one is a newer app's: this device says "update needed" and does not write the locker.
+ */
+inline constexpr int64_t kLockerStateVersion = 1;
 
 /** The furthest `at` read from a locker or file (Unix ms, the year 2100): anything beyond is cut back to it. */
 inline constexpr int64_t kMaxDeviceNameAt = 4102444800000;
@@ -62,20 +78,37 @@ struct AccountLockerState {
   std::vector<std::string> providers;
   /** Each contact's sync register (M023 §7): the newest wins per account, a removal is a tombstone. */
   std::vector<ContactClockEntry> contact_clock;
-  /** Display names of the account's devices (key `device_names`), sorted by peer_id; absent in older snapshots. */
+  /** Display names of the account's devices (key `device_names`), sorted by peer_id. */
   std::vector<DeviceNameEntry> device_names;
+  /**
+   * The state JSON this state was read from (StateFromJson), empty for one built here. A writer keeps what it does not
+   * know (T7): StateToJson writes back its top-level keys this build does not read, and each row's unknown fields on
+   * the row of the same key. MergeForPublish carries the stored copy's.
+   */
+  Object kept;
 };
 
 /**
- * One snapshot as providers store it (M023 §4): sealed state, its version, and a signature by the locker signing key
- * over both — under the locker id, the BLAKE2b-256 of that key's public half.
+ * One snapshot as providers store it: locker record v2 (SIGNED_FORMATS § 2.6; docs/contracts/ACCOUNT_LOCKER.md
+ * § Record): sealed state, its revision, and a signature by the locker signing key over both and the extension area,
+ * under the locker id, the BLAKE2b-256 of that key's raw public half.
  */
 struct LockerSnapshot {
+  /** The outside version (`record_version`): kLockerRecordVersion for every snapshot this build reads or writes. */
+  int64_t record_version = kLockerRecordVersion;
   ByteVector locker_id;
+  /** The revision (JSON `version`): the newest wins. */
   uint64_t version = 0;
+  /** The locker signing key, typed (algorithm id, then ML-DSA-65). */
   ByteVector signing_public_key;
-  /** XChaCha20-Poly1305 under the locker key (AAD binds the id and the version) of the padded state. */
+  /**
+   * XChaCha20-Poly1305 under the locker key (AAD binds the id and the revision) of the padded state: `FileCipher`'s
+   * bytes, whose first byte is the AEAD id.
+   */
   ByteVector sealed;
+  /** The signed extension area (`ext_b64`): none is defined at release 1; a received record keeps its entries. */
+  pp::ExtArea ext;
+  /** Typed signature by the locker signing key. */
   ByteVector signature;
 
   bool operator==(const LockerSnapshot&) const = default;
@@ -101,20 +134,33 @@ Roe<LockerKeys> KeysFrom(const RecoveryKeys& recovery);
 Roe<LockerSnapshot> Seal(const AccountLockerState& state, const LockerKeys& keys, uint64_t version);
 
 /**
- * What a provider checks before it stores a snapshot, knowing nothing of the account: the signing key hashes to the
- * locker id, and the signature verifies.
+ * What a provider checks before it stores a snapshot, knowing nothing of the account, in the receiver's order
+ * (docs/contracts/SIGNED_EXTENSIONS.md): `record_version`, the algorithm ids of the key, the signature and the sealed
+ * bytes, the signature (the raw key hashes to the locker id, and it verifies), an unknown critical entry. "Update
+ * needed" (a newer version, an unknown algorithm or critical entry) is `AppError::NewerFormat`.
  */
 Roe<void> VerifyOwner(const LockerSnapshot& snapshot);
 
-/** Verify (VerifyOwner, and that it is this locker's) and open a snapshot. */
+/**
+ * Verify (VerifyOwner, and that it is this locker's) and open a snapshot; then `state_version` first. A newer record
+ * or state is `AppError::NewerFormat`.
+ */
 Roe<AccountLockerState> Open(const LockerSnapshot& snapshot, const LockerKeys& keys);
+
+/** What PickNewest found. */
+struct PickedSnapshot {
+  /** The newest snapshot that verifies and opens, none older than `at_least`. */
+  std::optional<LockerSnapshot> newest;
+  /** A snapshot a newer app wrote was among them (skipped): this device stops publishing ("update needed"). */
+  bool newer_format = false;
+};
 
 /**
  * Of the snapshots providers returned, the newest that verifies and opens — none older than `at_least` (the newest
- * version this device has seen: a provider serving an old copy cannot roll it back). Nullopt when none qualifies.
+ * version this device has seen: a provider serving an old copy cannot roll it back). One a newer app wrote (a newer
+ * record or state version, an unknown critical entry) is skipped and noted.
  */
-std::optional<LockerSnapshot> PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys,
-                                         uint64_t at_least = 0);
+PickedSnapshot PickNewest(const std::vector<LockerSnapshot>& snapshots, const LockerKeys& keys, uint64_t at_least = 0);
 
 /**
  * What to publish when the locker already holds `stored` (another device of the account wrote it): contacts by their
@@ -156,13 +202,37 @@ Value DeviceNamesToJson(const std::vector<DeviceNameEntry>& entries);
 std::vector<DeviceNameEntry> DeviceNamesFromJson(const Array& rows);
 
 /**
- * The bytes signed for a snapshot: `pp-browser:account-locker-v1` and a zero byte, version byte 1, LenBytes(locker
- * id), u64 BE version, LenBytes(sealed) — what a provider checks (the relay: web2 `www` relay/AccountLocker.ts).
+ * The bytes signed for a snapshot: `"pp-browser:account-locker" 00 ‖ u8 2 ‖ LenBytes locker_id ‖ u64 version ‖
+ * LenBytes sealed ‖ ext area` (u64 BE lengths) — what a provider checks (the relay's `crypto/locker.ts`). The signing
+ * key is not in them: the locker id it hashes to is.
  */
-ByteVector SignBytes(const ByteVector& locker_id, uint64_t version, const ByteVector& sealed);
+ByteVector SignBytes(const ByteVector& locker_id, uint64_t version, const ByteVector& sealed, const pp::ExtArea& ext);
 
-/** The JSON a snapshot's state is (exposed for tests). */
+/**
+ * The record JSON (`POST /v1/lockers/put`'s and `GET /v1/lockers/:id`'s `locker`, a saved copy's `locker`):
+ * `{record_version: 2, locker_id (lowercase hex), version, signing_public_key_b64, sealed_b64, ext_b64 (when not
+ * empty), signature_b64}`.
+ */
+Object RecordToJson(const LockerSnapshot& snapshot);
+/**
+ * Steps 1–3 of the receiver's order for a record JSON: `record_version` first (missing or older: refused; newer:
+ * `AppError::NewerFormat`, nothing else read), the fields and the area (malformed: refused), the typed blobs' ids
+ * (unknown: NewerFormat). VerifyOwner checks the signature.
+ */
+Roe<LockerSnapshot> RecordFromJson(const Object& json);
+/**
+ * The whole receiver's order for a record JSON, as a provider runs it (the relay's `lockers/put`): steps 1–3 as
+ * RecordFromJson, the signature (the raw key hashes to the locker id, and it verifies), an unknown critical entry.
+ * `received` is filled when accepted. VerifyOwner is this, of a snapshot's JSON.
+ */
+SignedReceipt ReceiveRecord(const Object& json, LockerSnapshot* received);
+
+/**
+ * The JSON a snapshot's state is (`state_version` first; exposed for tests), with what `state.kept` holds that this
+ * build does not read.
+ */
 std::string StateToJson(const AccountLockerState& state);
+/** `state_version` first (missing or older: refused; newer: `AppError::NewerFormat`), then the state. */
 Roe<AccountLockerState> StateFromJson(const std::string& json);
 
 } // namespace account_locker

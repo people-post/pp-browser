@@ -4,6 +4,7 @@
 
 #include "lib/messaging/GroupLinkJoinFamily.h"
 #include "lib/people/DevicePeerId.h"
+#include "lib/people/CardKeys.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/chat/MessagingLimits.h"
@@ -38,6 +39,7 @@
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "lib/people/PeerCards.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -279,7 +281,7 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   if (account_locker_) {
     account_locker_->SetClient(clients_.Locker());
   }
-  ExpectRelayIdentities(settings); // before the card lists them: each relay's address names its PeerId (MR008)
+  ExpectRelayIdentities(settings); // before the card lists them: each relay's address names its relay id (MR008)
   (void)SetCardRelays();
   WireOurRelays();
   CheckRelayIdentitiesSoon();
@@ -290,37 +292,43 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
   if (!pins) {
     return;
   }
-  // The org's first (the build's or the config's anchor), then ours: a relay of ours naming the org's PeerId at
-  // another address is refused, not the org (MR008).
-  const auto expect = [&pins](const std::string& origin, const std::string& peer_id) {
-    if (!origin.empty() && !peer_id.empty()) {
-      (void)pins->Expect(origin, peer_id); // a conflict is logged and leaves that relay unused
+  // The org's first (the build's or the config's anchor), then ours (MR008, SIGNED_FORMATS § 3.5).
+  const auto expect = [&pins](const std::string& origin, const RelayId& relay_id) {
+    if (!origin.empty() && !relay_id.empty()) {
+      (void)pins->Expect(origin, relay_id); // a full store is logged and leaves that relay unused
     }
   };
-  const std::string home_peer_id =
-      settings.registration.peer_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
-          ? settings.relay.peer_id
-          : settings.registration.peer_id;
-  expect(clients_.OrgRelay(), settings.relay.peer_id);
-  expect(clients_.LockerHome(), home_peer_id);
-  NoteOrgRelayWithoutId(settings, clients_.OrgRelay(), settings.relay.peer_id, "relay.peer_id");
-  NoteOrgRelayWithoutId(settings, clients_.LockerHome(), home_peer_id, "registration.peer_id");
+  const std::string home_relay_id =
+      settings.registration.relay_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
+          ? settings.relay.relay_id
+          : settings.registration.relay_id;
+  const RelayId org_id = RelayId::Parse(settings.relay.relay_id).value_or(RelayId{});
+  const RelayId home_id = RelayId::Parse(home_relay_id).value_or(RelayId{});
+  expect(clients_.OrgRelay(), org_id);
+  expect(clients_.LockerHome(), home_id);
+  // The build's certificate for the org's relay: the floor, so its audience is known before the first fetch (Q10).
+  if (!org_id.empty() && !settings.org_relay_certificate_b64.empty()) {
+    (void)pins->OfferCertificate(org_id, settings.org_relay_certificate_b64, "the build");
+  }
+  NoteOrgRelayWithoutId(settings, clients_.OrgRelay(), settings.relay.relay_id, "relay.relay_id");
+  NoteOrgRelayWithoutId(settings, clients_.LockerHome(), home_relay_id, "registration.relay_id");
   const auto named_by_org = [&](const std::string& origin) {
-    return (!settings.relay.peer_id.empty() && SameRelay(origin, clients_.OrgRelay())) ||
-           (!home_peer_id.empty() && SameRelay(origin, clients_.LockerHome()));
+    return (!org_id.empty() && SameRelay(origin, clients_.OrgRelay())) ||
+           (!home_id.empty() && SameRelay(origin, clients_.LockerHome()));
   };
   if (our_relays_) {
     for (const OurRelayEntry& entry : our_relays_->List().relays) {
       if (!named_by_org(entry.origin)) {
-        expect(entry.origin, entry.peer_id); // the org's relay on our list keeps the build's PeerId (a newer build's)
+        expect(entry.origin, entry.relay_id); // the org's relay on our list keeps the build's id (a newer build's)
       }
     }
   }
 }
 
 bool ConversationsHub::SetCardRelays() {
-  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with its pinned PeerId
-  // (MR007: a relay not pinned yet, or whose identity changed, is left off); OwnCards keeps the https ones.
+  // Our card lists the relays we register on (multi-relay MR002), preferred first, each with the relay id its address
+  // names (MR008, SIGNED_FORMATS § 3.3: a relay not pinned yet, or not proving its address, is left off); OwnCards
+  // keeps the https ones.
   const auto pins = RelayIdentityPins();
   if (!mesh_messaging_ || !pins) {
     return false;
@@ -361,6 +369,17 @@ void ConversationsHub::CloseRelayPins() {
   closing->SetOnRelayOutdated({});
 }
 
+void ConversationsHub::OfferOrgRelayCertificate(const std::string& certificate_b64) {
+  const auto pins = RelayIdentityPins();
+  const auto relay_id = pins ? pins->PinnedRelayId(clients_.OrgRelay()) : std::nullopt;
+  if (!relay_id || certificate_b64.empty()) {
+    return; // none expected (a first use pins it from the relay's own answer)
+  }
+  AppRuntime::PostWorkerNormal([pins, relay_id = *relay_id, certificate_b64]() {
+    (void)pins->OfferCertificate(relay_id, certificate_b64, "client-compat");
+  });
+}
+
 bool ConversationsHub::KeepsPin(const std::string& origin) {
   // Ours and the org's origins (a relay not ours is never pinned, MR007).
   std::lock_guard lock(kept_pins_mu_);
@@ -369,19 +388,35 @@ bool ConversationsHub::KeepsPin(const std::string& origin) {
 }
 
 void ConversationsHub::NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin,
-                                             const std::string& peer_id, const char* setting) {
-  if (origin.empty() || !peer_id.empty() || settings.org_first_use) {
+                                             const std::string& relay_id, const char* setting) {
+  if (origin.empty() || RelayId::Parse(relay_id)) {
+    return;
+  }
+  if (settings.org_relay_pending) {
+    // The build's placeholder: that environment's operator set is not made yet. Fails closed.
+    log().error << "the backend's relay at " << origin << " is named by a placeholder relay ID (pending its operator "
+                << "set): it is not used";
+    return;
+  }
+  if (!relay_id.empty()) {
+    log().error << "the backend's relay at " << origin << ": " << setting << " is not a relay ID: it is not used";
+    return;
+  }
+  if (settings.org_first_use) {
     return;
   }
   // MR008 item 4: a release build takes no relay on its first answer, the org's neither (Me → Network says so).
   log().error << "the backend's relay at " << origin << " names no relay ID: it is not used (set " << setting
-              << " to the PeerId after # in the relay's link)";
+              << " to the relay:… after # in the relay's link)";
 }
 
 bool ConversationsHub::FirstUseAllowed(const std::string& origin) {
   // MR008 item 4: a developer build may take a bare origin of ours on its first answer; the org's origins too in a
   // build that names no PeerId for its compiled backend — a dogfood build, logged as a warning when it happens. A
   // release build's custom backend (or PP_BROWSER_ORIGIN) without one: never.
+  if (IsOrgOrigin(origin) && config_.org_relay_pending) {
+    return false; // the build's placeholder relay id fails closed, in every build
+  }
   if (config_.developer_relays) {
     return KeepsPin(origin);
   }
@@ -1299,8 +1334,9 @@ void ConversationsHub::OpenOurRelays(const HubSettings& settings) {
   // My relays (multi-relay R3, MR006): the profile's list, seeded once from the deployment's relay and config.
   CloseMyRelays(); // a profile reset: the old workflow (closed at Shutdown) goes before the store it changes
   our_relays_ = std::make_unique<OurRelaysStore>(data_dir_);
-  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}), settings.relay.peer_id,
-                          settings.relay_extra_base_urls, settings.developer_relays);
+  our_relays_->LoadOrSeed(clients_.OrgRelayOf({.relay = settings.relay}),
+                          RelayId::Parse(settings.relay.relay_id).value_or(RelayId{}), settings.relay_extra_base_urls,
+                          settings.developer_relays);
   CloseRelayRegistrations(); // a reset: closed at Shutdown already
   auto registrations = std::make_shared<RelayRegistrationsWorkflow>(*identity_);
   registrations->SetCard([this]() { return RegistrationCard(); });
@@ -1329,11 +1365,12 @@ void ConversationsHub::OpenContactCards() {
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
-  // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
+  // The page's *identity doesn't match* (MR007, MR008): our pins disagree with the card's relay id, or a send found
+  // the audience refused.
   contact_refresh_->SetIdentityMismatch(
-      [this](const std::string& account_id, const std::string& origin, const std::string& peer_id) {
+      [this](const std::string& account_id, const std::string& origin, const RelayId& relay_id) {
         const auto pins = RelayIdentityPins();
-        return (pins && pins->CheckCardRelay(origin, peer_id) == CardRelayCheck::Mismatch) ||
+        return (pins && pins->CheckCardRelay(origin, relay_id) == CardRelayCheck::Mismatch) ||
                clients_.Sender().AudienceMismatch(account_id, origin);
       });
   contact_cards_->SetCardFetcher(
@@ -1632,11 +1669,7 @@ AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
         }
         std::vector<AccountStateGrant> grants;
         for (const RelayGrant& grant : *held) {
-          grants.push_back(AccountStateGrant{.grantor_account_id = grant.recipient_account_id,
-                                             .grantee_account_id = grant.sender_account_id,
-                                             .issued_at = grant.issued_at,
-                                             .expires_at = grant.expires_at,
-                                             .signature = grant.signature});
+          grants.push_back(RelayGrantToLocker(grant));
         }
         return grants;
       },
@@ -1661,18 +1694,14 @@ void ConversationsHub::WireMyRelaysHooks() {
   });
   mesh_messaging_->SetOnOwnCardChanged([this](const AccountCard& card) {
     NotifyOwnDevicesChanged();
-    std::vector<AccountCardRelay> relays = card.relays;
-    std::vector<OwnCardRelay> pins;
-    for (const AccountCardRelay& relay : card.relays) {
-      pins.push_back(OwnCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
-    }
-    AppRuntime::PostWorkerNormal([this, relays = std::move(relays), pins = std::move(pins)]() {
+    AppRuntime::PostWorkerNormal([this, relays = card.relays]() {
       if (shutdown_requested_.load(std::memory_order_acquire) || IsMainDevice()) {
         return; // the main device's list and pins are its own
       }
-      // A linked device takes our own card's word on each relay's identity (MR007), then follows its list.
+      // A linked device takes our own card's word on each relay's identity (MR007, MR008: its relay id), then follows
+      // its list.
       if (const auto relay_pins = RelayIdentityPins()) {
-        relay_pins->TakeOwnCard(pins);
+        relay_pins->TakeOwnCard(relays);
       }
       if (const auto workflow = MyRelays()) {
         workflow->FollowCard(relays);
@@ -2594,12 +2623,10 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
 AccountStateRelays ConversationsHub::LockerRelays() const {
   AccountStateRelays relays;
   if (our_relays_) {
-    const auto pins = RelayIdentityPins();
+    // The locker names each relay by its relay id (SIGNED_FORMATS § 2.6); one whose id is not known yet is left out.
     for (const OurRelayEntry& entry : our_relays_->List().relays) {
-      // Its address: the PeerId we expect of it (the build's for the org's relay), else the one the list kept.
-      std::string peer_id = pins ? pins->PinnedPeerId(entry.origin).value_or(entry.peer_id) : entry.peer_id;
-      if (!peer_id.empty()) {
-        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .peer_id = std::move(peer_id)});
+      if (!entry.relay_id.empty()) {
+        relays.list.push_back(AccountStateRelay{.origin = entry.origin, .relay_id = entry.relay_id.ToString()});
       }
     }
   }
@@ -2613,15 +2640,18 @@ AccountStateRelays ConversationsHub::LockerRelays() const {
 }
 
 void ConversationsHub::RestoreOurRelays(const AccountStateRelays& relays) {
-  if (relays.list.empty()) {
+  // The locker's relays are `{origin, relay_id}` (SIGNED_FORMATS § 2.6; the codec checked each id's form).
+  std::vector<RelayAddress> addresses;
+  for (const AccountStateRelay& relay : relays.list) {
+    if (auto relay_id = RelayId::Parse(relay.relay_id)) {
+      addresses.push_back(RelayAddress{.origin = relay.origin, .relay_id = *relay_id});
+    }
+  }
+  if (addresses.empty()) {
     return; // a locker from before My relays: the deployment's default stays
   }
-  std::vector<AccountCardRelay> list;
-  for (const AccountStateRelay& relay : relays.list) {
-    list.push_back(AccountCardRelay{.origin = relay.origin, .peer_id = relay.peer_id});
-  }
   if (const auto workflow = MyRelays()) {
-    workflow->Restore(list);
+    workflow->Restore(addresses);
   }
 }
 
@@ -2671,11 +2701,10 @@ void ConversationsHub::TakeLockerGrants(const std::vector<AccountStateGrant>& gr
   std::vector<RelayGrant> taken;
   taken.reserve(grants.size());
   for (const AccountStateGrant& grant : grants) {
-    taken.push_back(RelayGrant{.recipient_account_id = grant.grantor_account_id,
-                               .sender_account_id = grant.grantee_account_id,
-                               .issued_at = grant.issued_at,
-                               .expires_at = grant.expires_at,
-                               .signature = grant.signature});
+    // A row a newer app wrote, or a broken one, is none (SIGNED_FORMATS § 2.4); the rest are checked when taken.
+    if (auto read = RelayGrantFromLocker(grant)) {
+      taken.push_back(std::move(*read));
+    }
   }
   mesh_messaging_->RelayGrants().TakeFromLocker(taken, look_up_keys);
 }
@@ -3596,7 +3625,7 @@ AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
     if (!record) {
       return record.error();
     }
-    return Base64Decode(record->signing_public_key_b64);
+    return RawSigningPublicKey(record->signing_public_key_b64, "the account signing key"); // held typed
   };
 }
 
@@ -4669,9 +4698,9 @@ MyRelaysWorkflow::Ports ConversationsHub::MyRelaysPorts() {
 
 void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports) {
   // Each takes the profile's pins as they are when it runs (none once the profile closes).
-  ports.check_identity = [this](const std::string& base_url, const std::string& peer_id) {
+  ports.check_identity = [this](const std::string& base_url, const RelayId& relay_id) {
     const auto pins = RelayIdentityPins();
-    return pins ? pins->CheckForAdd(base_url, peer_id, !config_.developer_relays)
+    return pins ? pins->CheckForAdd(base_url, relay_id, !config_.developer_relays)
                 : AddIdentityCheck{.result = AddIdentityCheck::Result::Unavailable};
   };
   ports.drop_pin = [this](const std::string& origin) {
@@ -4691,9 +4720,9 @@ void ConversationsHub::WireMyRelaysIdentityPorts(MyRelaysWorkflow::Ports& ports)
     const auto pins = RelayIdentityPins();
     return pins && pins->IdentityMismatch(origin);
   };
-  ports.peer_id_of = [this](const std::string& origin) -> std::string {
+  ports.relay_id_of = [this](const std::string& origin) -> RelayId {
     const auto pins = RelayIdentityPins();
-    return pins ? pins->PinnedPeerId(origin).value_or("") : std::string();
+    return pins ? pins->PinnedRelayId(origin).value_or(RelayId{}) : RelayId{};
   };
   ports.org_identity_mismatch = [this]() -> std::string {
     const auto pins = RelayIdentityPins();
@@ -4819,11 +4848,12 @@ Roe<std::string> ConversationsHub::OwnContactLocator() {
     return Error("Account not set up");
   }
   ContactLocator locator{.account_id = identity->account_id, .nickname = identity->nickname};
-  // Our preferred relay (the one we register on) and the PeerId it answers to (MR008), so a contact adding us can
-  // write before it has our card (R4); an `http://` lab relay, or one not pinned, is left out, as our card leaves it.
+  // Our preferred relay (the one we register on) and the relay id it proves (MR008, SIGNED_FORMATS § 3.3), so a
+  // contact adding us can write before it has our card (R4); an `http://` lab relay, or one not pinned, is left out,
+  // as our card leaves it.
   const std::string preferred = NormalizeRegistrationBackend(Registration()->BaseUrl());
   if (const auto pins = RelayIdentityPins()) {
-    locator.relay = AccountCardRelay{.origin = preferred, .peer_id = pins->PinnedPeerId(preferred).value_or("")};
+    locator.relay = RelayAddress{.origin = preferred, .relay_id = pins->PinnedRelayId(preferred).value_or(RelayId{})};
   }
   if (auto self = DevicePeerIdFromKey(identity->public_key_b64)) {
     locator.devices.push_back(*self);
@@ -4881,14 +4911,13 @@ class UnconfiguredRegistrationClient final : public IRegistrationClient {
 public:
   IRelayAudience* Audience() const override { return nullptr; }
   Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
-                                                 const std::string&, const std::string&,
-                                                 const std::vector<std::string>&,
+                                                 const std::string&, const std::vector<std::string>&,
                                                  const RegistrationPublishOpts&) override {
     return Unavailable();
   }
   Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
                                              const SignedRelayCommand&, const std::string&, const std::string&,
-                                             const std::string&, const std::string&, const std::vector<std::string>&,
+                                             const std::string&, const std::vector<std::string>&,
                                              const RegistrationPublishOpts&) override {
     return Unavailable();
   }

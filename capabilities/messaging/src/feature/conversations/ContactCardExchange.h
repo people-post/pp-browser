@@ -109,9 +109,9 @@ private:
   /** The card `relay` keeps for `account_id`, kept when it verifies (blocking); true once kept. */
   bool FetchFromRelay(const std::string& relay, const std::string& account_id);
   /** The locator's relay address onto the contact (stored; `contact` becomes the stored one). */
-  void KeepLocatorRelay(Contact& contact, const AccountCardRelay& relay);
+  void KeepLocatorRelay(Contact& contact, const RelayAddress& relay);
   /** The locator's relay as it may be used here: none when it is not on a public host and that is not allowed. */
-  AccountCardRelay UsableLocatorRelay(const AccountCardRelay& relay);
+  RelayAddress UsableLocatorRelay(const RelayAddress& relay);
   std::mutex refetch_mutex_;
   std::unordered_map<std::string, int64_t> last_refetch_ms_;
   struct LastAsk {

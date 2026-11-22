@@ -24,9 +24,9 @@ mesh::DirectoryHit Entry(const std::string& account_id, const std::string& nickn
 
 mesh::DirectoryHit EntryFor(const test::TestAccount& account, const std::string& nickname, int64_t updated_at = 1) {
   mesh::DirectoryHit hit = Entry(account.account_id, nickname, updated_at);
-  hit.signing_public_key_b64 = account.SigningPublicB64();
-  hit.kem_public_key_b64 = account.KemPublicB64();
-  hit.kem_binding_signature_b64 = account.KemBindingB64();
+  hit.signing_public_key_b64 = account.TypedSigningPublicB64();
+  hit.kem_public_key_b64 = account.TypedKemPublicB64();
+  hit.kem_binding_b64 = account.KemBindingB64();
   return hit;
 }
 
@@ -66,12 +66,20 @@ TEST(DirectoryAnswersTest, ARelayThatGaveNoAnswerAddsNothingAndFailsNothing) {
   EXPECT_TRUE(MergeDirectoryAnswers({Unreached("https://a.example")}).empty());
 }
 
+TEST(DirectoryAnswersTest, AnEntryWhoseKeysNeedANewerAppDoesNotVerify) {
+  const test::TestAccount alice = test::TestAccount::Make();
+  mesh::DirectoryHit hit = EntryFor(alice, "alice");
+  ASSERT_TRUE(DirectoryHitKeysVerify(hit));
+  hit.keys_update_needed = true;
+  EXPECT_FALSE(DirectoryHitKeysVerify(hit));
+}
+
 TEST(DirectoryAnswersTest, AnEntryWhoseKeysVerifyWinsOverOneWhoseDoNot) {
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount mallory = test::TestAccount::Make();
   mesh::DirectoryHit forged = EntryFor(alice, "alice-forged", 9);
-  forged.signing_public_key_b64 = mallory.SigningPublicB64(); // does not hash to alice's Account ID
-  forged.kem_binding_signature_b64 = mallory.KemBindingB64();
+  forged.signing_public_key_b64 = mallory.TypedSigningPublicB64(); // does not hash to alice's Account ID
+  forged.kem_binding_b64 = mallory.KemBindingB64();
   const mesh::DirectoryHit honest = EntryFor(alice, "alice", 1);
   ASSERT_FALSE(DirectoryHitKeysVerify(forged));
   ASSERT_TRUE(DirectoryHitKeysVerify(honest));

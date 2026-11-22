@@ -1,6 +1,7 @@
 #include "domain/delivery/E2ePublicSessionKeys.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
@@ -29,7 +30,7 @@ public:
       return Error("directory unreachable (test)");
     }
     PeerKemKeyRecord record;
-    record.kem_public_key_b64 = Base64Encode(public_key);
+    record.kem_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kKemPublicKey, public_key).value(); // held typed
     return record;
   }
 

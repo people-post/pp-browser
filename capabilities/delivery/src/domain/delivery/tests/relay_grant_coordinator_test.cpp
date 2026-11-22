@@ -7,6 +7,7 @@
 #include "domain/peers/OwnCards.h"
 #include "lib/delivery/RelayClients.h"
 #include "lib/delivery/RelayGrantSigner.h"
+#include "lib/people/CardKeys.h"
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/testing/InMemoryPeerCards.h"
@@ -15,6 +16,7 @@
 #include "common/tests/TeardownLikeTheApp.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/TypedBlob.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"
 
@@ -55,7 +57,7 @@ public:
   AnyPeerKem() : public_key_(HybridKem::GenerateKeyPair().value().public_key) {}
   Roe<PeerKemKeyRecord> Resolve(const std::string&, const std::string&) override {
     PeerKemKeyRecord record;
-    record.kem_public_key_b64 = Base64Encode(public_key_);
+    record.kem_public_key_b64 = WriteTypedBlobB64(pp::BlobKind::kKemPublicKey, public_key_).value(); // held typed
     return record;
   }
 
@@ -99,7 +101,7 @@ protected:
     ASSERT_TRUE(identity_->SetDek(TestDek()));
     ASSERT_TRUE(identity_->LoadOrCreate());
     me_ = identity_->Get()->account_id;
-    me_key_ = identity_->Get()->account_signing_public_key_b64;
+    me_key_ = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity_->Get()->account_signing_public_key_b64).value();
     cards_ = std::make_unique<InMemoryPeerCards>();
     account_keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_store_, *cards_, directory_);
     own_ = std::make_unique<OwnCards>(*identity_, *account_keys_);
@@ -314,6 +316,41 @@ TEST_F(RelayGrantCoordinatorTest, NoUsableGrantFromAGrantedPeerIsAskedForOnlyWhe
   now_ += 11LL * 60 * 1000;
   grants_->NoteHeardFrom("account:stranger");
   EXPECT_EQ(Settled("account:stranger"), 0) << "a stranger is not asked";
+}
+
+// SIGNED_FORMATS § 2.4: a grant this app cannot read is none and no forgery; its grantor runs a newer app and is not
+// asked again (it would send the same grant), until a grant we can read comes from it.
+TEST_F(RelayGrantCoordinatorTest, AGrantANewerAppWroteIsNoneAndItsGrantorIsNotAskedAgain) {
+  Grant(bob_.account_id);
+  // Ours to Bob is held and confirmed, so nothing heard from Bob sends it: the relay's count below is asks alone.
+  ASSERT_TRUE(grant_store_.PutIssued(
+      IRelayGrantStore::Issued{.grant = RelayGrant{.recipient_account_id = me_,
+                                                   .sender_account_id = bob_.account_id,
+                                                   .issued_at = now_.load(),
+                                                   .expires_at = now_.load() + kRelayGrantMaxLifetimeMs},
+                               .confirmed = true}));
+  EXPECT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .newer_format = true}, bob_.account_id)))
+      << "not an error: no forgery";
+  RelayGrant critical = BobsGrant(now_.load());
+  critical.ext = pp::ExtArea::FromEntries({{.type = 0x8001, .value = {}}}).value();
+  critical.signature = TypedSignatureB64(bob_.Sign(BuildRelayGrantSignBytes(critical)).value()).value();
+  EXPECT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = critical}, bob_.account_id)))
+      << "an unknown critical entry, signed: update needed, not a forgery";
+  EXPECT_FALSE(grant_store_.Received(bob_.account_id).value()) << "treated as none";
+  EXPECT_TRUE(grants_->NeedsNewerApp(bob_.account_id));
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "nothing acked";
+
+  grants_->NoteHeardFrom(bob_.account_id);
+  now_ += 11LL * 60 * 1000;
+  grants_->NoteHeardFrom(bob_.account_id);
+  grants_->GrantRefused(bob_.account_id);
+  EXPECT_EQ(Settled(bob_.account_id), 0) << "lacking it long, or refused: not asked for again";
+
+  ASSERT_TRUE(static_cast<bool>(grants_->OnNotice(
+      relay_grant::Notice{.kind = relay_grant::NoticeKind::Grant, .grant = BobsGrant(now_.load())}, bob_.account_id)));
+  EXPECT_FALSE(grants_->NeedsNewerApp(bob_.account_id)) << "a grant we read: asked again when one is lacking";
 }
 
 TEST_F(RelayGrantCoordinatorTest, AGrantArrivingReleasesWhatItsGrantorsStrangerQuotaHeldBack) {
