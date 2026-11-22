@@ -3,6 +3,22 @@
 // (its receive pipeline drops an id it holds), and gets it when the first copy never arrived.
 #include "feature/conversations/QueuedResend.h"
 
+#include "common/runtime/AppRuntime.h"
+#include "foundation/error/AppError.h"
+#include "domain/peers/AccountKeyResolver.h"
+#include "domain/peers/DirectoryShadowCache.h"
+#include "feature/conversations/InboxController.h"
+#include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/PeerDisplaySources.h"
+#include "lib/messaging/GroupRosterSync.h"
+#include "lib/net/testing/MockOrgBackendClients.h"
+#include "lib/people/ContactsStore.h"
+#include "lib/people/IdentityStore.h"
+#include "lib/people/PeerCards.h"
+#include "lib/people/PeerKemKeyStore.h"
+#include "lib/people/PeerSigningKeyStore.h"
+#include "lib/people/testing/InMemoryPeerCards.h"
+
 #include "common/Utilities.h"
 #include "common/chat/RelayStreamKey.h"
 #include "common/directory/DirectoryJson.h"
@@ -17,6 +33,12 @@
 #include "lib/messaging/tests/TestAccount.h"
 
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <condition_variable>
+#include <filesystem>
+#include <mutex>
+#include <thread>
 
 #include <map>
 #include <memory>
@@ -186,6 +208,37 @@ TEST_F(QueuedResendTest, AFirstCopyThatNeverArrivedIsReadFromTheOneSentAgain) {
   EXPECT_TRUE(bob_->Receive(alice_->Seal(alice_->Store(chat, "next"), *bob_, false)).persisted);
 }
 
+// B236 R3: the copy dropped by its id is no new message for the recipient — nothing is stored, so the receive paths
+// (MeshDeliveryOrchestrator: OnInboundMessagePersisted, the inbound and background notices) raise no unread count and
+// no notice: each of them runs only for a persisted outcome.
+TEST_F(QueuedResendTest, TheCopyDroppedByItsIdIsNoNewMessageForTheRecipient) {
+  const Thread chat = alice_->PublicChatWith(*bob_);
+  const ThreadMessage text = alice_->Store(chat, "hi");
+  ASSERT_TRUE(bob_->Receive(alice_->Seal(text, *bob_, false)).persisted);
+  const RelayReceiveOutcome again = bob_->Receive(alice_->Seal(text, *bob_, true));
+  EXPECT_FALSE(again.persisted);
+  EXPECT_FALSE(again.persisted_message);
+  EXPECT_FALSE(again.thread_changed);
+  EXPECT_FALSE(again.receive_failure);
+  EXPECT_FALSE(again.missing_copy) << "no copy asked for either";
+}
+
+// B236 R2 (open, see the report): the copy sent again is numbered anew in its device pair, so the number the first
+// copy (or the dropped one) used is a hole on the recipient's side: the next message is accepted, but as past a gap,
+// and the pair's contiguous count stays below the hole. Nothing is lost or held back; what remains is the repair.
+TEST_F(QueuedResendTest, TheNumberADroppedCopyUsedStaysAHoleTheNextMessagesAreReadPastIt) {
+  const Thread chat = alice_->PublicChatWith(*bob_);
+  const ThreadMessage first = alice_->Store(chat, "one");
+  ASSERT_TRUE(bob_->Receive(alice_->Seal(first, *bob_, false)).persisted);
+  ASSERT_FALSE(bob_->Receive(alice_->Seal(first, *bob_, true)).persisted);
+  const RelayReceiveOutcome next = bob_->Receive(alice_->Seal(alice_->Store(chat, "two"), *bob_, false));
+  EXPECT_TRUE(next.persisted);
+  EXPECT_EQ(next.decision, IngestDecision::AcceptGap) << "past the hole the dropped copy left";
+  const RelayReceiveOutcome after = bob_->Receive(alice_->Seal(alice_->Store(chat, "three"), *bob_, false));
+  EXPECT_TRUE(after.persisted);
+  EXPECT_EQ(after.decision, IngestDecision::AcceptGap) << "the hole is not closed by later messages";
+}
+
 ThreadMessage Ours(const std::string& id, const MessageDelivery delivery, const int64_t at,
                    const ChatContentType type = ChatContentType::Text) {
   ThreadMessage message;
@@ -270,6 +323,267 @@ TEST(QueuedResendRulesTest, AfterARestartTheQueuedRowsGoAgainOnce) {
   const QueuedResumePlan second = PlanQueuedResume(
       store, now + 20, now, [](const std::string& id) { return id == "queued" || id == "queued-text"; });
   EXPECT_TRUE(second.resend.empty());
+}
+
+// --- ResendStoredMessage / ResumeQueuedSends on a real MeshDeliveryOrchestrator ------------------------------------
+
+/** A relay that records each send; held, a send waits until released; `fail`, it is refused for good (400). */
+class RecordingRelay final : public IRelayClient {
+public:
+  Roe<void> Send(const RelayEnvelope& envelope) override {
+    std::unique_lock lock(mu_);
+    sent_.push_back(envelope);
+    entered_.notify_all();
+    released_.wait(lock, [this] { return !held_; });
+    if (fail_) {
+      return AppError::Network(Err::Network::HttpRejected, "400");
+    }
+    return {};
+  }
+  void Hold() {
+    std::lock_guard lock(mu_);
+    held_ = true;
+  }
+  void Release() {
+    std::lock_guard lock(mu_);
+    held_ = false;
+    released_.notify_all();
+  }
+  void SetFail(const bool fail) {
+    std::lock_guard lock(mu_);
+    fail_ = fail;
+  }
+  bool WaitForSends(const size_t count) {
+    std::unique_lock lock(mu_);
+    return entered_.wait_for(lock, std::chrono::seconds(5), [&] { return sent_.size() >= count; });
+  }
+  std::vector<RelayEnvelope> Sent() {
+    std::lock_guard lock(mu_);
+    return sent_;
+  }
+  size_t SentWithId(const std::string& id) {
+    std::lock_guard lock(mu_);
+    return static_cast<size_t>(
+        std::count_if(sent_.begin(), sent_.end(), [&](const RelayEnvelope& e) { return e.message_id == id; }));
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
+
+private:
+  std::mutex mu_;
+  std::condition_variable entered_;
+  std::condition_variable released_;
+  std::vector<RelayEnvelope> sent_;
+  bool held_ = false;
+  bool fail_ = false;
+};
+
+/** Alice's app as the hub builds it, minus the mesh: its stores, its identity, and the orchestrator on top. */
+class StoredResendTest : public ::testing::Test {
+protected:
+  StoredResendTest()
+      : dir_(std::filesystem::temp_directory_path() / ("pp_stored_resend_" + util::GenerateUuid())),
+        identity_(dir_.string(), "test"),
+        psk_(store_),
+        roster_(store_),
+        contacts_(dir_.string()),
+        shadows_(directory_),
+        labels_(contacts_, PeerDisplaySourcesFrom(shadows_)),
+        inbox_(store_, contacts_, labels_, &shadows_),
+        cards_(card_rows_),
+        keys_(signing_, kem_, cards_, directory_) {}
+
+  void SetUp() override {
+    EnsureSodiumInit();
+    std::filesystem::create_directories(dir_);
+    AppRuntime::Initialize(AppRuntimeConfig{});
+    ASSERT_TRUE(identity_.SetDek(TestDek(3)) && psk_.SetDek(TestDek(3)) && store_.SetDek(TestDek(3)));
+    ASSERT_TRUE(identity_.LoadOrCreate());
+    bob_ = test::TestAccount::Make();
+    ASSERT_TRUE(keys_.AddAccountCard(bob_.DeviceCard(), util::NowUnixMs(), "test"));
+    relay_ = std::make_shared<RecordingRelay>();
+    mesh_ =
+        std::make_unique<MeshDeliveryOrchestrator>(store_, contacts_, identity_, relay_, inbox_, keys_, psk_, roster_);
+    DirectChatTarget target;
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = bob_.account_id;
+    target.channel = ThreadChannel::E2ePublic;
+    auto thread = store_.FindOrCreateDirectThread(target, "", "Bob");
+    ASSERT_TRUE(thread);
+    chat_ = *thread;
+  }
+
+  void TearDown() override {
+    relay_->Release();
+    (void)AppRuntime::DrainWorkersThenUI();
+    mesh_.reset();
+    AppRuntime::Shutdown();
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+
+  /** A message of ours in `thread_id`, stored as an earlier run of the app left it. */
+  void Add(const std::string& thread_id, const std::string& id, const MessageDelivery delivery,
+           const int64_t age_ms = 60'000, const ChatContentType type = ChatContentType::Text) {
+    ThreadMessage message = Ours(id, delivery, util::NowUnixMs() - age_ms, type);
+    message.thread_id = thread_id;
+    ASSERT_TRUE(store_.AppendMessage(message));
+  }
+
+  MessageDelivery Delivery(const std::string& thread_id, const std::string& id) {
+    auto row = store_.GetMessage(thread_id, id);
+    return row && *row ? (*row)->delivery : MessageDelivery::Local;
+  }
+
+  void Drain() { ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); }
+
+  Thread MakeGroup(const GroupSyncState state) {
+    auto thread = store_.FindOrCreateGroupThread("g1", "Group", {});
+    EXPECT_TRUE(thread);
+    GroupMetadata metadata;
+    metadata.group_id = "g1";
+    metadata.owner_identity = identity_.Get()->account_id;
+    metadata.sync_state = state;
+    EXPECT_TRUE(roster_.UpsertMetadata(metadata));
+    for (const std::string& member : {identity_.Get()->account_id, bob_.account_id}) {
+      GroupRosterMember entry;
+      entry.member_identity = member;
+      EXPECT_TRUE(roster_.UpsertMember("g1", entry));
+    }
+    return *thread;
+  }
+
+  std::filesystem::path dir_;
+  InMemoryDeliveryStore store_;
+  IdentityStore identity_;
+  InMemoryPeerSessions psk_;
+  InMemoryGroupRosterStore roster_;
+  ContactsStore contacts_;
+  MockDirectoryClient directory_;
+  DirectoryShadowCache shadows_;
+  PeerDisplayResolver labels_;
+  InboxController inbox_;
+  PeerSigningKeyStore signing_;
+  PeerKemKeyStore kem_;
+  InMemoryPeerCardStore card_rows_;
+  PeerCards cards_;
+  AccountKeyResolver keys_;
+  test::TestAccount bob_;
+  std::shared_ptr<RecordingRelay> relay_;
+  std::unique_ptr<MeshDeliveryOrchestrator> mesh_;
+  Thread chat_;
+};
+
+TEST_F(StoredResendTest, AFailedMessageGoesAgainAsItselfAndIsMarkedSent) {
+  Add(chat_.id, "m1", MessageDelivery::Failed);
+  auto sent = mesh_->ResendStoredMessage(chat_.id, "m1");
+  ASSERT_TRUE(sent) << sent.error().message;
+  EXPECT_TRUE(*sent);
+  Drain();
+  ASSERT_EQ(relay_->SentWithId("m1"), 1u) << "the same message id";
+  EXPECT_EQ(relay_->Sent().front().recipient_account_id.value_or(""), bob_.account_id);
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Relayed);
+  auto again = mesh_->ResendStoredMessage(chat_.id, "m1");
+  EXPECT_FALSE(again) << "delivered: never sent again";
+  EXPECT_EQ(relay_->SentWithId("m1"), 1u);
+}
+
+TEST_F(StoredResendTest, ASecondResendWhileTheFirstIsOnItsWaySendsNothing) {
+  Add(chat_.id, "m1", MessageDelivery::Failed);
+  relay_->Hold();
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m1"));
+  ASSERT_TRUE(relay_->WaitForSends(1));
+  EXPECT_EQ(Delivery(chat_.id, "m1"), MessageDelivery::Pending) << "queued again before it went";
+  auto second = mesh_->ResendStoredMessage(chat_.id, "m1");
+  ASSERT_TRUE(second);
+  EXPECT_FALSE(*second) << "still under way: nothing done";
+  relay_->Release();
+  Drain();
+  EXPECT_EQ(relay_->SentWithId("m1"), 1u);
+}
+
+TEST_F(StoredResendTest, ADispatchThatFailsAfterThePendingWriteFailsTheRowAgain) {
+  DirectChatTarget nowhere;
+  nowhere.peer_identity_kind = "account";
+  nowhere.peer_identity_value = "not-an-account";
+  nowhere.channel = ThreadChannel::E2ePublic;
+  auto thread = store_.FindOrCreateDirectThread(nowhere, "", "Nobody");
+  ASSERT_TRUE(thread);
+  Add(thread->id, "m1", MessageDelivery::Failed);
+  auto sent = mesh_->ResendStoredMessage(thread->id, "m1");
+  EXPECT_FALSE(sent) << "no Account ID, no link: nothing to hand over";
+  EXPECT_EQ(Delivery(thread->id, "m1"), MessageDelivery::Failed) << "not left queued";
+  Drain();
+  EXPECT_TRUE(relay_->Sent().empty());
+}
+
+TEST_F(StoredResendTest, AGroupMessageGoesAgainToItsMembers) {
+  const Thread group = MakeGroup(GroupSyncState::Active);
+  Add(group.id, "g-m1", MessageDelivery::Failed);
+  auto sent = mesh_->ResendStoredMessage(group.id, "g-m1");
+  ASSERT_TRUE(sent) << sent.error().message;
+  Drain();
+  ASSERT_EQ(relay_->SentWithId("g-m1"), 1u) << "one record, to the one other member";
+  EXPECT_EQ(relay_->Sent().front().recipient_account_id.value_or(""), bob_.account_id);
+  EXPECT_EQ(Delivery(group.id, "g-m1"), MessageDelivery::Relayed);
+}
+
+TEST_F(StoredResendTest, AGroupWeWereRemovedFromOrStillCheckingSendsNothing) {
+  for (const auto& [state, error] : {std::pair{GroupSyncState::Removed, group_roster_sync::kGroupRemovedError},
+                                     std::pair{GroupSyncState::Checking, group_roster_sync::kGroupCheckingError}}) {
+    const Thread group = MakeGroup(state);
+    const std::string id = std::string("g-") + error;
+    Add(group.id, id, MessageDelivery::Failed);
+    auto sent = mesh_->ResendStoredMessage(group.id, id);
+    ASSERT_FALSE(sent);
+    EXPECT_EQ(sent.error().message, error);
+    EXPECT_EQ(Delivery(group.id, id), MessageDelivery::Failed) << "left as it was";
+  }
+  Drain();
+  EXPECT_TRUE(relay_->Sent().empty());
+}
+
+// R7 + the resume: what was still queued shows queued from the first frame, goes once at the first sync, and a tap
+// racing the resume makes no second copy.
+TEST_F(StoredResendTest, AfterAStartTheQueuedRowsShowQueuedThenGoOnceEvenWithATapRacing) {
+  Add(chat_.id, "q1", MessageDelivery::Pending);
+  Add(chat_.id, "q2", MessageDelivery::Pending, 120'000, ChatContentType::Attachment);
+  Add(chat_.id, "old", MessageDelivery::Pending, kResumeQueuedMaxAgeMs + 60'000);
+  Add(chat_.id, "failed-by-old-app", MessageDelivery::Failed);
+  mesh_->PrimeQueuedResume();
+  EXPECT_TRUE(mesh_->SendStartedMs("q1")) << "queued, not red, before the first sync";
+  EXPECT_TRUE(mesh_->SendStartedMs("q2"));
+  EXPECT_FALSE(mesh_->SendStartedMs("old"));
+  EXPECT_EQ(Delivery(chat_.id, "old"), MessageDelivery::Failed) << "too old: red at once";
+  EXPECT_FALSE(mesh_->SendStartedMs("failed-by-old-app"));
+  EXPECT_EQ(Delivery(chat_.id, "failed-by-old-app"), MessageDelivery::Failed) << "left as it was";
+
+  relay_->Hold();
+  std::thread resume([this]() { mesh_->ResumeQueuedSends(); });
+  std::thread tap([this]() { (void)mesh_->ResendStoredMessage(chat_.id, "q1"); });
+  resume.join();
+  tap.join();
+  mesh_->ResumeQueuedSends(); // a second sync: nothing again
+  relay_->Release();
+  Drain();
+  EXPECT_EQ(relay_->SentWithId("q1"), 1u) << "the tap and the resume: one copy";
+  EXPECT_EQ(relay_->SentWithId("q2"), 1u);
+  EXPECT_EQ(relay_->SentWithId("old"), 0u);
+  EXPECT_EQ(relay_->SentWithId("failed-by-old-app"), 0u);
+  EXPECT_EQ(Delivery(chat_.id, "q1"), MessageDelivery::Relayed);
+  EXPECT_EQ(Delivery(chat_.id, "q2"), MessageDelivery::Relayed);
+  EXPECT_FALSE(mesh_->SendStartedMs("q1"));
+}
+
+TEST_F(StoredResendTest, AResumedSendRefusedForGoodEndsRed) {
+  Add(chat_.id, "q1", MessageDelivery::Pending);
+  relay_->SetFail(true);
+  mesh_->ResumeQueuedSends();
+  Drain();
+  EXPECT_EQ(Delivery(chat_.id, "q1"), MessageDelivery::Failed);
+  EXPECT_FALSE(mesh_->SendStartedMs("q1")) << "nothing of it is tried any more: the red mark";
 }
 
 } // namespace

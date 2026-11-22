@@ -42,6 +42,7 @@
 #include "domain/delivery/RecipientRelays.h"
 #include "domain/delivery/RelayInboxCoordinator.h"
 #include "feature/conversations/PeerTransports.h"
+#include "feature/conversations/QueuedResend.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
@@ -132,10 +133,12 @@ public:
                               const std::string& text, const std::string& message_id, int64_t sent_at_ms);
   /** A deleted message that has not gone out yet is not retried. */
   void CancelPendingSend(const std::string& message_id);
-  /** When the send of our message `message_id` still under way started (DeliveryOutbox::SendStartedMs). Any thread. */
-  std::optional<int64_t> SendStartedMs(const std::string& message_id) const {
-    return outbox_.SendStartedMs(message_id);
-  }
+  /**
+   * When the send of our message `message_id` still under way started (DeliveryOutbox::SendStartedMs) — or, for a row
+   * the start will send again (PrimeQueuedResume) and has not yet, this process's start: it shows queued from the first
+   * frame, not red until the first sync (B236). Any thread.
+   */
+  std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
   /**
    * Sends our stored message `message_id` again as itself — the same message id, sealed again for the peer's (or each
    * member's) devices as a first send is — so a recipient that has it already drops the copy (the receive pipeline's
@@ -163,6 +166,12 @@ public:
    * are left as they are (PlanQueuedResume). Blocking: on a worker.
    */
   void ResumeQueuedSends();
+  /**
+   * At messaging ready, before the first frame reads the marks: which rows the start will send again (PlanQueuedResume,
+   * from the store alone) — they show queued until ResumeQueuedSends has them on their way — and those queued too long
+   * are failed now. Once per process; ResumeQueuedSends primes itself if nothing did. Blocking (the store).
+   */
+  void PrimeQueuedResume();
   /**
    * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
    * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
@@ -636,6 +645,10 @@ private:
   const int64_t created_ms_ = util::NowUnixMs();
   /** ResumeQueuedSends ran (or is running) in this process. */
   std::atomic<bool> queued_sends_resumed_{false};
+  /** PrimeQueuedResume's plan: the rows to send again, not yet handed to the outbox (shown queued meanwhile). */
+  mutable std::mutex resume_mu_;
+  bool resume_primed_ = false;
+  std::vector<QueuedRow> awaiting_resume_;
   /** One ResendStoredMessage at a time: a tap and the start's resume never both send a message. */
   std::mutex stored_resend_mu_;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
