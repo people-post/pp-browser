@@ -29,7 +29,7 @@
       </button>
     </div>
     <div class="shell-titlebar-drag" data-event-dblclick="titlebar_toggle_maximize()">
-      <p class="shell-titlebar-title">{{i18n:app.name}}</p>
+      <p class="shell-titlebar-title">{{window_title}}</p>
     </div>
     <div class="shell-titlebar-controls shell-titlebar-controls--icons" data-if="!titlebar_traffic_lights">
       <button class="shell-titlebar-btn" type="button" data-event-click="titlebar_minimize()">

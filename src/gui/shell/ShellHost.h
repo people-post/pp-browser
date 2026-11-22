@@ -163,6 +163,8 @@ public:
   void CloseAiDrawer();
   /** Closes every overlay layer (dialogs excluded), top first: a reset of the profile leaves none of the old account's. */
   void CloseAllLayers();
+  /** The desktop title strip's text (WindowTitleFor); no effect on a platform without the strip. */
+  void SetWindowTitle(const std::string& title);
   /** The drawer's rows have their swipe listeners (only while it is mounted). */
   bool AiDrawerRowSwipesAttached() const { return drawer_session_swipe_.Attached(); }
   /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */

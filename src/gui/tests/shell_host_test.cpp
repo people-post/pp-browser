@@ -4,12 +4,14 @@
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
+#include "gui/shell/WindowTitle.h"
 #include "lib/ui/ShellTypes.h"
 #include "gui/tests/run_log_sentinel_capture.h"
 
 #include <ui/base/SystemInterface.h>
 
 #include <gtest/gtest.h>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -687,11 +689,34 @@ TEST(ShellHostHiddenTabTest, AProfileResetOnTheWideLayoutLeavesNoPaneOrLayerOfTh
   wide.CloseAllLayers();
 
   EXPECT_EQ(wide.State().nav_tab, NavTab::Home);
-  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(wide.State().nav_tab), "ai_list") << "the list column is the AI list again";
+  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(wide.State().nav_tab), "ai_list")
+      << "the list column is the AI list again";
   EXPECT_TRUE(wide.State().primary_pane_key.empty()) << "the right pane is closed";
   EXPECT_FALSE(wide.State().auxiliary_open);
   EXPECT_TRUE(wide.State().transient_stack.empty());
   EXPECT_TRUE(wide.State().overlay_stack.empty());
+}
+
+// The desktop title strip: "PP" plain, "PP · name" with a nickname, plain again after a reset; the strip binds the text.
+TEST(ShellHostHiddenTabTest, TheTitleStripReadsPpDotNicknameOnceThereIsAName) {
+  EXPECT_EQ(WindowTitleFor("PP", ""), "PP");
+  EXPECT_EQ(WindowTitleFor("PP", "  \t"), "PP") << "a blank name is no name";
+  EXPECT_EQ(WindowTitleFor("PP", "Ada"), "PP \xC2\xB7 Ada");
+  EXPECT_EQ(WindowTitleFor("PP", " Ada Lovelace "), "PP \xC2\xB7 Ada Lovelace");
+
+  ShellHost& host = KeptHost();
+  host.SetWindowTitle(WindowTitleFor("PP", "Ada"));
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP \xC2\xB7 Ada");
+  host.SetWindowTitle(WindowTitleFor("PP", "Grace")); // the nickname changed
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP \xC2\xB7 Grace");
+  host.SetWindowTitle(WindowTitleFor("PP", "")); // after a reset
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP");
+
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "samples/window_shell.rml");
+  std::stringstream rml;
+  rml << in.rdbuf();
+  EXPECT_NE(rml.str().find("<p class=\"shell-titlebar-title\">{{window_title}}</p>"), std::string::npos)
+      << "the strip shows the bound text";
 }
 
 // A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).

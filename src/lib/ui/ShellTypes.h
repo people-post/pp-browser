@@ -639,6 +639,8 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** The desktop title strip's text (WindowTitleFor): the product name, and the account's nickname once it has one. */
+  ui::String window_title;
   /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */
   float banner_expires_at_ms = 0.f;
   std::vector<ToastEntry> toasts;

@@ -154,6 +154,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
+    ctor.Bind("window_title", &host.state_.window_title);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
     ctor.Bind("dialog_title", &host.state_.dialog.title);
@@ -508,6 +509,7 @@ void ShellHost::Initialize(ui::Context* context) {
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
   state_.titlebar_visible = DesktopWindowChrome::Enabled();
+  state_.window_title = Tr("app.name").c_str();
   state_.titlebar_traffic_lights = DesktopWindowChrome::ControlsLeading();
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
@@ -1073,6 +1075,14 @@ void ShellHost::CloseLayer(int layer_id) {
     }
   }
   RequestSyncLayout(true);
+}
+
+void ShellHost::SetWindowTitle(const std::string& title) {
+  if (state_.window_title == title.c_str()) {
+    return;
+  }
+  state_.window_title = title.c_str();
+  DataModelHost::Instance().Dirty("window", "window_title");
 }
 
 void ShellHost::CloseAllLayers() {

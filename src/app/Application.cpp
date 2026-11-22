@@ -123,6 +123,7 @@
 #include "gui/SupportDiscoveryPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/DeferredStartup.h"
+#include "gui/shell/WindowTitle.h"
 #include "gui/FlowCoordinator.h"
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -611,11 +612,26 @@ Roe<void> Application::ResetActiveProfile() {
   shell_->SelectNavTab(NavTab::Home);
   shell_->ClearTabContext();
   shell_->CloseAllLayers();
+  RefreshWindowTitle(); // no account any more: plain PP until the new one has a name
   // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
   // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
   // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
   unlock_gate_->EnsureUnlocked(nullptr);
   return {};
+}
+
+void Application::RefreshWindowTitle() {
+  if (!shell_) {
+    return;
+  }
+  std::string nickname;
+  if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
+    const ProfileIdentityView view = messaging_facade_->LoadProfileIdentityView();
+    if (view.ready) {
+      nickname = view.nickname;
+    }
+  }
+  shell_->SetWindowTitle(WindowTitleFor(Tr("app.name"), nickname));
 }
 
 Roe<void> Application::ResetChatData() {
@@ -958,8 +974,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
-  settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
-    return facade.SaveProfileNickname(nickname);
+  settings_commands.save_profile_nickname = [this, &facade](const std::string& nickname) {
+    auto saved = facade.SaveProfileNickname(nickname);
+    if (saved) {
+      RefreshWindowTitle();
+    }
+    return saved;
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
     // iOS: a large photo takes seconds to copy out of the library; the pill says so until the crop page is opened
@@ -2009,6 +2029,9 @@ void Application::WireUnlockPinAndFlow() {
       if (result && chat_) {
         chat_->ReloadAgentConfig();
       }
+      if (result) {
+        RefreshWindowTitle();
+      }
       return result;
     };
     onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
@@ -2613,6 +2636,7 @@ void Application::WireHubCallbacks() {
       call_->OnMessagingReady();
     }
     contacts_->Refresh();
+    RefreshWindowTitle(); // an account was opened (start, new account, link, restore): its name is in the title strip
     // A chat database too old to upgrade was reset when it opened (D105): say so once.
     if (TakeChatStoreResetNotice(store_.Snapshot().profile_data_dir)) {
       UserFeedback::Note(Tr("settings.storage.chats_reset_too_old"));
@@ -2765,6 +2789,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
 
   shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top, bootstrap.machine_prefs.safe_area.bottom);
   shell_->RefreshSafeAreaInsets(context);
+  RefreshWindowTitle(); // plain PP until an account with a name is open
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
   shell_->SetSidebarPrefs(bootstrap.profile_prefs.sidebar_width_dp, bootstrap.profile_prefs.sidebar_collapsed);
