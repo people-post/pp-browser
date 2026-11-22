@@ -179,6 +179,10 @@ public:
   bool ChatSendHeld(const std::string& thread_id) const;
   /** A grant from `grantor` was kept: what its stranger quota held back is sent at once (the outbox). Any thread. */
   void OnGrantReceived(const std::string& grantor);
+  /** Tests: sees each sent-copy handed to our other devices. Set before messaging runs. */
+  void SetOnMirrorForTest(std::function<void(const ThreadMessage& sent, const SentCopyTarget& target)> seen) {
+    on_mirror_for_test_ = std::move(seen);
+  }
   /**
    * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
    * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
@@ -307,6 +311,12 @@ public:
    * other devices. Off the caller's thread.
    */
   void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
+  /**
+   * B236: our stored message `message_id` was just delivered (its first copy accepted): our other devices get their
+   * copy now — never for a message that is not through, so a sibling never shows as sent what failed. Once per
+   * message (ApplyOutcomeToRow::delivered_now).
+   */
+  void MirrorDelivered(const std::string& thread_id, const std::string& message_id);
   /**
    * A copy may be missing for this device (M021 §9): once kMissingCopyWaitMs passed without the message arriving
    * another way (a copy over a link), ask the sending device for one (`copy_ask`, carrying our card). Once per
@@ -652,6 +662,8 @@ private:
   std::atomic<bool> inbox_sync_held_{false};
   /** When this orchestrator was made: a row written since is sent by its own send, never by ResumeQueuedSends. */
   const int64_t created_ms_ = util::NowUnixMs();
+  /** Tests: each sent-copy handed to our siblings (MirrorToSiblings), before the device check. */
+  std::function<void(const ThreadMessage& sent, const SentCopyTarget& target)> on_mirror_for_test_;
   /** ResumeQueuedSends ran (or is running) in this process. */
   std::atomic<bool> queued_sends_resumed_{false};
   /** PrimeQueuedResume's plan: the rows to send again, not yet handed to the outbox (shown queued meanwhile). */

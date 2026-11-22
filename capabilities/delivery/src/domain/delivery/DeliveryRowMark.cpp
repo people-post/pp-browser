@@ -10,9 +10,12 @@ RowMarkResult ApplyOutcomeToRow(IThreadTranscript& store, const DeliveryOutcome&
     return result; // the control lane: no row
   }
   if (outcome.ok) {
+    auto before = store.GetMessage(outcome.thread_id, outcome.message_id);
+    const bool was_delivered = before && *before && (*before)->delivery == MessageDelivery::Relayed;
     auto marked = store.UpdateMessageDelivery(outcome.thread_id, outcome.message_id, MessageDelivery::Relayed,
                                               outcome.transport, /*unless_delivered=*/false);
     result.changed = marked && *marked;
+    result.delivered_now = result.changed && !was_delivered;
     return result;
   }
   if (outcome.retrying || still_under_way) {
