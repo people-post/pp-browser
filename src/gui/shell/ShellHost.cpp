@@ -2136,6 +2136,11 @@ void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
     }
   }
 
+  if (IsIpadDevice() &&
+      safe_area_settle_.Observe(std::chrono::steady_clock::now(), sdl.window_w, sdl.window_h, sdl.top_dp)) {
+    // The window controls' inset settles after the first frames and raises no event: read it again on the next frame.
+    Backend::RequestForceFrame();
+  }
   const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
   int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
   if (bottom_chrome_open_) {

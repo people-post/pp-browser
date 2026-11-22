@@ -7,6 +7,7 @@
 #include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellHomeMascot.h"
 #include "gui/shell/NotificationTapCover.h"
+#include "gui/shell/SafeAreaSettle.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -490,6 +491,7 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  SafeAreaSettle safe_area_settle_;             // iPad: keeps frames coming while the window controls' inset settles
   int logged_keyboard_dp_ = -1;                 // the keyboard lift last written to the log (RefreshSafeAreaInsets)
   int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
   const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
