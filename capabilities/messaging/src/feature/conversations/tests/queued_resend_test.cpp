@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <iostream>
 #include <condition_variable>
 #include <filesystem>
 #include <mutex>
@@ -366,12 +367,37 @@ public:
     return static_cast<size_t>(
         std::count_if(sent_.begin(), sent_.end(), [&](const RelayEnvelope& e) { return e.message_id == id; }));
   }
-  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
-  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  /** What the next poll hands over (once). */
+  void Deliver(RelayEnvelope envelope) {
+    std::lock_guard lock(mu_);
+    inbox_.push_back(std::move(envelope));
+  }
+  Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override {
+    std::lock_guard lock(mu_);
+    RelayPollResult result;
+    result.messages.swap(inbox_);
+    result.next_cursor = "c" + std::to_string(++polls_);
+    return result;
+  }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
   Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
-  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest&) override { return Error("unused"); }
+  /** Stream history (a gap repair asks it): always an empty answer, as a sender that holds nothing in the range. */
+  Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override {
+    std::lock_guard lock(mu_);
+    history_asks_.push_back(request);
+    ChatHistoryResponse response;
+    response.session_epoch = request.session_epoch;
+    return response;
+  }
+  std::vector<ChatHistoryRequest> HistoryAsks() {
+    std::lock_guard lock(mu_);
+    return history_asks_;
+  }
 
 private:
+  std::vector<RelayEnvelope> inbox_;
+  std::vector<ChatHistoryRequest> history_asks_;
+  int polls_ = 0;
   std::mutex mu_;
   std::condition_variable entered_;
   std::condition_variable released_;
@@ -588,6 +614,88 @@ TEST_F(StoredResendTest, AResumedSendRefusedForGoodEndsRed) {
   Drain();
   EXPECT_EQ(Delivery(chat_.id, "q1"), MessageDelivery::Failed);
   EXPECT_FALSE(mesh_->SendStartedMs("q1")) << "nothing of it is tried any more: the red mark";
+}
+
+// B236 R2, evidence for the transport owner (no product change): a device-pair copy that never arrives (here: lost on
+// the way) leaves a hole in that pair's numbering on the recipient. Driven through the real relay poll path of the
+// recipient's orchestrator: one copy, the hole, then five genuine messages, the sender answering every history ask
+// empty. Recorded: the decision for each message, the history asks the recipient makes (MaybeRepairGap), and whether
+// the empty answers close the pair's hole.
+TEST_F(StoredResendTest, ADevicePairHoleIsAskedAboutOnEveryLaterMessageAndNeverCloses) {
+  const LocalIdentity me = *identity_.Get();
+  mesh_->SetProfileDataDir(dir_.string());
+  mesh_->SetRelayClients(MeshDeliveryOrchestrator::RelayClients{
+      .preferred = relay_, .history = relay_, .sender = relay_.get(), .inboxes = {RelayInbox{"https://r", relay_}}});
+  // Carol, a peer whose card we keep, writes to this device in her pair with it.
+  test::TestAccount carol = test::TestAccount::Make();
+  ASSERT_TRUE(keys_.AddAccountCard(carol.DeviceCard(), util::NowUnixMs(), "test"));
+  InMemoryDeliveryStore carol_store;
+  ASSERT_TRUE(carol_store.SetDek(TestDek(9)));
+  InMemoryPeerSessions carol_psk(carol_store);
+  ASSERT_TRUE(carol_psk.SetDek(TestDek(9)));
+  const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(me.account_id, me.peer_id);
+  const ByteVector my_device_kem = Base64Decode(me.device_kem_public_key_b64).value();
+  auto seal = [&](const std::string& text) {
+    ThreadMessage message;
+    message.id = util::GenerateUuid();
+    message.text = text;
+    message.timestamp = util::NowUnixMs();
+    auto copy = SealPairCopy(message, carol.account_id, SendRelayOptions{}, carol_psk, pair, my_device_kem);
+    EXPECT_TRUE(copy) << copy.error().message;
+    RelayEnvelope envelope = BuildDirectEnvelope(
+        message, SendRelayOptions{}, EnvelopeSender{carol.account_id, carol.device.peer_id, std::nullopt},
+        ThreadChannel::E2ePublic, me.account_id, {DeviceCopy(me.peer_id, std::move(*copy))}, NextRelayOrderKey());
+    test::SignEnvelopeAs(carol, envelope);
+    return envelope;
+  };
+  auto poll = [&](RelayEnvelope envelope) {
+    relay_->Deliver(std::move(envelope));
+    mesh_->SyncInboxFromWake(true);
+    Drain();
+    Drain(); // the repair the ingest started, on its own worker turn
+  };
+
+  poll(seal("one"));  // seq 1
+  (void)seal("lost"); // seq 2: never reaches us
+  DirectChatTarget from_carol;
+  from_carol.peer_identity_kind = "account";
+  from_carol.peer_identity_value = carol.account_id;
+  from_carol.channel = ThreadChannel::E2ePublic;
+  auto thread = store_.FindDirectThread(from_carol);
+  ASSERT_TRUE(thread && *thread) << "the first message made the chat";
+  const size_t asks_before = relay_->HistoryAsks().size();
+  std::vector<size_t> asks_after_each;
+  for (int n = 1; n <= 5; ++n) {
+    poll(seal("genuine " + std::to_string(n))); // seq 3..7
+    asks_after_each.push_back(relay_->HistoryAsks().size() - asks_before);
+  }
+  auto rows = store_.GetMessagesPage((*thread)->id, std::nullopt, 100);
+  ASSERT_TRUE(rows);
+  EXPECT_EQ(rows->size(), 6u) << "every genuine message is read (nothing held back by the hole)";
+
+  // What the pair's numbering holds after the empty answers.
+  const uint32_t epoch = 1;
+  auto pair_state = store_.GetPeerSyncState((*thread)->id, epoch, carol.device.peer_id);
+  ASSERT_TRUE(pair_state);
+  const std::vector<ChatHistoryRequest> asks = relay_->HistoryAsks();
+  std::string ranges;
+  for (const ChatHistoryRequest& ask : asks) {
+    ranges += " [" + std::to_string(ask.min_sender_seq.value_or(0)) + "," +
+              std::to_string(ask.max_sender_seq.value_or(0)) + "]";
+  }
+  RecordProperty("history_asks_after_each_message",
+                 std::to_string(asks_after_each[0]) + "," + std::to_string(asks_after_each[1]) + "," +
+                     std::to_string(asks_after_each[2]) + "," + std::to_string(asks_after_each[3]) + "," +
+                     std::to_string(asks_after_each[4]));
+  std::cout << "[ R2 evidence ] history asks after each of 5 messages (cumulative): " << asks_after_each[0] << ","
+            << asks_after_each[1] << "," << asks_after_each[2] << "," << asks_after_each[3] << "," << asks_after_each[4]
+            << "; ranges:" << ranges << "; pair contiguous=" << pair_state->contiguous_peer_seq
+            << " phase=" << static_cast<int>(pair_state->phase) << " loaded_max=" << pair_state->loaded_max_seq
+            << std::endl;
+  // Today's behaviour, as observed (the report files it): one ask per later message, and the pair's hole stays open.
+  EXPECT_EQ(asks_after_each.back(), 5u) << "one history ask per message after the hole";
+  EXPECT_EQ(pair_state->contiguous_peer_seq, 1u) << "the empty answers do not close the device pair's hole";
+  EXPECT_EQ(pair_state->phase, PeerSyncPhase::Gap);
 }
 
 } // namespace
