@@ -323,7 +323,8 @@ app versions.
 | App release candidates | `release/app-X.Y` | `vX.Y.Z-rc.<n>` |
 | pp-node release candidates | `release/node-X.Y` | `pp-node/vX.Y.Z-rc.<n>` |
 | Internal pp-node builds | main | `node-internal/<date>.<n>` |
-| Relay dev deploys | main | `dev/<date>.<n>` (with Leo) |
+| Relay dev deploys | a commit on main, tagged by hand | `dev/<date>.<n>` (with Leo; [RC021](DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)) |
+| Relay release candidates | `release/X.Y` | `release/vX.Y.Z-rc.<n>` |
 
 CI builds nobody installs, and builds a developer installs on their own device (USB, a local run), get no tag: tags
 are for builds someone else installs.
@@ -335,10 +336,17 @@ release version is set before its candidate build, so the TestFlight build that 
 
 **Deploys are gated by GitHub environments:**
 
-- main deploys the relay to dev automatically;
-- release candidates from `release/*` deploy to staging (today's qa) ([§ Environments](#environments));
-- only `v*` tags deploy to production, behind an approval gate; for apps, only tags go to the stores;
+- the relay repos deploy by tag only, never by branch push ([RC021](DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)):
+  a `dev/<date>.<n>` tag on a commit on main deploys dev;
+- a `release/vX.Y.Z-rc.<n>` tag on `release/X.Y` deploys staging (today's qa) ([§ Environments](#environments)); the
+  prefix `release/` with a `v...-rc.<n>` tail never equals the branch name `release/X.Y` and does not match `v*`;
+- only `v*` tags on `release/X.Y` deploy to production, behind an approval gate; for apps, only tags go to the stores;
 - rollback redeploys the previous release tag's artifact (RC003).
+
+The relay's API repository and the relay node fleet's deploy repository (the playbooks) follow this scheme, with the
+same tags; pp-node fleet rollouts remain Leo's. The relay reports its
+version as `dev.<date>.<n>` (dev), `X.Y.Z-rc.<n>` (staging) and `X.Y.Z` (prod). qa is retired from these repos' deploy
+flow; dev, staging and prod are the live relay environments. App and pp-node candidate tags are unchanged.
 
 ### App builds: internal, external, store
 
@@ -419,15 +427,15 @@ and **dev** is new ([RC009](DECISIONS.md#rc009--four-environments-todays-qa-beco
 | Environment | What deploys there | Who uses it | Data |
 |-------------|--------------------|-------------|------|
 | **local** (local-stack and the lab, as today) | any branch, in CI and lab runs | developers, CI | thrown away after each run |
-| **dev** (new) | main, automatically | developers, dev builds | may be reset |
-| **staging** (today's qa) | release candidates from `release/X.Y`; the previous release for rollback rehearsals | release testing, internal TestFlight candidates | prod-like and kept, no real users |
-| **prod** | `v*` tags only, behind an approval, canary first | users and external testers | real |
+| **dev** (new) | a `dev/<date>.<n>` tag on a commit on main, pushed by Leo | developers, dev builds | may be reset |
+| **staging** (today's qa) | release candidates tagged `release/vX.Y.Z-rc.<n>` on `release/X.Y`; the previous release for rollback rehearsals | release testing, internal TestFlight candidates | prod-like and kept, no real users |
+| **prod** | `v*` tags on `release/X.Y` only, behind an approval, canary first | users and external testers | real |
 
 **Staging keeps everything qa has today**, so nothing on the wire or on disk changes: dev builds compile in its
 origin (`PP_API_URL_QA`), users' `config.json` keeps `backend.env: "qa"`, and the relay keeps its PeerId
 (`PP_RELAY_PEER_ID_QA`). In dev builds the label in Me → Network becomes "Staging"; store builds do not compile it
 in, and a `backend.env: "qa"` there loads as prod, as it already does for a build without a QA origin ([RC015](DECISIONS.md#rc015--client-side-answers-after-kenneths-review)).
-What changes is what deploys there: release candidates, no longer every merge.
+What changes is what deploys there: tagged release candidates, no longer every merge.
 
 **Staging is where a candidate is proven:**
 

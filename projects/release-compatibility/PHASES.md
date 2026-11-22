@@ -32,7 +32,7 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
 - [x] **First, at the start of P2:** develop merged into main a last time; open PRs retargeted to main; develop deleted
   (pp-browser, pp-cpp-*, pp-ledger; pp-relay-apis with Leo), all repos in the same week; P2's own work lands on main.
   Done 2026-11-20 in all ten repos (pp-browser, the five pp-cpp-*, pp-ledger, pp-ledger-apps, pp-relay-apis,
-  pp-relay-infra-ansible); the relay repos deploy qa from main and prod from `v*` tags. Started 2026-11-19 ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): the relay repos move once their deploys do.
+  pp-relay-infra-ansible); the relay repos deployed qa from main and prod from `v*` tags (qa and main deploys superseded by [RC021](DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only): tags only). Started 2026-11-19 ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos)): the relay repos move once their deploys do.
 - [x] Branch protection on main in every repo except pp-relay-apis and pp-relay-infra-ansible ([RC019](DECISIONS.md#rc019--p2-starts-one-main-the-relay-deploys-from-main-and-tags-no-protection-on-the-private-relay-repos) item 3): one approval from someone other than the author, code owners on their
   paths. Done 2026-11-20: main in the eight repos (admins may bypass; CI checks required, pp-browser's one `required`
   check); pp-browser's `release/**` ruleset (one approval, the `required` check, no force push or deletion).
@@ -41,8 +41,10 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   `node-internal/<date>.<n>`, relay `dev/<date>.<n>`); there is no Android or desktop test build people install yet.
 - [x] Release workflows take release tags only from `release/*` branches, build once, and promote the artifact.
   Done 2026-11-20: app and pp-node (`release/app-X.Y`, `release/node-X.Y`), relay (`release/X.Y`, Hongwei's tags).
-- [ ] GitHub environments: main → dev; release candidates → staging; only `v*` tags → production, behind an approval.
-  So far: the relay's main → qa and `v*` tags → prod (only Hongwei); dev and staging wait for Environments below.
+- [ ] GitHub environments, by tag only ([RC021](DECISIONS.md#rc021--the-relay-repos-deploy-by-tag-only)):
+  `dev/<date>.<n>` → dev; `release/vX.Y.Z-rc.<n>` → staging; only `v*` tags → production, behind an approval.
+  So far: the relay's main → qa and `v*` tags → prod (only Hongwei); the relay repos move to tags, and dev and
+  staging wait for Environments below.
 - [x] The backport bot ([DESIGN § Release lines](DESIGN.md#release-lines-are-first-class), RC014): a label opens a PR
   to that exact release branch, running its checks and needing approval; trailer and link to the original kept;
   conflicts reported as a draft PR or comment; an exception label for release-branch-only fixes; branch closing
