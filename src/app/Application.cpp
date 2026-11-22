@@ -2782,6 +2782,9 @@ void Application::WireHubCallbacks() {
     }
     AppRuntime::PostUI([this]() {
       peer_icons_refresh_posted_ = false;
+      if (settings_) {
+        settings_->OnOwnIconChanged(); // our own photo, when another device of the account set it
+      }
       if (contacts_) {
         contacts_->Refresh();
         contacts_->RefreshMemberIcon(
