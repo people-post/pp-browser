@@ -344,6 +344,8 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** This device is the account's only one (OwnCards::OnlyDevice); false before messaging is up. */
+  bool OnlyDeviceOnAccount();
   /**
    * The person chose a new device list (no card of ours was found on our relays, OwnCards::StartFreshList): this
    * device's card holds only itself, as the master, and goes to our contacts and relays — the account's other devices

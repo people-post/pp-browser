@@ -120,6 +120,12 @@ public:
   Roe<OwnDeviceList> Devices();
   /** The newest list leaves this device out: it stops sending (M021 d4). */
   bool SignedOut();
+  /**
+   * This device is the account's only one: the newest card lists it alone (or, a new account's first device, none was
+   * issued yet). False while another device is listed, this one is signed out, or no card of ours is at hand: a
+   * profile reset takes the account's registration off our relays only on its last device.
+   */
+  bool OnlyDevice();
   /** The master takes another device off the list (revoke, M021 d4); an error on any other device. */
   Roe<AccountCard> RemoveDevice(const std::string& peer_id, int64_t now_ms);
   /** The master hands its role to another listed device (moves it first). */

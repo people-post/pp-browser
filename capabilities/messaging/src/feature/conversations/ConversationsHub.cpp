@@ -4534,6 +4534,10 @@ Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   return {};
 }
 
+bool ConversationsHub::OnlyDeviceOnAccount() {
+  return mesh_messaging_ && mesh_messaging_->OwnAccountCards().OnlyDevice();
+}
+
 bool ConversationsHub::IsMainDevice() {
   if (!mesh_messaging_) {
     return true;

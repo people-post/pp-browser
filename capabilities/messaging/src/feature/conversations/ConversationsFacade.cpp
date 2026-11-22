@@ -1507,7 +1507,12 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
   return pbr::UpdateRegisteredNickname(*hub_.Registration(), hub_.Identity(), nickname);
 }
 
-Roe<void> ConversationsFacade::RevokeRegistration() {
+Roe<void> ConversationsFacade::LeaveRelaysOnReset() {
+  if (!hub_.OnlyDeviceOnAccount()) {
+    // A revoke would remove the account's registration for every device: the relay gives the next registration a new,
+    // empty mailbox, and what was sent before it is lost.
+    return PushDeviceCoordinator::UnregisterEverywhere(hub_);
+  }
   // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
   if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();
