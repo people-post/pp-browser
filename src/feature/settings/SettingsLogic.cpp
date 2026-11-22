@@ -58,13 +58,13 @@ AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUi
 }
 
 std::string EndpointLinkText(const ServiceEndpointConfig& endpoint) {
-  return endpoint.peer_id.empty() ? endpoint.base_url : endpoint.base_url + "#" + endpoint.peer_id;
+  return endpoint.relay_id.empty() ? endpoint.base_url : endpoint.base_url + "#" + endpoint.relay_id;
 }
 
 void SetEndpointFromLinkText(ServiceEndpointConfig& endpoint, const std::string& text) {
   const size_t hash = text.find('#');
   endpoint.base_url = text.substr(0, hash);
-  endpoint.peer_id = hash == std::string::npos ? std::string() : text.substr(hash + 1);
+  endpoint.relay_id = hash == std::string::npos ? std::string() : text.substr(hash + 1);
 }
 
 std::string MissingRelayIdSetting(const AppConfig& config, const bool developer_build, const bool compiled_backend) {
@@ -77,12 +77,12 @@ std::string MissingRelayIdSetting(const AppConfig& config, const bool developer_
     }
     return url;
   };
-  if (!config.relay.base_url.empty() && config.relay.peer_id.empty()) {
-    return "relay.peer_id";
+  if (!config.relay.base_url.empty() && config.relay.relay_id.empty()) {
+    return "relay.relay_id";
   }
   const bool apart = trimmed(config.registration.base_url) != trimmed(config.relay.base_url);
-  if (apart && !config.registration.base_url.empty() && config.registration.peer_id.empty()) {
-    return "registration.peer_id";
+  if (apart && !config.registration.base_url.empty() && config.registration.relay_id.empty()) {
+    return "registration.relay_id";
   }
   return {};
 }

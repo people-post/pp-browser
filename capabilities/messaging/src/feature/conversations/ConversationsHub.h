@@ -301,6 +301,11 @@ public:
    * is too old for it (ClientCompatController shows the update screen). Each time; any thread. nullptr: none.
    */
   void SetOnOrgRelayRequiresUpgrade(std::function<void()> callback);
+  /**
+   * `client-compat` carried the org relay's certificate: offered to the relay pins (on a worker) for the relay id the
+   * org's relay is expected to prove; kept when it verifies and is higher than the one held (SIGNED_FORMATS § 3.4).
+   */
+  void OfferOrgRelayCertificate(const std::string& certificate_b64);
   /** Registers on our other relays that are due, off the caller's thread (after the preferred one, on a timer). */
   void RegisterOnOtherRelaysSoon();
   PushBindingGate& PushGate() { return push_gate_; }
@@ -779,16 +784,21 @@ private:
   /** A pin the store keeps when full: ours and the org's origins (the only ones pinned). Any thread. */
   bool KeepsPin(const std::string& origin);
   /**
-   * An origin no address names a PeerId for may be pinned on its first answer (MR008 item 4): a developer build's
-   * relays of ours, and the org's origins in a build or config that names none for them. Any thread.
+   * An origin no address names a relay id for may be pinned on its first valid certificate (MR008 item 4): a developer
+   * build's relays of ours, and the org's origins in a build or config that names none for them — never the org's
+   * when the build names a placeholder (HubSettings::org_relay_pending: fails closed). Any thread.
    */
   bool FirstUseAllowed(const std::string& origin);
-  /** The org's `origin` names no PeerId (`setting`) where first use is not allowed: logged as an error (not used). */
-  void NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin, const std::string& peer_id,
+  /**
+   * The org's `origin` names no relay id (`setting`) where first use is not allowed, a placeholder, or one not of the
+   * form: logged as an error (not used).
+   */
+  void NoteOrgRelayWithoutId(const HubSettings& settings, const std::string& origin, const std::string& relay_id,
                              const char* setting);
   /**
-   * The identities every relay of ours and the org's origins are expected to answer to (MR008): the org's from the
-   * build or the config (`relay.peer_id`, `registration.peer_id`), ours from the list. Before the card lists them.
+   * The relay ids every relay of ours and the org's origins are expected to prove (MR008): the org's from the build or
+   * the config (`relay.relay_id`, `registration.relay_id`) with the build's certificate as its floor, ours from the
+   * list. Before the card lists them.
    */
   void ExpectRelayIdentities(const HubSettings& settings);
   /**

@@ -200,10 +200,10 @@ jobs:
           # a node's registration / directory URLs derive from it.
           PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
           PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
-          # The prod relay's PeerId beside its origin (multi-relay MR008): the node's registration relay is expected
-          # to answer to it with the compiled URL.
-          PP_RELAY_PEER_ID_PROD: ${{ vars.PP_RELAY_PEER_ID_PROD || secrets.PP_RELAY_PEER_ID_PROD }}
-          PP_RELAY_PEER_ID_QA: ${{ vars.PP_RELAY_PEER_ID_QA || secrets.PP_RELAY_PEER_ID_QA }}
+          # The prod relay's id beside its origin (SIGNED_FORMATS § 3.3): the node's registration relay is expected
+          # to prove it with the compiled URL (its certificate: config/relay-certs/prod.cert).
+          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_QA: ${{ vars.PP_RELAY_ID_QA || secrets.PP_RELAY_ID_QA }}
           KIND: ${{ needs.guard.outputs.kind }}
         run: |
           set -euo pipefail
@@ -215,9 +215,9 @@ jobs:
             echo "::warning::PP_API_URL_PROD is empty: a publishing dogfood node needs registration.base_url in its config or PP_NODE_REGISTRATION_BASE_URL."
           fi
           if [[ "${KIND}" == "candidate" ]]; then
-            ./scripts/check/check_relay_peer_ids.sh release
+            ./scripts/check/check_relay_ids.sh release
           else
-            ./scripts/check/check_relay_peer_ids.sh dogfood
+            ./scripts/check/check_relay_ids.sh dogfood
           fi
           bash scripts/platform/pp_node_package_linux.sh all
 

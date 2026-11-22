@@ -10,18 +10,18 @@ namespace pbr {
 
 namespace {
 
-/** Relays given whole (our card's, the locker's) as our list: bounded (BoundOurRelays), each with its PeerId. */
-OurRelaysList ListOf(const std::vector<AccountCardRelay>& relays) {
+/** Relays given whole (our card's, the locker's) as our list: bounded (BoundOurRelays), each with its relay id. */
+OurRelaysList ListOf(const std::vector<RelayAddress>& relays) {
   std::vector<std::string> origins;
-  for (const AccountCardRelay& relay : relays) {
+  for (const RelayAddress& relay : relays) {
     origins.push_back(relay.origin);
   }
   OurRelaysList list;
   for (const std::string& origin : BoundOurRelays(origins)) {
-    const auto named = std::find_if(relays.begin(), relays.end(), [&origin](const AccountCardRelay& relay) {
-      return SameRelay(relay.origin, origin);
-    });
-    list.relays.push_back(OurRelayEntry{.origin = origin, .peer_id = named == relays.end() ? "" : named->peer_id});
+    const auto named = std::find_if(relays.begin(), relays.end(),
+                                    [&origin](const RelayAddress& relay) { return SameRelay(relay.origin, origin); });
+    list.relays.push_back(
+        OurRelayEntry{.origin = origin, .relay_id = named == relays.end() ? RelayId{} : named->relay_id});
   }
   return list;
 }
@@ -30,7 +30,7 @@ OurRelaysList ListOf(const std::vector<AccountCardRelay>& relays) {
 bool SameAddresses(const OurRelaysList& a, const OurRelaysList& b) {
   return std::equal(a.relays.begin(), a.relays.end(), b.relays.begin(), b.relays.end(),
                     [](const OurRelayEntry& x, const OurRelayEntry& y) {
-                      return SameRelay(x.origin, y.origin) && x.peer_id == y.peer_id;
+                      return SameRelay(x.origin, y.origin) && x.relay_id == y.relay_id;
                     });
 }
 
@@ -96,21 +96,21 @@ Roe<void> MyRelaysWorkflow::RequireMainDevice() const {
   return {};
 }
 
-Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, std::string& peer_id, bool& pinned_now) {
+Roe<void> MyRelaysWorkflow::CheckIdentity(const std::string& base_url, RelayId& relay_id, bool& pinned_now) {
   pinned_now = false;
   if (!ports_.check_identity) {
     return {};
   }
-  const AddIdentityCheck check = ports_.check_identity(base_url, peer_id);
+  const AddIdentityCheck check = ports_.check_identity(base_url, relay_id);
   switch (check.result) {
     case AddIdentityCheck::Result::Ok:
       pinned_now = check.pinned_now;
-      peer_id = check.peer_id;
+      relay_id = check.relay_id;
       return {};
     case AddIdentityCheck::Result::Unavailable:
       return Error(kIdentityUnavailable);
     case AddIdentityCheck::Result::Taken:
-      log().warning << "relay " << base_url << " is named for the identity of " << check.holder << "; not added";
+      log().warning << "relay " << base_url << " is the relay of ours at " << check.holder << "; not added";
       return Error(std::string(store_.List().Lists(check.holder) ? kIdentityTaken : kIdentityTakenKnown) + "|" +
                    RelayOriginHost(check.holder));
     case AddIdentityCheck::Result::Mismatch:
@@ -132,13 +132,13 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_b
   if (parsed.problem != RelayOriginProblem::None) {
     return Error(OriginProblemCode(parsed.problem));
   }
-  if (parsed.peer_id.empty() && !developer_build) {
-    return Error(kLinkHasNoId); // MR008: only its address names the PeerId it must answer to
+  if (parsed.relay_id.empty() && !developer_build) {
+    return Error(kLinkHasNoId); // MR008: only its address names the relay id it must prove
   }
   if (!IsPublicRelayOrigin(parsed.base_url, developer_build)) {
     return Error(kLocal); // before it is asked: the probe would reach into this device's network
   }
-  if (auto listed = WithRelayAdded(store_.List(), parsed.base_url, parsed.peer_id); !listed) {
+  if (auto listed = WithRelayAdded(store_.List(), parsed.base_url, parsed.relay_id); !listed) {
     return listed.error();
   }
   if (ports_.probe) {
@@ -147,12 +147,12 @@ Roe<void> MyRelaysWorkflow::Add(const std::string& typed, const bool developer_b
       return Error(kUnreachable);
     }
   }
-  std::string peer_id = parsed.peer_id;
+  RelayId relay_id = parsed.relay_id;
   bool pinned_now = false;
-  if (auto identified = CheckIdentity(parsed.base_url, peer_id, pinned_now); !identified) {
-    return identified; // nothing is signed for a relay that does not answer to its address
+  if (auto identified = CheckIdentity(parsed.base_url, relay_id, pinned_now); !identified) {
+    return identified; // nothing is signed for a relay that does not prove its address
   }
-  auto next = WithRelayAdded(store_.List(), parsed.base_url, peer_id);
+  auto next = WithRelayAdded(store_.List(), parsed.base_url, relay_id);
   auto committed = next ? Commit(*next, false) : Roe<void>(next.error());
   if (!committed) {
     if (pinned_now && ports_.drop_pin) {
@@ -222,7 +222,7 @@ Roe<void> MyRelaysWorkflow::MakePreferred(const std::string& origin) {
   return Commit(*next, true);
 }
 
-void MyRelaysWorkflow::FollowCard(const std::vector<AccountCardRelay>& card_relays) {
+void MyRelaysWorkflow::FollowCard(const std::vector<RelayAddress>& card_relays) {
   const Entered entered(*this);
   if (!entered.open) {
     return;
@@ -240,7 +240,7 @@ void MyRelaysWorkflow::FollowCard(const std::vector<AccountCardRelay>& card_rela
   (void)Commit(next, list.Preferred() != next.Preferred());
 }
 
-void MyRelaysWorkflow::Restore(const std::vector<AccountCardRelay>& relays) {
+void MyRelaysWorkflow::Restore(const std::vector<RelayAddress>& relays) {
   const Entered entered(*this);
   if (!entered.open || relays.empty()) {
     return;
@@ -383,10 +383,10 @@ OurRelaysStatus MyRelaysWorkflow::Status() const {
     const OurRelayEntry& entry = list.relays[i];
     OurRelayStatus relay{.origin = entry.origin, .preferred = i == 0, .registration = entry.registration};
     relay.identity_mismatch = ports_.identity_mismatch && ports_.identity_mismatch(entry.origin);
-    // What it answers to now (the build's for the org's relay, a first use's), else what the list kept.
-    relay.peer_id = ports_.peer_id_of ? ports_.peer_id_of(entry.origin) : std::string();
-    if (relay.peer_id.empty()) {
-      relay.peer_id = entry.peer_id;
+    // What it is expected to prove now (the build's for the org's relay, a first use's), else what the list kept.
+    relay.relay_id = ports_.relay_id_of ? ports_.relay_id_of(entry.origin) : RelayId{};
+    if (relay.relay_id.empty()) {
+      relay.relay_id = entry.relay_id;
     }
     relay.registration = ShownRegistration(entry.registration, i == 0, preferred, now_ms);
     if (const auto reach = reach_.find(RelayOriginKey(entry.origin)); reach != reach_.end()) {

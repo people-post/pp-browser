@@ -5,14 +5,14 @@ are in SIGNED_FORMATS; this page is who builds what, where it lands, and in whic
 
 ## Branches
 
-The old and new forms cannot read each other, so nothing lands on `main` piece by piece (main deploys the relay to qa,
-RC019). Each repo gets one integration branch; every work item is a PR into it, reviewed and merged there as it is
+The old and new forms cannot read each other, so nothing lands on `main` piece by piece (a tag on `main` deploys the relay to dev,
+RC021). Each repo gets one integration branch; every work item is a PR into it, reviewed and merged there as it is
 ready; merge day merges each integration branch into `main`.
 
 | Repo | Integration branch | Lands on main |
 |------|--------------------|---------------|
 | pp-browser | `cutover/signed-formats` | merge day, with the relay's |
-| pp-relay-apis | `cutover/signed-formats` | merge day (deploys qa) |
+| pp-relay-apis | `cutover/signed-formats` | merge day (Leo tags `dev/<date>.<n>`); then `release/1.0` is re-cut from `main` |
 | pp-cpp-mesh | none: DHT record v2 is a library release (`v10.0.0`, a breaking format), pinned on pp-browser's branch | before merge day |
 
 The integration branches are rebased on (or merge) `main` weekly, so they do not drift. CI runs on PRs into them.
@@ -33,12 +33,47 @@ The integration branches are rebased on (or merge) `main` weekly, so they do not
 | R2 | pp-relay-apis | Card v5 stored verbatim, KEM binding v2, grant v2, locker record v2 (§ 4) | `account-card.ts`, `repos/accounts.ddb.ts`, registration, `grant.ts`, messenger send, `crypto/locker.ts`, lockers | R1, W2, W3 |
 | R3 | pp-relay-apis | The certificate: the registry loads it (`RELAY_CERTIFICATE_SECRET_ID`, `RELAY_SIGNING_KEY_SECRET_ID`), checks it, serves `relay-identity` v2 and `client-compat`'s `relay_certificate_b64`; `scripts/relay-operator.mjs`; the local stack's 1-of-1 set | registry `relay-identity.ts`, `client-compat.ts`, shared `relay-identity.ts`, `scripts/`, `local-stack/` | R1, W5's vectors |
 | R4 | pp-relay-apis | The legacy routes removed (C2, its route half: `blobs/*`, `files/*`, `GET /search`, `llm_api_key`, `keys/rotate`, the pre-cutover sender mapping) and the one-time cutover data job (Q12) | `storage/src/routes.ts`, registry routes, `llm-credentials.ts`, `records.ts`, a job | W7 on main |
-| L | both | The app lab against the local stack on the integration branches, every suite; then against qa after merge day | — | everything |
+| R5 | pp-relay-apis | Support (the support worker) speaks the release-1 app ↔ app formats: envelope v4, account card v5 (its own and customers'), KEM binding v2, relay grant v2; its own card back on register. Its signed relay calls move to v4 with R1. Missed by the first plan (INVENTORY lists Support on the app's formats) | `packages/support-crypto`, `functions/support-worker` ingest/outbound | R2b, W1, W2 vectors |
+| L | both | The app lab against the local stack on the integration branches, every suite; then against dev after merge day and staging after its rc | — | everything |
 
-Infrastructure and keys, **Leo** (asked 2026-11-20; parallel to the work above): the certificate and signing-seed
-secrets and the registry's permission to read them (terraform); a qa operator set (2 of 3, or 1 of 1 until staging
-exists) and its certificate 1 before merge day; prod's set and certificate 1 before release day (§ 7 step 5);
-pp-node's fleet config naming the relay id (ansible) for pp-node 10.0.
+Infrastructure and keys, **Leo** (asked 2026-11-20; parallel to the work above; the list below, by environment).
+
+How they were split while built: R1 as **R1a** (`ext-area.ts`, `alg-id.ts`) and **R1b** (sign domains v4, after W6);
+R2 as **R2a** (grant v2, locker v2) and **R2b** (card v5, KEM binding v2, after W2). PRs into an integration branch
+run no CI (its items run the full suite locally); merged items land in batches, and the integration branch's push
+builds each batch once.
+
+### Infrastructure and keys, Leo
+
+The environments are RC009's, deployed by tag (RC021): **dev** (the relay's `main` env, the dev account; tag
+`dev/<date>.<n>` on `main`), **staging** (`release/vX.Y.Z-rc.<n>` on `release/X.Y`) and **prod** (`vX.Y.Z`). qa is
+retired. dev and staging are new and have no testers, so either is reset whenever the cutover needs it.
+
+What the merged R3, R4, R5 and W5 need, exactly (the relay's `docs/operators.md` has the steps and a worked example),
+in each of the relay's `main`, `staging` and `prod` envs (`modules/relay-env`):
+
+1. Per environment, two new secrets: `pp-relay-api/<env>/relay-signing-key` (standard base64 of a 32-byte seed) and
+   `pp-relay-api/<env>/relay-certificate` (the certificate's standard base64, `relay-operator.mjs combine` output).
+2. Registry variables `RELAY_SIGNING_KEY_SECRET_ID`, `RELAY_CERTIFICATE_SECRET_ID`, `RELAY_ID` (`relay:…`) and
+   `RELAY_ORIGINS` (the API bases exactly as clients use them, `https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID`
+   equals the certificate's audience. The support worker needs the same `RELAY_ID` (R5: it names its relay on
+   Support's card, and stops at start without it). IAM: `secretsmanager:GetSecretValue` on both secrets for the registry role
+   (and `kms:Decrypt` with a customer-managed key).
+3. Each environment's operator set and its certificate 1 (sequence 1, `expires_at` 0), in this order: **dev's** (1 of
+   1) before merge day; **staging's** (2 of 3, like prod's: it rehearses prod's ceremony) before the re-cut
+   `release/1.0`'s first candidate; **prod's** (2 of 3) before release day, certifying prod's current transport key and
+   a new signing seed. Without its certificate an environment's registry answers `503 relay_identity_unavailable` to
+   signed calls.
+4. pp-browser: the relay ids in CI variables `PP_RELAY_ID_DEV`, `PP_RELAY_ID_STAGING` and `PP_RELAY_ID_PROD`, the
+   certificates in `config/relay-certs/{dev,staging,prod}.cert` (until then builds fail closed against that
+   environment; the per-environment PeerId variables, `PP_RELAY_PEER_ID_*`, go: the relay id and certificate replace
+   them); pp-node 10.0's fleet config sets `registration.relay_id` per tier (ansible).
+5. The cutover data job (`packages/cutover-data`, dry run unless `--apply`, `--env main|staging|prod`): a role to run
+   it once per environment (dev on merge day, staging when the re-cut `release/1.0`'s first candidate deploys, prod on
+   release day; on dev and staging it rehearses prod's run) with DynamoDB scan/query/update/delete on `accounts` and
+   `messages`, and S3 delete on the locker and message-body prefixes.
+6. The deploy roles: drop qa's trust of `refs/heads/main` (`relay-api-lambda.tf`, `nodes.tf`), as RC021 retires qa. After merge day the CloudFront behaviours for the removed routes
+   (`keys/rotate`, `/search`, `blobs/*`, `files/*`) and `LLM_LEGACY_KEYS_ACCEPTED_UNTIL` can go.
 
 ## Order
 
@@ -46,9 +81,13 @@ pp-node's fleet config naming the relay id (ansible) for pp-node 10.0.
    **W7** to `main` meanwhile; **W4's mesh half** tagged `v10.0.0` and pinned on pp-browser's integration branch.
 2. **R1**, then R2 and R3, each reading pp-browser's vector files byte for byte; **R4** once W7 is on `main`.
 3. **L**: the whole app lab on the two integration branches against the local stack (1-of-1 operator set).
-4. **Merge day**, when Leo's qa secrets and certificate exist: pp-relay-apis then pp-browser integration branches into
-   `main` the same day; qa redeploys; testers update (old and new builds cannot talk). The lab runs against qa.
-5. **Release day** as SIGNED_FORMATS § 7 step 6.
+4. **Merge day**, when dev's secrets and certificate exist: pp-relay-apis then pp-browser integration branches into
+   `main` the same day; dev is reset and Leo tags `dev/<date>.<n>`; the data job runs on dev; the lab runs against dev.
+5. **Staging:** the relay's `release/1.0` (cut 2026-11-21 before the cutover; `release/v1.0.0-rc.1` never had testers)
+   is re-cut from `main`, so relay 1.0 is the cutover, and Leo tags `release/v1.0.0-rc.2` once staging's certificate
+   exists; staging is reset, the data job runs there as prod's rehearsal, and the lab runs against staging. pp-browser's
+   release branch is cut from `main` likewise. Testers start on release 1 here or on prod (RC017: they reinstall).
+6. **Release day** as SIGNED_FORMATS § 7 step 6: prod's operator set and certificate, prod's data job, `v1.0.0`.
 
 ## Status
 

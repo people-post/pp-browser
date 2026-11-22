@@ -324,9 +324,16 @@ bool ContactRefreshWorkflow::TakeRelayAnswer(Run& run, StoredAccountRow row) {
   if (PrimaryAccountIdFromHit(hit) != run.account_id) {
     return reject("it is for another account"); // asked for one account, answered for another (or for none)
   }
+  if (hit.keys_update_needed) {
+    // Keys of an algorithm (or a binding version) this build does not read: the account needs a newer app. Not bad
+    // keys, so not rejected for them; nothing of this answer is used, and the next relay is asked.
+    run.result.relay_keys_update_needed = true;
+    Log().info << "refresh: a relay's answer has keys this build does not read (update needed)";
+    return false;
+  }
   // Checked before anything is kept: an answer whose keys do not verify gives nothing, not even its card.
-  const bool carries_keys = NonEmpty(hit.signing_public_key_b64) || NonEmpty(hit.kem_public_key_b64) ||
-                            NonEmpty(hit.kem_binding_signature_b64);
+  const bool carries_keys =
+      NonEmpty(hit.signing_public_key_b64) || NonEmpty(hit.kem_public_key_b64) || NonEmpty(hit.kem_binding_b64);
   if (carries_keys && !DirectoryHitKeysVerify(hit)) {
     return reject("its keys do not verify against the Account ID");
   }
@@ -397,8 +404,8 @@ ContactRelayView ContactRefreshWorkflow::PreferredRelay(const Contact& contact) 
     std::lock_guard lock(mutex_);
     mismatch = identity_mismatch_;
   }
-  if (const std::string& peer_id = list.relays.front().peer_id;
-      !peer_id.empty() && mismatch && mismatch(account_id, view.origin, peer_id)) {
+  if (const RelayId& relay_id = list.relays.front().relay_id;
+      !relay_id.empty() && mismatch && mismatch(account_id, view.origin, relay_id)) {
     view.reach = ContactRelayView::Reach::IdentityMismatch;
     return view;
   }

@@ -1,5 +1,8 @@
 #include "app/node/NodeEnvOverlay.h"
 
+#include "foundation/crypto/RelayId.h"
+#include "foundation/platform/DeploymentProfile.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -113,20 +116,33 @@ std::string NodeRelayUrlKey(const std::string& url) {
 }
 
 std::string NodeRegistrationIdProblem(const ServiceEndpointConfig& registration, const bool developer_build) {
-  if (registration.base_url.empty() || !registration.peer_id.empty() || developer_build) {
+  if (registration.base_url.empty() || RelayId::Parse(registration.relay_id)) {
     return {};
   }
-  return "registration.peer_id (PP_NODE_REGISTRATION_PEER_ID) is not set for " + registration.base_url +
-         ": the node does not register there (set it to the PeerId after # in the relay's link)";
+  if (IsPendingRelayId(registration.relay_id)) {
+    return "registration.relay_id for " + registration.base_url +
+           " is the build's placeholder (\"pending\": that relay's operator set is not made yet): the node does not "
+           "register there (set registration.relay_id or PP_NODE_REGISTRATION_RELAY_ID to the relay:… after # in the "
+           "relay's link)";
+  }
+  if (!registration.relay_id.empty()) {
+    return "registration.relay_id (PP_NODE_REGISTRATION_RELAY_ID) for " + registration.base_url +
+           " is not a relay ID (relay: and 43 base64url characters): the node does not register there";
+  }
+  if (developer_build) {
+    return {};
+  }
+  return "registration.relay_id (PP_NODE_REGISTRATION_RELAY_ID) is not set for " + registration.base_url +
+         ": the node does not register there (set it to the relay:… after # in the relay's link)";
 }
 
-void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
-                                   const std::string& compiled_prod_peer_id) {
-  if (!registration.peer_id.empty() || compiled_prod_relay.empty()) {
+void DefaultNodeRegistrationRelayId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
+                                    const std::string& compiled_prod_relay_id) {
+  if (!registration.relay_id.empty() || compiled_prod_relay.empty()) {
     return;
   }
   if (NodeRelayUrlKey(registration.base_url) == NodeRelayUrlKey(compiled_prod_relay)) {
-    registration.peer_id = compiled_prod_peer_id;
+    registration.relay_id = compiled_prod_relay_id;
   }
 }
 
@@ -197,10 +213,10 @@ void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
   }
   if (const char* registration = EnvOrNull("PP_NODE_REGISTRATION_BASE_URL")) {
     config.registration.base_url = registration;
-    config.registration.peer_id.clear(); // the file's (or the build's) PeerId is another relay's
+    config.registration.relay_id.clear(); // the file's (or the build's) relay id is another relay's
   }
-  if (const char* peer_id = EnvOrNull("PP_NODE_REGISTRATION_PEER_ID")) {
-    config.registration.peer_id = peer_id;
+  if (const char* relay_id = EnvOrNull("PP_NODE_REGISTRATION_RELAY_ID")) {
+    config.registration.relay_id = relay_id;
   }
   if (const char* content_sha256 = EnvOrNull("PP_NODE_RELAY_CONTENT_SHA256")) {
     if (auto parsed = ParsePpNodeBoolEnv(content_sha256)) {

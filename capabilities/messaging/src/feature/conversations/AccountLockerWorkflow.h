@@ -98,12 +98,18 @@ public:
   struct Fetched {
     AccountLockerState state;
     uint64_t version = 0;
+    /**
+     * A copy a newer app wrote (a newer record or state version, an unknown algorithm or critical entry) was skipped:
+     * this device reads the newest copy it can, and does not publish over the newer one.
+     */
+    bool newer_format = false;
   };
   /**
    * The state a recovery seed's locker holds, verified and opened: the newest valid copy among the provider's and
    * `saved_copies` (exported locker files' text) — never older than the highest version this device has seen of
    * that locker, which it raises; nullopt when there is none. With saved copies, an unreachable provider is not an
-   * error; a file that is not a saved account is.
+   * error; a file that is not a saved account is. Only copies a newer app wrote: `AppError::NewerFormat` ("update
+   * needed").
    */
   Roe<std::optional<Fetched>> Fetch(const ByteVector& recovery_seed, const std::vector<std::string>& saved_copies = {});
 
@@ -164,7 +170,7 @@ private:
  */
 Roe<void> CanRenameDevice(const OwnDeviceList& list, const std::string& peer_id);
 
-/** Provider text ↔ snapshot bytes (hex id, base64 fields). */
+/** Provider text ↔ snapshot bytes (`account_locker::RecordToJson` / `RecordFromJson`: a newer record is NewerFormat). */
 LockerRecord LockerRecordFromSnapshot(const LockerSnapshot& snapshot);
 Roe<LockerSnapshot> LockerSnapshotFromRecord(const LockerRecord& record);
 /** The record inside an exported locker file; an error when the text is not one. */

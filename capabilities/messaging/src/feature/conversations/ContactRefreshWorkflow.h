@@ -60,6 +60,11 @@ struct ContactRefreshResult {
    * contact's Account ID, or it carried neither. Nothing of it was used (Outcome::Rejected).
    */
   bool relay_keys_rejected = false;
+  /**
+   * A relay's answer named keys of an algorithm (or a KEM binding version) this build does not read (the row's
+   * `keys_update_needed`): the contact needs a newer app here, not a forgery. Nothing of it was used (Rejected).
+   */
+  bool relay_keys_update_needed = false;
   /** The contact as stored after the refresh; empty when it is gone. */
   std::optional<Contact> contact;
 
@@ -150,11 +155,11 @@ public:
   /** Our relays, preferred first, then our other directories: asked after the contact's own. Any thread. */
   void SetOurRelays(std::vector<std::string> origins);
   /**
-   * Whether the contact's card entry `{origin, peer_id}` does not match the relay (our pins disagree, or a send found
-   * it refused, MR007): the page says *identity doesn't match*. None: never. Any thread.
+   * Whether the contact's card entry `{origin, relay_id}` does not match the relay (our pins disagree, or a send found
+   * its audience refused, MR007/MR008): the page says *identity doesn't match*. None: never. Any thread.
    */
   using IdentityMismatchFn =
-      std::function<bool(const std::string& account_id, const std::string& origin, const std::string& peer_id)>;
+      std::function<bool(const std::string& account_id, const std::string& origin, const RelayId& relay_id)>;
   void SetIdentityMismatch(IdentityMismatchFn mismatch);
 
   /**

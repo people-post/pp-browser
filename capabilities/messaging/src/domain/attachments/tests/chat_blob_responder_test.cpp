@@ -1,5 +1,6 @@
 #include "lib/content/testing/InMemoryObjectIndex.h"
 #include "lib/people/DevicePeerId.h"
+#include "lib/people/CardKeys.h"
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -50,7 +51,8 @@ public:
     requester_account = requester.Get()->account_id;
     requester_peer = *DevicePeerIdFromKey(requester.Get()->public_key_b64);
     PeerSigningKeyRecord key;
-    key.signing_public_key_b64 = requester.Get()->account_signing_public_key_b64;
+    key.signing_public_key_b64 =
+        TypedKeyB64(pp::BlobKind::kSignaturePublicKey, requester.Get()->account_signing_public_key_b64).value();
     key.source = "test";
     keys.Put("account", requester_account, key);
     {

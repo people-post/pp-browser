@@ -6,6 +6,9 @@
 #include "lib/delivery/HttpRelayClient.h"
 #include "lib/net/RelayOrigins.h"
 
+#include "foundation/crypto/TypedBlob.h"
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -56,16 +59,26 @@ Error IdentityChanged() {
   return AppError::Auth(Err::Auth::RelayIdentityMismatch, "presented another identity");
 }
 
-/** The PeerId a card names for `origin` in these tests (MR007). */
-std::string PeerIdOf(const std::string& origin) {
-  return "Qm:" + RelayOriginKey(origin);
+/** The relay id a card names for `origin` (each origin its own). */
+RelayId RelayIdOf(const std::string& origin) {
+  ByteVector raw(kRelayIdBytes, 0);
+  const std::string key = RelayOriginKey(origin);
+  for (size_t i = 0; i < key.size(); ++i) {
+    raw[i % raw.size()] = static_cast<uint8_t>(raw[i % raw.size()] * 31 + static_cast<uint8_t>(key[i]));
+  }
+  return RelayId::FromRaw(raw).value();
 }
 
-/** A card's relay list: each origin with the PeerId the card names for it. */
+/** The audience a test client signs for: named after the card's relay id. */
+std::string PeerIdOf(const std::string& origin) {
+  return "Qm:" + RelayIdOf(origin).ToString();
+}
+
+/** A card's relay list: each origin with the relay id the card names for it. */
 std::vector<AccountCardRelay> Card(const std::vector<std::string>& origins) {
   std::vector<AccountCardRelay> relays;
   for (const std::string& origin : origins) {
-    relays.push_back(AccountCardRelay{.origin = origin, .peer_id = PeerIdOf(origin)});
+    relays.push_back(AccountCardRelay{.origin = origin, .relay_id = RelayIdOf(origin)});
   }
   return relays;
 }
@@ -130,12 +143,11 @@ protected:
   void SetUp() override {
     coordinator_.SetClock([this]() { return now_ms_; });
     coordinator_.SetOurRelays({{kOurs, Relay(kOurs)}, {kOurOther, Relay(kOurOther)}});
-    coordinator_.SetForeignClients(
-        [this](const std::string& origin, const std::string& peer_id) -> std::shared_ptr<IRelayClient> {
-          made_.push_back(origin);
-          made_for_.push_back(peer_id);
-          return Relay(origin);
-        });
+    coordinator_.SetForeignClients([this](const AccountCardRelay& relay) -> std::shared_ptr<IRelayClient> {
+      made_.push_back(relay.origin);
+      made_for_.push_back("Qm:" + relay.relay_id.ToString());
+      return Relay(relay.origin);
+    });
     RelayRoutes routes;
     routes.relays_of = [this](const std::string& account) {
       return account == kBob ? Card(bobs_relays_) : std::vector<AccountCardRelay>{};
@@ -341,8 +353,8 @@ TEST_F(RelaySendCoordinatorTest, ARelayOfOursOnAContactsListIsSentAsOurs) {
   EXPECT_TRUE(made_.empty()) << "the same relay, written differently: our registered client";
 }
 
-// MR007-SEND: a send into a contact's relay is signed for the PeerId its card names.
-TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsPeerId) {
+// MR007-SEND, SIGNED_FORMATS § 3.4: a send into a contact's relay gets a client for the relay id its card names.
+TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsRelayId) {
   bobs_relays_ = {kBobsA};
   ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
   EXPECT_EQ(made_for_, std::vector<std::string>({PeerIdOf(kBobsA)}));
@@ -352,8 +364,8 @@ TEST_F(RelaySendCoordinatorTest, AContactsRelayIsSignedForTheCardsPeerId) {
 // skipped relay is not marked unhealthy; the contact page hears of it.
 TEST_F(RelaySendCoordinatorTest, ACardEntryConflictingWithAPinIsSkipped) {
   bobs_relays_ = {kBobsA, kBobsB};
-  coordinator_.SetCardRelayCheck([](const std::string& origin, const std::string&) {
-    return SameRelay(origin, kBobsA) ? CardRelayCheck::Mismatch : CardRelayCheck::Usable;
+  coordinator_.SetCardRelayCheck([](const AccountCardRelay& relay) {
+    return SameRelay(relay.origin, kBobsA) ? CardRelayCheck::Mismatch : CardRelayCheck::Usable;
   });
   ASSERT_TRUE(coordinator_.Send(EnvelopeTo(kBob)));
   EXPECT_EQ(Tried(), std::vector<std::string>({kBobsB}));
@@ -439,14 +451,14 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   });
   const std::string bobs_origin = bobs.Origin() + "/api/relay";
   RelaySendCoordinator coordinator;
-  auto signer = [](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); };
+  const RelayAuthSigner signer = test::FakeRelaySigner();
+  const std::string held_key = Base64Encode(ByteVector(kMlDsa65PublicKeyBytes, 0x42)); // as the identity holds it
   coordinator.SetOurRelays({{"http://127.0.0.1:9/api/relay", std::make_shared<HttpRelayClient>("")}});
-  coordinator.SetForeignClients([&](const std::string& origin, const std::string& peer_id) {
-    auto client = std::make_shared<HttpRelayClient>(origin);
+  coordinator.SetForeignClients([&](const AccountCardRelay& relay) {
+    auto client = std::make_shared<HttpRelayClient>(relay.origin);
     client->SetAuthSigner(signer);
-    client->SetAudience(std::make_shared<FixedRelayAudience>(peer_id));
-    client->SetSendHooks(
-        {.grant_for = {}, .grant_refused = {}, .sender_public_key = [] { return std::string("a2V5"); }});
+    client->SetAudience(std::make_shared<FixedRelayAudience>("Qm:" + relay.relay_id.ToString()));
+    client->SetSendHooks({.grant_for = {}, .grant_refused = {}, .sender_public_key = [held_key] { return held_key; }});
     return client;
   });
   coordinator.SetRoutes(
@@ -464,7 +476,9 @@ TEST(RelaySendCoordinatorHttpTest, AForeignRelayGetsOurKeyWhenItAsksForIt) {
   std::lock_guard lock(mu);
   ASSERT_EQ(bodies.size(), 2u);
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64"));
-  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""), "a2V5");
+  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""),
+            Base64Encode(TypedSigningPublicKey(Base64Decode(held_key).value()).value()))
+      << "typed (SIGNED_FORMATS § 2.8)";
   EXPECT_EQ(bodies[1].getString("audience").value_or(""), PeerIdOf(bobs_origin)) << "the card's PeerId (MR007)";
 }
 

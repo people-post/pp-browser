@@ -78,7 +78,7 @@ bool ControlLaneCarriesCard(bool opens_session, bool asked, const std::vector<st
  * A signed control-lane envelope carrying `control` (an identified system message): route
  * kRelayRouteControl, unsequenced (seq 0), its own relay stream; one record with `params.copies` — the same
  * plaintext sealed in each copy's session (M024: a copy per device of the peer's, or the account copy). `sign`
- * signs the envelope's sign bytes with this device's key.
+ * signs the envelope's sign bytes with this device's key (raw: EnvelopeSigner::Sign types the signature).
  */
 Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params, const ThreadMessage& control,
                                             const std::function<Roe<std::string>(const std::vector<uint8_t>&)>& sign);

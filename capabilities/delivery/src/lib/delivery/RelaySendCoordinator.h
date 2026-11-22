@@ -62,10 +62,12 @@ public:
     std::string origin;
     std::shared_ptr<IRelayClient> client;
   };
-  /** A client for a relay not ours, signing for `peer_id` (empty: none — nothing is signed for an unnamed relay). */
-  using ForeignClientFactory =
-      std::function<std::shared_ptr<IRelayClient>(const std::string& origin, const std::string& peer_id)>;
-  using CardRelayCheckFn = std::function<CardRelayCheck(const std::string& origin, const std::string& peer_id)>;
+  /**
+   * A client for a relay not ours, signing for the audience its entry proves: its relay id's certificate
+   * (RelayPins::ContactAudience). None named: no client — nothing is signed for an unnamed relay.
+   */
+  using ForeignClientFactory = std::function<std::shared_ptr<IRelayClient>(const AccountCardRelay& relay)>;
+  using CardRelayCheckFn = std::function<CardRelayCheck(const AccountCardRelay& relay)>;
 
   static constexpr size_t kMaxForeignClients = 16;
   /** How long a relay that refused a card's PeerId is skipped for that recipient (MR007). */
@@ -81,7 +83,7 @@ public:
   /** Clients for relays not ours; the ones made so far are dropped (their signer or hooks changed). */
   void SetForeignClients(ForeignClientFactory factory);
   void SetRoutes(RelayRoutes routes);
-  /** How a card's `{origin, peer_id}` stands against our pins (RelayPins::CheckCardRelay); none: always usable. */
+  /** How a card's (or locator's) entry stands against our pins (RelayPins::CheckCardRelay); none: always usable. */
   void SetCardRelayCheck(CardRelayCheckFn check);
   /**
    * A send to `recipient` found its relay at `origin` unusable for the PeerId its card names (a pin mismatch, or the

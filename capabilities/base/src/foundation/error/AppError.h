@@ -147,9 +147,10 @@ enum class Blob : int32_t {
 };
 
 /**
- * A format refused for its version, not because it is broken: the writer is a newer app. Read after the object's
- * authenticity is known (a verified signature, an opened AEAD), so it is never a forgery or a decryption failure:
- * the receiver says "update needed" (ReceiveFailure::NeedsUpdate) and moves on.
+ * A format refused for its version, not because it is broken: the writer is a newer app. Never a forgery or a
+ * decryption failure: the receiver says "update needed" (ReceiveFailure::NeedsUpdate) and moves on. For a signed
+ * object the receiver's order says when (docs/contracts/SIGNED_EXTENSIONS.md, `foundation/crypto/SignedReceive.h`): a
+ * newer outside version or an unknown algorithm id before verifying, an unknown critical extension only after.
  */
 enum class Format : int32_t {
   Generic = 0,

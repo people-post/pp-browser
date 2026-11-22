@@ -3,6 +3,7 @@
 #include "lib/people/AccountCard.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
+#include "common/ExtArea.h"
 #include "common/Value.h"
 
 #include <cstdint>
@@ -30,7 +31,8 @@ enum class GroupChangeKind : uint8_t { Add, Leave, Remove, Rename, LinkAdd, Link
  * | `link_add`    | `link_id`, `secret_hash`, `expires_at`, `max_uses` (0: no limit)           |
  * | `link_revoke` | `link_id`                                                                  |
  *
- * Fields a kind does not carry are left empty; a change carrying one does not pass CheckShape.
+ * Fields a kind does not carry are left empty; a change carrying one does not pass CheckShape. Roster change v2
+ * (SIGNED_FORMATS § 2.5): JSON `change_version: 2`.
  */
 struct GroupChange {
   std::string group_id;
@@ -60,11 +62,13 @@ struct GroupChange {
 
   /** The signer's account card, carried when the receiver may lack it (not signed: it proves itself). */
   std::optional<AccountCard> signer_card;
-  /** ML-DSA-65 by the signing device's key over SignBytes, base64. */
+  /** The signing device key's typed signature over SignBytes, base64. */
   std::string signature_b64;
+  /** The signed extension area (`ext_b64`): none is defined at release 1; a received change keeps its entries. */
+  pp::ExtArea ext;
 };
 
-/** Signs bytes with this device's key (base64 out), as a device signs its envelopes. */
+/** Signs bytes with this device's key (base64 out, a bare ML-DSA-65 signature or a typed one), as a device signs its envelopes. */
 using GroupDeviceSign = std::function<Roe<std::string>(const ByteVector&)>;
 
 namespace group_change {
@@ -77,10 +81,13 @@ inline constexpr size_t kMaxTitleBytes = 256;
 std::string KindToString(GroupChangeKind kind);
 std::optional<GroupChangeKind> KindFromString(const std::string& value);
 
+/** The change's version, outside (`change_version`) and inside (the byte after the domain): release 1's only one. */
+inline constexpr uint8_t kChangeVersion = 2;
+
 /**
- * The bytes the device signs: tag `pp-browser:group-roster-change-v1`, group, base epoch (u64), signer, signer
- * device, at (u64), kind, then the kind's body (DESIGN § Change). Strings are a u32 BE length then the bytes;
- * integers u64 BE; id lists a u64 BE count then each id, sorted.
+ * The bytes the device signs (SIGNED_FORMATS § 2.5): `"pp-browser:group-roster-change" 00 ‖ u8 2`, group, base epoch
+ * (u64), signer, signer device, at (u64), kind, then the kind's body (DESIGN § Change), then the extension area.
+ * Strings are a u32 BE length then the bytes; integers u64 BE; id lists a u64 BE count then each id, sorted.
  */
 ByteVector SignBytes(const GroupChange& change);
 
@@ -96,13 +103,22 @@ Roe<GroupChange> Sign(GroupChange change, const GroupDeviceSign& sign);
 /**
  * The change verifies against `card`: the card proves itself (VerifyAccountCard at `now_ms`) for the signer's
  * account (its account id derives from the card's account key), lists the signing device, and that device's
- * signing key verifies the signature.
+ * signing key verifies the signature (VerifyDeviceSignature).
  */
 Roe<void> Verify(const GroupChange& change, const AccountCard& card, int64_t now_ms);
-/** Only the signature, against `device` (a card entry already proved for the signer). */
+/**
+ * Steps 3–5 of the receiver's order against `device` (a card entry already proved for the signer): the key's and the
+ * signature's algorithm ids (unknown: `AppError::NewerFormat`), the signature (a forgery otherwise), an unknown
+ * critical entry (NewerFormat).
+ */
 Roe<void> VerifyDeviceSignature(const GroupChange& change, const AccountCardDevice& device);
 
 Object ToJson(const GroupChange& change);
+/**
+ * Steps 1–3 of the receiver's order: `change_version` first (missing or older: refused; newer:
+ * `AppError::NewerFormat`, nothing else read), the fields and the area (a kind this build does not know is
+ * NewerFormat: its body, and so its signed bytes, are a newer app's), the signature's algorithm id.
+ */
 Roe<GroupChange> FromJson(const Object& json);
 
 /**

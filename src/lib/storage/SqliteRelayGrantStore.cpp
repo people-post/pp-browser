@@ -2,6 +2,8 @@
 
 #include "lib/storage/SqliteChatStoreGate.h"
 
+#include "crypto/SodiumUtil.h"
+
 #include <sqlite3.h>
 
 #include <memory>
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS relay_grants (
   sender_account TEXT NOT NULL,
   issued_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
+  ext_b64 TEXT NOT NULL DEFAULT '',
   signature TEXT NOT NULL,
   confirmed INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (direction, peer_account)
@@ -41,6 +44,28 @@ struct StmtCloser {
 std::string ColumnText(sqlite3_stmt* stmt, const int column) {
   const unsigned char* text = sqlite3_column_text(stmt, column);
   return text ? reinterpret_cast<const char*>(text) : std::string();
+}
+
+/** The grant's extension entries as stored (`ext_b64`: the entries in standard base64, "" for none). */
+std::string ExtText(const pp::ExtArea& ext) {
+  return ext.empty() ? std::string() : pp::Base64Encode(ext.EncodeEntries());
+}
+
+/** A stored grant's columns 0–5 (recipient, sender, issued, expires, ext, signature): what was kept, read back. */
+RelayGrant GrantColumns(sqlite3_stmt* stmt) {
+  RelayGrant grant;
+  grant.recipient_account_id = ColumnText(stmt, 0);
+  grant.sender_account_id = ColumnText(stmt, 1);
+  grant.issued_at = sqlite3_column_int64(stmt, 2);
+  grant.expires_at = sqlite3_column_int64(stmt, 3);
+  // Written by this store from a grant that read: it decodes; a damaged row reads as no entries.
+  if (auto entries = pp::Base64Decode(ColumnText(stmt, 4)); entries && !entries->empty()) {
+    if (auto ext = pp::ExtArea::DecodeEntries(*entries)) {
+      grant.ext = std::move(ext.value());
+    }
+  }
+  grant.signature = ColumnText(stmt, 5);
+  return grant;
 }
 
 } // namespace
@@ -81,8 +106,8 @@ Roe<std::optional<IRelayGrantStore::Issued>> SqliteRelayGrantStore::Get(const ch
   std::unique_ptr<sqlite3, DbCloser> db(*opened);
   sqlite3_stmt* raw = nullptr;
   if (sqlite3_prepare_v2(db.get(),
-                         "SELECT recipient_account, sender_account, issued_at, expires_at, signature, confirmed "
-                         "FROM relay_grants WHERE direction = ?1 AND peer_account = ?2",
+                         "SELECT recipient_account, sender_account, issued_at, expires_at, ext_b64, signature, "
+                         "confirmed FROM relay_grants WHERE direction = ?1 AND peer_account = ?2",
                          -1, &raw, nullptr) != SQLITE_OK) {
     sqlite3_finalize(raw);
     return Error("relay_grants select prepare failed");
@@ -98,12 +123,8 @@ Roe<std::optional<IRelayGrantStore::Issued>> SqliteRelayGrantStore::Get(const ch
     return Error("relay_grants select failed");
   }
   Issued row;
-  row.grant.recipient_account_id = ColumnText(raw, 0);
-  row.grant.sender_account_id = ColumnText(raw, 1);
-  row.grant.issued_at = sqlite3_column_int64(raw, 2);
-  row.grant.expires_at = sqlite3_column_int64(raw, 3);
-  row.grant.signature = ColumnText(raw, 4);
-  row.confirmed = sqlite3_column_int(raw, 5) != 0;
+  row.grant = GrantColumns(raw);
+  row.confirmed = sqlite3_column_int(raw, 6) != 0;
   return std::optional<Issued>(std::move(row));
 }
 
@@ -121,13 +142,13 @@ Roe<void> SqliteRelayGrantStore::Put(const char* direction, const std::string& p
   const char* sql =
       only_if_newer
           ? "INSERT INTO relay_grants (direction, peer_account, recipient_account, sender_account, issued_at, "
-            "expires_at, signature, confirmed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) "
+            "expires_at, signature, confirmed, ext_b64) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) "
             "ON CONFLICT (direction, peer_account) DO UPDATE SET recipient_account = excluded.recipient_account, "
             "sender_account = excluded.sender_account, issued_at = excluded.issued_at, "
-            "expires_at = excluded.expires_at, signature = excluded.signature, confirmed = excluded.confirmed "
-            "WHERE excluded.issued_at > relay_grants.issued_at"
+            "expires_at = excluded.expires_at, signature = excluded.signature, confirmed = excluded.confirmed, "
+            "ext_b64 = excluded.ext_b64 WHERE excluded.issued_at > relay_grants.issued_at"
           : "INSERT OR REPLACE INTO relay_grants (direction, peer_account, recipient_account, sender_account, "
-            "issued_at, expires_at, signature, confirmed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+            "issued_at, expires_at, signature, confirmed, ext_b64) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
   sqlite3_stmt* raw = nullptr;
   if (sqlite3_prepare_v2(db.get(), sql, -1, &raw, nullptr) != SQLITE_OK) {
     sqlite3_finalize(raw);
@@ -142,6 +163,8 @@ Roe<void> SqliteRelayGrantStore::Put(const char* direction, const std::string& p
   sqlite3_bind_int64(raw, 6, grant.expires_at);
   sqlite3_bind_text(raw, 7, grant.signature.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(raw, 8, confirmed ? 1 : 0);
+  const std::string ext = ExtText(grant.ext);
+  sqlite3_bind_text(raw, 9, ext.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(raw) != SQLITE_DONE) {
     return Error("relay_grants upsert failed");
   }
@@ -194,8 +217,8 @@ Roe<std::vector<RelayGrant>> SqliteRelayGrantStore::AllReceived() {
   std::unique_ptr<sqlite3, DbCloser> db(*opened);
   sqlite3_stmt* raw = nullptr;
   if (sqlite3_prepare_v2(db.get(),
-                         "SELECT recipient_account, sender_account, issued_at, expires_at, signature FROM relay_grants "
-                         "WHERE direction = ?1 ORDER BY peer_account",
+                         "SELECT recipient_account, sender_account, issued_at, expires_at, ext_b64, signature "
+                         "FROM relay_grants WHERE direction = ?1 ORDER BY peer_account",
                          -1, &raw, nullptr) != SQLITE_OK) {
     sqlite3_finalize(raw);
     return Error("relay_grants list prepare failed");
@@ -205,13 +228,7 @@ Roe<std::vector<RelayGrant>> SqliteRelayGrantStore::AllReceived() {
   std::vector<RelayGrant> all;
   int rc = SQLITE_ROW;
   while ((rc = sqlite3_step(raw)) == SQLITE_ROW) {
-    RelayGrant grant;
-    grant.recipient_account_id = ColumnText(raw, 0);
-    grant.sender_account_id = ColumnText(raw, 1);
-    grant.issued_at = sqlite3_column_int64(raw, 2);
-    grant.expires_at = sqlite3_column_int64(raw, 3);
-    grant.signature = ColumnText(raw, 4);
-    all.push_back(std::move(grant));
+    all.push_back(GrantColumns(raw));
   }
   if (rc != SQLITE_DONE) {
     return Error("relay_grants list failed");

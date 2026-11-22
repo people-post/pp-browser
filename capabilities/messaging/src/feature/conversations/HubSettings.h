@@ -36,12 +36,19 @@ struct HubSettings {
    */
   bool developer_relays = false;
   /**
-   * The org's relay (and registration URL) may be pinned on its first identity answer when the build or config names
-   * no PeerId for it (multi-relay MR008 item 4): a developer build, or the compiled prod / qa backend of a build that
-   * ships none (dogfood, warned). Off — a release build's custom backend or PP_BROWSER_ORIGIN without `relay.peer_id`
-   * (`registration.peer_id`): that relay is not used.
+   * The org's relay (and registration URL) may be pinned on its first valid certificate when the build or config names
+   * no relay id for it (multi-relay MR008 item 4): a developer build, or the compiled prod / qa backend of a build that
+   * ships none (dogfood, warned). Off — a release build's custom backend or PP_BROWSER_ORIGIN without `relay.relay_id`
+   * (`registration.relay_id`): that relay is not used.
    */
   bool org_first_use = false;
+  /**
+   * The build names a placeholder for the org relay's id (DeploymentProfile kPendingRelayId: its operator set is not
+   * made yet): it fails closed — the org's relay is not used and never pinned on first use, in any build.
+   */
+  bool org_relay_pending = false;
+  /** The build's certificate for the org's relay (standard base64; "" none): the floor its pins start from (Q10). */
+  std::string org_relay_certificate_b64;
 };
 
 } // namespace pbr

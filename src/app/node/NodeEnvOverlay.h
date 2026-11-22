@@ -29,29 +29,31 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   PP_NODE_CAPACITY_LINKS / _RESERVATIONS / _BRIDGES / _GROUP_CALLS   (mesh.capacity; a positive count)
  *   PP_NODE_ADVERTISE_MULTIADDRS
  *   PP_NODE_MESH_PUBLISH
- *   PP_NODE_REGISTRATION_BASE_URL  (clears registration.peer_id: another relay's)
- *   PP_NODE_REGISTRATION_PEER_ID   (registration.peer_id: the PeerId that relay answers to, multi-relay MR008)
+ *   PP_NODE_REGISTRATION_BASE_URL  (clears registration.relay_id: another relay's)
+ *   PP_NODE_REGISTRATION_RELAY_ID  (registration.relay_id: the relay id that relay proves, `relay:…`, MR008)
  *   PP_NODE_RELAY_CONTENT_SHA256   (relay.content_sha256: send x-amz-content-sha256 on relay POST/PUT)
  *   (PP_NODE_IDENTITY_SEED is applied in NodeBootstrap, not here)
- * NodeBootstrap then defaults the registration relay's PeerId (DefaultNodeRegistrationPeerId).
+ * NodeBootstrap then defaults the registration relay's id (DefaultNodeRegistrationRelayId).
  */
 void ApplyPpNodeConfigEnvOverlays(AppConfig& config);
 
 /**
- * The relay the node registers at is expected to answer to `registration.peer_id` (MR008); empty while it is the
- * compiled prod registration URL (`compiled_prod_relay`, the compiled origin + /api/relay): the compiled prod relay's
- * PeerId. Another URL without one keeps none (the node pins that relay's first answer, with a warning).
+ * The relay the node registers at is expected to prove `registration.relay_id` (MR008, SIGNED_FORMATS § 3.3); empty
+ * while it is the compiled prod registration URL (`compiled_prod_relay`, the compiled origin + /api/relay): the
+ * compiled prod relay's id (`pending` while its operator set is not made: the node does not register). Another URL
+ * without one keeps none (a developer build pins that relay's first valid certificate, with a warning).
  */
-void DefaultNodeRegistrationPeerId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
-                                   const std::string& compiled_prod_peer_id);
+void DefaultNodeRegistrationRelayId(ServiceEndpointConfig& registration, const std::string& compiled_prod_relay,
+                                    const std::string& compiled_prod_relay_id);
 
 /** A relay base URL as the node compares it: trimmed, no trailing `/`, scheme and host lower case, no default port. */
 std::string NodeRelayUrlKey(const std::string& url);
 
 /**
- * Why the node may not register at `registration` (MR008 item 5): a registration URL with no `peer_id` (after
- * DefaultNodeRegistrationPeerId) outside a developer build — the message names the setting; "" when it may (or there
- * is no registration URL). A developer build pins that relay on its first answer instead, warned.
+ * Why the node may not register at `registration` (MR008 item 5): a registration URL whose `relay_id` (after
+ * DefaultNodeRegistrationRelayId) is the build's placeholder or not a relay id (any build), or is empty outside a
+ * developer build — the message names the setting; "" when it may (or there is no registration URL). A developer
+ * build pins that relay on its first valid certificate instead, warned.
  */
 std::string NodeRegistrationIdProblem(const ServiceEndpointConfig& registration, bool developer_build);
 

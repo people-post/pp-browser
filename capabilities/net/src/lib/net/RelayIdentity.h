@@ -1,17 +1,24 @@
 #pragma once
 
+#include "foundation/crypto/RelayId.h"
+
 #include "common/Error.h"
 
+#include <cstdint>
 #include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** A relay's identity (multi-relay MR007): its ML-DSA-65 key and the PeerId derived from it, as a pp-node's. */
+/**
+ * What a relay says of itself (`GET /v1/relay-identity` v2; release-compatibility SIGNED_FORMATS § 3.4): its relay id
+ * and its certificate. Neither is taken on its word: the certificate proves the relay id and the transport PeerId
+ * (RelayCertificate.h, RelayPins), so the answer itself needs no signature.
+ */
 struct RelayIdentity {
-  std::string peer_id;
-  /** Standard (padded) base64 of the raw 1952-byte key. */
-  std::string public_key_b64;
+  RelayId relay_id;
+  /** Standard base64 of the certificate blob (RelayCertificate.h); not checked here. */
+  std::string certificate_b64;
 
   bool operator==(const RelayIdentity&) const = default;
 };
@@ -20,11 +27,16 @@ struct RelayIdentity {
 inline constexpr const char kRelayIdentityUnavailable[] = "relay_identity_unavailable";
 inline constexpr const char kRelayIdentityInvalid[] = "relay_identity_invalid";
 
+/** The answer's `schema_version`: 2 from the cutover (1 named a PeerId and a key, and is not read). */
+inline constexpr int64_t kRelayIdentitySchemaVersion = 2;
+
 /**
- * The body of `GET /v1/relay-identity` (docs/contracts/SERVICE_ENDPOINTS.md § Relay identity), taken only when
- * `schema_version` is 1, `signature_alg` is `ml-dsa-65`, `public_key_b64` is canonical base64 of 1952 bytes, and the
- * key derives `peer_id` (pp::PeerIdFromMlDsaPublicKey). Unknown keys are ignored. Anything else:
- * kRelayIdentityInvalid (Err::Network::RelayIdentityUnavailable, as no identity). Unsigned on purpose (MR007).
+ * The body of `GET /v1/relay-identity` (docs/contracts/SERVICE_ENDPOINTS.md § Relay identity):
+ * `{ "schema_version": 2, "relay_id": "relay:…", "certificate_b64": "…" }`, taken when `schema_version` is 2 or
+ * higher (T15: a newer one is read for these fields), `relay_id` is a relay id's written form and `certificate_b64` a
+ * non-empty string. Unknown keys are ignored. Anything else (version 1 or none: an older relay) is
+ * kRelayIdentityInvalid (Err::Network::RelayIdentityUnavailable, as no identity). The certificate is checked by
+ * whoever takes it (RelayPins: against the relay id it expects, and that it lists the origin asked).
  */
 Roe<RelayIdentity> ParseRelayIdentity(const std::string& body);
 

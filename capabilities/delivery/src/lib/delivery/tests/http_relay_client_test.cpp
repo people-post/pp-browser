@@ -4,8 +4,11 @@
 #include "common/chat/MessagingJson.h"
 #include "common/tests/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "lib/delivery/testing/TypedBlobFakes.h"
+#include "lib/net/testing/FakeRelaySigner.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/OutboundMessage.h"
+#include "lib/delivery/RelayGrantSigner.h"
 #include "lib/delivery/RelayMessageSignPayload.h"
 
 #include <gtest/gtest.h>
@@ -52,11 +55,11 @@ RelayEnvelope EnvelopeTo(const std::string& recipient) {
   envelope.sender_device = "QmMyPhone";
   envelope.route.kind = kRelayRouteDirect;
   envelope.route.channel = ThreadChannel::E2ePublic;
-  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.body.e2e.payload_b64 = test::FakePayloadB64();
   envelope.order_key = 7;
   envelope.stream_key = "v2:e2e_public:account:bob:account:me:from:QmMyPhone";
   envelope.recipient_account_id = recipient;
-  envelope.signature = "envelope-sig";
+  envelope.signature = test::FakeSignatureB64();
   return envelope;
 }
 
@@ -65,7 +68,12 @@ RelayGrant BobsGrant() {
                     .sender_account_id = kMe,
                     .issued_at = 1761235200000,
                     .expires_at = 1761235200000 + kRelayGrantMaxLifetimeMs,
-                    .signature = "Ym9icy1zaWduYXR1cmU="};
+                    .signature = pp::Base64Encode(pp::ByteVector(3310, 0x01))}; // a typed ML-DSA-65 signature's shape
+}
+
+/** Our account's key as the identity holds it: a bare ML-DSA-65 key. */
+std::string kHeldAccountKeyB64() {
+  return Base64Encode(ByteVector(kMlDsa65PublicKeyBytes, 0x42));
 }
 
 class HttpRelayClientTest : public ::testing::Test {
@@ -74,7 +82,7 @@ protected:
     client_.SetAuthSigner([this](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
       std::lock_guard lock(mu_);
       signed_.push_back(bytes);
-      return std::string("c2ln");
+      return test::FakeRelaySigner()(bytes);
     });
     client_.SetAudience(audience_);
     RelaySendHooks hooks;
@@ -87,7 +95,7 @@ protected:
       std::lock_guard lock(mu_);
       refused_.push_back(recipient);
     };
-    hooks.sender_public_key = []() { return std::string("bXkta2V5"); };
+    hooks.sender_public_key = []() { return kHeldAccountKeyB64(); };
     client_.SetSendHooks(std::move(hooks));
   }
 
@@ -133,6 +141,7 @@ TEST_F(HttpRelayClientTest, ASendNamesBothAccountsAndCarriesTheRecipientsGrant) 
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64")) << "registered here: the relay holds our key";
   const Object* grant = bodies[0].getObject("grant");
   ASSERT_NE(grant, nullptr);
+  EXPECT_EQ(grant->getIf<int64_t>("grant_version"), 2) << "grant v2 (SIGNED_FORMATS § 2.4)";
   EXPECT_EQ(RelayGrantFromJson(*grant).value(), BobsGrant());
 }
 
@@ -143,7 +152,7 @@ TEST_F(HttpRelayClientTest, ASendNamesItsRelayInBodyAndBytes) {
   const auto bodies = Bodies();
   ASSERT_EQ(bodies.size(), 1u);
   EXPECT_EQ(bodies[0].getString("audience").value_or(""), kAudience);
-  EXPECT_EQ(bodies[0].getIf<int64_t>("sign_version"), 3) << "the version byte its bytes carry";
+  EXPECT_EQ(bodies[0].getIf<int64_t>("sign_version"), 4) << "the version byte its bytes carry";
   RelayWireSendRecord record;
   record.sender_account_id = kMe;
   record.recipient_account_id = kBob;
@@ -256,7 +265,9 @@ TEST_F(HttpRelayClientTest, ARelayWithoutOurKeyGetsItOnTheNextTry) {
   const auto bodies = Bodies();
   ASSERT_EQ(bodies.size(), 2u);
   EXPECT_FALSE(bodies[0].contains("sender_public_key_b64"));
-  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""), "bXkta2V5");
+  EXPECT_EQ(bodies[1].getString("sender_public_key_b64").value_or(""),
+            Base64Encode(TypedSigningPublicKey(Base64Decode(kHeldAccountKeyB64()).value()).value()))
+      << "the held key, typed (SIGNED_FORMATS § 2.8)";
 }
 
 TEST_F(HttpRelayClientTest, AGrantTheRelayRefusesIsReportedAndTheSendGoesOnceAsAStrangers) {

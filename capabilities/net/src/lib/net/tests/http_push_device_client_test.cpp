@@ -6,6 +6,8 @@
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/RelayAudience.h"
 
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <map>
@@ -27,7 +29,7 @@ constexpr const char kAudience[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YB
 class PushDeviceClientTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    client_.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); });
+    client_.SetAuthSigner(test::FakeRelaySigner());
     client_.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
     server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
       std::lock_guard lock(mu_);
@@ -66,7 +68,7 @@ TEST_F(PushDeviceClientTest, AnUnregisterNamesTheBindingTheRegisterMade) {
   ASSERT_EQ(bodies_.size(), 2u);
   EXPECT_EQ(bodies_[0].getString("push_token").value_or(""), "tok");
   EXPECT_EQ(bodies_[0].getString("audience").value_or(""), kAudience);
-  EXPECT_EQ(bodies_[0].getIf<int64_t>("sign_version"), 3) << "relay-api-v1's version byte";
+  EXPECT_EQ(bodies_[0].getIf<int64_t>("sign_version"), 4) << "relay-api's version byte (SIGNED_FORMATS § 2.8)";
   EXPECT_EQ(bodies_[1].getString("binding_id").value_or(""), "bind-1");
   EXPECT_FALSE(bodies_[1].contains("push_token")) << "the token is no part of a removal";
   EXPECT_TRUE(held_.empty());
@@ -100,7 +102,7 @@ TEST_F(PushDeviceClientTest, ABindingMismatchRegistersAndUnregistersTheCurrentOn
 class PushDeviceSiblingTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    client_.SetAuthSigner([](const std::vector<uint8_t>&) -> Roe<std::string> { return std::string("c2ln"); });
+    client_.SetAuthSigner(test::FakeRelaySigner());
     client_.SetAudience(std::make_shared<FixedRelayAudience>(kAudience));
     server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
       std::lock_guard lock(mu_);

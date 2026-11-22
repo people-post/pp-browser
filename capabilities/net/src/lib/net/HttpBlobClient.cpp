@@ -194,10 +194,11 @@ Roe<BlobPresignResult> HttpBlobClient::Presign(const std::string& account_id, co
   body.set("content_type", content_type);
   body.setJsonUInt("byte_length", byte_length);
   body.set("purpose", BlobPurposeToWire(purpose));
-  const auto response = PostSigned("/v1/cdn/presign", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildBlobPresignSignBytes(audience, account_id, content_type, byte_length, BlobPurposeToWire(purpose),
-                                     timestamp);
-  });
+  const auto response = PostSigned("/v1/cdn/presign", std::move(body), timestamp,
+                                   [&](const std::string& audience, const pp::ExtArea& ext) {
+                                     return BuildBlobPresignSignBytes(audience, account_id, content_type, byte_length,
+                                                                      BlobPurposeToWire(purpose), timestamp, ext);
+                                   });
   if (!response) {
     return response.error();
   }
@@ -222,9 +223,10 @@ Roe<void> HttpBlobClient::Retain(const std::string& account_id, const std::strin
   Object body;
   body.set("account_id", account_id);
   body.set("blob_id", blob_id);
-  const auto response = PostSigned("/v1/cdn/retain", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildBlobRetainSignBytes(audience, account_id, blob_id, timestamp);
-  });
+  const auto response = PostSigned("/v1/cdn/retain", std::move(body), timestamp,
+                                   [&](const std::string& audience, const pp::ExtArea& ext) {
+                                     return BuildBlobRetainSignBytes(audience, account_id, blob_id, timestamp, ext);
+                                   });
   return response ? Roe<void>{} : Roe<void>(response.error());
 }
 
@@ -233,9 +235,10 @@ Roe<void> HttpBlobClient::Delete(const std::string& account_id, const std::strin
   Object body;
   body.set("account_id", account_id);
   body.set("blob_id", blob_id);
-  const auto response = PostSigned("/v1/cdn/delete", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildBlobDeleteSignBytes(audience, account_id, blob_id, timestamp);
-  });
+  const auto response = PostSigned("/v1/cdn/delete", std::move(body), timestamp,
+                                   [&](const std::string& audience, const pp::ExtArea& ext) {
+                                     return BuildBlobDeleteSignBytes(audience, account_id, blob_id, timestamp, ext);
+                                   });
   return response ? Roe<void>{} : Roe<void>(response.error());
 }
 
@@ -247,9 +250,10 @@ Roe<void> HttpBlobClient::SetProfileIcon(const std::string& account_id, const st
   body.set("url", url);
   body.set("blob_id", blob_id);
   body.set("kind", kind);
-  const auto response = PostSigned("/v1/profile/icon", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildProfileIconSignBytes(audience, account_id, url, blob_id, kind, timestamp);
-  });
+  const auto response = PostSigned(
+      "/v1/profile/icon", std::move(body), timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildProfileIconSignBytes(audience, account_id, url, blob_id, kind, timestamp, ext);
+      });
   return response ? Roe<void>{} : Roe<void>(response.error());
 }
 
@@ -261,9 +265,10 @@ Roe<RelayFileStartResult> HttpBlobClient::FileStart(const std::string& account_i
   Object body;
   body.set("account_id", account_id);
   body.setJsonUInt("byte_length", byte_length);
-  auto response = PostSigned("/v1/blob/start", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildFileStartSignBytes(audience, account_id, byte_length, timestamp);
-  });
+  auto response = PostSigned("/v1/blob/start", std::move(body), timestamp,
+                             [&](const std::string& audience, const pp::ExtArea& ext) {
+                               return BuildFileStartSignBytes(audience, account_id, byte_length, timestamp, ext);
+                             });
   if (!response) {
     Error error = response.error();
     error.message += " byte_length=" + std::to_string(byte_length); // a full space is planned against this size
@@ -295,9 +300,10 @@ Roe<RelayFilePartResult> HttpBlobClient::FilePart(const std::string& account_id,
   body.set("account_id", account_id);
   body.set("blob_id", blob_id);
   body.setJsonUInt("part_number", part_number);
-  auto response = PostSigned("/v1/blob/part", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildFilePartSignBytes(audience, account_id, blob_id, part_number, timestamp);
-  });
+  auto response =
+      PostSigned("/v1/blob/part", std::move(body), timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildFilePartSignBytes(audience, account_id, blob_id, part_number, timestamp, ext);
+      });
   if (!response) {
     return response.error();
   }
@@ -328,9 +334,10 @@ Roe<RelayFileCompleteResult> HttpBlobClient::FileComplete(const std::string& acc
   Object body;
   body.set("account_id", account_id);
   body.set("blob_id", blob_id);
-  auto response = PostSigned("/v1/blob/complete", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildFileCompleteSignBytes(audience, account_id, blob_id, timestamp);
-  });
+  auto response = PostSigned("/v1/blob/complete", std::move(body), timestamp,
+                             [&](const std::string& audience, const pp::ExtArea& ext) {
+                               return BuildFileCompleteSignBytes(audience, account_id, blob_id, timestamp, ext);
+                             });
   if (!response) {
     return response.error();
   }
@@ -355,9 +362,10 @@ Roe<void> HttpBlobClient::FileDelete(const std::string& account_id, const std::s
   Object body;
   body.set("account_id", account_id);
   body.set("blob_id", blob_id);
-  auto response = PostSigned("/v1/blob/delete", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildFileDeleteSignBytes(audience, account_id, blob_id, timestamp);
-  });
+  auto response = PostSigned("/v1/blob/delete", std::move(body), timestamp,
+                             [&](const std::string& audience, const pp::ExtArea& ext) {
+                               return BuildFileDeleteSignBytes(audience, account_id, blob_id, timestamp, ext);
+                             });
   if (!response) {
     return response.error();
   }
@@ -371,9 +379,10 @@ Roe<RelayFileListResult> HttpBlobClient::FileList(const std::string& account_id,
   if (!status_filter.empty()) {
     body.set("status", status_filter);
   }
-  auto response = PostSigned("/v1/blob/list", std::move(body), timestamp, [&](const std::string& audience) {
-    return BuildFileListSignBytes(audience, account_id, status_filter, timestamp);
-  });
+  auto response =
+      PostSigned("/v1/blob/list", std::move(body), timestamp, [&](const std::string& audience, const pp::ExtArea& ext) {
+        return BuildFileListSignBytes(audience, account_id, status_filter, timestamp, ext);
+      });
   if (!response) {
     return response.error();
   }

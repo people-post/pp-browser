@@ -206,18 +206,18 @@ TEST(ConfigMergeTest, NetworkDraftWritesCustomUrlsToTheSavedCopyWhenAnOriginRepl
 }
 
 // Multi-relay MR008: the custom backend's relay and registration fields take relay links (the relay's address with its
-// PeerId after `#`); a bare URL names none, so the old PeerId (another relay's) does not stay with a new URL.
+// relay id after `#`); a bare URL names none, so the old relay id (another relay's) does not stay with a new URL.
 TEST(ConfigMergeTest, TheCustomRelayFieldsTakeRelayLinks) {
   const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
   pbr::SettingsUiState state;
   state.backend_env = "custom";
-  state.relay_base_url = "https://relay.example.test/api/relay#QmRelay";
+  state.relay_base_url = "https://relay.example.test/api/relay#relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
   state.registration_base_url = "https://other.example.test/api/relay";
   const pbr::AppConfig saved = pbr::ApplyNetworkSettingsDraft(defaults, state);
   EXPECT_EQ(saved.relay.base_url, "https://relay.example.test/api/relay");
-  EXPECT_EQ(saved.relay.peer_id, "QmRelay");
+  EXPECT_EQ(saved.relay.relay_id, "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8");
   EXPECT_EQ(saved.registration.base_url, "https://other.example.test/api/relay");
-  EXPECT_TRUE(saved.registration.peer_id.empty());
+  EXPECT_TRUE(saved.registration.relay_id.empty());
   EXPECT_EQ(pbr::EndpointLinkText(saved.relay), state.relay_base_url) << "the field shows the link again";
 }
 
@@ -227,13 +227,13 @@ TEST(ConfigMergeTest, AReleaseBuildsCustomRelayWithoutItsIdIsNamedAsMissing) {
   pbr::AppConfig config;
   config.relay.base_url = "https://relay.example.test/api/relay";
   config.registration.base_url = "https://relay.example.test/api/relay/";
-  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "relay.peer_id");
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "relay.relay_id");
   EXPECT_EQ(pbr::MissingRelayIdSetting(config, true, false), "") << "a developer build: first use, warned";
-  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, true), "") << "the compiled backend: the build's PeerId";
-  config.relay.peer_id = "QmRelay";
-  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "") << "the same origin: the relay's PeerId serves";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, true), "") << "the compiled backend: the build's relay id";
+  config.relay.relay_id = "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "") << "the same origin: the relay's id serves";
   config.registration.base_url = "https://accounts.example.test/api/relay";
-  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "registration.peer_id") << "another origin";
-  config.registration.peer_id = "QmAccounts";
+  EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "registration.relay_id") << "another origin";
+  config.registration.relay_id = "relay:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
   EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "");
 }

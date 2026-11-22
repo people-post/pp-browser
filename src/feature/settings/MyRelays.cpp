@@ -97,8 +97,8 @@ MyRelaysView MyRelaysViewFor(const std::vector<MyRelayFacts>& relays, const bool
     } else {
       FillState(row, facts.registration);
       FillReach(row, facts);
-      row.link = RelayLink(facts.origin, facts.peer_id);
-      if (facts.peer_id.empty()) {
+      row.link = RelayLink(facts.origin, facts.relay_id);
+      if (facts.relay_id.empty()) {
         row.link.clear(); // a bare origin (a developer build) has no link to give
       }
     }

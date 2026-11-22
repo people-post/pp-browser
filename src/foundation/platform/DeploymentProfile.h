@@ -23,14 +23,30 @@ const char* BackendEnvName(BackendEnv env);
  */
 std::string BriefOrigin();
 /**
- * The compile-time origins (CMake PP_API_URL_PROD / PP_API_URL_QA) and their relays' PeerIds (PP_RELAY_PEER_ID_PROD /
- * PP_RELAY_PEER_ID_QA, multi-relay MR008: the org relay's address ships with the build); "" where not configured.
+ * A compiled relay id that stands for an operator set not made yet (release-compatibility CUTOVER_PLAN: Leo makes the
+ * qa and prod sets and their certificate 1): the build's default for prod and qa until then. It **fails closed**: it
+ * is no relay id, so the org relay of that environment is not used (nothing is signed for it, and it is never pinned
+ * on first use); release checks refuse it (`scripts/check/check_relay_ids.sh`).
+ */
+inline constexpr char kPendingRelayId[] = "pending";
+/** `relay_id` is the placeholder (kPendingRelayId). */
+inline bool IsPendingRelayId(std::string_view relay_id) {
+  return relay_id == kPendingRelayId;
+}
+
+/**
+ * The compile-time origins (CMake PP_API_URL_PROD / PP_API_URL_QA), their relays' ids (PP_RELAY_ID_PROD /
+ * PP_RELAY_ID_QA: `relay:…`, kPendingRelayId, or "" for none — multi-relay MR008 as SIGNED_FORMATS § 3.3 amends it: the
+ * org relay's address ships with the build) and each relay's newest certificate at build time, the floor a fresh
+ * install starts from (`config/relay-certs/<env>.cert`, standard base64; "" for none: § 3.5, Q10).
  */
 struct CompiledOrigins {
   const char* prod = "";
   const char* qa = "";
-  const char* prod_relay_peer_id = "";
-  const char* qa_relay_peer_id = "";
+  const char* prod_relay_id = "";
+  const char* qa_relay_id = "";
+  const char* prod_relay_certificate = "";
+  const char* qa_relay_certificate = "";
 };
 /** This build's compile-time origins. */
 CompiledOrigins BuildCompiledOrigins();
@@ -40,27 +56,40 @@ CompiledOrigins BuildCompiledOrigins();
  */
 std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend,
                                const CompiledOrigins& compiled);
+/** The org relay's identity as the build (or PP_BROWSER_ORIGIN's PP_BROWSER_RELAY_ID) names it. */
+struct OrgRelayIdentity {
+  /** `relay:…`; kPendingRelayId (the environment's operator set is not made yet: fails closed); "" for none. */
+  std::string relay_id;
+  /** The build's certificate for it (standard base64): the floor; "" for none (fetched from the relay). */
+  std::string certificate_b64;
+};
 /**
- * The PeerId the org's relay (BriefRelayBaseUrl) must answer to (MR008): `compiled`'s for `backend` (`Qa` → the QA
- * one, otherwise prod's); "" in the UI demo app. When `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin,
- * `env_peer_id` (PP_BROWSER_RELAY_PEER_ID, may be null): none there, a developer build pins that relay on its first
- * answer (warned) and a release build does not use it.
+ * The relay id the org's relay (BriefRelayBaseUrl) must prove (MR008, SIGNED_FORMATS § 3.5), and the build's
+ * certificate for it: `compiled`'s for `backend` (`Qa` → the QA ones, otherwise prod's); none in the UI demo app. When
+ * `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin, `env_relay_id` (PP_BROWSER_RELAY_ID, may be null) and
+ * no certificate: none there, a developer build pins that relay on its first valid certificate (warned) and a release
+ * build does not use it.
  */
-std::string ResolveRelayPeerId(bool ui_demo, const char* env_origin, BackendEnv backend,
-                               const CompiledOrigins& compiled, const char* env_peer_id = nullptr);
+OrgRelayIdentity ResolveOrgRelayIdentity(bool ui_demo, const char* env_origin, BackendEnv backend,
+                                         const CompiledOrigins& compiled, const char* env_relay_id = nullptr);
 /**
- * Whether the org's relay may be pinned on its first identity answer when none is named for it (multi-relay MR008
- * item 4): in a developer build, or on a compiled backend (`compiled_backend`: prod / qa, no PP_BROWSER_ORIGIN) — a
- * build that ships no PeerId is a dogfood one (release workflows refuse it). A custom backend or PP_BROWSER_ORIGIN in a
- * release build names its relay's PeerId, or that relay is not used.
+ * Whether the org's relay may be pinned on its first valid certificate when no relay id is named for it (multi-relay
+ * MR008 item 4): in a developer build, or on a compiled backend (`compiled_backend`: prod / qa, no PP_BROWSER_ORIGIN) —
+ * a build that names no relay id is a dogfood one (release workflows refuse it). A custom backend or
+ * PP_BROWSER_ORIGIN in a release build names its relay's id, or that relay is not used. A pending relay id
+ * (kPendingRelayId) is never taken on first use: the hub refuses it before asking this.
  */
 inline bool OrgRelayFirstUseAllowed(bool developer_build, bool compiled_backend) {
   return developer_build || compiled_backend;
 }
-/** ResolveRelayPeerId for this process (the latched backend). */
-std::string BriefRelayPeerId();
-/** The compile-time prod relay's PeerId ("" unless configured; pp-node's default with the compiled URL). */
-const char* CompiledDefaultRelayPeerId();
+/** ResolveOrgRelayIdentity for this process (the latched backend). */
+OrgRelayIdentity BriefOrgRelayIdentity();
+/** BriefOrgRelayIdentity's relay id. */
+std::string BriefRelayId();
+/** The compile-time prod relay's id ("" unless configured; pp-node's default with the compiled URL). */
+const char* CompiledDefaultRelayId();
+/** The compile-time prod relay's certificate ("" unless configured; pp-node's floor with the compiled URL). */
+const char* CompiledDefaultRelayCertificate();
 /** False in the UI demo app: nothing may leave the device (crash reports, run logs). */
 inline bool UploadAllowed(bool ui_demo) {
   return !ui_demo;

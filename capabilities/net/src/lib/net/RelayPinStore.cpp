@@ -11,13 +11,14 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <utility>
 
 namespace pbr {
 
 namespace {
 
-constexpr int64_t kSchemaVersion = 2; // 2: expected identities (MR008)
+constexpr int64_t kSchemaVersion = 3; // 3: relay ids and certificates (the signed-format cutover; nothing older read)
 
 logging::Logger& PinLog() {
   static logging::Logger log = logging::getLogger("RelayPins");
@@ -28,57 +29,125 @@ std::filesystem::path PinsPath(const std::string& profile_data_dir) {
   return std::filesystem::path(profile_data_dir) / "relay_pins.json";
 }
 
+/** A kept certificate read back: verified again (expiry aside: it is checked where the certificate is used). */
+std::optional<RelayCertificate> HeldFromB64(const std::string& certificate_b64, const RelayId& relay_id) {
+  RelayCertificateCheck check =
+      ReceiveRelayCertificateB64(certificate_b64, relay_id, std::numeric_limits<int64_t>::min());
+  if (!check.accepted()) {
+    return std::nullopt;
+  }
+  return std::move(check.certificate);
+}
+
 } // namespace
 
-std::string RelayPinsToJson(const std::vector<RelayPin>& pins) {
+const char* RelayMismatchName(const RelayMismatch mismatch) {
+  switch (mismatch) {
+    case RelayMismatch::OtherRelay:
+      return "other_relay";
+    case RelayMismatch::NoValidCertificate:
+      return "no_valid_certificate";
+    case RelayMismatch::OriginNotListed:
+      return "origin_not_listed";
+    case RelayMismatch::None:
+      break;
+  }
+  return "";
+}
+
+RelayMismatch RelayMismatchFromName(const std::string& name) {
+  for (const RelayMismatch mismatch :
+       {RelayMismatch::OtherRelay, RelayMismatch::NoValidCertificate, RelayMismatch::OriginNotListed}) {
+    if (name == RelayMismatchName(mismatch)) {
+      return mismatch;
+    }
+  }
+  return RelayMismatch::None;
+}
+
+std::string RelayPinsToJson(const RelayPinsFile& file) {
   Object root;
   root.set("schema_version", kSchemaVersion);
   std::vector<Value> rows;
-  for (const RelayPin& pin : pins) {
+  for (const RelayPin& pin : file.pins) {
     Object row;
     row.set("origin", pin.origin);
-    row.set("peer_id", pin.peer_id);
+    row.set("relay_id", pin.relay_id.ToString());
     row.set("pinned_at_ms", pin.pinned_at_ms);
     if (pin.Mismatched()) {
-      row.set("presented_peer_id", pin.presented_peer_id);
-      row.set("presented_at_ms", pin.presented_at_ms);
+      row.set("mismatch", std::string(RelayMismatchName(pin.mismatch)));
+      row.set("mismatch_at_ms", pin.mismatch_at_ms);
+      if (!pin.presented_relay_id.empty()) {
+        row.set("presented_relay_id", pin.presented_relay_id.ToString());
+      }
     }
     rows.push_back(ObjectValue(std::move(row)));
   }
   root.set("pins", makeArray(std::move(rows)));
+  std::vector<Value> certificates;
+  for (const HeldRelayCertificate& held : file.certificates) {
+    Object row;
+    row.set("relay_id", held.certificate.relay_id.ToString());
+    row.set("sequence", static_cast<int64_t>(held.certificate.body.sequence));
+    row.set("certificate_b64", held.certificate.ToBase64());
+    row.set("kept_at_ms", held.kept_at_ms);
+    certificates.push_back(ObjectValue(std::move(row)));
+  }
+  root.set("certificates", makeArray(std::move(certificates)));
   return DumpJson(root);
 }
 
-std::optional<std::vector<RelayPin>> RelayPinsFromJson(const std::string& text) {
+std::optional<RelayPinsFile> RelayPinsFromJson(const std::string& text) {
   const auto root = TryParseObject(text);
   if (!root || root->getIf<int64_t>("schema_version").value_or(0) != kSchemaVersion) {
     return std::nullopt;
   }
   const Array* rows = root->getArray("pins");
-  if (!rows) {
+  const Array* certificates = root->getArray("certificates");
+  if (!rows || !certificates) {
     return std::nullopt;
   }
-  std::vector<RelayPin> pins;
+  RelayPinsFile file;
   for (const Value& item : rows->elements) {
     const Object* row = asObject(item);
     if (!row) {
       continue;
     }
-    RelayPin pin{.origin = RelayOriginKey(row->getString("origin").value_or("")),
-                 .peer_id = row->getString("peer_id").value_or(""),
-                 .pinned_at_ms = row->getIf<int64_t>("pinned_at_ms").value_or(0),
-                 .presented_peer_id = row->getString("presented_peer_id").value_or(""),
-                 .presented_at_ms = row->getIf<int64_t>("presented_at_ms").value_or(0)};
-    // The rules hold on disk too: a second pin of one origin or of one PeerId is dropped.
-    const bool clash = std::any_of(pins.begin(), pins.end(), [&pin](const RelayPin& kept) {
-      return kept.origin == pin.origin || kept.peer_id == pin.peer_id;
-    });
-    if (pin.origin.empty() || pin.peer_id.empty() || clash || pins.size() >= RelayPinStore::kMaxPins) {
+    const auto relay_id = RelayId::Parse(row->getString("relay_id").value_or(""));
+    RelayPin pin{
+        .origin = RelayOriginKey(row->getString("origin").value_or("")),
+        .relay_id = relay_id.value_or(RelayId{}),
+        .pinned_at_ms = row->getIf<int64_t>("pinned_at_ms").value_or(0),
+        .mismatch = RelayMismatchFromName(row->getString("mismatch").value_or("")),
+        .presented_relay_id = RelayId::Parse(row->getString("presented_relay_id").value_or("")).value_or(RelayId{}),
+        .mismatch_at_ms = row->getIf<int64_t>("mismatch_at_ms").value_or(0)};
+    // The rules hold on disk too: one pin per origin.
+    const bool clash = std::any_of(file.pins.begin(), file.pins.end(),
+                                   [&pin](const RelayPin& kept) { return kept.origin == pin.origin; });
+    if (pin.origin.empty() || !relay_id || clash || file.pins.size() >= RelayPinStore::kMaxPins) {
       continue;
     }
-    pins.push_back(std::move(pin));
+    file.pins.push_back(std::move(pin));
   }
-  return pins;
+  for (const Value& item : certificates->elements) {
+    const Object* row = asObject(item);
+    const auto relay_id = row ? RelayId::Parse(row->getString("relay_id").value_or("")) : std::nullopt;
+    if (!relay_id || file.certificates.size() >= RelayPinStore::kMaxCertificates) {
+      continue;
+    }
+    const bool clash =
+        std::any_of(file.certificates.begin(), file.certificates.end(),
+                    [&relay_id](const HeldRelayCertificate& kept) { return kept.certificate.relay_id == *relay_id; });
+    auto certificate = clash ? std::nullopt : HeldFromB64(row->getString("certificate_b64").value_or(""), *relay_id);
+    if (!certificate) {
+      PinLog().error << "relay_pins.json: the certificate kept for " << relay_id->ToString()
+                     << " does not verify: dropped";
+      continue;
+    }
+    file.certificates.push_back(HeldRelayCertificate{.certificate = std::move(*certificate),
+                                                     .kept_at_ms = row->getIf<int64_t>("kept_at_ms").value_or(0)});
+  }
+  return file;
 }
 
 RelayPinStore::RelayPinStore(std::string profile_data_dir) : profile_data_dir_(std::move(profile_data_dir)) {}
@@ -86,6 +155,7 @@ RelayPinStore::RelayPinStore(std::string profile_data_dir) : profile_data_dir_(s
 void RelayPinStore::Load() {
   std::lock_guard lock(mutex_);
   pins_.clear();
+  certificates_.clear();
   newer_file_ = false;
   if (profile_data_dir_.empty()) {
     return;
@@ -95,8 +165,8 @@ void RelayPinStore::Load() {
     return; // none yet: each is expected from its address
   }
   const auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
-  auto pins = text ? RelayPinsFromJson(*text) : std::nullopt;
-  if (!pins) {
+  auto file = text ? RelayPinsFromJson(*text) : std::nullopt;
+  if (!file) {
     const auto root = text ? TryParseObject(*text) : std::nullopt;
     newer_file_ = root && root->getIf<int64_t>("schema_version").value_or(0) > kSchemaVersion;
     PinLog().error << "relay_pins.json refused ("
@@ -105,7 +175,8 @@ void RelayPinStore::Load() {
                    << "): the relays are expected again from their addresses";
     return;
   }
-  pins_ = std::move(*pins);
+  pins_ = std::move(file->pins);
+  certificates_ = std::move(file->certificates);
 }
 
 void RelayPinStore::SetKeep(std::function<bool(const std::string& origin)> keep) {
@@ -123,20 +194,21 @@ std::vector<RelayPin>::const_iterator RelayPinStore::FindLocked(const std::strin
   return std::find_if(pins_.begin(), pins_.end(), [&key](const RelayPin& pin) { return pin.origin == key; });
 }
 
-std::vector<RelayPin>::const_iterator RelayPinStore::HolderLocked(const std::string& peer_id) const {
-  return std::find_if(pins_.begin(), pins_.end(), [&peer_id](const RelayPin& pin) { return pin.peer_id == peer_id; });
-}
-
 std::optional<RelayPin> RelayPinStore::PinFor(const std::string& origin) const {
   std::lock_guard lock(mutex_);
   const auto found = FindLocked(origin);
   return found == pins_.end() ? std::nullopt : std::optional<RelayPin>(*found);
 }
 
-std::optional<std::string> RelayPinStore::HolderOf(const std::string& peer_id) const {
+std::vector<std::string> RelayPinStore::OriginsOf(const RelayId& relay_id) const {
   std::lock_guard lock(mutex_);
-  const auto found = HolderLocked(peer_id);
-  return found == pins_.end() ? std::nullopt : std::optional<std::string>(found->origin);
+  std::vector<std::string> origins;
+  for (const RelayPin& pin : pins_) {
+    if (pin.relay_id == relay_id) {
+      origins.push_back(pin.origin);
+    }
+  }
+  return origins;
 }
 
 std::vector<RelayPin> RelayPinStore::All() const {
@@ -146,7 +218,8 @@ std::vector<RelayPin> RelayPinStore::All() const {
 
 bool RelayPinStore::AddLocked(RelayPin pin) {
   if (pins_.size() >= kMaxPins) {
-    // The oldest pin of a relay no one keeps (removed from our list since): pinned again by fetch if it comes back.
+    // The oldest pin of a relay no one keeps (removed from our list since): pinned again by its address if it comes
+    // back.
     auto oldest = pins_.end();
     for (auto it = pins_.begin(); it != pins_.end(); ++it) {
       if ((!keep_ || !keep_(it->origin)) && (oldest == pins_.end() || it->pinned_at_ms < oldest->pinned_at_ms)) {
@@ -163,78 +236,57 @@ bool RelayPinStore::AddLocked(RelayPin pin) {
   return true;
 }
 
-PinAnswer RelayPinStore::Present(const std::string& origin, const std::string& peer_id, const int64_t now_ms,
-                                 const bool first_use) {
+PinOutcome RelayPinStore::Expect(const std::string& origin, const RelayId& relay_id, const int64_t now_ms) {
   std::lock_guard lock(mutex_);
   const std::string key = RelayOriginKey(origin);
   const auto found = FindLocked(key);
-  if (found == pins_.end()) {
-    if (!first_use) {
-      return PinAnswer{.outcome = PinOutcome::NotExpected};
-    }
-    if (const auto holder = HolderLocked(peer_id); holder != pins_.end()) {
-      return PinAnswer{.outcome = PinOutcome::Taken, .holder = holder->origin};
-    }
-    if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
-      return PinAnswer{.outcome = PinOutcome::Full};
-    }
-    SaveLocked();
-    return PinAnswer{.outcome = PinOutcome::Pinned};
-  }
-  if (found->peer_id == peer_id) {
-    if (found->Mismatched()) {
-      // It answers to its address again (the relay's misconfiguration was undone): in force once more.
-      found->presented_peer_id.clear();
-      found->presented_at_ms = 0;
-      SaveLocked();
-    }
-    return PinAnswer{.outcome = PinOutcome::Same};
-  }
-  if (found->presented_peer_id != peer_id) {
-    found->presented_peer_id = peer_id;
-    found->presented_at_ms = now_ms;
-    SaveLocked();
-  }
-  return PinAnswer{.outcome = PinOutcome::Mismatch};
-}
-
-PinAnswer RelayPinStore::Expect(const std::string& origin, const std::string& peer_id, const int64_t now_ms) {
-  std::lock_guard lock(mutex_);
-  const std::string key = RelayOriginKey(origin);
-  if (const auto holder = HolderLocked(peer_id); holder != pins_.end() && holder->origin != key) {
-    return PinAnswer{.outcome = PinOutcome::Taken, .holder = holder->origin};
-  }
-  const auto found = FindLocked(key);
-  if (found != pins_.end() && found->peer_id == peer_id) {
-    return PinAnswer{.outcome = PinOutcome::Same}; // a mismatch seen stays until a check finds it answers again
+  if (found != pins_.end() && found->relay_id == relay_id) {
+    return PinOutcome::Same;
   }
   if (found == pins_.end()) {
-    if (!AddLocked(RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms})) {
-      return PinAnswer{.outcome = PinOutcome::Full};
+    if (!AddLocked(RelayPin{.origin = key, .relay_id = relay_id, .pinned_at_ms = now_ms})) {
+      return PinOutcome::Full;
     }
   } else {
-    *found = RelayPin{.origin = key, .peer_id = peer_id, .pinned_at_ms = now_ms};
+    *found = RelayPin{.origin = key, .relay_id = relay_id, .pinned_at_ms = now_ms};
   }
   SaveLocked();
-  return PinAnswer{.outcome = PinOutcome::Pinned};
+  return PinOutcome::Pinned;
 }
 
-bool RelayPinStore::TakeOwnCard(const std::vector<OwnCardRelay>& relays, const int64_t now_ms) {
+bool RelayPinStore::NoteCheck(const std::string& origin, const RelayMismatch mismatch, const RelayId& presented,
+                              const int64_t now_ms) {
+  std::lock_guard lock(mutex_);
+  const auto found = FindLocked(origin);
+  if (found == pins_.end()) {
+    return false;
+  }
+  if (found->mismatch == mismatch && found->presented_relay_id == presented) {
+    return false; // seen so already (a restart, another pass): said once
+  }
+  found->mismatch = mismatch;
+  found->presented_relay_id = mismatch == RelayMismatch::None ? RelayId{} : presented;
+  found->mismatch_at_ms = mismatch == RelayMismatch::None ? 0 : now_ms;
+  SaveLocked();
+  return true;
+}
+
+bool RelayPinStore::TakeOwnCard(const std::vector<RelayAddress>& relays, const int64_t now_ms) {
   std::lock_guard lock(mutex_);
   bool changed = false;
-  for (const OwnCardRelay& relay : relays) {
+  for (const RelayAddress& relay : relays) {
     const std::string key = RelayOriginKey(relay.origin);
-    if (key.empty() || relay.peer_id.empty()) {
+    if (key.empty() || relay.relay_id.empty()) {
       continue;
     }
     const auto found = FindLocked(key);
-    if (found != pins_.end() && found->peer_id == relay.peer_id) {
+    if (found != pins_.end() && found->relay_id == relay.relay_id) {
       continue;
     }
-    // Our own account's word: another origin's pin of this PeerId goes, and this origin's pin follows the card.
-    std::erase_if(pins_, [&](const RelayPin& pin) { return pin.origin == key || pin.peer_id == relay.peer_id; });
+    // Our own account's word: this origin's pin follows the card.
+    std::erase_if(pins_, [&key](const RelayPin& pin) { return pin.origin == key; });
     changed = true; // a pin that disagreed went, whether or not this one fits
-    (void)AddLocked(RelayPin{.origin = key, .peer_id = relay.peer_id, .pinned_at_ms = now_ms});
+    (void)AddLocked(RelayPin{.origin = key, .relay_id = relay.relay_id, .pinned_at_ms = now_ms});
   }
   if (changed) {
     SaveLocked();
@@ -252,13 +304,61 @@ void RelayPinStore::Drop(const std::string& origin) {
   SaveLocked();
 }
 
+std::optional<RelayCertificate> RelayPinStore::CertificateFor(const RelayId& relay_id) const {
+  std::lock_guard lock(mutex_);
+  for (const HeldRelayCertificate& held : certificates_) {
+    if (held.certificate.relay_id == relay_id) {
+      return held.certificate;
+    }
+  }
+  return std::nullopt;
+}
+
+RelayCertificateOffer RelayPinStore::Offer(const RelayCertificate& certificate, const int64_t now_ms) {
+  std::lock_guard lock(mutex_);
+  const auto found = std::find_if(
+      certificates_.begin(), certificates_.end(),
+      [&certificate](const HeldRelayCertificate& held) { return held.certificate.relay_id == certificate.relay_id; });
+  const RelayCertificateOffer offer =
+      CompareRelayCertificates(found == certificates_.end() ? nullptr : &found->certificate, certificate);
+  if (offer != RelayCertificateOffer::Adopted) {
+    return offer;
+  }
+  if (found != certificates_.end()) {
+    *found = HeldRelayCertificate{.certificate = certificate, .kept_at_ms = now_ms};
+    SaveLocked();
+    return offer;
+  }
+  if (certificates_.size() >= kMaxCertificates) {
+    // The oldest certificate of a relay no pin names (a contact's relay): fetched again when it is needed.
+    auto oldest = certificates_.end();
+    for (auto it = certificates_.begin(); it != certificates_.end(); ++it) {
+      const bool named = std::any_of(pins_.begin(), pins_.end(),
+                                     [&it](const RelayPin& pin) { return pin.relay_id == it->certificate.relay_id; });
+      if (!named && (oldest == certificates_.end() || it->kept_at_ms < oldest->kept_at_ms)) {
+        oldest = it;
+      }
+    }
+    if (oldest == certificates_.end()) {
+      oldest = std::min_element(
+          certificates_.begin(), certificates_.end(),
+          [](const HeldRelayCertificate& a, const HeldRelayCertificate& b) { return a.kept_at_ms < b.kept_at_ms; });
+    }
+    certificates_.erase(oldest);
+  }
+  certificates_.push_back(HeldRelayCertificate{.certificate = certificate, .kept_at_ms = now_ms});
+  SaveLocked();
+  return offer;
+}
+
 void RelayPinStore::SaveLocked() const {
   if (profile_data_dir_.empty() || newer_file_) {
     return; // a newer app's file is never overwritten
   }
   std::error_code ec;
   std::filesystem::create_directories(profile_data_dir_, ec);
-  if (auto written = AtomicFileWrite::Write(PinsPath(profile_data_dir_).string(), RelayPinsToJson(pins_)); !written) {
+  const std::string text = RelayPinsToJson(RelayPinsFile{.pins = pins_, .certificates = certificates_});
+  if (auto written = AtomicFileWrite::Write(PinsPath(profile_data_dir_).string(), text); !written) {
     PinLog().error << "relay_pins.json not written: " << written.error().message;
   }
 }

@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
+#include "lib/people/CardKeys.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 namespace pbr {
@@ -40,8 +41,9 @@ Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::ResolveDevice(const std
   session.target_key.channel = CryptoChannel::E2ePublic;
   session.target_key.peer_device = device.peer_id;
   // The device pair's session (M021), shared with the chat stream; opened to the device's own KEM key.
-  auto resolved = ResolveE2ePublicSendSession(psk_store_, session.target_key,
-                                              [&device]() { return Base64Decode(device.kem_public_key_b64); });
+  auto resolved = ResolveE2ePublicSendSession(psk_store_, session.target_key, [&device]() {
+    return RawKemPublicKey(device.kem_public_key_b64, "the device KEM key");
+  });
   if (!resolved) {
     return resolved.error();
   }
@@ -56,7 +58,7 @@ Roe<ByteVector> E2ePublicSessionKeys::PeerKemPublicKey(const PeerSessionKey& key
   if (!kem) {
     return kem.error();
   }
-  return Base64Decode(kem->kem_public_key_b64);
+  return RawKemPublicKey(kem->kem_public_key_b64, "the account KEM key");
 }
 
 } // namespace pbr

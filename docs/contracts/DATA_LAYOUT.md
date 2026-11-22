@@ -40,15 +40,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
                             # plaintext like the directory cache — read at mesh start, before any PIN unlock; local only, never sent; optional
-  our_relays.json           # My relays (multi-relay R3, MR006, MR008): {schema_version: 2, relays: [{origin, peer_id? (the PeerId its address names: its relay link's,
+  our_relays.json           # My relays (multi-relay R3, MR006, MR008, SIGNED_FORMATS § 3.3): {schema_version: 3, relays: [{origin, relay_id? (`relay:…`, the relay id its address names: its relay link's,
                             # the build's / config's for the org's relay, our own card's on a linked device; absent only for a developer build's bare origin, or the org's
-                            # in a build that ships none; one that is not a PeerId drops the entry), registration: {state registered|failed|not_registered|expired|unknown,
+                            # in a build that names none; one that is not a relay id drops the entry), registration: {state registered|failed|not_registered|expired|unknown,
                             # reason? (failed: unreachable|refused|identity|other, worded by the page), expires_at?, card_issued_at?, registration_id? (MR007: the one a revoke names, additive),
                             # at_ms?}}]}, preferred first, ≤4; user data (a restore takes the account locker's `relays`), seeded once from the
-                            # deployment's relay + relay.extra_base_urls (relay links; an unreadable file, or schema 1 (MR007's, no PeerIds), is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
+                            # deployment's relay + relay.extra_base_urls (relay links; an unreadable file, or schema 1 or 2 (PeerIds, before the cutover), is seeded again; a newer one is refused and never written: the seed in memory, changes refused); plaintext like the
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
-  relay_pins.json           # the PeerId each relay origin of ours must answer to (multi-relay MR007, MR008, § relay_pins.json below); plaintext, written atomically
+  relay_pins.json           # the relay id each relay origin of ours must prove, and the highest certificate per relay id (SIGNED_FORMATS § 3, § relay_pins.json below); plaintext, written atomically
   relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
                             # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
@@ -71,10 +71,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   attachment_suppressions.json # attachments the person deleted here, not fetched again (R020): {schema_version: 1, threads: {thread_id: [content hash hex]}};
                             # plaintext, written atomically; no schema_version (a file from before it): 1; a newer one, or one not read, refuses every change; optional
   contacts.json             # address book (schema_version 3: local + remote + overrides{}); another version, or none, is refused; optional
-                            # remote.locator_relay: a QR locator's preferred relay address {origin, peer_id} (multi-relay R4, MR008), its relay list until a card (additive;
-                            # one without its PeerId is read as none)
+                            # remote.locator_relay: a QR locator's preferred relay address {origin, relay_id} (multi-relay R4, MR008, SIGNED_FORMATS § 3.3), its relay list
+                            # until a card (additive; one without a relay id of the `relay:` form, a `peer_id` one included, is read as none)
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
-                            # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches); no schema_version (a file from
+                            # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches, the org relay's certificate); no schema_version (a file from
                             # before it): read as it is; a newer one is no cache and never written over
   cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
                             # fetched_at_ms, local_filename} beside icon-<hash>.<ext> (named after its bytes); a cache, fetched again when its url or blob_id
@@ -83,7 +83,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
                             # 3 h old while the widget is on; device-only, never synced; optional
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 8, floor 8 — § Schema
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 9, floor 9 — § Schema
                             # versions; restart_pending: a public session kept through a chat reset — Reset chats, or a profile.db below its floor — starts its next epoch on the next send);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
@@ -255,31 +255,41 @@ There is no account-switcher UI: the profile follows the backend. Use `--profile
 
 ### relay_pins.json
 
-The PeerId each relay this profile signs for must answer to (multi-relay MR007, MR008;
-[SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)): the identities we expect, from each relay's address, never from
-its own answer. Per profile, so per backend; a pp-node keeps one in its data directory, the same format.
+The relay id each relay this profile signs for must prove, and the highest valid certificate seen per relay id
+(release-compatibility SIGNED_FORMATS § 3.2-3.4; [SERVICE_ENDPOINTS § Pins](SERVICE_ENDPOINTS.md#pins)): the relay ids
+we expect, from each relay's address, never from its own answer. Per profile, so per backend; a pp-node keeps one in
+its data directory, the same format.
 
 ```json
-{ "schema_version": 2,
-  "pins": [ { "origin": "https://www.brief.global/api/relay", "peer_id": "Qm…", "pinned_at_ms": 1761235200000,
-              "presented_peer_id": "Qm…", "presented_at_ms": 1761235300000 } ] }
+{ "schema_version": 3,
+  "pins": [ { "origin": "https://www.brief.global/api/relay", "relay_id": "relay:…", "pinned_at_ms": 1761235200000,
+              "mismatch": "other_relay", "presented_relay_id": "relay:…", "mismatch_at_ms": 1761235300000 } ],
+  "certificates": [ { "relay_id": "relay:…", "sequence": 2, "certificate_b64": "…", "kept_at_ms": 1761235200000 } ] }
 ```
 
 - `origin`: the relay base URL as relays are compared (`RelayOriginKey`: scheme and host lower case, the default port
-  dropped, no trailing `/`). One pin per origin and one origin per PeerId (a second of either is dropped on read).
-- `peer_id`: what its address names — the relay link it was added by (and `our_relays.json`), the build
-  (`PP_RELAY_PEER_ID_PROD` / `_QA`) or the config (`relay.peer_id`, `registration.peer_id`) for the org's origins, our
+  and a trailing `/` dropped). One pin per origin; a relay id may be pinned at several origins (its certificate lists
+  up to four).
+- `relay_id`: what its address names — the relay link it was added by (and `our_relays.json`), the build
+  (`PP_RELAY_ID_PROD` / `_QA`) or the config (`relay.relay_id`, `registration.relay_id`) for the org's origins, our
   own card on a linked device; only a developer build's bare origin, and the org's in a build or config that names
-  none, take their first identity answer.
-- `presented_peer_id` / `presented_at_ms`: optional — another PeerId the origin's identity answer named when it was
-  checked; present, the relay does not match its address and nothing is signed for it. It goes when a later check
-  finds the relay answering to its address again, or the address changes (a new link, a build naming another PeerId).
+  none, take their first valid certificate's.
+- `mismatch` / `presented_relay_id` / `mismatch_at_ms`: optional — when it was last checked the origin did not prove its
+  address: `other_relay` (another relay's certificate, or another relay id named; `presented_relay_id` the one named),
+  `no_valid_certificate`, or `origin_not_listed` (a valid certificate that does not list this origin). Present,
+  nothing is signed for it. It goes when a later check finds the origin proving its address again, or the address
+  changes (a new link, a build naming another relay id).
 - Only our relays and the org's origins are pinned (a contact's card or QR code never writes a pin). At most 32;
   when full, the oldest pin that is neither one of our relays nor the org's origins (one removed from My relays since)
   goes.
-- Another `schema_version` (1: MR007's first-come pins), or a file that is not JSON, is refused and read as empty
-  (logged as an error): each relay is expected again from its address. A newer one is never overwritten: that run's
-  pins are kept in memory only.
+- `certificates`: per relay id the highest valid certificate seen (standard base64 of the blob, kept byte for byte),
+  from the build, `client-compat` or the relay's `relay-identity` — ours, the org's and contacts' relays alike (a
+  contact's relay's is cached, never pinned). A lower one never replaces it. At most 32; when full, the oldest of a
+  relay no pin names goes. Each is verified again against its relay id when the file is read (expiry aside: it is read
+  where the certificate is used); one that does not verify is dropped, logged. `sequence` is informational.
+- Another `schema_version` (1, 2: PeerId pins from before the cutover), or a file that is not JSON, is refused and read
+  as empty (logged as an error): each relay is expected again from its address, and its certificate fetched again. A
+  newer one is never overwritten: that run's pins are kept in memory only.
 
 ## Schema versions
 
@@ -293,7 +303,7 @@ its own answer. Per profile, so per backend; a pp-node keeps one in its data dir
 | Below the floor | Too old to upgrade: the store is reset — `profile.db`: the whole chat store (`threads/`, as Me → Storage → Reset chats; the account, contacts and settings stay) but its public sessions, which Reset chats keeps too: the `e2e_public` sessions with a key (account and device pair, `SessionsAChatResetKeeps`) are read from the old file before it goes — straight from its tables, whatever columns its version has, their keys still sealed (the AAD names the profile, not the file) — and written into the new one `restart_pending`; if that fails, none are kept and the reset goes on; a `thread.db`: that chat's messages (its place in the catalog stays). An error line is logged and `chat_store_reset` is written beside `threads/`; the app takes it once after start-up and says "your chats were reset" |
 | Newer than this build's | Left alone and shut; the app shows the start-up recovery ("This data is from a newer version of the app": update the app, or Reset chats…) |
 
-Today: `profile.db` 8 (floor 8), `thread.db` 4 (floor 4). **Release 1 is every store's start** ([release-compatibility RC017](../../projects/release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)): every tester deletes the app and installs release 1, so each floor is release 1's schema and no step from before it is kept (the baseline, the Account ID and the account card steps went with it); a pre-release file is below the floor. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
+Today: `profile.db` 9 (floor 9: the signed-format cutover, release-compatibility SIGNED_FORMATS § 2.4–2.5, moved it with roster statements v4, roster changes v2 and relay grants v2), `thread.db` 4 (floor 4). **Release 1 is every store's start** ([release-compatibility RC017](../../projects/release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)): every tester deletes the app and installs release 1, so each floor is release 1's schema and no step from before it is kept (the baseline, the Account ID and the account card steps went with it); a pre-release file is below the floor. A store still creates a table that is new to it (`CREATE TABLE IF NOT EXISTS`, at the current shape); any change to a table that may already exist is a ladder step, never an `ALTER` on open.
 
 A card of our own account is kept in `peer_cards` only from our own devices (`self`, `sibling`), or as `OwnCards` got it
 back from our relays' directories after checking it against our own account keys (`recovered`,

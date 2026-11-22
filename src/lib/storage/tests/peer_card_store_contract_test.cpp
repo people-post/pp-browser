@@ -19,7 +19,7 @@ PeerCardRecord Record(const std::string& account_id, int64_t issued_at, const st
   record.keys.account_id = account_id; // shape only: the store keeps what PeerCards checked
   record.keys.signing_public_key_b64 = "c2lnbmluZw==";
   record.keys.kem_public_key_b64 = "a2Vt";
-  record.keys.kem_binding_signature_b64 = "YmluZGluZw==";
+  record.keys.kem_binding_b64 = "YmluZGluZw==";
   record.issued_at = issued_at;
   record.nickname = nickname;
   record.devices = {"QmPhone"};

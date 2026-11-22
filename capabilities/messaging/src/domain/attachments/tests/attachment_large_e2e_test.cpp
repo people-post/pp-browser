@@ -29,6 +29,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include "lib/net/testing/FakeRelaySigner.h"
+
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -92,7 +94,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     local.registered = true;
     ASSERT_TRUE(identity.Update(local));
     auto blob = std::make_shared<HttpBlobClient>(url);
-    blob->SetAuthSigner([](const std::vector<uint8_t>&) { return Roe<std::string>(std::string("sig")); });
+    blob->SetAuthSigner(test::FakeRelaySigner());
     OutgoingAttachmentStore store(dir.string(), profile_id);
 
     // What the app does: read the picked file, hand it to the staged upload, keep a local copy in the CAS.

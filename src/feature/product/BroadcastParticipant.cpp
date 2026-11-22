@@ -6,6 +6,7 @@
 #include "lib/broadcast/AnnounceOverlayReply.h"
 #include "lib/broadcast/PeerAnnounceKeyResolve.h"
 #include "lib/people/ContactIdentity.h"
+#include "lib/people/CardKeys.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "feature/broadcast/AmpBroadcastTransport.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -58,7 +59,8 @@ static std::optional<std::vector<uint8_t>> PublisherKey(ConversationsHub& hub, c
         if (!record) {
           return std::nullopt;
         }
-        return record->signing_public_key_b64;
+        auto raw = RawSigningPublicKeyB64(record->signing_public_key_b64); // held typed: the raw key's PeerId
+        return raw ? std::optional<std::string>(std::move(*raw)) : std::nullopt;
       });
 }
 

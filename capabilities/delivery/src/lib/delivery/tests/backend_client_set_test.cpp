@@ -2,6 +2,9 @@
 
 #include "common/ValueJson.h"
 #include "common/tests/ScriptedHttpServer.h"
+#include "lib/net/testing/TestRelayCertificates.h"
+
+#include "lib/net/testing/FakeRelaySigner.h"
 
 #include <gtest/gtest.h>
 
@@ -40,11 +43,14 @@ TEST(BackendClientSetTest, BuildsEveryClientForItsEndpoint) {
   EXPECT_TRUE(directory.Configured());
 }
 
-// MR007, MR008-PIN: every client of a relay signs for the PeerId that relay's address names; the lockers at the org's
-// registration URL for its. Nothing is asked of the relays to sign.
+// MR007, MR008-PIN, SIGNED_FORMATS § 3.4: every client of a relay signs for the PeerId its held certificate proves for
+// the relay id its address names; the lockers at the org's registration URL for its. Nothing is asked of the relays
+// to sign when the certificates are held (the build's, client-compat's).
 TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
-  constexpr const char kRelayA[] = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
-  constexpr const char kRelayB[] = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
+  const test::TestRelay relay_a(0x21);
+  const test::TestRelay relay_b(0x22);
+  const std::string kRelayA = test::TestRelay::PeerIdOf(0x31);
+  const std::string kRelayB = test::TestRelay::PeerIdOf(0x32);
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
   auto pins = std::make_shared<RelayPins>("");
@@ -53,8 +59,14 @@ TEST(BackendClientSetTest, EachRelaysClientsSignForItsPin) {
     ++asked;
     return Error("not asked");
   });
-  ASSERT_TRUE(pins->Expect("https://relay.example/api/relay", kRelayA));
-  ASSERT_TRUE(pins->Expect("https://b.example/api/relay", kRelayB));
+  ASSERT_TRUE(pins->Expect("https://relay.example/api/relay", relay_a.Id()));
+  ASSERT_TRUE(pins->Expect("https://b.example/api/relay", relay_b.Id()));
+  ASSERT_TRUE(pins->OfferCertificate(
+      relay_a.Id(),
+      relay_a.Certificate(1, {"https://relay.example/api/relay", "https://registration.example/api/relay"}, 0x31),
+      "the build"));
+  ASSERT_TRUE(pins->OfferCertificate(relay_b.Id(), relay_b.Certificate(1, {"https://b.example/api/relay"}, 0x32),
+                                     "client-compat"));
   clients.SetPins(pins);
   auto endpoints = At("https://relay.example/api/relay", "https://relay.example/api/relay",
                       "https://registration.example/api/relay");
@@ -182,15 +194,18 @@ TEST(BackendClientSetTest, NoPreferredRelayMeansNoOtherRelaysEither) {
 TEST(BackendClientSetTest, AForeignRelayOutsideThePolicyGetsNoClient) {
   SwitchableDirectoryClient directory;
   BackendClientSet clients(directory);
+  clients.SetPins(std::make_shared<RelayPins>(""));
   clients.Apply(At("https://relay.example", "https://relay.example", "https://relay.example"));
+  const RelayId named = RelayId::FromRaw(ByteVector(kRelayIdBytes, 0x55)).value();
   for (const char* origin : {"https://127.0.0.1", "https://localhost/api", "https://[::1]", "https://169.254.169.254",
                              "https://10.0.0.5:8443", "http://other.example", "https://intranet"}) {
-    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin, .peer_id = "QmPeer"}), nullptr) << origin;
-    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (a locator's: no PeerId)";
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin, .relay_id = named}), nullptr) << origin;
+    EXPECT_EQ(clients.Sender().ClientFor({.origin = origin}), nullptr) << origin << " (no relay id)";
   }
-  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .peer_id = "QmPeer"}), nullptr);
+  EXPECT_NE(clients.Sender().ClientFor({.origin = "https://other.example/api/relay", .relay_id = named}), nullptr)
+      << "a card's relay: its audience is what that relay id's certificate proves (ContactAudience)";
   EXPECT_EQ(clients.Sender().ClientFor({.origin = "https://unnamed.example/api/relay"}), nullptr)
-      << "MR008: a relay not ours whose address names no PeerId gets nothing signed";
+      << "MR008: a relay not ours whose address names no relay id gets nothing signed";
   EXPECT_NE(clients.Sender().ClientFor({.origin = "https://relay.example"}), nullptr) << "our own relay";
 }
 
@@ -364,16 +379,18 @@ TEST_F(BackendClientSetOriginTest, ARelayThePersonAddedIsHeldToPublicAddressesOu
 // a signer given later reaches it and an Apply that keeps it changes nothing on it.
 TEST_F(BackendClientSetOriginTest, AClientTakenBeforeTheSignerSignsWithItAndApplyNeverRewritesIt) {
   auto pins = std::make_shared<RelayPins>("");
-  ASSERT_TRUE(pins->Expect(OrgRelay(), "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP")); // the build's
+  const test::TestRelay org(0x23);
+  ASSERT_TRUE(pins->Expect(OrgRelay(), org.Id())); // the build's relay id and certificate
+  ASSERT_TRUE(pins->OfferCertificate(org.Id(), org.Certificate(1, {OrgRelay()}, 0x33), "the build"));
   clients_.SetPins(pins);
   Apply({OrgRelay()});
   const std::shared_ptr<IRelayClient> relay = clients_.Relay();
   EXPECT_FALSE(relay->PollInbox("account:me", ""));
   EXPECT_EQ(Asked(org_, "/v1/inbox/poll"), 0u) << "nothing goes unsigned";
   int signed_calls = 0;
-  clients_.SetSigner([&signed_calls](const std::vector<uint8_t>&) -> Roe<std::string> {
+  clients_.SetSigner([&signed_calls](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
     ++signed_calls;
-    return std::string("sig");
+    return test::FakeRelaySigner()(bytes);
   });
   (void)relay->PollInbox("account:me", "");
   EXPECT_EQ(signed_calls, 1) << "the client taken before signs with the signer given after";

@@ -1,4 +1,5 @@
 #include "lib/people/IdentityStore.h"
+#include "lib/people/CardKeys.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/FileCipher.h"
@@ -411,15 +412,14 @@ pbr::AccountCard OwnCardOf(pbr::IdentityStore& store, const std::string& nicknam
                            const std::string& account_id = {}) {
   const pbr::LocalIdentity identity = store.Get().value();
   pbr::AccountCard card;
-  card.keys.account_id = account_id.empty() ? identity.account_id : account_id;
-  card.keys.signing_public_key_b64 = identity.account_signing_public_key_b64;
-  card.keys.kem_public_key_b64 = identity.kem_public_key_b64;
-  card.keys.kem_binding_signature_b64 =
-      store.SignBytes(pbr::KemBindingSignBytes(identity.account_signing_public_key_b64, identity.kem_public_key_b64))
-          .value();
-  card.devices = {pbr::AccountCardDevice{.peer_id = identity.peer_id,
-                                         .signing_public_key_b64 = identity.public_key_b64,
-                                         .kem_public_key_b64 = identity.device_kem_public_key_b64}};
+  card.keys = pbr::MakeKeyCard(account_id.empty() ? identity.account_id : account_id,
+                               identity.account_signing_public_key_b64, identity.kem_public_key_b64,
+                               [&store](const pbr::ByteVector& bytes) { return store.SignBytes(bytes); })
+                  .value();
+  card.devices = {pbr::AccountCardDevice{
+      .peer_id = identity.peer_id,
+      .signing_public_key_b64 = pbr::TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity.public_key_b64).value(),
+      .kem_public_key_b64 = pbr::TypedKeyB64(pp::BlobKind::kKemPublicKey, identity.device_kem_public_key_b64).value()}};
   card.nickname = nickname;
   card.issued_at = issued_at;
   return pbr::SignAccountCard(card, [&store](const pbr::ByteVector& bytes) { return store.SignBytes(bytes); }).value();

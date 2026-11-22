@@ -98,18 +98,12 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
   envelope.recipient_account_id = peer_account_id;
   envelope.timestamp = message.timestamp;
 
-  auto sign_payload = EnvelopeSigner::BuildSignBytes(envelope);
-  if (!sign_payload) {
-    return sign_payload.error();
-  }
   if (!sign_bytes) {
     return Error("History responder missing sign callback");
   }
-  auto signature = sign_bytes(*sign_payload);
-  if (!signature) {
-    return signature.error();
+  if (auto signed_envelope = EnvelopeSigner::Sign(envelope, sign_bytes); !signed_envelope) {
+    return signed_envelope.error();
   }
-  envelope.signature = *signature;
   return envelope;
 }
 

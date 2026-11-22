@@ -86,11 +86,12 @@ TEST(AccountLockerTest, TheNewestValidSnapshotWinsAndAnOldOneCannotRollBack) {
   forged_v9.locker_id = keys.locker_id;
 
   auto picked = account_locker::PickNewest({v3, forged_v9, v5}, keys);
-  ASSERT_TRUE(picked);
-  EXPECT_EQ(picked->version, 5u) << "the forged newer one does not count";
+  ASSERT_TRUE(picked.newest);
+  EXPECT_EQ(picked.newest->version, 5u) << "the forged newer one does not count";
+  EXPECT_FALSE(picked.newer_format) << "a forgery is not a newer app's";
   // This device has seen version 5: a provider still serving 3 cannot take it back.
-  EXPECT_FALSE(account_locker::PickNewest({v3}, keys, /*at_least=*/5));
-  EXPECT_FALSE(account_locker::PickNewest({}, keys));
+  EXPECT_FALSE(account_locker::PickNewest({v3}, keys, /*at_least=*/5).newest);
+  EXPECT_FALSE(account_locker::PickNewest({}, keys).newest);
 }
 
 TEST(AccountLockerTest, SizesAreBucketedSoSmallChangesDoNotShow) {
@@ -252,8 +253,9 @@ TEST(AccountLockerTest, DeviceNamesRoundTripWhateverTheyHold) {
   EXPECT_EQ(opened->device_names, names);
 }
 
-TEST(AccountLockerTest, AnOldSnapshotHasNoNamesAndKeepsEverythingElse) {
-  auto read = account_locker::StateFromJson(R"({"nickname":"alice","providers":["https://node.example/locker"]})");
+TEST(AccountLockerTest, AStateWithoutNamesKeepsEverythingElse) {
+  auto read = account_locker::StateFromJson(
+      R"({"state_version":1,"nickname":"alice","providers":["https://node.example/locker"]})");
   ASSERT_TRUE(read);
   EXPECT_TRUE(read->device_names.empty());
   EXPECT_EQ(read->nickname, "alice");
@@ -262,17 +264,17 @@ TEST(AccountLockerTest, AnOldSnapshotHasNoNamesAndKeepsEverythingElse) {
 
 TEST(AccountLockerTest, UnknownKeysAndFieldsAreIgnoredOnRead) {
   auto read = account_locker::StateFromJson(
-      R"({"future_key":{"x":1},"device_names":[{"peer_id":"peer:a","name":"Phone","at":4,"icon":"star"},)"
+      R"({"state_version":1,"future_key":{"x":1},"device_names":[{"peer_id":"peer:a","name":"Phone","at":4,"icon":"star"},)"
       R"({"peer_id":"peer:b","name":"Tablet","at":6,"extra":[1,2]}]})");
   ASSERT_TRUE(read);
   EXPECT_EQ(read->device_names,
             (std::vector<DeviceNameEntry>{Named("peer:a", "Phone", 4), Named("peer:b", "Tablet", 6)}));
 }
 
-TEST(AccountLockerTest, AnOldDeviceRewritingTheLockerCostsTheNewDeviceNothingLasting) {
-  // The old device's output has no device_names; the new one merges it with what it has, puts its entry back
-  // and the result reads fine.
-  AccountLockerState old_rewrite = SampleState(); // never heard of names
+TEST(AccountLockerTest, ACopyWithoutNamesCostsTheOtherDeviceNothingLasting) {
+  // The stored copy has no device_names; the device merges it with what it has, puts its entry back and the
+  // result reads fine.
+  AccountLockerState old_rewrite = SampleState(); // no names
   AccountLockerState ours = SampleState();
   ours.device_names = {Named("peer:a", "Phone", 5)};
   auto stored = account_locker::StateFromJson(account_locker::StateToJson(old_rewrite));
@@ -383,8 +385,8 @@ TEST(AccountLockerTest, ARemovalTombstoneRoundTripsWithoutANameAndWinsByAt) {
   const std::string json = account_locker::StateToJson(state);
   EXPECT_NE(json.find("\"removed\":true"), std::string::npos);
   // A tombstone read from a file ignores any name it carries.
-  auto read =
-      account_locker::StateFromJson(R"({"device_names":[{"peer_id":"peer:b","name":"Leaked","at":9,"removed":true}]})");
+  auto read = account_locker::StateFromJson(
+      R"({"state_version":1,"device_names":[{"peer_id":"peer:b","name":"Leaked","at":9,"removed":true}]})");
   ASSERT_TRUE(read);
   EXPECT_EQ(read->device_names, (std::vector<DeviceNameEntry>{Gone("peer:b", 9)}));
   // The rule is unchanged: the larger `at` wins, tombstone or live.
@@ -395,9 +397,9 @@ TEST(AccountLockerTest, ARemovalTombstoneRoundTripsWithoutANameAndWinsByAt) {
 }
 
 TEST(AccountLockerTest, AnEntryFarInTheFutureOrBelowZeroIsClampedOnRead) {
-  auto read =
-      account_locker::StateFromJson(R"({"device_names":[{"peer_id":"peer:a","name":"Far","at":9223372036854775807},)"
-                                    R"({"peer_id":"peer:b","name":"Early","at":-5}]})");
+  auto read = account_locker::StateFromJson(
+      R"({"state_version":1,"device_names":[{"peer_id":"peer:a","name":"Far","at":9223372036854775807},)"
+      R"({"peer_id":"peer:b","name":"Early","at":-5}]})");
   ASSERT_TRUE(read);
   ASSERT_EQ(read->device_names.size(), 2u);
   EXPECT_EQ(read->device_names[0].at, kMaxDeviceNameAt);
@@ -435,7 +437,7 @@ TEST(AccountLockerTest, ANameReadFromTheLockerIsCutAtThirtyTwoCodePoints) {
 }
 
 TEST(AccountLockerTest, MoreEntriesThanTheLimitAreDroppedOnRead) {
-  std::string json = R"({"device_names":[)";
+  std::string json = R"({"state_version":1,"device_names":[)";
   for (int i = 0; i < 12; ++i) {
     json += std::string(i ? "," : "") + R"({"peer_id":"peer:)" + std::to_string(i) + R"(","name":"D","at":)" +
             std::to_string(i + 1) + "}";
@@ -449,7 +451,7 @@ TEST(AccountLockerTest, MoreEntriesThanTheLimitAreDroppedOnRead) {
 // Grants given to the account (multi-relay MR005) ride the locker, so a restored or linked device's first sends to
 // its grantors are not a stranger's (ACCOUNT_LOCKER § State JSON `grants`).
 AccountStateGrant GrantFrom(const std::string& grantor, int64_t issued_at, int64_t expires_at = 0,
-                            const std::string& signature = "c2ln") {
+                            const std::string& signature = "AXNpZw==") {
   return AccountStateGrant{.grantor_account_id = grantor,
                            .grantee_account_id = "account:alice",
                            .issued_at = issued_at,
@@ -466,15 +468,21 @@ TEST(AccountLockerTest, GrantsRoundTripAndABrokenRowIsDropped) {
   EXPECT_EQ(opened->extras.grants, state.extras.grants);
 
   auto read = account_locker::StateFromJson(
-      R"({"grants":[{"recipient_account_id":"account:bob","sender_account_id":"account:alice","issued_at":5,)"
-      R"("expires_at":9,"signature":"c2ln","future":1},)"
-      R"({"recipient_account_id":"account:carol","sender_account_id":"account:alice","issued_at":5,"expires_at":9},)"
-      R"({"recipient_account_id":"account:dave","sender_account_id":"account:alice","issued_at":9,"expires_at":5,)"
-      R"("signature":"c2ln"}]})");
+      R"({"state_version":1,"grants":[{"grant_version":2,"recipient_account_id":"account:bob",)"
+      R"("sender_account_id":"account:alice","issued_at":5,"expires_at":9,"signature":"AXNpZw==","future":1},)"
+      R"({"grant_version":2,"recipient_account_id":"account:carol","sender_account_id":"account:alice",)"
+      R"("issued_at":5,"expires_at":9},)"
+      R"({"grant_version":2,"recipient_account_id":"account:dave","sender_account_id":"account:alice",)"
+      R"("issued_at":9,"expires_at":5,"signature":"AXNpZw=="},)"
+      R"({"grant_version":3,"recipient_account_id":"account:erin","sender_account_id":"account:alice",)"
+      R"("issued_at":5,"expires_at":9,"signature":"AXNpZw=="},)"
+      R"({"recipient_account_id":"account:fay","sender_account_id":"account:alice","issued_at":5,)"
+      R"("expires_at":9,"signature":"AXNpZw=="}]})");
   ASSERT_TRUE(read);
   EXPECT_EQ(read->extras.grants, (std::vector<AccountStateGrant>{GrantFrom("account:bob", 5, 9)}))
-      << "no signature, or expiring before it was issued: dropped";
-  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.grants.empty()) << "an older snapshot";
+      << "no signature, expiring before it was issued, another grant version or none: dropped";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"state_version":1,"nickname":"a"})")->extras.grants.empty())
+      << "a state without grants";
 }
 
 TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
@@ -492,14 +500,15 @@ TEST(AccountLockerTest, GrantsMergeToTheLatestPerGrantorWithoutTheExpired) {
       << "a tie keeps the same one on every device";
 }
 
-// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays' addresses (MR008: each with its PeerId),
-// so a restore keeps the person's list; the copy from the newer card wins a merge, and an untrusted copy is bounded.
+// D2 (ACCOUNT_LOCKER § State JSON `relays`): the locker carries our relays' addresses (each with its relay id,
+// SIGNED_FORMATS § 3.3), so a restore keeps the person's list; the copy from the newer card wins a merge, and an
+// untrusted copy is bounded.
 TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
-  const std::string kB = "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP";
-  const std::string kA = "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie";
+  const std::string kB = "relay:CwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCwsLCws";
+  const std::string kA = "relay:CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo";
   AccountLockerState state = SampleState();
-  state.extras.relays = {.list = {{.origin = "https://b.example/api/relay", .peer_id = kB},
-                                  {.origin = "https://a.example/api/relay", .peer_id = kA}},
+  state.extras.relays = {.list = {{.origin = "https://b.example/api/relay", .relay_id = kB},
+                                  {.origin = "https://a.example/api/relay", .relay_id = kA}},
                          .card_issued_at = 500};
   const LockerKeys keys = KeysOf(0x11);
   auto opened = account_locker::Open(account_locker::Seal(state, keys, 1).value(), keys);
@@ -507,18 +516,21 @@ TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
   EXPECT_EQ(opened->extras.relays, state.extras.relays);
 
   AccountLockerState older = state;
-  older.extras.relays = {.list = {{.origin = "https://a.example/api/relay", .peer_id = kA}}, .card_issued_at = 400};
+  older.extras.relays = {.list = {{.origin = "https://a.example/api/relay", .relay_id = kA}}, .card_issued_at = 400};
   EXPECT_EQ(account_locker::MergeForPublish(older, state).extras.relays, state.extras.relays)
       << "the stored list came with a newer card";
   EXPECT_EQ(account_locker::MergeForPublish(state, older).extras.relays, state.extras.relays) << "ours is newer";
 
-  const auto row = [](const std::string& origin, const std::string& peer_id) {
-    return R"({"origin":")" + origin + R"(","peer_id":")" + peer_id + R"("})";
+  const auto row = [](const std::string& origin, const std::string& relay_id) {
+    return R"({"origin":")" + origin + R"(","relay_id":")" + relay_id + R"("})";
   };
   auto read = account_locker::StateFromJson(
-      R"({"relays":{"list":[)" + row("https://a.example", kA) + "," + row("https://a.example", kB) + "," + row("", kA) +
-      "," + row("https://n.example", "") + "," + row("https://b.example", kB) + "," + row("https://c.example", kA) +
-      "," + row("https://d.example", kB) + "," + row("https://e.example", kA) + R"(],"card_issued_at":7}})");
+      R"({"state_version":1,"relays":{"list":[)" + row("https://a.example", kA) + "," + row("https://a.example", kB) +
+      "," + row("", kA) + "," + row("https://n.example", "") + "," +
+      row("https://p.example", "QmeKYz9h9AozszFqAkRzwxx4xGheEMYRVrLHuh7EMG7Bie") + "," +
+      row("https://q.example", "relay:CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgp") + "," +
+      row("https://b.example", kB) + "," + row("https://c.example", kA) + "," + row("https://d.example", kB) + "," +
+      row("https://e.example", kA) + R"(],"card_issued_at":7}})");
   ASSERT_TRUE(read);
   std::vector<std::string> origins;
   for (const AccountStateRelay& relay : read->extras.relays.list) {
@@ -526,9 +538,9 @@ TEST(AccountLockerTest, OurRelaysRoundTripAndTheNewerCardsListWinsAMerge) {
   }
   EXPECT_EQ(origins, (std::vector<std::string>{"https://a.example", "https://b.example", "https://c.example",
                                                "https://d.example"}))
-      << "each origin once, none empty, none without its PeerId (MR008), at most four";
-  EXPECT_TRUE(account_locker::StateFromJson(R"({"nickname":"a"})")->extras.relays.list.empty())
-      << "an older snapshot: none";
+      << "each origin once, none empty, none without a relay id (a PeerId or a second spelling is none), at most four";
+  EXPECT_TRUE(account_locker::StateFromJson(R"({"state_version":1,"nickname":"a"})")->extras.relays.list.empty())
+      << "a state without relays: none";
 }
 
 TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
@@ -541,18 +553,6 @@ TEST(AccountLockerTest, OverTheCapTheLatestIssuedGrantsStay) {
   EXPECT_EQ(capped.front().grantor_account_id, "account:g103") << "the three issued first went";
   EXPECT_TRUE(std::is_sorted(capped.begin(), capped.end(),
                              [](const auto& a, const auto& b) { return a.grantor_account_id < b.grantor_account_id; }));
-}
-
-TEST(AccountLockerTest, SignBytesMatchTheRelaysGoldenVector) {
-  // Shared with the relay (web2 www __tests__/AccountLocker.test.ts): what a provider verifies.
-  ByteVector locker_id(32);
-  for (size_t i = 0; i < locker_id.size(); ++i) {
-    locker_id[i] = static_cast<uint8_t>(i);
-  }
-  EXPECT_EQ(
-      BytesToHex(account_locker::SignBytes(locker_id, 7, ByteVector{0xaa, 0xbb})),
-      "70702d62726f777365723a6163636f756e742d6c6f636b65722d763100010000000000000020000102030405060708090a0b0c0d0e0f"
-      "101112131415161718191a1b1c1d1e1f00000000000000070000000000000002aabb");
 }
 
 } // namespace

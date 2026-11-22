@@ -1,3 +1,7 @@
+# Default owners for every path; a later, more specific line replaces it (the last matching line wins).
+# Any one of the three may approve.
+*                                    @yhw1630 @gzdemon77 @leofreiheit
+
 # Who must look at a change in the risky parts of the tree. GitHub only enforces this when branch
 # protection enables "require review from code owners"; until then it is documentation for reviewers.
 #
