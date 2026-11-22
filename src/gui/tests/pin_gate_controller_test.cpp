@@ -8,6 +8,14 @@
 
 #include <gtest/gtest.h>
 
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
+
+#include <filesystem>
+
+#include <chrono>
+
 #include <optional>
 #include <string>
 #include <tuple>
@@ -64,7 +72,11 @@ protected:
     complete.use_device_pin_instead = [this]() { ++use_pin_instead_; };
     complete.try_biometric = [this]() { ++biometric_tries_; };
     controller_.BindGateComplete(std::move(complete));
+    // Each reading of the clock a second later: a choice is never "the same tap again" unless a test says so.
+    controller_.SetClockForTest([this]() { return clock_ += std::chrono::seconds(1); });
   }
+
+  std::chrono::steady_clock::time_point clock_{};
 
   PinGateController controller_;
   PinGateState shown_;
@@ -817,6 +829,98 @@ TEST_F(PinGateControllerTest, ALostBiometricUnlockOpensThePadOnAKeyOnlyDoor) {
   EXPECT_GT(remounts_, remounts);
   EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_message"));
   EXPECT_EQ(std::string(shown_.biometric_hint.c_str()), "turn it on again");
+}
+
+// The reset's confirm tap, or the fork's own button, delivered twice (a trackpad's touch and the mouse click made from
+// it): the second copy, landing on the page that just appeared, picks nothing there; a real tap after the guard does.
+TEST_F(PinGateControllerTest, AChoicePageIgnoresTheTapThatBroughtItUp) {
+  controller_.SetClockForTest([this]() { return clock_; });
+  controller_.ShowIdentityFork();
+  clock_ += std::chrono::milliseconds(200);
+  controller_.OnIdentityNew();
+  EXPECT_TRUE(shown_.identity_fork_mode) << "still the fork: not taken to \"Set a PIN?\"";
+  EXPECT_FALSE(shown_.chooser_mode);
+  controller_.OnIdentityLink();
+  controller_.OnIdentityPhrase();
+  EXPECT_TRUE(shown_.identity_fork_mode);
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnIdentityNew();
+  EXPECT_TRUE(shown_.chooser_mode) << "a real tap goes on to \"Set a PIN?\"";
+  // Its own double tap does not pick "Set a PIN" or "Just continue" right away either.
+  clock_ += std::chrono::milliseconds(100);
+  controller_.OnSetPin();
+  controller_.OnUseDefaultPin();
+  EXPECT_TRUE(shown_.chooser_mode);
+  EXPECT_FALSE(shown_.create_mode);
+  EXPECT_EQ(completes_, 0);
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnSetPin();
+  EXPECT_TRUE(shown_.create_mode);
+}
+
+// Reset my profile in the running app, through the real unlock gate and this controller: the page shown is the fresh
+// install's first page (the fork: new account / I already have an account / recovery phrase), not "Set a PIN?" —
+// with the keypad (a phone) and without (a desktop window).
+TEST_F(PinGateControllerTest, AfterAResetInTheRunningAppTheFreshInstallsFirstPageShows) {
+  for (const bool keypad : {true, false}) {
+    keypad_available_ = keypad;
+    shown_ = {};
+    const auto dir = std::filesystem::temp_directory_path() / ("pp_reset_fork_" + std::to_string(keypad));
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ProfileSecretsEngine engine;
+    ASSERT_TRUE(engine.Initialize(dir.string()));
+    ProfileUnlockGate gate;
+    gate.BindSecrets(engine);
+    bool ready = false;
+    ProfileUnlockPorts ports;
+    ports.messaging_initialized = []() { return true; };
+    ports.messaging_ready = [&ready]() { return ready; };
+    ports.ui.show_identity_fork = [this]() { controller_.ShowIdentityFork(); };
+    ports.ui.show_chooser = [this]() { controller_.ShowChooser(); };
+    ports.ui.show_unlock = [this]() { controller_.ShowUnlock(); };
+    ports.ui.dismiss = [this]() { controller_.Dismiss(); };
+    gate.BindPorts(std::move(ports));
+
+    // A fresh install's first frame, for comparison (its own gate: one decision per process).
+    {
+      ProfileUnlockGate fresh_gate;
+      fresh_gate.BindSecrets(engine);
+      ProfileUnlockPorts fresh;
+      fresh.messaging_initialized = []() { return true; };
+      fresh.messaging_ready = []() { return false; };
+      fresh.ui.show_identity_fork = [this]() { controller_.ShowIdentityFork(); };
+      fresh.ui.show_chooser = [this]() { controller_.ShowChooser(); };
+      fresh_gate.BindPorts(std::move(fresh));
+      fresh_gate.BeginDeferredUnlockAfterFirstPresent();
+      fresh_gate.BindPorts({});
+    }
+    EXPECT_TRUE(shown_.identity_fork_mode) << "fresh install, keypad=" << keypad;
+    const std::string fresh_title = shown_.title.c_str();
+    controller_.Dismiss();
+
+    // An account in use (the first-frame decision found it ready), then the reset as Application does it (secrets
+    // shut down, the directory wiped and made again, secrets back, messaging initialized but not ready), then its
+    // EnsureUnlocked.
+    ASSERT_TRUE(engine.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x52)));
+    ready = true;
+    gate.BeginDeferredUnlockAfterFirstPresent();
+    shown_ = {};
+    engine.Shutdown();
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ASSERT_TRUE(engine.Initialize(dir.string()));
+    ready = false;
+    gate.EnsureUnlocked(nullptr);
+    EXPECT_TRUE(shown_.active) << "keypad=" << keypad;
+    EXPECT_TRUE(shown_.identity_fork_mode) << "the fork, keypad=" << keypad;
+    EXPECT_FALSE(shown_.chooser_mode) << "not \"Set a PIN?\", keypad=" << keypad;
+    EXPECT_FALSE(shown_.create_mode);
+    EXPECT_EQ(std::string(shown_.title.c_str()), fresh_title) << "the same page as a fresh install's";
+    gate.BindPorts({});
+    engine.Shutdown();
+    std::filesystem::remove_all(dir);
+  }
 }
 
 } // namespace
