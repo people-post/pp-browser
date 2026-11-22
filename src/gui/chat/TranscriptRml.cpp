@@ -309,6 +309,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (auto failure = SendFailureLine(message, facts)) {
     return SystemLineRml(*failure);
   }
+  if (StrangerHeldRowProbe(message)) {
+    return SystemLineRml(Tr("chat.send.held_line")); // B236: shown only while it holds the chat (InboxController)
+  }
   return SystemLineRml(StoredSystemText(message));
 }
 
@@ -1210,7 +1213,43 @@ std::string PendingFileRml(const PendingUpload& upload) {
                      "<div class=\"chat-attachment-clock\"></div>");
 }
 
+std::string PendingVoiceRml(const PendingUpload& upload, const TranscriptFacts& facts, const int64_t timestamp_ms) {
+  const bool failed = upload.state == PendingUploadState::Failed;
+  // The disc over the play button: uploading cancels, failed retries, cancelling only spins. The percent is in its middle.
+  const std::string core =
+      failed ? "<svg class=\"chat-pending-icon\" src=\"../icons/v2/retry.svg\" width=\"16\" height=\"16\"></svg>"
+      : upload.state == PendingUploadState::Cancelling
+          ? std::string()
+          : "<span id=\"" + PendingPercentElementId(upload.row_id) + "\" class=\"chat-file-percent\">" +
+                PendingPercentText(upload.percent) + "</span>";
+  std::string overlay = "<div class=\"chat-voice-pending\">" + PendingDiscRml(upload, core) + "</div>";
+  if (failed) {
+    overlay += PendingDiscardRml(upload, " chat-voice-discard");
+  }
+  VoiceBubbleFace face;
+  face.ours = true;
+  const std::string name = facts.sender_label ? facts.sender_label(kLocalSelfContactId) : std::string();
+  const AvatarGlyph glyph =
+      MakeAvatarGlyph(name, facts.sender_stable_id ? facts.sender_stable_id(kLocalSelfContactId) : std::string());
+  face.letter = glyph.letter;
+  face.tone = glyph.tone;
+  if (facts.sender_icon) {
+    face.icon_path = facts.sender_icon(kLocalSelfContactId);
+  }
+  face.clock = MessageClockLabel(timestamp_ms);
+  const int64_t duration_ms = ParseVoiceFileName(upload.title).value_or(0);
+  return VoiceBubbleRml(upload.row_id, JsArgInAttribute(upload.row_id), duration_ms, VoiceBubbleState{}, face, overlay);
+}
+
+std::string PendingUploadRml(const PendingUpload& upload, const TranscriptFacts& facts, const int64_t timestamp_ms) {
+  return upload.kind == PendingUploadKind::Voice ? PendingVoiceRml(upload, facts, timestamp_ms)
+                                                 : PendingUploadRml(upload);
+}
+
 std::string PendingUploadRml(const PendingUpload& upload) {
+  if (upload.kind == PendingUploadKind::Voice) {
+    return PendingVoiceRml(upload, TranscriptFacts{}, 0);
+  }
   return upload.kind == PendingUploadKind::File ? PendingFileRml(upload) : PendingPictureRml(upload);
 }
 

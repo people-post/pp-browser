@@ -5,6 +5,8 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
 
+#include <string>
+
 namespace pbr {
 
 void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state) {
@@ -85,6 +87,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_voice", &state.show_voice);
   ctor.Bind("voice_entry_off", &state.voice_entry_off);
   ctor.Bind("voice_blocked", &state.voice_blocked);
+  ctor.Bind("voice_toggle_disabled", &state.voice_toggle_disabled);
   ctor.Bind("voice_recording", &state.voice_recording);
   ctor.Bind("voice_finishing", &state.voice_finishing);
   ctor.Bind("attachment_preparing", &state.attachment_preparing);
@@ -100,6 +103,13 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("voice_hint", &state.voice_hint);
   ctor.Bind("voice_level_width", &state.voice_level_width);
   ctor.Bind("voice_title", &state.voice_title);
+  ctor.Bind("voice_bubble", &state.voice_bubble);
+  ctor.Bind("voice_bubble_left", &state.voice_bubble_left);
+  ctor.Bind("voice_bubble_top", &state.voice_bubble_top);
+  ctor.Bind("voice_limit", &state.voice_limit);
+  for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+    ctor.Bind("voice_lv_" + std::to_string(i), &state.voice_lv[i]);
+  }
   ctor.Bind("show_thread_actions", &state.show_thread_actions);
   ctor.Bind("show_peer_sheet", &state.show_peer_sheet);
   ctor.Bind("show_stranger_bar", &state.show_stranger_bar);
@@ -223,6 +233,8 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
   ctor.Bind("show_reconnect_banner", &state.show_reconnect_banner);
   ctor.Bind("sessions_more", &state.sessions_more);
+  ctor.Bind("account_sync_syncing", &state.account_sync_syncing);
+  ctor.Bind("account_sync_delayed", &state.account_sync_delayed);
   ctor.Bind("sessions_query", &state.sessions_query);
   ctor.Bind("ai_sessions_query", &state.ai_sessions_query);
   ctor.Bind("ai_sessions_count_label", &state.ai_sessions_count_label);
@@ -290,6 +302,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_voice");
   DataModelHost::Instance().Dirty("chat", "voice_entry_off");
   DataModelHost::Instance().Dirty("chat", "voice_blocked");
+  DataModelHost::Instance().Dirty("chat", "voice_toggle_disabled");
   DataModelHost::Instance().Dirty("chat", "voice_recording");
   DataModelHost::Instance().Dirty("chat", "voice_finishing");
   DataModelHost::Instance().Dirty("chat", "attachment_preparing");
@@ -305,6 +318,13 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "voice_hint");
   DataModelHost::Instance().Dirty("chat", "voice_level_width");
   DataModelHost::Instance().Dirty("chat", "voice_title");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble_left");
+  DataModelHost::Instance().Dirty("chat", "voice_bubble_top");
+  DataModelHost::Instance().Dirty("chat", "voice_limit");
+  for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+    DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));
+  }
   DataModelHost::Instance().Dirty("chat", "image_chip");
   DataModelHost::Instance().Dirty("chat", "image_preparing");
   DataModelHost::Instance().Dirty("chat", "image_thumb_ready");

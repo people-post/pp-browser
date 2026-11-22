@@ -16,6 +16,8 @@ inline bool ShowCaptureEntry(const bool is_mobile, const bool call_live, const b
 struct ComposerLocks {
   bool input = false;
   bool attach = false;
+  /** The microphone toggle: unlike the attach entries it is not off for an upload (voice messages queue behind it). */
+  bool voice = false;
 };
 
 /**
@@ -33,6 +35,7 @@ inline ComposerLocks ComposerLocksOf(const bool compose_disabled, const bool att
   locks.input = compose_disabled || (attachment_here && !bubble_in_transcript) || image_preparing || voice_recording;
   // Editing a sent message changes its words only: no picture, file or voice message meanwhile.
   locks.attach = locks.input || attachment_busy || editing_message;
+  locks.voice = locks.input || editing_message;
   return locks;
 }
 

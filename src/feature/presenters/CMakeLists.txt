@@ -3,6 +3,7 @@
 # Capabilities expose facades; another app brings its own presenters.
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
+    AccountSyncState.cpp
     AttachmentExit.cpp
     AttachmentPicks.cpp
     AvatarCropFrame.cpp
@@ -41,6 +42,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     ThreadSearch.cpp
     ThreadSearchSession.cpp
     TwoFingerGesture.cpp
+    VoiceSendQueue.cpp
   PUBLIC_LIBS
     pp_feature_conversations
     pp_feature_calls)

@@ -344,6 +344,56 @@ TEST(ConfigJsonTest, ProfilePrefsPinDigitsUnknownWhenAbsentAndRejectsOddValues) 
   }
 }
 
+TEST(ConfigJsonTest, ProfilePrefsComposerVoiceModeLastRoundTripsAndDefaultsOff) {
+  // Additive optional device-local boolean (no schema bump): absent reads false (keyboard); once set it stays set.
+  pbr::ProfilePreferences fresh;
+  EXPECT_FALSE(fresh.composer_voice_mode_last);
+
+  pbr::ProfilePreferences edited;
+  edited.composer_voice_mode_last = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.composer_voice_mode_last);
+
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 16 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.composer_voice_mode_last = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.composer_voice_mode_last);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsAccountSyncPendingRoundTripsAndAbsentMeansNotPending) {
+  pbr::ProfilePreferences fresh;
+  EXPECT_FALSE(fresh.account_sync_pending);
+
+  pbr::ProfilePreferences edited;
+  edited.account_sync_pending = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.account_sync_pending);
+
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 16 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.account_sync_pending = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.account_sync_pending);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsOldFileWithoutComposerVoiceModeReadsUnchanged) {
+  auto old_file = pbr::TryParseObject(R"({ "schema_version": 16, "theme": "themes/base.rcss", "language": "en",
+                                           "pin_digits": 6, "show_notifications": false })");
+  ASSERT_TRUE(old_file.has_value());
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(*old_file, parsed);
+  EXPECT_FALSE(parsed.composer_voice_mode_last);
+  EXPECT_EQ(parsed.schema_version, 16);
+  EXPECT_EQ(parsed.language, "en");
+  EXPECT_EQ(parsed.pin_digits, 6);
+  EXPECT_FALSE(parsed.show_notifications);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
   // Minimal AI-first Home: absent (a fresh or pre-existing profile) reads off; once set it stays set.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

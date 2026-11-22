@@ -219,6 +219,8 @@ public:
    * is read again, so the page on screen and the ones under it show the change without a tap or a page change.
    */
   void OnContactsChanged();
+  /** An imported account's first sync is running / late (AccountSyncState): the empty list shows it, not "No contacts yet". */
+  void SetAccountSync(bool syncing, bool delayed);
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
@@ -600,6 +602,8 @@ private:
   ui::String my_account_id_;
   ui::String my_account_id_shown_;
   bool my_has_icon_ = false;
+  bool account_sync_syncing_ = false;
+  bool account_sync_delayed_ = false;
   ui::String my_icon_src_;
   ui::String my_avatar_letter_ = "?";
   int my_avatar_tone_ = 0;

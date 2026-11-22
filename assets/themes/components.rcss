@@ -1053,21 +1053,30 @@ select selectbox option {
   margin-bottom: 4dp;
 }
 
-/* Voice mode: the "hold to talk" bar takes the text input's place; grey while a call has the microphone, red while recording. */
+/* Voice mode: the "hold to talk" bar takes the text input's place. At rest a pill with the microphone (the accent
+   colour is in colors-*.rcss); held it is the accent and says what releasing does; sliding up to the cancel line
+   turns it a soft red. Grey while a call has the microphone. */
 .prompt-voice-bar {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40dp;
+  gap: 8dp;
+  height: 50dp;
   margin: 0;
   padding: 0 14dp;
   border: 0;
-  border-radius: 20dp;
+  border-radius: 25dp;
   font-family: LatoLatin;
-  font-size: 15dp;
+  font-size: 17dp;
   cursor: pointer;
+}
+
+.prompt-voice-bar-mic {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
 }
 
 .prompt-voice-bar--blocked {
@@ -1086,7 +1095,7 @@ select selectbox option {
   cursor: pointer;
 }
 
-/* Inside the voice bar while recording (red bar): everything reads white on it. */
+/* Desktop (a click starts it): the bar shows the dot, the timer and the hint while recording. */
 .prompt-voice-status {
   flex: 1;
   min-width: 0;
@@ -1096,30 +1105,16 @@ select selectbox option {
   padding: 0 6dp;
 }
 
-.prompt-voice-bar .prompt-voice-dot {
-  background-color: #ffffff;
-}
-
-.prompt-voice-bar .prompt-voice-timer--countdown,
-.prompt-voice-bar .prompt-voice-hint--cancel {
-  color: #ffffff;
-}
-
 .prompt-voice-dot {
   flex-shrink: 0;
   width: 10dp;
   height: 10dp;
   border-radius: 5dp;
-  background-color: #ef4444;
 }
 
 .prompt-voice-timer {
   flex-shrink: 0;
   font-size: 14dp;
-}
-
-.prompt-voice-timer--countdown {
-  color: #ef4444;
 }
 
 .prompt-voice-hint {
@@ -1131,9 +1126,83 @@ select selectbox option {
   opacity: 0.72;
 }
 
-.prompt-voice-hint--cancel {
-  color: #ef4444;
-  opacity: 1;
+/* The phone's hold-to-talk bubble (a child of .shell-chat-overlay, ShellLayoutRml): 176x64dp, above the press point,
+   its left edge follows the finger (voice_bubble_left, eased). The material child carries the colour and, on the frosted
+   chat overlay, the blur (the engine draws none on an element that has children itself, like .bar-material). No edge
+   line and no tail: a soft shadow separates it, so it reads as glass and not as a drawn box. */
+.voice-bubble {
+  position: absolute;
+  z-index: 4;
+  width: 176dp;
+  height: 64dp;
+  border-radius: 28dp;
+  transition: left 0.12s cubic-out;
+}
+
+.voice-bubble-material {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border-radius: 28dp;
+}
+
+.shell-chat-overlay--frost .voice-bubble-material {
+  backdrop-filter: blur(20px);
+}
+
+.voice-bubble-body {
+  position: relative;
+  padding: 8dp 18dp;
+}
+
+.voice-bubble-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7dp;
+  height: 26dp;
+  font-size: 16dp;
+  white-space: nowrap;
+}
+
+.voice-bubble-row--armed .prompt-voice-dot {
+  display: none;
+}
+
+.voice-bubble-timer {
+  flex-shrink: 0;
+  font-size: 16dp;
+}
+
+.voice-bubble-bars {
+  flex: 1;
+  height: 20dp;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.voice-bubble-bar {
+  width: 3dp;
+  border-radius: 1.5dp;
+}
+
+.voice-bubble-bin {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.voice-bubble-sub {
+  height: 20dp;
+  margin-top: 2dp;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 13dp;
+  line-height: 20dp;
 }
 
 .chat-link {
@@ -8059,6 +8128,34 @@ input.checkbox {
   text-align: center;
 }
 
+/* An imported account's contacts have not come over yet (AccountSyncState): a spinner and one line, centred in the
+   empty list. Shared by the Contacts page and the Chats list; the arc's colours are in the colour template. */
+@keyframes sync-pending-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320dp;
+  padding: 24dp 16dp;
+  gap: 14dp;
+  text-align: center;
+}
+
+.sync-pending-spinner {
+  flex-shrink: 0;
+  width: 28dp;
+  height: 28dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 17dp;
+  animation: 0.9s linear infinite sync-pending-spin;
+}
+
 .sidebar-empty .btn {
   margin-top: 16dp;
 }
@@ -12591,6 +12688,51 @@ input.checkbox {
   background-color: rgba(0, 0, 0, 128);
 }
 
+/* A voice message being sent: the sent bubble itself, the 36dp upload disc laid over the 28dp play button (it takes no
+   room: the bubble is the size of the sent one), the percent in its small core, and after a failure the ✕ at the card's
+   corner. Same translucent black and white as a picture's disc. */
+.chat-voice-card {
+  position: relative;
+}
+
+.chat-voice-pending {
+  position: absolute;
+  top: 4dp;
+  left: 48dp;
+  width: 36dp;
+  height: 36dp;
+}
+
+.chat-voice-pending .chat-pending-disc {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.chat-voice-pending .chat-pending-ring {
+  top: 3dp;
+  left: 3dp;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+.chat-voice-pending .chat-pending-core {
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+}
+
+.chat-voice-pending .chat-file-percent {
+  font-size: 9dp;
+  line-height: 12dp;
+}
+
+.chat-pending-discard.chat-voice-discard {
+  top: -14dp;
+  right: -14dp;
+}
+
 /* A file card, sent or being sent (DEV/PLAN-attachment-bubbles-multi-pick.md): a 72dp type tile on the left, the name
    (two lines at most) and the size on the right, 220-292dp wide (292 as a picture bubble). The whole sent card opens
    the file. While it uploads the disc sits on the tile, the percent in its middle; after a failure the ✕ sits at the
@@ -12946,9 +13088,19 @@ input.checkbox {
   height: 22dp;
 }
 
-/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
+/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place. It is a little shorter than the row: 16dp from the
+   left edge and ending 8dp before the 44dp keyboard key, which sits at the row's end (so the bar never runs edge to edge). */
 .shell-chat-overlay .prompt-voice-bar {
-  padding-right: 44dp;
+  margin-left: 4dp;
+  margin-right: 52dp;
+  border: 1dp;
+}
+
+/* The two keys of the phone's composer (the microphone in text mode, the keyboard in voice mode): a 26dp glyph (it was
+   18dp) in the 44dp target, so the two states look alike. */
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end svg {
+  width: 26dp;
+  height: 26dp;
 }
 
 .shell-chat-overlay .prompt-voice-toggle-btn--start {

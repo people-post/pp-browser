@@ -324,8 +324,8 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
                                                             const bool increment_unread) const {
   // A local "this message did not go out" line is a note under the message, not a new message: the chat's
   // preview and place in the list stay as the failed message left them.
-  if (SendFailureRowReason(message)) {
-    return {};
+  if (SendFailureRowReason(message) || StrangerHeldRowProbe(message)) {
+    return {}; // ... and a "held" line (B236) is a note too
   }
   // An edit is not a new message (DEV/PLAN-message-edit.md): the chat keeps its place, and its preview changes only
   // when the edited message is the newest (InboxController::AfterMessageEdited).
@@ -612,6 +612,9 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
       return message.error();
     }
     message->thread_id = thread_id;
+    if (StrangerHeldRowProbe(*message)) {
+      continue; // a local "held" line (B236) is this device's note, never something the AI is given
+    }
     fetched.push_back(std::move(*message));
   }
   sqlite3_finalize(stmt);
@@ -915,6 +918,14 @@ Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id,
   if (!thread_db) {
     return thread_db.error();
   }
+  // Queued again (sent again with its own id, B236): its outbox record first — the outbox (profile.db) and the row (the
+  // thread's db) are two databases, so no one transaction holds both. A failure here leaves the row as it was; a
+  // record left over by a row that did not change is dropped below (or by the next start's ReconcileOutbox).
+  if (delivery == MessageDelivery::Pending) {
+    if (auto outbox = UpsertOutboxRow(message_id, thread_id); !outbox) {
+      return outbox.error();
+    }
+  }
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE messages SET delivery = ?, transport = COALESCE(?, transport) WHERE id = ? "
@@ -935,6 +946,12 @@ Roe<bool> SqliteThreadStore::UpdateMessageDelivery(const std::string& thread_id,
   sqlite3_finalize(stmt);
   if (updated && delivery != MessageDelivery::Pending) {
     (void)RemoveOutboxRow(message_id); // as UpdateMessage does
+  } else if (!updated && delivery == MessageDelivery::Pending) {
+    // Not queued again (delivered meanwhile, or no such row): its record goes unless the row is still pending.
+    auto row = GetMessage(thread_id, message_id);
+    if (row && (!*row || (*row)->delivery != MessageDelivery::Pending)) {
+      (void)RemoveOutboxRow(message_id);
+    }
   }
   return updated;
 }
@@ -1985,8 +2002,8 @@ Roe<void> SqliteThreadStore::ReconcileOutbox() {
     return threads.error();
   }
   for (const Thread& thread : *threads) {
-    if (thread.kind != ThreadKind::Direct) {
-      continue;
+    if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
+      continue; // a group's pending row too: one queued again by a resend (B236) is resumed after a start
     }
     auto messages = GetMessagesPage(thread.id, std::nullopt, 10000);
     if (!messages) {

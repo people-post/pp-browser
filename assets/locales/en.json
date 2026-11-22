@@ -769,6 +769,8 @@
     "contacts.block_confirm_body":
         "You won't get messages or calls from {name}. They are not told. You can undo this any time.",
     "contacts.empty_hint": "No contacts yet. Tap + to add one, find people on the network, or ask the assistant.",
+    "account_sync.pending": "Syncing your contacts…",
+    "account_sync.delayed": "Still syncing. It will try again on its own.",
     "contacts.find_someone": "Find someone",
     "contacts.you": "You",
     "contacts.display_name": "Note",
@@ -1215,7 +1217,12 @@
     "chat.voice.mode_voice": "Switch to voice",
     "chat.voice.mode_keyboard": "Switch to keyboard",
     "chat.voice.send": "Send voice message",
-    "chat.voice.hint_hold": "Release to send · slide up to cancel",
+    "chat.voice.tap_hint": "Hold to talk",
+    "chat.voice.hint_send": "Release to send",
+    "chat.voice.hint_slide_up": "↑ Slide up to cancel",
+    "chat.voice.hint_slide_down": "↓ Slide down to resume",
+    "chat.voice.limit_reached": "{minutes} min limit",
+    "chat.voice.interrupted_by_call": "The recording was stopped by a call",
     "chat.voice.hint_click": "Recording…",
     "chat.voice.hint_cancel": "Release to cancel",
     "chat.voice.countdown": "{seconds} s left",
@@ -1224,10 +1231,10 @@
     "chat.voice.try_again_click": "Now click the bar to record.",
     "chat.voice.permission_denied":
         "PP needs the microphone to record a voice message. Allow it in your device's settings, then try again.",
+    "chat.voice.queue_full": "5 voice messages are still sending. Please wait a moment.",
     "chat.voice.busy_call": "You can't record during a call.",
     "chat.voice.no_mic": "No microphone could be opened.",
     "chat.voice.failed": "The recording didn't work — please try again.",
-    "chat.voice.upload_busy": "The last attachment is still being sent. Please wait, then record again.",
     "chat.voice.play": "Play",
     "chat.voice.pause": "Pause",
     "chat.voice.cannot_play": "Can't play this voice message",
@@ -1279,6 +1286,8 @@
     "chat.notice.send.relay_not_configured": "No message server is set up, so this message wasn't sent.",
     "chat.notice.send.relay_busy":
         "The server is busy right now. This message wasn't sent — please send it again later.",
+    "chat.notice.send.not_added_yet":
+        "They haven't added you as a contact yet, so this wasn't sent. Once they add you, tap the red mark to send it again.",
     "chat.notice.send.relay_rate_limited":
         "Too many messages to new contacts. This message wasn't sent — wait a little, then send it again.",
     "chat.notice.send.relay_unreachable":
@@ -1292,8 +1301,11 @@
     "chat.send.mark.failed": "Not sent",
     "chat.send.still_trying": "Still trying to send. Please wait.",
     "chat.send.not_resendable": "This message can't be re-sent with a tap. Please send it again.",
-    "chat.send.not_sent_other":
-        "This message wasn't sent. Pictures, files, voice messages and cards can't be re-sent with a tap yet. Please send it again.",
+    "chat.send.held_line":
+        "They haven't added you as a contact yet, so you can't send more for now. You can continue once they add you.",
+    "chat.send.held": "They haven't added you yet, so this can't be sent right now.",
+    "chat.send.file_gone":
+        "This picture, file or voice message is no longer saved, so it can't be re-sent. Please send it again.",
     "chat.send.reason_then": "{reason} {then}",
     "chat.notice.send.recipient_not_found": "The server can't find them, so this message wasn't sent.",
     "chat.notice.send.recipient_not_found_update":

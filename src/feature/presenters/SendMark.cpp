@@ -32,7 +32,7 @@ SendMark MarkOf(const ThreadMessage& message, const std::optional<int64_t> start
       break;
   }
   if (started_ms) {
-    return now_ms - *started_ms <= kQueuedMarkLimitMs ? SendMark::Queued : SendMark::Failed;
+    return SendMark::Queued; // still being tried, however long (B236): only the outbox giving up turns it red
   }
   // Only a row still Pending: a Failed one has had its outcome.
   if (message.delivery == MessageDelivery::Pending && now_ms - message.timestamp <= kQueuedMarkGraceMs) {
@@ -43,10 +43,10 @@ SendMark MarkOf(const ThreadMessage& message, const std::optional<int64_t> start
 
 void NoteMarkChange(std::optional<int64_t>& earliest, const ThreadMessage& message,
                     const std::optional<int64_t> started_ms, const int64_t now_ms, const bool no_recipients) {
-  if (MarkOf(message, started_ms, now_ms, no_recipients) != SendMark::Queued) {
+  if (started_ms || MarkOf(message, started_ms, now_ms, no_recipients) != SendMark::Queued) {
     return;
   }
-  const int64_t at = started_ms ? *started_ms + kQueuedMarkLimitMs + 1 : message.timestamp + kQueuedMarkGraceMs + 1;
+  const int64_t at = message.timestamp + kQueuedMarkGraceMs + 1;
   if (!earliest || at < *earliest) {
     earliest = at;
   }

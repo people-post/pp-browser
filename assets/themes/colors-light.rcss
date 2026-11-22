@@ -114,9 +114,112 @@ selection {
   background-color: #7878801f;
 }
 
+.prompt-voice-bar-mic {
+  image-color: #007aff;
+}
+
+/* Held: the accent (never red). Armed (slid up to the cancel line): a soft red tint. */
 .prompt-voice-bar--active, .prompt-voice-bar--active:hover {
-  background-color: #ff3b30;
+  background-color: #007aff;
   color: #ffffff;
+}
+
+.prompt-voice-bar--active .prompt-voice-bar-mic {
+  image-color: #ffffff;
+}
+
+.prompt-voice-bar--active .prompt-voice-dot {
+  background-color: #ffffff;
+}
+
+.prompt-voice-bar--armed, .prompt-voice-bar--armed:hover {
+  background-color: #ff3b301a;
+  color: #b3261e;
+}
+
+.prompt-voice-bar--armed .prompt-voice-bar-mic {
+  image-color: #b3261e;
+}
+
+/* The phone chat's bar is a floating card like the text pill: a 1dp edge and the pill's soft shadow. */
+.shell-chat-overlay .prompt-voice-bar {
+  background-color: #ffffff;
+  border-color: #3c3c434a;
+  box-shadow: 0 2dp 10dp #00000029;
+}
+
+.shell-chat-overlay .prompt-voice-bar--active, .shell-chat-overlay .prompt-voice-bar--active:hover {
+  background-color: #007aff;
+  border-color: #007aff;
+  box-shadow: none;
+}
+
+.shell-chat-overlay .prompt-voice-bar--armed, .shell-chat-overlay .prompt-voice-bar--armed:hover {
+  background-color: #ff3b301a;
+  border-color: transparent;
+}
+
+.prompt-voice-dot {
+  background-color: #ff3b30;
+}
+
+.prompt-voice-timer--countdown {
+  color: #ff9500;
+}
+
+.prompt-voice-bar--active .prompt-voice-timer--countdown {
+  color: #ffffff;
+}
+
+/* The hold-to-talk bubble (components.rcss). Material: the bar colour (opaque with Transparency off), the frosted
+   bar colour with the blur on the frosted overlay, or the 88% colour without blur (the fallback). */
+.voice-bubble {
+  color: #000000;
+  box-shadow: 0 8dp 28dp #0000002e;
+}
+
+.voice-bubble-material {
+  background-color: #f2f2f7;
+}
+
+.shell-chat-overlay--frost .voice-bubble-material {
+  background-color: #f2f2f794;
+}
+
+.shell-chat-overlay--glass .voice-bubble-material {
+  background-color: #f2f2f7e0;
+}
+
+.voice-bubble-bar {
+  background-color: #007aff;
+}
+
+.voice-bubble-sub {
+  color: #000000bf;
+}
+
+.voice-bubble-timer--countdown {
+  color: #ff9500;
+}
+
+.voice-bubble--armed .voice-bubble-material {
+  background-color: #ffe4e2;
+}
+
+.shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-material {
+  background-color: #ffc8c4c7;
+}
+
+.shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-material {
+  background-color: #ffe4e2f0;
+}
+
+.voice-bubble--armed .voice-bubble-row, .voice-bubble--armed .voice-bubble-sub {
+  color: #7a0008;
+}
+
+.voice-bubble-bin {
+  image-color: #7a0008;
 }
 
 .prompt-emoji-btn svg {
@@ -994,6 +1097,11 @@ select selectbox option:hover {
 .photo-preview-spinner {
   border-color: #ffffff55;
   border-top-color: #ffffff;
+}
+
+.sync-pending-spinner {
+  border-color: #78788033;
+  border-top-color: #007aff;
 }
 
 .shell-startup-cover {

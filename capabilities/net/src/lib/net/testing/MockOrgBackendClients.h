@@ -50,6 +50,8 @@ public:
   void SetPutError(Error error) { put_error_ = std::move(error); }
   void ClearPutError() { put_error_ = std::nullopt; }
   void SetFileCompleteError(Error error) { file_complete_error_ = std::move(error); }
+  /** FileDelete records the id and then answers this error. */
+  void SetFileDeleteError(Error error) { file_delete_error_ = std::move(error); }
   void SetFileListResult(RelayFileListResult result) { file_list_result_ = std::move(result); }
   /** Called inside FileComplete before it answers (a test can break the outgoing store there). */
   void SetOnFileComplete(std::function<void(const std::string& blob_id)> hook) { on_file_complete_ = std::move(hook); }
@@ -79,6 +81,7 @@ private:
   std::unordered_map<std::string, uint64_t> file_byte_lengths_;
   std::optional<Error> put_error_;
   std::optional<Error> file_complete_error_;
+  std::optional<Error> file_delete_error_;
   std::optional<RelayFileListResult> file_list_result_;
   std::function<void(const std::string&)> on_file_complete_;
   std::vector<uint64_t> file_start_byte_lengths_;

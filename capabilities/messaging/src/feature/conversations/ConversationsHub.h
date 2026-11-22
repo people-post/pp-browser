@@ -50,6 +50,7 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/QueuedResend.h"
 #include "feature/conversations/RelayRegistrationSignal.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/BlobQuota.h"
@@ -87,6 +88,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -97,6 +99,7 @@ namespace pbr {
 class IPeerSessionStore;
 class ProfileSecretsEngine;
 class ContactProfileRefresh;
+class OwnProfileIconSync;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -352,6 +355,12 @@ public:
    * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
    */
   void SetOnContactsChanged(std::function<void()> callback);
+  /**
+   * An account-locker sync (the account's contacts and groups across its devices) ended: true when it completed (with
+   * changes or without), false when it failed (the locker could not be read or written). Not called when the sync did
+   * not run (messaging down, no recovery seed, not registered, signed out). Runs on a worker thread.
+   */
+  void SetOnAccountSyncResult(std::function<void(bool ok)> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
@@ -436,6 +445,14 @@ public:
    * as a new edit with the same words and the same send time, and the unsent one goes. Returns the new edit's row.
    */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * The red mark of our message `message_id` tapped (B236): it is sent again as itself
+   * (MeshDeliveryOrchestrator::ResendStoredMessage), unless what it carries is known to be gone from the server (its
+   * share link past the relay's file lifetime, or missing from our files there). Off the caller's thread; `on_done`
+   * on a worker. An error: not sent (not one that can be, or its send failed).
+   */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   /**
    * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
    * and the send pace (AttachmentLimits::send_max_per_minute).
@@ -697,6 +714,8 @@ private:
   void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
+  /** After a locker sync: fetch our own photo when another device of the account set a new one (off the UI thread). */
+  void RefreshOwnProfileIconSoon();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
   bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
@@ -848,6 +867,8 @@ private:
   std::function<void()> on_own_devices_changed_;
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
+  std::mutex account_sync_result_mu_;
+  std::function<void(bool ok)> on_account_sync_result_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
@@ -912,6 +933,8 @@ private:
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
+  /** Our own photo when it was set on another device of the account (after a locker sync). */
+  std::unique_ptr<OwnProfileIconSync> own_icon_sync_;
   std::unique_ptr<ContactRefreshWorkflow> contact_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
@@ -982,6 +1005,9 @@ private:
    * Registration, PushDevices, ClientCompat and BlobClient (copies, under clients_mu_).
    */
   mutable std::mutex clients_mu_;
+  /** Messages whose tap-resend (ResendMessageAsync) is being started: a second tap meanwhile sends nothing. */
+  std::mutex tap_resends_mu_;
+  std::set<std::string> tap_resends_;
   std::shared_ptr<IRegistrationClient> registration_;
   std::shared_ptr<IPushDeviceClient> push_devices_;
   std::shared_ptr<IClientCompatClient> client_compat_;

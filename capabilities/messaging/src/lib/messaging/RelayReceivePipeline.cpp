@@ -363,6 +363,8 @@ Roe<void> RelayReceivePipeline::ApplyGroupChange(ThreadMessage& message, const s
   log().info << "group change " << group_change::KindToString(change->kind) << " group_id=" << change->group_id
              << " by=" << change->signer
              << (received->held == group_roster_sync::ChangeHeld::NoCard ? " (no card yet)" : "");
+  // Whether it counted here, and whether the account it is about is still listed after it (VerdictLine).
+  log().info << "group change verdict " << group_roster_sync::VerdictLine(*change, received->applied.view);
   FinishView(change->group_id, received->applied, local_account, outcome);
   KeepChangeNewcomer(message, *change, local_account);
   return {};

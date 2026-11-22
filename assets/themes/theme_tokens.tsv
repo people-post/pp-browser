@@ -129,3 +129,13 @@ x-call-unknown-bottom	#0066d9	#0066d9	extra: phone call page, unknown caller ava
 x-picture-placeholder	#d1d1d6	#3a3a3c	extra: chat picture bubble while its preview is being made (B203; opaque: a translucent grey reads as blue on our own bubble)
 x-picture-placeholder-icon	#aeaeb2	#262628	extra: the photo icon on that placeholder, a touch darker than it (static; no animation)
 x-media-pill	#000000a6	#000000a6	extra: the small dark pill carrying a time over a picture or video (white text, readable on any picture)
+x-vbubble-glass	#f2f2f794	#1a1a1ca8	extra: the voice bubble glass over the blur (58% / 66%: the chat behind shows through; text kept at >= 4.5 over white, black and saturated backdrops)
+x-vbubble-armed	#ffc8c4c7	#5c1a18d0	extra: the voice bubble when the cancel is armed: the same glass with a soft red tint (78% / 82%)
+x-vbubble-armed-solid	#ffe4e2	#3c1414	extra: the same with Transparency off (opaque)
+x-vbubble-approx	#f2f2f7e0	#1a1a1ce0	extra: the voice bubble without blur (88% bar colour); the fallback of the frost
+x-vbubble-armed-approx	#ffe4e2f0	#3c1414f0	extra: the armed bubble without blur (94%)
+x-vbubble-ink-armed	#7a0008	#ffc2bb	extra: text and bin of the armed voice bubble
+x-vbubble-ink-2	#000000bf	#ffffffe6	extra: the voice bubble's second line (75% / 90% of the text colour)
+x-vbubble-shadow	#0000002e	#0000008c	extra: the voice bubble's soft diffuse shadow (it replaces an edge line)
+x-vbar-armed	#ff3b301a	#ff453a29	extra: the voice bar while the cancel is armed (soft red, 10% / 16%)
+x-vbar-ink-armed	#b3261e	#ff968c	extra: text and icon of the armed voice bar

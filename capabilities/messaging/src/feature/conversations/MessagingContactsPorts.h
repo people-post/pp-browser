@@ -64,6 +64,8 @@ struct MessagingContactsPorts {
       add_from_locator;
   /** Share a contact into a chat as a contact card. */
   std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;
+  /** B236: the chat sends nothing for now (the recipient has not added us; ConversationsFacade::ChatSendHeld). */
+  std::function<bool(const std::string& thread_id)> send_held;
   /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */
   std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 

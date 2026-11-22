@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "domain/attachments/SentRelayFile.h"
 
 #include "foundation/tls/RelayClientHeader.h"
 
@@ -35,6 +36,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/OwnProfileIconSync.h"
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
@@ -1327,6 +1329,16 @@ void ConversationsHub::OpenContactCards() {
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  own_icon_sync_ = std::make_unique<OwnProfileIconSync>(
+      data_dir_, directory_,
+      [this]() -> std::string {
+        auto identity = Identity().Get();
+        return identity && identity->registered ? identity->account_id : std::string();
+      },
+      [](const std::string& profile_dir, const std::string& key, const mesh::ProfileIconRef& icon) {
+        return FetchProfileIcon(profile_dir, key, icon);
+      },
+      []() { return util::NowUnixMs(); });
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
   // The page's *identity doesn't match* (MR007): our pins disagree with the card, or a send found the PeerId refused.
@@ -1948,6 +1960,8 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   mesh_messaging_->OwnAccountCards().Reconcile(util::NowUnixMs());
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
+  // What was still queued when the app stopped shows queued from the first frame; it goes at the first sync (B236).
+  mesh_messaging_->PrimeQueuedResume();
   messaging_ready_ = true;
   mesh_ready_ = false;
   StartCoordinatorTimers();
@@ -2702,8 +2716,20 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
         return; // M021 d4: a signed-out device no longer speaks for the account
       }
-      if (auto published = account_locker_->Publish(); !published) {
+      auto published = account_locker_->Publish();
+      if (!published) {
         log().info << "Account locker not published: " << published.error().message;
+      }
+      std::function<void(bool)> on_result;
+      {
+        std::lock_guard lock(account_sync_result_mu_);
+        on_result = on_account_sync_result_;
+      }
+      if (on_result) {
+        on_result(static_cast<bool>(published));
+      }
+      if (published) {
+        RefreshOwnProfileIconSoon(); // a photo set on another device of the account: ours has none yet
       }
     });
   });
@@ -2799,6 +2825,9 @@ Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepare
   if (!uploaded) {
     return uploaded.error();
   }
+  if (mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings(); // our other devices look our photo up again (only with more than one device)
+  }
   return {};
 }
 
@@ -2813,7 +2842,11 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
   if (!blob) {
     return Error("Blob client not configured");
   }
-  return ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  auto cleared = ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  if (cleared && mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings();
+  }
+  return cleared;
 }
 
 namespace {
@@ -2929,6 +2962,69 @@ Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, c
   }
   Inbox().AfterMessageEdited(thread_id, target, edited->row);
   return edited->row;
+}
+
+void ConversationsHub::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                          std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<StoredResendAnswer> answer) {
+    if (on_done) {
+      on_done(std::move(answer));
+    }
+  };
+  if (!IsInitialized() || !mesh_messaging_) {
+    finish(Error("Messaging hub not initialized"));
+    return;
+  }
+  {
+    std::lock_guard lock(tap_resends_mu_);
+    if (!tap_resends_.insert(message_id).second) {
+      finish(StoredResendAnswer::StillTrying);
+      return;
+    }
+  }
+  // Off the UI thread: our files may be listed on the relay, and the copies are sealed again.
+  auto body = [this, thread_id, message_id, finish = std::move(finish)]() {
+    Roe<StoredResendAnswer> answer = [&]() -> Roe<StoredResendAnswer> {
+      auto row = Store().GetMessage(thread_id, message_id);
+      if (!row) {
+        return row.error();
+      }
+      if (!*row) {
+        return Error("Message not found");
+      }
+      if ((*row)->content_type == ChatContentType::Attachment && !MeshMessaging().SendStartedMs(message_id)) {
+        std::optional<RelayFileListResult> ours;
+        const std::shared_ptr<IBlobClient> blob = BlobClient();
+        auto identity = Identity().Get();
+        if (blob && identity && identity->registered && !identity->account_id.empty()) {
+          if (auto listed = blob->FileList(identity->account_id, "complete")) {
+            ours = std::move(*listed);
+          } else {
+            log().info << "own relay files not listed before a resend: " << listed.error().message;
+          }
+        }
+        if (SentRelayFileGone((*row)->payload_json, (*row)->timestamp, util::NowUnixMs(), ours ? &*ours : nullptr)) {
+          log().info << "not sent again: its file is no longer on the server message_id=" << message_id;
+          return StoredResendAnswer::AttachmentGone;
+        }
+      }
+      auto sent = MeshMessaging().ResendStoredMessage(thread_id, message_id);
+      if (!sent) {
+        return sent.error();
+      }
+      return *sent ? StoredResendAnswer::Sent : StoredResendAnswer::StillTrying;
+    }();
+    {
+      std::lock_guard lock(tap_resends_mu_);
+      tap_resends_.erase(message_id);
+    }
+    finish(std::move(answer));
+  };
+  if (AppRuntime::IsRunning()) {
+    AppRuntime::PostWorkerNormal(std::move(body));
+  } else {
+    body();
+  }
 }
 
 Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
@@ -4268,6 +4364,7 @@ void ConversationsHub::Shutdown() {
   contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
+  own_icon_sync_.reset();
   UnwireCardReaders();
   account_keys_.reset();
   peer_cards_.reset();
@@ -4438,6 +4535,26 @@ void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
 void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
   std::lock_guard lock(contacts_changed_mu_);
   on_contacts_changed_ = std::move(callback);
+}
+
+void ConversationsHub::RefreshOwnProfileIconSoon() {
+  if (!own_icon_sync_ || !HasDirectory() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  AppRuntime::PostWorkerBackground([this]() {
+    if (!own_icon_sync_ || shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const auto outcome = own_icon_sync_->Refresh();
+    if (outcome == OwnProfileIconSync::Outcome::Fetched || outcome == OwnProfileIconSync::Outcome::Cleared) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); }); // the Me page, Contacts and chats redraw our avatar
+    }
+  });
+}
+
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
+  std::lock_guard lock(account_sync_result_mu_);
+  on_account_sync_result_ = std::move(callback);
 }
 
 void ConversationsHub::NotifyOwnDevicesChanged() {

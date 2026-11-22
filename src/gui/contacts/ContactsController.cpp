@@ -642,6 +642,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.Bind("contact_index", &controller.contact_index_);
         ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
         ctor.Bind("search_query", &controller.search_query_);
+        ctor.Bind("account_sync_syncing", &controller.account_sync_syncing_);
+        ctor.Bind("account_sync_delayed", &controller.account_sync_delayed_);
         ctor.Bind("add_query", &controller.add_query_);
         ctor.Bind("add_rows", &controller.add_rows_);
         ctor.Bind("add_searching", &controller.add_searching_);
@@ -1027,6 +1029,16 @@ void ContactsController::SyncLists() {
     SyncBlocked();
     DirtyBlocked();
   }
+}
+
+void ContactsController::SetAccountSync(const bool syncing, const bool delayed) {
+  if (account_sync_syncing_ == syncing && account_sync_delayed_ == delayed) {
+    return;
+  }
+  account_sync_syncing_ = syncing;
+  account_sync_delayed_ = delayed;
+  DataModelHost::Instance().Dirty("contacts", "account_sync_syncing");
+  DataModelHost::Instance().Dirty("contacts", "account_sync_delayed");
 }
 
 void ContactsController::OnContactsChanged() {
@@ -2507,6 +2519,10 @@ void ContactsController::ShareContactCard(const std::function<Roe<void>()>& shar
 void ContactsController::ShareContactTo(const std::string& thread_id, const std::string& contact_id,
                                         const std::string& name) {
   if (!contacts_ports_.share_contact) {
+    return;
+  }
+  if (contacts_ports_.send_held && contacts_ports_.send_held(thread_id)) {
+    ShowToast(Tr("chat.send.held")); // B236: that chat sends nothing until they add us
     return;
   }
   const auto share = [share = contacts_ports_.share_contact, thread_id, contact_id]() {

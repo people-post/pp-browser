@@ -59,25 +59,36 @@ TEST(VoiceRecorder, StopKeepsAnOggFileNamedByItsLength) {
   EXPECT_FALSE(recorder.IsRecording());
 }
 
-TEST(VoiceRecorder, TheLevelFollowsTheLoudnessOfTheLastFrames) {
-  TempDir dir;
-  for (const bool loud : {false, true}) {
+TEST(VoiceRecorder, TheLevelIsZeroForSilenceAndNearOneAtFullScale) {
+  EXPECT_FLOAT_EQ(VoiceLevelFromPeak(0), 0.f);
+  EXPECT_FLOAT_EQ(VoiceLevelFromPeak(32768), 1.f);
+  EXPECT_GT(VoiceLevelFromPeak(32767), 0.99f);
+  EXPECT_LT(VoiceLevelFromPeak(50), 0.1f);                      // about -56 dB
+  EXPECT_GT(VoiceLevelFromPeak(3000), VoiceLevelFromPeak(300)); // louder is higher
+  EXPECT_LE(VoiceLevelFromPeak(1 << 20), 1.f);
+
+  {
+    TempDir dir;
     RecorderProbe probe;
-    VoiceRecorder::Callbacks callbacks = probe.Callbacks();
-    auto level = std::make_shared<std::atomic<float>>(-1.f);
-    callbacks.on_level = [level](const float value) { level->store(value); };
-    std::vector<int16_t> pcm = loud ? Tone(1500) : std::vector<int16_t>(48 * 1500, 0);
-    VoiceRecorder recorder(Scripted(std::move(pcm)), std::move(callbacks));
+    VoiceRecorder recorder(Scripted(std::vector<int16_t>(48 * 1500, 0)), probe.Callbacks());
     ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
-    ASSERT_TRUE(WaitFor([&] { return level->load() >= 0.f; })) << "a level arrives with the progress";
+    ASSERT_TRUE(WaitFor([&] { return probe.last_progress_ms.load() >= 1000; }));
     recorder.Cancel();
     ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
-    if (loud) {
-      EXPECT_GT(level->load(), 0.3f);
-      EXPECT_LE(level->load(), 1.f);
-    } else {
-      EXPECT_EQ(level->load(), 0.f);
-    }
+    EXPECT_EQ(probe.max_level.load(), 0.f) << "silence reports level 0";
+  }
+  {
+    TempDir dir;
+    RecorderProbe probe;
+    VoiceRecorder recorder(Scripted(std::vector<int16_t>(48 * 1500, 32767)), probe.Callbacks());
+    ASSERT_TRUE(recorder.Start(ConfigIn(dir)));
+    ASSERT_TRUE(WaitFor([&] { return probe.last_progress_ms.load() >= 1000; }));
+    recorder.Cancel();
+    ASSERT_TRUE(WaitFor([&] { return probe.Done(); }));
+    EXPECT_GT(probe.last_level.load(), 0.99f) << "full scale reports a level near 1";
+    // One report about every 100 ms of audio: the level rides on the progress tick, not on a tick of its own.
+    EXPECT_NEAR(static_cast<double>(probe.progress_calls.load()),
+                static_cast<double>(probe.last_progress_ms.load() / 100), 2.0);
   }
 }
 

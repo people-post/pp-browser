@@ -566,12 +566,16 @@ TEST(PendingPictureSourcePinTest, ChipEventsHaveNoIdAndBubbleEventsCarryOne) {
   }
 }
 
-// Step 2: a video's bubble waits for its poster and a poster that comes after a cancel is deleted; a voice recording
-// never gets a bubble; a file / video bubble learns its name and size from the preparation.
-TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceWithoutBubble) {
+// Step 2: a video's bubble waits for its poster and a poster that comes after a cancel is deleted; a file / video
+// bubble learns its name and size from the preparation. A voice recording gets a bubble too (the finished voice bubble
+// with the upload disc over its play button), made at once like a file's; its file fate stays with the voice flag.
+TEST(PendingPictureSourcePinTest, VideoPosterFirstLatePosterDeletedVoiceHasItsOwnBubble) {
   const std::string body = Body(Controller(), "void ChatController::StartAttachmentUpload(");
   ASSERT_FALSE(body.empty());
-  EXPECT_NE(body.find("const bool with_bubble = bubble.has_value() && !voice_file;"), std::string::npos);
+  EXPECT_NE(body.find("const bool with_bubble = bubble.has_value();"), std::string::npos);
+  EXPECT_NE(body.find("with_bubble && *bubble == PendingUploadKind::Voice"), std::string::npos);
+  EXPECT_NE(body.find("DecideVoiceSendSettle("), std::string::npos)
+      << "the recording's file still follows the voice flag";
   const size_t poster = body.find("WriteVideoPosterThumbnail(path, scratch_dir)");
   const size_t prepare = body.find("PrepareOutgoingAttachment(path, limits, source, scratch_dir)");
   ASSERT_NE(poster, std::string::npos);
@@ -670,7 +674,8 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
   EXPECT_NE(start.find("session != messaging_session_"), std::string::npos);
   const size_t refused = start.find("if (voice_file && !thread_id.empty()) {");
   ASSERT_NE(refused, std::string::npos);
-  EXPECT_LT(start.find("KeepVoiceForRetry(path, thread_id);", refused), start.find("release_pick_(path);", refused));
+  EXPECT_LT(start.find("FailVoiceKeepingRecording(reuse_row, path, thread_id);", refused),
+            start.find("release_pick_(path);", refused));
   const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
   EXPECT_NE(retry.find("if (AttachmentBusy() || chat_.voice_recording) {"), std::string::npos);
   EXPECT_EQ(retry.find("!item->record_id.empty() ? item->record_id : failed_record_id_"), std::string::npos)
@@ -685,11 +690,11 @@ TEST(PendingPictureSourcePinTest, PickEndsEndPreparingStalePostersBuildNothingRe
 TEST(PendingPictureSourcePinTest, OfflineRetriesStayFailedFailFastAndSayNoConnection) {
   const std::string source = Controller();
   const std::string retry = Body(source, "void ChatController::OnRetryAttachmentSend(");
-  EXPECT_NE(retry.find("OnUploadResumeFinished(now, sent, staged)"), std::string::npos);
-  EXPECT_NE(retry.find("if (!sent && !stale_chip) {"), std::string::npos)
-      << "the copy is looked for after a cancel too";
-  EXPECT_NE(retry.find("bubble_tap_guard_until_ ="), std::string::npos);
-  EXPECT_NE(retry.find("offline_stop->load()"), std::string::npos);
+  const std::string run = Body(source, "void ChatController::StartAttachmentRetry(");
+  EXPECT_NE(run.find("OnUploadResumeFinished(now, sent, staged)"), std::string::npos);
+  EXPECT_NE(run.find("if (!sent && !stale_chip) {"), std::string::npos) << "the copy is looked for after a cancel too";
+  EXPECT_NE(run.find("bubble_tap_guard_until_ ="), std::string::npos);
+  EXPECT_NE(run.find("offline_stop->load()"), std::string::npos);
   const std::string progress =
       Body(source, "std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgress(");
   const size_t held = progress.find("stop = held->hold.Update(facade->DeviceOffline(), SteadyNowMs());");

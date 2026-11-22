@@ -4,8 +4,12 @@ namespace pbr {
 
 struct BackgroundActivity::State {};
 
-BackgroundActivity::BackgroundActivity(const std::string& /*name*/) {}
+BackgroundActivity::BackgroundActivity(const std::string& /*name*/) {
+  ++Held();
+}
 
-BackgroundActivity::~BackgroundActivity() = default;
+BackgroundActivity::~BackgroundActivity() {
+  --Held();
+}
 
 } // namespace pbr

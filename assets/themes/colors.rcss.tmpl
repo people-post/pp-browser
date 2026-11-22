@@ -117,9 +117,112 @@ selection {
   background-color: {{fill-2}};
 }
 
+.prompt-voice-bar-mic {
+  image-color: {{accent}};
+}
+
+/* Held: the accent (never red). Armed (slid up to the cancel line): a soft red tint. */
 .prompt-voice-bar--active, .prompt-voice-bar--active:hover {
-  background-color: {{danger}};
+  background-color: {{accent}};
   color: {{label-on-accent}};
+}
+
+.prompt-voice-bar--active .prompt-voice-bar-mic {
+  image-color: {{label-on-accent}};
+}
+
+.prompt-voice-bar--active .prompt-voice-dot {
+  background-color: {{label-on-accent}};
+}
+
+.prompt-voice-bar--armed, .prompt-voice-bar--armed:hover {
+  background-color: {{x-vbar-armed}};
+  color: {{x-vbar-ink-armed}};
+}
+
+.prompt-voice-bar--armed .prompt-voice-bar-mic {
+  image-color: {{x-vbar-ink-armed}};
+}
+
+/* The phone chat's bar is a floating card like the text pill: a 1dp edge and the pill's soft shadow. */
+.shell-chat-overlay .prompt-voice-bar {
+  background-color: {{bg-card}};
+  border-color: {{separator}};
+  box-shadow: 0 2dp 10dp {{x-float-shadow}};
+}
+
+.shell-chat-overlay .prompt-voice-bar--active, .shell-chat-overlay .prompt-voice-bar--active:hover {
+  background-color: {{accent}};
+  border-color: {{accent}};
+  box-shadow: none;
+}
+
+.shell-chat-overlay .prompt-voice-bar--armed, .shell-chat-overlay .prompt-voice-bar--armed:hover {
+  background-color: {{x-vbar-armed}};
+  border-color: transparent;
+}
+
+.prompt-voice-dot {
+  background-color: {{danger}};
+}
+
+.prompt-voice-timer--countdown {
+  color: {{warn}};
+}
+
+.prompt-voice-bar--active .prompt-voice-timer--countdown {
+  color: {{label-on-accent}};
+}
+
+/* The hold-to-talk bubble (components.rcss). Material: the bar colour (opaque with Transparency off), the frosted
+   bar colour with the blur on the frosted overlay, or the 88% colour without blur (the fallback). */
+.voice-bubble {
+  color: {{label}};
+  box-shadow: 0 8dp 28dp {{x-vbubble-shadow}};
+}
+
+.voice-bubble-material {
+  background-color: {{x-bar}};
+}
+
+.shell-chat-overlay--frost .voice-bubble-material {
+  background-color: {{x-vbubble-glass}};
+}
+
+.shell-chat-overlay--glass .voice-bubble-material {
+  background-color: {{x-vbubble-approx}};
+}
+
+.voice-bubble-bar {
+  background-color: {{accent}};
+}
+
+.voice-bubble-sub {
+  color: {{x-vbubble-ink-2}};
+}
+
+.voice-bubble-timer--countdown {
+  color: {{warn}};
+}
+
+.voice-bubble--armed .voice-bubble-material {
+  background-color: {{x-vbubble-armed-solid}};
+}
+
+.shell-chat-overlay--frost .voice-bubble--armed .voice-bubble-material {
+  background-color: {{x-vbubble-armed}};
+}
+
+.shell-chat-overlay--glass .voice-bubble--armed .voice-bubble-material {
+  background-color: {{x-vbubble-armed-approx}};
+}
+
+.voice-bubble--armed .voice-bubble-row, .voice-bubble--armed .voice-bubble-sub {
+  color: {{x-vbubble-ink-armed}};
+}
+
+.voice-bubble-bin {
+  image-color: {{x-vbubble-ink-armed}};
 }
 
 .prompt-emoji-btn svg {
@@ -1004,6 +1107,11 @@ select selectbox option:hover {
 .photo-preview-spinner {
   border-color: {{x-photo-spinner-track}};
   border-top-color: {{x-photo-spinner}};
+}
+
+.sync-pending-spinner {
+  border-color: {{fill}};
+  border-top-color: {{accent}};
 }
 
 .shell-startup-cover {

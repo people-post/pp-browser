@@ -42,10 +42,12 @@
 #include "domain/delivery/RecipientRelays.h"
 #include "domain/delivery/RelayInboxCoordinator.h"
 #include "feature/conversations/PeerTransports.h"
+#include "feature/conversations/QueuedResend.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/net/OrgBackendClients.h"
+#include "common/Utilities.h"
 
 #include <atomic>
 #include <chrono>
@@ -131,10 +133,24 @@ public:
                               const std::string& text, const std::string& message_id, int64_t sent_at_ms);
   /** A deleted message that has not gone out yet is not retried. */
   void CancelPendingSend(const std::string& message_id);
-  /** When the send of our message `message_id` still under way started (DeliveryOutbox::SendStartedMs). Any thread. */
-  std::optional<int64_t> SendStartedMs(const std::string& message_id) const {
-    return outbox_.SendStartedMs(message_id);
-  }
+  /**
+   * When the send of our message `message_id` still under way started (DeliveryOutbox::SendStartedMs) — or, for a row
+   * the start will send again (PrimeQueuedResume) and has not yet, this process's start: it shows queued from the first
+   * frame, not red until the first sync (B236). Any thread.
+   */
+  std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
+  /**
+   * Sends our stored message `message_id` again as itself — the same message id, sealed again for the peer's (or each
+   * member's) devices as a first send is — so a recipient that has it already drops the copy (the receive pipeline's
+   * dedup by message id, RelayReceivePipeline: BenignDuplicate) and one that does not gets it (B236). Its row is queued
+   * again first (a restart before it is through finds it in the outbox). For a message of ours, from this device,
+   * carrying a send mark (text, picture / file / voice, card, payment), in a public 1:1 chat or a group
+   * (StoredResendAllowed, QueuedResend.h); a private (e2e) chat's numbering is not re-sealed. true: on its way; false:
+   * something of it is still under way, nothing done; an error: not sent (not one of those, delivered, or its send
+   * failed — then its row is failed again). Blocking (sealing, the store): a worker or the UI thread, as a composer
+   * send.
+   */
+  Roe<bool> ResendStoredMessage(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void PollAndMerge();
@@ -143,6 +159,30 @@ public:
    * `force` (a push, a wake) polls every one.
    */
   void SyncInboxFromWake(bool force = true);
+  /**
+   * After a start (B236): what was still queued when the app last stopped — our rows still pending in the store's
+   * outbox — is sent again as itself (ResendStoredMessage), once per process, at the first inbox sync with a relay;
+   * one queued longer than kResumeQueuedMaxAgeMs is failed instead (the red mark: a tap sends it). Rows already failed
+   * are left as they are (PlanQueuedResume). Blocking: on a worker.
+   */
+  void ResumeQueuedSends();
+  /**
+   * At messaging ready, before the first frame reads the marks: which rows the start will send again (PlanQueuedResume,
+   * from the store alone) — they show queued until ResumeQueuedSends has them on their way — and those queued too long
+   * are failed now. Once per process; ResumeQueuedSends primes itself if nothing did. Blocking (the store).
+   */
+  void PrimeQueuedResume();
+  /**
+   * B236: whether the 1:1 chat `thread_id` is held — the recipient has not added us and its probe is still queued
+   * (StrangerHold) — so it sends nothing more for now. Blocking (the store); any thread.
+   */
+  bool ChatSendHeld(const std::string& thread_id) const;
+  /** A grant from `grantor` was kept: what its stranger quota held back is sent at once (the outbox). Any thread. */
+  void OnGrantReceived(const std::string& grantor);
+  /** Tests: sees each sent-copy handed to our other devices. Set before messaging runs. */
+  void SetOnMirrorForTest(std::function<void(const ThreadMessage& sent, const SentCopyTarget& target)> seen) {
+    on_mirror_for_test_ = std::move(seen);
+  }
   /**
    * Holds every inbox poll (none goes until released): mail waits on the relays. The app lab's probe uses it to keep
    * messages on a relay while it replays requests (multi-relay MR007); nothing in the product holds. Any thread.
@@ -271,6 +311,12 @@ public:
    * other devices. Off the caller's thread.
    */
   void MirrorToSiblings(const ThreadMessage& sent, SentCopyTarget target);
+  /**
+   * B236: our stored message `message_id` was just delivered (its first copy accepted): our other devices get their
+   * copy now — never for a message that is not through, so a sibling never shows as sent what failed. Once per
+   * message (ApplyOutcomeToRow::delivered_now).
+   */
+  void MirrorDelivered(const std::string& thread_id, const std::string& message_id);
   /**
    * A copy may be missing for this device (M021 §9): once kMissingCopyWaitMs passed without the message arriving
    * another way (a copy over a link), ask the sending device for one (`copy_ask`, carrying our card). Once per
@@ -410,21 +456,35 @@ private:
    */
   void NotePeerNeedsUpdate(const std::string& account, const std::string& detail);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport);
-  /** `detail`: the transport's own text, for the log. */
-  void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
-                       const std::string& detail);
+  /**
+   * A 1:1 message's request (or one of its copies) ended: its row as ApplyOutcomeToRow marks it (B236: failed only
+   * when nothing of it is still being tried), and the reason told when it failed now.
+   */
+  void ApplySendOutcome(const DeliveryOutcome& outcome);
+  /** A send of ours in a 1:1 chat refused for the stranger quota and queued: the chat is held, one line says so. */
+  void NoteStrangerHeld(const std::string& thread_id, const std::string& message_id);
+  /**
+   * The send of the stored 1:1 row `appended` (`wire`: what goes on the wire) in `thread`: a copy for each of the
+   * peer's devices (M021/M022), or the account copy, handed to the outbox. An error when nothing could be handed over
+   * (the caller fails the row).
+   */
+  Roe<void> DispatchDirect(const Thread& thread, const ThreadMessage& appended, const ThreadMessage& wire,
+                           const SendRelayOptions& options);
+  /** The send of the stored group row `message` to each other member's devices (`members`), as DispatchDirect. */
+  Roe<void> DispatchGroup(const Thread& thread, const ThreadMessage& message, const std::string& text,
+                          const SendRelayOptions& options, const std::vector<GroupRosterMember>& members,
+                          const LocalIdentity& identity);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
   Roe<void> StartNextPairEpochIfRestored(const PeerSessionKey& key);
-  /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
+  /**
+   * One member's copy of a group message ended: that member's reachability, the row once any copy is out, and failed
+   * once the last copy ends with none out.
+   */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
   void NotifyGroupMembersMissed(const std::string& thread_id, const std::string& message_id);
-  /** The message row's delivery state; false when there is no row (a control-lane send). */
-  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success,
-                    MessageTransport transport, bool unless_delivered = false);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id, std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
@@ -600,6 +660,20 @@ private:
   RecipientRelays recipient_relays_;
   uint64_t last_relay_poll_ms_ = 0;
   std::atomic<bool> inbox_sync_held_{false};
+  /** When this orchestrator was made: a row written since is sent by its own send, never by ResumeQueuedSends. */
+  const int64_t created_ms_ = util::NowUnixMs();
+  /** Tests: each sent-copy handed to our siblings (MirrorToSiblings), before the device check. */
+  std::function<void(const ThreadMessage& sent, const SentCopyTarget& target)> on_mirror_for_test_;
+  /** ResumeQueuedSends ran (or is running) in this process. */
+  std::atomic<bool> queued_sends_resumed_{false};
+  /** PrimeQueuedResume's plan: the rows to send again, not yet handed to the outbox (shown queued meanwhile). */
+  mutable std::mutex resume_mu_;
+  bool resume_primed_ = false;
+  std::vector<QueuedRow> awaiting_resume_;
+  /** One "held" line per chat (NoteStrangerHeld): outcomes on several workers never both add one. */
+  std::mutex stranger_hold_mu_;
+  /** One ResendStoredMessage at a time: a tap and the start's resume never both send a message. */
+  std::mutex stored_resend_mu_;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};
   void StoreBriefRelayHealth(BriefRelayHealthState state);

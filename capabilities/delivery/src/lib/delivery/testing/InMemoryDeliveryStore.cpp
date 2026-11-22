@@ -334,10 +334,16 @@ bool InMemoryDeliveryStore::UpdateMessageLocked(const ThreadMessage& message) {
   for (ThreadMessage& row : rows->second) {
     if (row.id == message.id) {
       const int64_t order = row.display_order; // keeps its place in the thread
+      const bool queued_again =
+          row.delivery != MessageDelivery::Pending && message.delivery == MessageDelivery::Pending;
       row = message;
       row.display_order = order;
       if (message.delivery != MessageDelivery::Pending) {
         std::erase_if(outbox_, [&](const auto& entry) { return entry.first == message.id; });
+      } else if (queued_again && message.relay_visible &&
+                 std::none_of(outbox_.begin(), outbox_.end(),
+                              [&](const auto& entry) { return entry.first == message.id; })) {
+        outbox_.emplace_back(message.id, message.thread_id); // as SQLite's UpdateMessageDelivery (B236)
       }
       return true;
     }
@@ -533,7 +539,8 @@ Roe<uint32_t> InMemoryDeliveryStore::BumpLocalChatTargetEpoch(const std::string&
 
 Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
   std::lock_guard lock(mutex_);
-  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct message missing one gets it.
+  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct or group message missing one
+  // gets it.
   std::erase_if(outbox_, [&](const auto& entry) {
     auto rows = messages_.find(entry.second);
     if (rows == messages_.end()) {
@@ -544,7 +551,7 @@ Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
     return message == rows->second.end() || message->delivery != MessageDelivery::Pending;
   });
   for (const auto& [thread_id, thread] : threads_) {
-    if (thread.kind != ThreadKind::Direct) {
+    if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
       continue;
     }
     if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
