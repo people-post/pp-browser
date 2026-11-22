@@ -29,7 +29,7 @@ pp-node fleet rollback and environment resets after that (Leo's).
 | Role | Who | Does |
 |------|-----|------|
 | **Release owner** | Hongwei for release 1 (app 1.0, pp-node 10.0, relay 1.0); rotates after it | Cuts release branches, pushes release tags, approves backports, decides go / no-go and incidents. The backport bot asks the repo variable `RELEASE_OWNER` for review |
-| **Relay prod deployer** | Hongwei (pp-relay-apis variable `RELAY_PROD_DEPLOYERS`) | Pushes the relay's `vX.Y.Z` tags, the only way to deploy relay prod |
+| **Relay prod deployer** | listed in pp-relay-apis (private) | Pushes the relay's `vX.Y.Z` tags, the only way to deploy relay prod |
 | **Relay settings and infrastructure** | Leo (`@leofreiheit`) | Prod `client-compat` values (`min_client_version`, `latest_client_version`, `upgrade_url`, `upgrade_urls`, `message`), alarms, backups, the pp-node fleet |
 
 ## Before using one

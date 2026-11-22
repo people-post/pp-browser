@@ -473,8 +473,8 @@ protection item for two repos. Item 2 amended by [RC021](#rc021--the-relay-repos
    pp-browser, the pp-cpp-* libraries, pp-ledger and pp-ledger-apps first (`develop` merged into `main` a last time,
    docs and workflows moved to `main`, then the default branch switched and `develop` deleted), then the relay's private
    repositories once their deploys have moved (item 2).
-2. **The relay's deploys:** a push to `main` deploys **qa**; a `v*` release tag deploys **prod**, and Hongwei approves
-   prod by being the one who pushes those tags. qa keeps its name until RC009's dev and staging exist. The deploy
+2. **The relay's deploys:** a push to `main` deploys **qa**; a `v*` release tag deploys **prod**, and the relay prod
+   deployer approves prod by being the one who pushes those tags. qa keeps its name until RC009's dev and staging exist. The deploy
    roles in the relay's infrastructure trust the refs by name, so they first add `main` (qa) and `v*` tags (prod) beside
    today's `develop` and `main`, and drop the old two once `develop` is deleted.
 3. **Branch protection on the public repos** as PHASES § P2 says. The relay's private repositories keep their own rules,
