@@ -15,8 +15,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 allowlist="${root}/scripts/check/private_infra_allowlist.txt"
 
-# Secret ids and secret stores, cloud resource names and permissions, the private infrastructure repositories.
-PATTERN='SECRET_ID|secretsmanager:|Secrets Manager|GetSecretValue|arn:aws|kms:|pp-relay-infra-(terraform|ansible)'
+# Kinds of detail, not our names (this file is public too): a secret-id variable, a secret store and its permissions,
+# a cloud resource name, an infrastructure repository.
+PATTERN='[A-Z0-9_]+_SECRET_ID|arn:aws[a-z-]*:|secretsmanager:|Secrets Manager|GetSecretValue|kms:|[a-z0-9]+(-[a-z0-9]+)*-infra-(terraform|ansible)'
 
 # The tree's tracked files; the self-test's files under a temporary directory (--no-index).
 grep_index=()
@@ -78,7 +79,7 @@ self_test() {
   printf 'A relay certificate is served at GET /v1/relay-identity.\n' >"${dir}/docs/a.md"
   : >"${dir}/allow.txt"
   expect 0 "no match"
-  printf 'The registry reads RELAY_CERTIFICATE_SECRET_ID.\n' >>"${dir}/docs/a.md"
+  printf 'The service reads EXAMPLE_TOKEN_SECRET_ID.\n' >>"${dir}/docs/a.md"
   expect 1 "a new file naming a secret id"
   printf 'docs/a.md 1\n' >"${dir}/allow.txt"
   expect 0 "an allowed file at its count"
@@ -88,18 +89,20 @@ self_test() {
   printf 'A relay certificate is served at GET /v1/relay-identity.\n' >"${dir}/docs/a.md"
   expect 1 "an allowed file below its count"
   printf 'docs/a.md 0\n' >"${dir}/allow.txt"
-  printf 'The registry reads RELAY_CERTIFICATE_SECRET_ID.\n' >"${dir}/docs/a.md"
+  printf 'The service reads EXAMPLE_TOKEN_SECRET_ID.\n' >"${dir}/docs/a.md"
   expect 1 "a zero line is no allowance"
   printf '# a comment\ndocs/gone.md 2\n' >"${dir}/allow.txt"
   expect 1 "an allowed file that no longer matches"
   : >"${dir}/allow.txt"
-  for line in 'arn:aws:secretsmanager:us-east-1:1:secret:x' 'the seed in Secrets Manager' 'see pp-relay-infra-terraform' \
-    'pp-relay-infra-ansible roles'; do
+  for line in 'arn:aws:secretsmanager:us-east-1:1:secret:x' 'arn:aws-cn:iam::1:role/x' 'the seed in Secrets Manager' \
+    'secretsmanager:GetSecretValue on it' 'and kms:Decrypt' 'see example-infra-terraform' 'example-svc-infra-ansible roles'; do
     printf '%s\n' "${line}" >"${dir}/docs/a.md"
     expect 1 "pattern: ${line}"
   done
   printf 'pp-relay-apis serves the relay; Lambda and DynamoDB are its architecture.\n' >"${dir}/docs/a.md"
   expect 0 "the relay's public name and architecture"
+  printf 'An infra-terraform module; a SECRET_ID_LENGTH constant; arn:other.\n' >"${dir}/docs/a.md"
+  expect 0 "words near the patterns"
   rm -rf "${dir}"
   [[ ${failures} -eq 0 ]] && echo "check_private_infra self-test: ok"
   [[ ${failures} -eq 0 ]]
