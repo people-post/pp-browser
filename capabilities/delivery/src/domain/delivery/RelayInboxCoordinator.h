@@ -30,7 +30,10 @@ struct RelayInbox {
  * woke us). Another relay is polled only once we are registered there. Each inbox keeps its own cursor (persisted,
  * RelayInboxCursors, by relay: a relay made preferred keeps its cursor, one no longer ours loses it) and one poll at a time; a batch is handed to `take` on the ingest lane, then acked on the relay
  * it came from. A message that arrives through two relays is taken twice: the receive pipeline drops the second by
- * its id. A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
+ * its id. A cursor counts in one mailbox: the registration we held there (Ports::mailbox, kept beside the cursor). A
+ * fresh registration is a new mailbox numbered from the start, so a cursor kept for another one, or while it was not
+ * known, is dropped and that inbox is read from its start (what was taken already is dropped as seen); cursors from a
+ * file that noted no mailbox at all (an older app's) are dropped once, all of them. A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
  * relay_upgrade_required` / `unsupported_sign_version`, `401 wrong_audience`; release-compatibility T14) is not polled
  * again, forced or not, for kRefusedFirstMs, doubling to kRefusedMaxMs while it keeps refusing; an answer ends the
  * back-off. Thread-safe; the polls' HTTP runs on the `poll` lane.
@@ -66,6 +69,11 @@ public:
     std::function<bool(const std::string& origin)> ready;
     /** Monotonic ms (the refusal back-off); none: the steady clock. */
     std::function<int64_t()> now_ms;
+    /**
+     * The registration we hold at that relay now (its `registration_id`: new for a fresh registration — a new mailbox
+     * —, the same across renewals); empty: unknown, the cursor kept is used. None: always unknown.
+     */
+    std::function<std::string(const std::string& origin, bool preferred)> mailbox;
   };
 
   explicit RelayInboxCoordinator(Ports ports);
@@ -101,7 +109,8 @@ private:
   void NoteRefusal(Inbox& inbox, bool permanent);
   /** One poll of `inbox`: false when it failed. */
   bool PollOnce(const std::shared_ptr<Inbox>& inbox, const std::string& account_id);
-  std::string CursorOf(const Inbox& inbox, const std::string& account_id);
+  /** The cursor kept for `inbox`; none when it was kept for another `mailbox` than this one (dropped then). */
+  std::string CursorOf(const Inbox& inbox, const std::string& account_id, const std::string& mailbox);
   void KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor);
   void LoadCursorsLocked(const std::string& account_id);
   /** Drops the cursors of relays not listed and writes the file (cursors read for an account). */
@@ -118,6 +127,8 @@ private:
   std::string cursors_account_;
   /** The cursors read, by relay (RelayOriginKey). */
   std::map<std::string, std::string> cursors_;
+  /** The mailbox each relay's cursor counts in (the registration id), by relay (RelayOriginKey). */
+  std::map<std::string, std::string> mailboxes_;
   uint64_t syncs_ = 0;
 };
 

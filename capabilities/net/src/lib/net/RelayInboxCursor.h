@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 
 namespace pbr {
@@ -17,6 +18,13 @@ struct RelayInboxCursors {
   std::string preferred_relay;
   /** By relay origin (RelayOriginKey). */
   std::map<std::string, std::string> others;
+  /**
+   * The mailbox each relay's cursor counts in, by relay origin (RelayOriginKey; the preferred relay's too): the
+   * `registration_id` we held there (a relay missing: not known when its cursor was kept). A fresh registration is a
+   * new mailbox, numbered from the start again. None at all — a file from before it, or one an older app wrote
+   * again — says nothing of any cursor's mailbox. Always written (empty too).
+   */
+  std::optional<std::map<std::string, std::string>> registrations;
 
   bool operator==(const RelayInboxCursors&) const = default;
 };

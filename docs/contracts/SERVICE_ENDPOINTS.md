@@ -338,7 +338,11 @@ user changes the list.
   at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
   ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
   only once they hold our registration. A forced sync — a push or a wake — polls every relay: any of them may hold
-  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox.
+  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox. A cursor counts in
+  one mailbox: the registration we held there when it was kept (`registration_id`, kept beside it). A fresh
+  registration (after a revoke or a lapse) is a new mailbox the relay numbers from the start, so a cursor kept for
+  another registration, or while it was not known, is dropped and that inbox read from its start (a cursor file that
+  noted none at all, an older app's, drops every cursor once); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
 - **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
   for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
   redelivery. One relay batch is taken in at a time.

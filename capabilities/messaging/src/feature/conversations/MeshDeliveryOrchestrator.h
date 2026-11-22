@@ -232,6 +232,11 @@ public:
   void SetRelayClients(RelayClients clients);
   /** Whether another relay of ours may be polled now (we are registered there); none: always. Any thread. */
   void SetInboxReady(std::function<bool(const std::string& origin)> ready);
+  /**
+   * The registration we hold at an inbox's relay now (RelayInboxCoordinator::Ports::mailbox: a cursor counts in that
+   * mailbox); none, or empty: unknown. Any thread.
+   */
+  void SetInboxMailbox(std::function<std::string(const std::string& origin, bool preferred)> mailbox);
   /** Each poll of an inbox of ours (`ok`: it answered), on the poll lane (My relays' reachability). */
   void SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled);
   /** Our account card changed here (issued, or a sibling's newer one taken), outside any lock (My relays follow). */
@@ -569,6 +574,7 @@ private:
   void PostRelayIngestNotes(RelayIngestNotes notes);
   RelayInboxCoordinator::Ports InboxPorts();
   bool InboxReady(const std::string& origin) const;
+  std::string InboxMailbox(const std::string& origin, bool preferred) const;
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
   /**
@@ -681,6 +687,7 @@ private:
   std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
   mutable std::mutex inbox_ready_mu_;
   std::function<bool(const std::string&)> inbox_ready_;
+  std::function<std::string(const std::string&, bool)> inbox_mailbox_; // guarded by inbox_ready_mu_
   /** One relay batch through the pipeline at a time (two relays may carry the same message). */
   std::mutex relay_ingest_mu_;
   /** Our relay inboxes, polled (last: its posted polls capture this, and it reads the members above). */
