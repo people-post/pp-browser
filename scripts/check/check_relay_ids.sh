@@ -16,6 +16,11 @@
 #                                ships that environment
 #   check_relay_ids.sh dogfood   warns instead
 #   check_relay_ids.sh --self-test
+#
+# In both modes a certificate of another relay id fails: a relay id and a certificate that are both set but disagree
+# are never intended (the file and the variable were not changed together), and the app would drop that floor with
+# only a log warning. The check reads the founding operator set from the certificate and hashes it to its relay id
+# (SIGNED_FORMATS § 3.1); it does not verify signatures (the app does, and pp-relay-apis' `relay-operator.mjs verify`).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -32,8 +37,52 @@ certificate_text() {
   grep -v '^[[:space:]]*#' "${file}" | tr -d '[:space:]'
 }
 
-check_env() { # check_env <ENV> <relay id> <certificate file>; prints problems
-  local env="$1" id="$2" file="$3" cert
+# The relay id a certificate is of (SIGNED_FORMATS § 3.1): BLAKE2b-256("pp-browser:relay-id" 00 ‖ u8 1 ‖ founding
+# set), the founding set being the first LenBytes (u64 big-endian length) of the body. The blob must also end where
+# its signatures do (a copy cut short). Prints the id, or prints a reason and exits 1 when the blob is not a version-1
+# certificate this check can read.
+certificate_relay_id() { # certificate_relay_id <certificate base64>
+  python3 -c '
+import base64, binascii, hashlib, struct, sys
+
+def fail(why):
+    print(why)
+    sys.exit(1)
+
+try:
+    blob = base64.b64decode(sys.argv[1], validate=True)
+except (binascii.Error, ValueError):
+    fail("not base64")
+if len(blob) < 1 or blob[0] != 1:
+    fail("certificate version %s, this build reads 1" % (blob[0] if blob else "missing"))
+
+def len_bytes(data, at):
+    if len(data) < at + 8:
+        fail("truncated")
+    (n,) = struct.unpack(">Q", data[at : at + 8])
+    if len(data) < at + 8 + n:
+        fail("truncated")
+    return data[at + 8 : at + 8 + n]
+
+body = len_bytes(blob, 1)
+at = 9 + len(body)
+if len(blob) < at + 1:
+    fail("truncated")
+signatures, at = blob[at], at + 1
+for _ in range(signatures):
+    at += 1 + 8 + len(len_bytes(blob, at + 1))
+if at != len(blob):
+    fail("truncated" if at > len(blob) else "bytes after the signatures")
+founding = len_bytes(body, 0)
+if len(founding) < 2 or not 1 <= founding[0] <= founding[1] <= 8:
+    fail("no operator set (threshold and size outside 1 <= t <= n <= 8)")
+digest = hashlib.blake2b(b"pp-browser:relay-id\x00\x01" + founding, digest_size=32).digest()
+print("relay:" + base64.urlsafe_b64encode(digest).decode().rstrip("="))
+' "$1"
+}
+
+check_env() { # check_env <ENV> <relay id> <certificate file>; prints problems, "fatal: " first when every mode fails
+  local env="$1" id="$2" file="$3" cert of
   if [[ "${id}" == "pending" ]]; then
     echo "PP_RELAY_ID_${env} is the placeholder (pending): the ${env} relay is not used until its operator set exists"
   elif ! relay_id_form "${id}"; then
@@ -44,6 +93,10 @@ check_env() { # check_env <ENV> <relay id> <certificate file>; prints problems
     echo "${file#"${root}/"} holds no certificate (a placeholder): a fresh install would know no audience before its first fetch"
   elif ! [[ "${cert}" =~ ^[A-Za-z0-9+/]+=*$ ]]; then
     echo "${file#"${root}/"} is not a certificate's base64"
+  elif ! of="$(certificate_relay_id "${cert}")"; then
+    echo "fatal: ${file#"${root}/"} is not a certificate this build reads: ${of}"
+  elif relay_id_form "${id}" && [[ "${of}" != "${id}" ]]; then
+    echo "fatal: ${file#"${root}/"} is the certificate of ${of}, not of PP_RELAY_ID_${env} (${id}): a new operator set is a new relay id, so the file and the variable change together"
   fi
 }
 
@@ -62,21 +115,35 @@ check() {
       check_env DEV "${PP_RELAY_ID_DEV:-pending}" "${PP_RELAY_CERT_FILE_DEV:-${root}/config/relay-certs/dev.cert}"
     fi
   )
-  local problem
+  local problem fatal=0
   for problem in "${problems[@]+"${problems[@]}"}"; do
-    if [[ "${mode}" == "release" ]]; then
+    if [[ "${problem}" == fatal:* ]]; then
+      echo "::error::${problem#fatal: }"
+      fatal=1
+    elif [[ "${mode}" == "release" ]]; then
       echo "::error::${problem}"
     else
       echo "::warning::${problem}"
     fi
   done
-  [[ "${mode}" != "release" || ${#problems[@]} -eq 0 ]]
+  [[ ${fatal} -eq 0 && ( "${mode}" != "release" || ${#problems[@]} -eq 0 ) ]]
 }
 
 self_test() {
-  local good="relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" failures=0 dir
+  # Real certificates from the frozen vectors (SIGNED_FORMATS § 6): certificate 1 of the vectors' relay, wrapped and
+  # commented as a .cert file is; another relay's; a version this build does not read; a truncated one.
+  local good="relay:lelZMZgWuhoMQTvLLUT1C5qlJBPX66oxOLzIT_VsEs4" failures=0 dir
+  local vectors="${root}/capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json"
   dir="$(mktemp -d)"
-  printf '# a comment\nAQID\nBA==\n' >"${dir}/good.cert"
+  python3 - "${vectors}" "${dir}" <<'PY_VECTORS'
+import json, sys, textwrap
+
+cases = {c["name"]: c for c in json.load(open(sys.argv[1]))["cases"]}
+for file, name in [("good", "certificate_1"), ("other", "other_relay_id"), ("version2", "version_2"),
+                   ("truncated", "truncated")]:
+    with open("%s/%s.cert" % (sys.argv[2], file), "w") as out:
+        out.write("# a comment\n" + "\n".join(textwrap.wrap(cases[name]["certificate_b64"], 120)) + "\n")
+PY_VECTORS
   printf '# placeholder\npending\n' >"${dir}/pending.cert"
   printf 'not base64!\n' >"${dir}/bad.cert"
   # expect <0|1> <mode> <prod id|UNSET> <prod cert> [<ENV> <url> <id|UNSET> <cert>]...: ENV is STAGING or DEV
@@ -106,10 +173,17 @@ self_test() {
   expect 1 release "" good.cert                # empty: what CI passes, pending
   expect 1 release "relay:short" good.cert
   expect 1 release "QmTWkSQAcGsETogTFKrPJ3GzdHG3vP9UwXVyp2HeK9YBvP" good.cert # a PeerId is no relay id
-  expect 1 release "relay:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh9" good.cert # spare bits
+  expect 1 release "relay:lelZMZgWuhoMQTvLLUT1C5qlJBPX66oxOLzIT_VsEs5" good.cert # spare bits
   expect 1 release "${good}" pending.cert      # no certificate floor
   expect 1 release "${good}" bad.cert
   expect 1 release "${good}" missing.cert
+  # A certificate of another relay id, or one this build cannot read, fails in every mode; with no id set there is
+  # nothing to compare.
+  expect 1 release "${good}" other.cert
+  expect 1 dogfood "${good}" other.cert
+  expect 0 dogfood UNSET other.cert
+  expect 1 dogfood "${good}" version2.cert
+  expect 1 dogfood UNSET truncated.cert
   # Staging and dev count only where the build compiles their origin; then each needs its own id and certificate.
   expect 0 release "${good}" good.cert STAGING "" UNSET pending.cert DEV "" UNSET missing.cert
   for env in STAGING DEV; do
@@ -123,19 +197,23 @@ self_test() {
     expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" pending.cert
     expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" bad.cert
     expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" missing.cert
+    expect 1 release "${good}" good.cert "${env}" "${url}" "${good}" other.cert
+    expect 1 dogfood "${good}" good.cert "${env}" "${url}" "${good}" other.cert
   done
   expect 0 release "${good}" good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
   expect 1 release "${good}" good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" UNSET good.cert
   expect 1 release "${good}" good.cert STAGING "${staging}" UNSET good.cert DEV "${dev}" "${good}" good.cert
   expect 1 release UNSET good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
   expect 0 dogfood UNSET pending.cert STAGING "${staging}" "" pending.cert DEV "${dev}" UNSET missing.cert
-  # The files in the tree: each environment's exists and holds a certificate or the placeholder (dev's is made, 1 of 1;
-  # prod's and staging's are pending until Leo makes them).
+  expect 1 dogfood UNSET pending.cert STAGING "${staging}" "" pending.cert DEV "${dev}" "${good}" other.cert
+  # The files in the tree: each environment's exists and holds a certificate this build reads or the placeholder
+  # (dev's is made, 1 of 1; prod's and staging's are pending until Leo makes them).
   local name text
   for name in prod staging dev; do
     text="$(certificate_text "${root}/config/relay-certs/${name}.cert")"
-    if [[ ! -f "${root}/config/relay-certs/${name}.cert" ]] || ! [[ "${text}" == pending || "${text}" =~ ^[A-Za-z0-9+/]+=*$ ]]; then
-      echo "self-test: config/relay-certs/${name}.cert is missing, or neither a certificate's base64 nor pending" >&2
+    if [[ ! -f "${root}/config/relay-certs/${name}.cert" ]] ||
+      { [[ "${text}" != pending ]] && ! certificate_relay_id "${text}" >/dev/null; }; then
+      echo "self-test: config/relay-certs/${name}.cert is missing, or neither a certificate this build reads nor pending" >&2
       failures=$((failures + 1))
     fi
   done
