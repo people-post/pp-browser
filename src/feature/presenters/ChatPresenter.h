@@ -439,11 +439,13 @@ public:
    */
   std::optional<SendFailure> SendFailureReasonOf(const std::string& thread_id, const std::string& message_id);
   /**
-   * A tap on the red mark of our message `message_id` in `thread_id` (#210 step 2): an own text in a public chat whose
-   * automatic sending has stopped is sent again as a new message and the unsent row goes (ResendAfterTap); otherwise
-   * nothing is sent and the result says what to tell. The composer's draft is not touched.
+   * A tap on the red mark of our message `message_id` in `thread_id` (#210 step 2, B236): decides (DecideSendMarkTap)
+   * — ResendSameMessage for the caller to start (the same message id), the edit sent again for an edited message, or
+   * what to tell. The composer's draft is not touched.
    */
   SendMarkTap TapSendMark(const std::string& thread_id, const std::string& message_id);
+  /** `message_id` was sent again by a tap (ResendSameMessage): told once if it is drawn red again (ResentTurnedRed). */
+  void NoteResent(const std::string& thread_id, const std::string& message_id) { resent_ids_[message_id] = thread_id; }
   /**
    * Sends the failed message again once the contact's or our own card was updated: as TapSendMark, but without the
    * "update the card first" results (the update was just made).
@@ -672,8 +674,6 @@ private:
   std::optional<std::string> opened_at_mention_;
   /** Messages sent again by a tap not yet told as red again, until told or delivered (in memory). */
   ResentMessages resent_ids_;
-  /** Unsent rows already sent again whose removal failed: a later tap retries the removal only (in memory). */
-  std::unordered_set<std::string> resent_unremoved_;
 };
 
 } // namespace pbr
