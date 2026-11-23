@@ -765,6 +765,28 @@
   font-size: 15dp;
 }
 
+/* The hint over the empty field (the engine draws no placeholder): the input's own text line, one line, ellipsized before
+   the camera key; clicks fall through to the field. Hidden while an IME composes. */
+.shell-body--wide .prompt-composer--wide .prompt-composer-label--wide {
+  display: block;
+  position: absolute;
+  top: 3dp;
+  left: 14dp;
+  right: 44dp;
+  height: 40dp;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 40dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.shell-body--wide .prompt-composer--wide textarea:composing ~ .prompt-composer-label--wide {
+  display: none;
+}
+
 /* Send: the mockup's round 40dp accent button. (The voice branch's Send in click mode shares the class.) */
 .shell-body--wide .prompt-send-btn,
 .shell-body--wide .prompt-stop-btn {

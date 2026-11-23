@@ -342,6 +342,54 @@ TEST_F(WideFrostLayoutTest, TheComposerIsOneFloatingRoundedPanelInTheColumnsMarg
   }
 }
 
+// The engine draws no placeholder, so the "Enter to send" hint is a label over the empty field: shown while the draft is
+// empty, gone with any text and while recording, inside the input pill and clear of the camera key, one ellipsized line
+// at the narrowest window; the phone's markup does not get it.
+TEST_F(WideFrostLayoutTest, TheWideComposerShowsItsHintOverTheEmptyFieldOnly) {
+  const std::string hint = LocalizationService::Instance().LocalizeText("{{i18n:chat.composer.hint_wide}}");
+  const auto drawn = [&](ui::Element* e) {
+    return e && e->GetComputedValues().display() != ui::Style::Display::None && Height(e) > 0.f;
+  };
+  for (const int width : {900, 1280}) {
+    SCOPED_TRACE(width);
+    window_w_ = width;
+    chat_.show_capture = true;
+    Load(Wide(NavTab::Sessions, "chat"));
+    ui::Element* label = First(".prompt-composer-label--wide");
+    ui::Element* pill = First(".prompt-composer-pill");
+    ui::Element* input = First("#draft-input");
+    ui::Element* capture = First(".prompt-capture-btn");
+    ASSERT_TRUE(label && pill && input && capture);
+    EXPECT_TRUE(drawn(label));
+    EXPECT_EQ(label->GetInnerRML(), hint);
+    const auto left = [](ui::Element* e) { return e->GetAbsoluteOffset(ui::BoxArea::Border).x; };
+    const auto right = [&](ui::Element* e) { return left(e) + e->GetBox().GetSize(ui::BoxArea::Border).x; };
+    EXPECT_GE(left(label), left(pill));
+    EXPECT_LE(right(label), right(pill) + 0.5f);
+    EXPECT_GE(Top(label), Top(pill) - 0.5f);
+    EXPECT_LE(Bottom(label), Bottom(pill) + 0.5f);
+    ASSERT_TRUE(drawn(capture));
+    EXPECT_LE(right(label), left(capture) + 0.5f) << "clear of the camera key";
+    EXPECT_NEAR((Top(label) + Bottom(label)) / 2.f, (Top(input) + Bottom(input)) / 2.f, 1.5f) << "on the input's line";
+    EXPECT_LT(Height(label), 44.f) << "one line, not wrapped";
+    EXPECT_EQ(label->GetComputedValues().pointer_events(), ui::Style::PointerEvents::None);
+
+    chat_.draft = "hi";
+    Load(Wide(NavTab::Sessions, "chat"));
+    EXPECT_FALSE(drawn(First(".prompt-composer-label--wide"))) << "any text hides it";
+
+    chat_.draft = "";
+    chat_.voice_recording = true;
+    chat_.voice_timer = "0:03";
+    Load(Wide(NavTab::Sessions, "chat"));
+    EXPECT_FALSE(drawn(First(".prompt-composer-label--wide"))) << "recording hides it";
+    chat_.voice_recording = false;
+  }
+  std::string phone = Asset("views/composer.rml");
+  EXPECT_EQ(phone.find("prompt-composer-label--wide"), std::string::npos);
+  EXPECT_EQ(phone.find("hint_wide"), std::string::npos);
+}
+
 // Every state of the composer stays inside the panel (the mount is the panel's padding): the reply / edit strip, the
 // status row (an attachment chip, the stop key), and the recording pill; the panel grows upward and the mount follows.
 TEST_F(WideFrostLayoutTest, TheComposersStripsAndRecordingStayInsideTheFloatingPanel) {
