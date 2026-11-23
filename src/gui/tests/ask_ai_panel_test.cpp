@@ -241,7 +241,7 @@ protected:
   FakeTurnHost turn_host_;
   FakePanelHost panel_host_;
   ChatScreenState chat_;
-  std::map<std::string, std::vector<std::string>> chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>> chat_links_;
   ChatWidgetHost widgets_;
   bool ws_active_ = false;
   ui::String ws_title_, ws_subtitle_, ws_rml_;

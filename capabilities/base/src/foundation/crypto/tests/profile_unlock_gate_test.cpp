@@ -9,6 +9,7 @@
 #include <chrono>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <gtest/gtest.h>
 #include <memory>
@@ -986,6 +987,259 @@ TEST_F(ProfileUnlockGateBiometricTest, MissingTurnsTheToggleOff) {
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
   RunAll();
   EXPECT_TRUE(engine_.IsUnlocked());
+}
+
+// --- A profile this build cannot open, whatever the PIN (Windows: an October profile refused at every unlock, shown
+// as a PIN error 11 times; the iPhone app on a Mac with a container from 13 October) ---
+
+TEST(ProfileUnlockGateProblemKindTest, OnlyUnopenableAndNewerDataAreProfileProblems) {
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(AppError::Storage(Err::Storage::Unopenable, "identity.enc schema 3")),
+            std::optional(ProfileOpenProblem::CannotOpen));
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(AppError::NewerFormat("identity.enc schema 99")),
+            std::optional(ProfileOpenProblem::Newer));
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")),
+            std::nullopt);
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(AppError::Storage(Err::Storage::Failed, "disk full")), std::nullopt);
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(Error("shutdown in progress")), std::nullopt);
+}
+
+class ProfileUnlockGateProblemTest : public ProfileUnlockGateTest {
+protected:
+  struct DiagCapture : logging::Handler {
+    void emit(logging::Level, const std::string&, const std::string& message) override { lines.push_back(message); }
+    std::vector<std::string> lines;
+  };
+
+  void SetUp() override {
+    ProfileUnlockGateTest::SetUp();
+    diag_ = std::make_shared<DiagCapture>();
+    DiagLog().addHandler(diag_);
+  }
+
+  void CreateVault() {
+    ASSERT_TRUE(static_cast<bool>(engine_.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x50))));
+    engine_.Vault()->Lock(); // as after a cold start
+  }
+
+  void WriteFile(const char* name, const ByteVector& bytes) {
+    std::ofstream out(dir_ / name, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  } // closed before anything reads it
+
+  void Bind() {
+    ProfileUnlockPorts ports;
+    ports.messaging_initialized = []() { return true; };
+    ports.messaging_ready = []() { return false; };
+    ports.ensure_messaging_ready = [this]() -> Roe<void> {
+      ++readies_;
+      return ready_result_;
+    };
+    ports.ui.show_identity_fork = [this]() { ++forks_; };
+    ports.ui.show_unlock = [this]() { ++doors_; };
+    ports.ui.show_error = [this](const std::string& message) { errors_.push_back(message); };
+    ports.ui.dismiss = [this]() { ++dismissed_; };
+    ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+    gate_.BindPorts(std::move(ports));
+  }
+
+  int DiagCount(const std::string& needle) const {
+    int found = 0;
+    for (const auto& line : diag_->lines) {
+      found += line.find(needle) != std::string::npos ? 1 : 0;
+    }
+    return found;
+  }
+
+  std::shared_ptr<DiagCapture> diag_;
+  Roe<void> ready_result_ = Roe<void>{};
+  int readies_ = 0;
+  int forks_ = 0;
+  int doors_ = 0;
+  int dismissed_ = 0;
+  std::vector<std::string> errors_;
+  std::vector<ProfileOpenProblem> problems_;
+};
+
+TEST_F(ProfileUnlockGateProblemTest, AnAccountThisBuildCannotOpenGetsItsPageNotAPinError) {
+  CreateVault();
+  ready_result_ = AppError::Storage(Err::Storage::Unopenable,
+                                    "identity.enc schema 3 is from before release 1; wipe profile data and recreate");
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(doors_, 1) << "nothing in the files says so: the PIN is asked for";
+  ASSERT_TRUE(problems_.empty());
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::CannotOpen);
+  EXPECT_TRUE(errors_.empty()) << "never the raw text, never a PIN error";
+  EXPECT_EQ(gate_.ProfileProblem(), std::optional(ProfileOpenProblem::CannotOpen));
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+  EXPECT_FALSE(engine_.IsUnlocked()) << "the key leaves memory";
+  EXPECT_EQ(DiagCount("wrong_pin=1"), 0) << "not counted as a wrong PIN";
+  EXPECT_EQ(DiagCount("profile_problem=1 newer=0"), 1);
+
+  // Whatever asks for the account next gets the same page, not the PIN door again.
+  bool answered = false;
+  gate_.EnsureUnlocked([&answered](bool) { answered = true; });
+  EXPECT_EQ(doors_, 1);
+  EXPECT_EQ(problems_.size(), 1u) << "the page is already up";
+  EXPECT_FALSE(answered) << "it waits on the page";
+  EXPECT_EQ(readies_, 1) << "no second unlock attempt";
+}
+
+TEST_F(ProfileUnlockGateProblemTest, ANewerAppsDataAsksForAnUpdate) {
+  CreateVault();
+  ready_result_ = AppError::NewerFormat("identity.enc schema 99");
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::Newer);
+  EXPECT_TRUE(errors_.empty());
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AWrongPinIsStillAWrongPin) {
+  CreateVault();
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  gate_.CompleteWithPin("9999", /*create_mode=*/false);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+  EXPECT_EQ(errors_.size(), 1u);
+  EXPECT_EQ(DiagCount("wrong_pin=1"), 1);
+  EXPECT_EQ(readies_, 0);
+  // and the right one still opens it
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  EXPECT_EQ(dismissed_, 1);
+  EXPECT_TRUE(engine_.IsUnlocked());
+}
+
+TEST_F(ProfileUnlockGateProblemTest, APassingFailureKeepsTheDoor) {
+  // Not every failure is a profile problem: one that may pass (here an I/O error) must never offer to wipe.
+  CreateVault();
+  ready_result_ = AppError::Storage(Err::Storage::Failed, "Failed to read identity.enc");
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(errors_.size(), 1u);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AVaultThatIsNotOneIsKnownBeforeThePin) {
+  WriteFile("vault.bin", ByteVector(120, 0x78));
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::CannotOpen);
+  EXPECT_EQ(doors_, 0) << "no PIN is asked for";
+  EXPECT_EQ(forks_, 0);
+  EXPECT_EQ(DiagCount("before_pin=1"), 1);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, ANewerVaultIsKnownBeforeThePin) {
+  ByteVector newer = {'P', 'P', 'B', 'V', static_cast<uint8_t>(kVaultFileVersion + 1)};
+  newer.resize(120, 0x01);
+  WriteFile("vault.bin", newer);
+  Bind();
+  gate_.EnsureUnlocked(nullptr);
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::Newer);
+  EXPECT_EQ(doors_, 0);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AccountDataWithoutItsVaultIsKnownBeforeThePin) {
+  // A setup or link that stopped half-way (or a reset that did not finish): the account data's key is gone. Not the
+  // first-run page over it — a new PIN would make a vault that cannot open it.
+  WriteFile("identity.enc", ByteVector(64, 0x33));
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::CannotOpen);
+  EXPECT_EQ(forks_, 0);
+}
+
+// A vault.bin that cannot be read now (here a directory in its place; on a locked phone, file protection): nothing is
+// concluded from it — the PIN door, never the problem page.
+TEST_F(ProfileUnlockGateProblemTest, AVaultNotReadNowIsNoProblem) {
+  std::filesystem::create_directories(dir_ / "vault.bin");
+  EXPECT_EQ(DataKeyVault::CheckFile((dir_ / "vault.bin").string()), DataKeyVault::FileCheck::NotRead);
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(doors_, 1);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AnEmptyVaultIsDamaged) {
+  WriteFile("vault.bin", ByteVector{});
+  EXPECT_EQ(DataKeyVault::CheckFile((dir_ / "vault.bin").string()), DataKeyVault::FileCheck::Damaged);
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AGoodVaultAndAFreshInstallAreNoProblem) {
+  CreateVault();
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::nullopt);
+  std::filesystem::remove(dir_ / "vault.bin");
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::nullopt) << "nothing at all: a fresh install";
+}
+
+TEST_F(ProfileUnlockGateProblemTest, StartOverClosesThePageAndTheResetBringsTheFirstRunPage) {
+  WriteFile("identity.enc", ByteVector(64, 0x33));
+  Bind();
+  std::vector<bool> answers;
+  gate_.EnsureUnlocked([&answers](const bool unlocked) { answers.push_back(unlocked); });
+  ASSERT_EQ(problems_.size(), 1u);
+
+  ASSERT_TRUE(gate_.ReleaseForStartOver());
+  EXPECT_EQ(dismissed_, 1);
+  ASSERT_EQ(answers.size(), 1u);
+  EXPECT_FALSE(answers.front()) << "who waited is told no";
+
+  // A reset that failed (the files are still there): the page comes back, the problem was kept.
+  gate_.EnsureUnlocked(nullptr);
+  EXPECT_EQ(problems_.size(), 2u);
+  ASSERT_TRUE(gate_.ReleaseForStartOver());
+
+  // The reset as Application does it: secrets down, the directory wiped and made again, then the gate is told.
+  engine_.Shutdown();
+  std::filesystem::remove_all(dir_);
+  std::filesystem::create_directories(dir_);
+  ASSERT_TRUE(static_cast<bool>(engine_.Initialize(dir_.string())));
+  gate_.ForgetProfileProblem();
+  gate_.EnsureUnlocked(nullptr);
+  EXPECT_EQ(forks_, 1) << "the first-run page";
+  EXPECT_EQ(problems_.size(), 2u);
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, ForgotPinStartOverClosesTheDoor) {
+  CreateVault();
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(doors_, 1);
+  ASSERT_TRUE(gate_.ReleaseForStartOver());
+  EXPECT_EQ(dismissed_, 1);
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, StartOverWaitsForARunningUnlock) {
+  CreateVault();
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.ui.dismiss = [this]() { ++dismissed_; };
+  std::function<void()> finish;
+  ports.run_heavy = [&finish](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
+    finish = [work = std::move(work), on_done = std::move(on_done)]() { on_done(work()); };
+  };
+  gate_.BindPorts(std::move(ports));
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  ASSERT_TRUE(gate_.IsUnlockInProgress());
+  EXPECT_FALSE(gate_.ReleaseForStartOver()) << "a reset must not race the unlock";
+  EXPECT_EQ(dismissed_, 0);
+  finish();
 }
 
 } // namespace

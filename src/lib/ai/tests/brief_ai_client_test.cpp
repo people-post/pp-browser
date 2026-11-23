@@ -282,6 +282,35 @@ TEST(BriefAiClientTest, ParseDoneRole) {
   EXPECT_EQ(e->role, "pp_news_analyst");
 }
 
+TEST(BriefAiClientTest, ParseDoneAnswerKind) {
+  for (const char* kind : {"news_pick", "news_digest", "news_unavailable"}) {
+    auto e = pbr::BriefAiClient::ParseEvent(std::string(R"({"type":"done","response":"r","answer_kind":")") + kind +
+                                            R"(","truncated":false})");
+    ASSERT_TRUE(e.has_value());
+    EXPECT_EQ(e->answer_kind, kind);
+  }
+  auto plain = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r"})");
+  ASSERT_TRUE(plain.has_value());
+  EXPECT_TRUE(plain->answer_kind.empty());
+}
+
+// A news read is an ordinary request: the item's URL and a fixed sentence as the message, `news_digest` among the
+// capabilities, and no intent (an unknown intent is a 400 on the server, contract section 15).
+TEST(BriefAiClientTest, RequestJsonNewsReadHasTheCapabilityAndNoIntent) {
+  pbr::BriefAiRequest request;
+  request.message = "https://example.com/a\n这篇讲了什么";
+  request.capabilities = {"add_contact", "news_digest"};
+  const pbr::Object json = ParsedRequest(request);
+  EXPECT_FALSE(json.contains("intent"));
+  EXPECT_EQ(json.getString("message").value_or(""), "https://example.com/a\n这篇讲了什么");
+  const pbr::Object* client = json.getObject("client");
+  ASSERT_NE(client, nullptr);
+  const pbr::Array* capabilities = client->getArray("capabilities");
+  ASSERT_NE(capabilities, nullptr);
+  ASSERT_EQ(capabilities->elements.size(), 2u);
+  EXPECT_EQ(pbr::asString(capabilities->elements[1]).value_or(""), "news_digest");
+}
+
 TEST(BriefAiClientTest, ParseDoneWithoutRoleIsEmpty) {
   auto e = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r","route":"web"})");
   ASSERT_TRUE(e.has_value());

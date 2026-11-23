@@ -1,5 +1,6 @@
 #pragma once
 
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "lib/ui/ShellTypes.h"
 #include "gui/shell/ShellPinGatePorts.h"
 #include "gui/PinPromptPorts.h"
@@ -52,6 +53,8 @@ public:
   void ShowIdentityFork();
   void ShowChooser();
   void ShowUnlock();
+  /** This build cannot open the profile (ProfileUnlockGate): its page in place of the PIN. */
+  void ShowProfileProblem(ProfileOpenProblem problem);
   void Dismiss();
   void SetUnlockInProgressUi(bool in_progress);
   /** The gate did not start the submitted PIN (another unlock was running): the pad is usable again. */
@@ -101,6 +104,15 @@ public:
   /** The phrase page: pick a saved copy of the account (M023) to restore from too. */
   void OnUseSavedCopy();
   void OnForgotToggle();
+  /**
+   * "Start over" on the problem page (not for a newer app's data) or "Start over on this device" under "Forgot PIN?":
+   * the confirm step (Me → Storage → Reset my data's words). Its Cancel goes back to the page it came from.
+   */
+  void OnStartOver();
+  /** The confirm step's "Start over": UnlockGateCompletePorts::start_over. */
+  void OnStartOverConfirm();
+  /** "Quit" on the problem page (desktop: the port is set there only). */
+  void OnQuit();
   void OnNoteToggle();
   /** "Enter PIN instead" on the waiting screen. */
   void OnUsePinInstead();
@@ -150,6 +162,10 @@ private:
   void NoteChoiceShown() { choice_shown_at_ = Now(); }
   /** The choice came within kChoiceTapGuard of its page appearing: the tap that brought the page, again. */
   bool ChoiceTooSoon() const;
+  /** The start-over confirm came from the problem page (else from the unlock door's "Forgot PIN?"). */
+  bool start_over_from_problem_ = false;
+  /** This confirm's "Start over" was sent (OnStartOverConfirm): a second delivery of the tap does nothing. */
+  bool start_over_sent_ = false;
   bool link_flow_ = false;
   /** Within the link flow: the paste page takes a recovery phrase (M023), not a transfer code. */
   bool phrase_flow_ = false;

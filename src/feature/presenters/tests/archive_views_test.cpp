@@ -78,5 +78,15 @@ TEST(ArchiveViewsTest, UnarchivingFromTheAiViewReturnsTheThreadToTheNormalAiList
   EXPECT_EQ(Where(Ai(false), views.showing_archived, views.showing_archived_ai), ChatListBucket::Ai);
 }
 
+// A group a linked device's first account sync recreated (no message yet, never archived) is a row of the Chats list
+// like any chat: nothing in the list waits for its first message (only an AI chat does, while not `listed`).
+TEST(ArchiveViewsTest, ARestoredGroupWithoutMessagesIsOnTheChatsList) {
+  EXPECT_EQ(ClassifyForList(/*is_ai=*/false, /*listed=*/true, /*archived=*/false, /*showing_archived=*/false,
+                            /*showing_archived_ai=*/false),
+            ChatListBucket::Human);
+  EXPECT_EQ(ClassifyForList(/*is_ai=*/false, /*listed=*/false, /*archived=*/false, false, false), ChatListBucket::Human)
+      << "a human chat is never hidden for having no content yet";
+}
+
 } // namespace
 } // namespace pbr

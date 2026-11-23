@@ -52,7 +52,9 @@ TEST(OpenLinkSourceTest, OwnFeedLinksOpenWithoutAPrompt) {
   const std::string source = ControllerSource();
   ASSERT_FALSE(source.empty()) << "ChatController.cpp not found under PP_SOURCE_DIR";
   // Home's brief and an AI answer's link: the trusted path, never the confirm.
-  for (const char* signature : {"void ChatController::OpenHomeBrief(", "void ChatController::OpenChatLinkIn("}) {
+  // The news reader's "Open original" is the item's own URL from the AI assistant's answer.
+  for (const char* signature : {"void ChatController::OpenHomeBrief(", "void ChatController::OpenChatLinkIn(",
+                                "void ChatController::OpenNewsOriginal("}) {
     const auto body = FunctionBody(source, signature);
     ASSERT_TRUE(body.has_value()) << signature << " not found";
     EXPECT_NE(body->find("OpenTrustedUrl("), std::string::npos) << signature;

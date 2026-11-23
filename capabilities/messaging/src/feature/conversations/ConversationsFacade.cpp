@@ -330,6 +330,11 @@ Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::str
   return hub_.Store().GetMessage(thread_id, message_id);
 }
 
+Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessagesByGeneration(
+    const std::string& thread_id, const std::vector<std::string>& generations) {
+  return hub_.Store().GetMessagesByGeneration(thread_id, generations);
+}
+
 Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
   return hub_.DeleteMessageForEveryone(thread_id, message_id);
 }

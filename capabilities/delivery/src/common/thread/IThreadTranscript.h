@@ -4,6 +4,7 @@
 #include "common/ContextBudget.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -96,6 +97,25 @@ public:
       }
     }
     return std::optional<ThreadMessage>();
+  }
+  /**
+   * The rows whose `generation` is one of `generations`, oldest first (a news read's hidden rows). Default: scan the
+   * newest page (test doubles); the SQLite store selects them by the column and decrypts only those.
+   */
+  virtual Roe<std::vector<ThreadMessage>> GetMessagesByGeneration(const std::string& thread_id,
+                                                                  const std::vector<std::string>& generations) const {
+    auto page = GetMessagesPage(thread_id, std::nullopt, 10000);
+    if (!page) {
+      return page.error();
+    }
+    std::vector<ThreadMessage> out;
+    for (const ThreadMessage& message : *page) {
+      if (message.generation &&
+          std::find(generations.begin(), generations.end(), *message.generation) != generations.end()) {
+        out.push_back(message);
+      }
+    }
+    return out;
   }
   /** Annotation rows aimed at `target_message_id`. Default: scan the newest page (test doubles). */
   virtual Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,

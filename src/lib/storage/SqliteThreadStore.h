@@ -57,6 +57,8 @@ public:
                                   std::optional<MessageTransport> transport, bool unless_delivered) override;
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
                                                const std::string& message_id) const override;
+  Roe<std::vector<ThreadMessage>> GetMessagesByGeneration(const std::string& thread_id,
+                                                          const std::vector<std::string>& generations) const override;
   Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,
                                                           const std::string& target_message_id) const override;
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;

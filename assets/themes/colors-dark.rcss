@@ -415,6 +415,30 @@ select selectbox option:hover {
   color: #ffffffb3;
 }
 
+/* A news item already read (MarkNewsLinksRead): grey in its list, like a visited link. */
+.chat-link.news-read {
+  color: #ebebf599;
+}
+
+/* The news reader sheet (news_reader.rml). */
+.news-reader-spin {
+  border-color: #ebebf54c #ebebf54c #ebebf54c transparent;
+}
+
+.news-reader-note {
+  color: #ebebf599;
+}
+
+.news-reader-open {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.news-reader-step {
+  background-color: #7878805c;
+  color: #ffffff;
+}
+
 .chat-mention {
   color: #5e5ce6;
   background-color: #0a84ff2e;
@@ -2047,6 +2071,11 @@ input.checkbox:checked {
 
 .nc-action-icon--add {
   background-color: #0a84ff;
+}
+
+/* Groups (Contacts and New chat → the groups this account is in): green, apart from New group's orange. */
+.nc-action-icon--groups {
+  background-color: #30d158;
 }
 
 .nc-action-icon svg {

@@ -12,11 +12,20 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/** Why this build cannot open the profile on this device, whatever the PIN (never a wrong PIN). */
+enum class ProfileOpenProblem {
+  /** From before release 1, damaged, or its key gone (a setup or link that stopped half-way): only starting over. */
+  CannotOpen,
+  /** A newer version of the app saved it: update the app. */
+  Newer,
+};
 
 /**
  * Profile PIN vault and DEK fan-out — app-owned; independent of messaging.
@@ -33,6 +42,11 @@ public:
   bool HasVault() const;
   /** Vault exists on disk but DEK not yet distributed to consumers. */
   bool NeedsUnlock() const;
+  /**
+   * What the files say before any PIN: a vault that is not one (or a newer one), or account data (`identity.enc`)
+   * with no vault to open it. nullopt when nothing is known to be wrong, or a file could not be read.
+   */
+  std::optional<ProfileOpenProblem> ProbeBeforeUnlock() const;
   bool IsUnlocked() const { return unlocked_; }
 
   /** Create vault (if missing) or unlock with PIN, then fan out DEK to consumers. */

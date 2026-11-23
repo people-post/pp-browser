@@ -11,6 +11,7 @@
 #include "common/AtomicFileWrite.h"
 #include "foundation/error/AppError.h"
 
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -70,6 +71,39 @@ bool DataKeyVault::Exists(const std::string& vault_path) {
 
 bool DataKeyVault::Exists() const {
   return Exists(vault_path_);
+}
+
+DataKeyVault::FileCheck DataKeyVault::CheckFile(const std::string& vault_path) {
+  std::error_code ec;
+  const bool exists = std::filesystem::exists(vault_path, ec);
+  if (ec) {
+    return FileCheck::NotRead;
+  }
+  if (!exists) {
+    return FileCheck::Missing;
+  }
+  // Only what was read whole counts: a read error can look like a short file (the stream reports end of file).
+  const bool regular = std::filesystem::is_regular_file(vault_path, ec);
+  const auto size = regular && !ec ? std::filesystem::file_size(vault_path, ec) : std::uintmax_t{0};
+  if (!regular || ec) {
+    return FileCheck::NotRead;
+  }
+  ByteVector bytes;
+  {
+    std::ifstream in(vault_path, std::ios::binary);
+    if (!in) {
+      return FileCheck::NotRead;
+    }
+    auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes);
+    if (!read || read->size() != size) {
+      return FileCheck::NotRead;
+    }
+    bytes = std::move(*read);
+  } // closed before the answer (Windows: the file may be deleted right after)
+  if (bytes.size() >= 5 && std::memcmp(bytes.data(), kVaultMagic, 4) == 0 && bytes[4] > kVaultFileVersion) {
+    return FileCheck::Newer;
+  }
+  return CheckVaultHeader(bytes) ? FileCheck::Ok : FileCheck::Damaged;
 }
 
 void DataKeyVault::Lock() {

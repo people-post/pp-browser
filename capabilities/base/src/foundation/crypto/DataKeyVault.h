@@ -22,6 +22,20 @@ public:
   static std::string VaultPathForProfile(const std::string& profile_data_dir);
   static bool Exists(const std::string& vault_path);
 
+  /** What `vault.bin` says before any PIN, from its header alone. */
+  enum class FileCheck {
+    Missing,
+    /** A vault this build reads (the PIN still decides). */
+    Ok,
+    /** Not read (locked phone, I/O): nothing is concluded from it. */
+    NotRead,
+    /** Read, and not a vault: too short, another file, or a version this build never wrote. */
+    Damaged,
+    /** Read: a newer version of the app wrote it. */
+    Newer,
+  };
+  static FileCheck CheckFile(const std::string& vault_path);
+
   bool Exists() const;
   bool IsUnlocked() const { return !dek_.empty(); }
   const std::string& ProfileId() const { return profile_id_; }

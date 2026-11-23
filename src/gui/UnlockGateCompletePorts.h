@@ -34,6 +34,14 @@ struct UnlockGateCompletePorts {
   std::function<void()> use_device_pin_instead;
   /** ProfileUnlockGate::TryBiometric: the face / fingerprint prompt again (the door's key). */
   std::function<void()> try_biometric;
+  /**
+   * "Start over on this device", confirmed (Application::StartOverOnThisDevice): this device's account data is wiped
+   * the way Me → Storage → Reset my data does it, and the first-run page follows. False when it was not begun (an
+   * unlock is running): the confirm may be tapped again.
+   */
+  std::function<bool()> start_over;
+  /** Desktop only (unset on phones): "Quit" on the page for a profile this build cannot open. */
+  std::function<void()> quit;
 };
 
 } // namespace pbr

@@ -240,6 +240,17 @@ struct PinGateState {
   bool forgot_open = false;
   /** Unlock with a call waiting on a locked phone (PIN grace window): "unlock your phone" + "Enter PIN instead". */
   bool waiting_device_unlock = false;
+  /**
+   * This build cannot open the profile, whatever the PIN (ProfileOpenProblem): no PIN box, the reason (`message`,
+   * then what can be done) and the way on — "Start over" (`!profile_problem_newer`), "Quit" (`quit_offered`,
+   * desktop). Markup: ShellLayoutRml::PinGateProfileProblem; events pin_gate_start_over / pin_gate_quit.
+   */
+  bool profile_problem_mode = false;
+  /** A newer version of the app saved the profile: update the app; nothing to wipe. */
+  bool profile_problem_newer = false;
+  bool quit_offered = false;
+  /** "Start over" asks once (from the problem page or "Forgot PIN?"): Cancel goes back, pin_gate_start_over_confirm runs it. */
+  bool start_over_confirm_mode = false;
   /** Settings asks for the PIN once (transfer code, recovery phrase) / changes it (old → new → again), B2. */
   bool verify_mode = false;
   bool change_mode = false;

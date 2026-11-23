@@ -225,9 +225,9 @@ void InboxController::AfterMessageEdited(const std::string& thread_id, const Thr
   const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation &&
+    if (message.content_type != ChatContentType::Annotation && !IsHiddenNewsMessage(message) &&
         !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
-      newest = &message;
+      newest = &message; // a news read's hidden rows are no preview (they never set it)
     }
   }
   if (!newest || newest->id != before.id) {
@@ -290,9 +290,9 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation &&
+    if (message.content_type != ChatContentType::Annotation && !IsHiddenNewsMessage(message) &&
         !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
-      newest = &message;
+      newest = &message; // a news read's hidden rows are no preview (they never set it)
     }
   }
   if (newest && newest->id == message_id) {
@@ -720,10 +720,11 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(const std::string& t
     kind = (*thread)->kind;
   }
   const bool direct_thread = kind == ThreadKind::Direct;
-  // A "held" line (B236) shows only while it holds its chat (its probe still queued); afterwards it is gone.
+  // A "held" line (B236) shows only while it holds its chat (its probe still queued); afterwards it is gone. A news
+  // item read in an AI chat (its request and digest) is never drawn: the digest shows in the reader sheet.
   const auto drop_spent_holds = [this](std::vector<ThreadMessage>& page) {
     std::erase_if(page, [this](const ThreadMessage& message) {
-      return StrangerHeldRowProbe(message) && !StrangerHeldLineShown(store_, message);
+      return IsHiddenNewsMessage(message) || (StrangerHeldRowProbe(message) && !StrangerHeldLineShown(store_, message));
     });
   };
   drop_spent_holds(messages);

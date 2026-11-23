@@ -328,6 +328,9 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
       contacts.OnBlockedPeopleDismissed();
       settings.RefreshBlockedCount();
     }
+    if (key == "group_list") {
+      contacts.OnGroupListDismissed();
+    }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }
@@ -638,7 +641,9 @@ Roe<void> Application::ResetActiveProfile() {
   RefreshWindowTitle(); // no account any more: plain PP until the new one has a name
   // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
   // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
-  // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
+  // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process). What the gate found on the old profile
+  // (a profile this build could not open) went with it.
+  unlock_gate_->ForgetProfileProblem();
   unlock_gate_->EnsureUnlocked(nullptr);
   return {};
 }
@@ -661,6 +666,32 @@ void Application::RefreshWindowTitle() {
     }
   }
   shell_->SetWindowTitle(WindowTitleFor(Tr("app.name"), nickname));
+}
+
+bool Application::StartOverOnThisDevice() {
+  if (!unlock_gate_->ReleaseForStartOver()) {
+    return false; // an unlock is running: the page stays, the button works once it is done
+  }
+  log().warning << "Starting over on this device from the unlock gate";
+  // A call answered on the locked phone waits on the system call screen for this account's messaging; with the account
+  // wiped it can never connect: it goes now, not at its cap. (No call media runs here: calls need messaging, which is
+  // not up while this gate is.)
+  if (ICallSystemUi::Instance().HasPendingPushCall()) {
+    ICallSystemUi::Instance().EndPendingPushCall();
+  }
+  // The vault is locked here (or the account cannot be read): messaging is not ready, so ResetActiveProfile leaves
+  // the relays alone — no revoke, no unregister — and only wipes this device.
+  if (auto reset = ResetActiveProfile(); !reset) {
+    log().error << "Start over failed: " << reset.error().message;
+    const std::string message = UserFeedback::UserMessage(reset.error());
+    unlock_gate_->EnsureUnlocked(nullptr); // the problem page again (it is kept until a reset goes through), or the PIN
+    if (shell_->State().pin_gate.active) {
+      pin_gate_->ShowError(message);
+    } else {
+      UserFeedback::Fail(message);
+    }
+  }
+  return true;
 }
 
 Roe<void> Application::ResetChatData() {
@@ -1865,6 +1896,10 @@ void Application::WireUnlockPinAndFlow() {
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     gate_complete.use_device_pin_instead = [this]() { unlock_gate_->UseDevicePinInstead(); };
     gate_complete.try_biometric = [this]() { unlock_gate_->TryBiometric(); };
+    gate_complete.start_over = [this]() { return StartOverOnThisDevice(); };
+    if (Platform::IsDesktop()) {
+      gate_complete.quit = []() { Backend::RequestExit(); }; // phones have no "Quit": the system closes apps
+    }
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
   ProfileUnlockPorts unlock_ports;
@@ -1924,6 +1959,9 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
+  unlock_ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) {
+    pin_gate_->ShowProfileProblem(problem);
+  };
   unlock_ports.ui.dismiss = [this]() {
     pin_gate_->Dismiss();
     // Any unlock but the default PIN's (grace window, PIN, dev PIN, link, recovery phrase): with the app on screen the
@@ -2193,6 +2231,9 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
     pin_actions.on_biometric = [this]() { pin_gate_->OnBiometric(); };
     pin_actions.on_use_pin = [this]() { pin_gate_->OnUsePin(); };
+    pin_actions.on_start_over = [this]() { pin_gate_->OnStartOver(); };
+    pin_actions.on_start_over_confirm = [this]() { pin_gate_->OnStartOverConfirm(); };
+    pin_actions.on_quit = [this]() { pin_gate_->OnQuit(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {

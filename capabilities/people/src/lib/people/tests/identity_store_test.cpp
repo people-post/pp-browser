@@ -4,6 +4,7 @@
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/KemKeyBinding.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "foundation/crypto/RecoverySeed.h"
 #include "crypto/PeerId.h"
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <optional>
 #include <sodium.h>
 #include "common/PbrCompat.h"
 
@@ -506,6 +508,98 @@ TEST_F(IdentityStoreTest, ANewDekForALinkOrRestoreDropsTheOldAccountsCard) {
   ASSERT_TRUE(store.ReplaceDekKeepLoaded(other_dek));
   EXPECT_FALSE(std::filesystem::exists(data_dir_ / "own_card.enc"));
   EXPECT_FALSE(store.OwnCard().value());
+}
+
+// The account data a build can never open, whatever the PIN (Windows: an October identity.enc, schema 3, refused at
+// every unlock and shown as a PIN error): the unlock gate tells it apart by its kind, never by its text.
+class IdentityStoreUnopenableTest : public IdentityStoreTest {
+protected:
+  void WriteIdentityFile(const ByteVector& bytes) {
+    std::filesystem::create_directories(data_dir_);
+    std::ofstream out(data_dir_ / "identity.enc", std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  } // closed before the store reads it
+
+  void WriteIdentityJson(const Object& root, const ByteVector& dek) {
+    const std::string json = DumpJson(root, 2);
+    auto ciphertext = FileCipher::Encrypt(dek, ByteVector(json.begin(), json.end()),
+                                          FileCipher::BuildAad("identity", "test-profile"));
+    ASSERT_TRUE(static_cast<bool>(ciphertext)) << ciphertext.error().message;
+    WriteIdentityFile(*ciphertext);
+  }
+
+  std::optional<ProfileOpenProblem> ProblemOnLoad() {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    EXPECT_TRUE(store.SetDek(MakeTestDek()));
+    auto loaded = store.LoadOrCreate();
+    EXPECT_FALSE(static_cast<bool>(loaded));
+    if (loaded) {
+      return std::nullopt;
+    }
+    return ProfileUnlockGate::ProfileProblemOf(loaded.error());
+  }
+};
+
+TEST_F(IdentityStoreUnopenableTest, AnIdentityFromBeforeRelease1CannotBeOpened) {
+  Object old;
+  old.set("schema_version", static_cast<int64_t>(3));
+  old.set("nickname", "october");
+  WriteIdentityJson(old, MakeTestDek());
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
+TEST_F(IdentityStoreUnopenableTest, AnIdentityWithoutAVersionCannotBeOpened) {
+  Object old;
+  old.set("nickname", "no-version");
+  WriteIdentityJson(old, MakeTestDek());
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
+TEST_F(IdentityStoreUnopenableTest, ANewerAppsIdentityAsksForAnUpdate) {
+  Object newer;
+  newer.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion + 1));
+  WriteIdentityJson(newer, MakeTestDek());
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::Newer));
+}
+
+// A newer app's envelope (its version byte above this build's): "update PP", never the wipe.
+TEST_F(IdentityStoreUnopenableTest, ANewerEnvelopeAsksForAnUpdate) {
+  Object current;
+  current.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  const std::string json = DumpJson(current, 2);
+  auto ciphertext = FileCipher::Encrypt(MakeTestDek(), ByteVector(json.begin(), json.end()),
+                                        FileCipher::BuildAad("identity", "test-profile"));
+  ASSERT_TRUE(static_cast<bool>(ciphertext));
+  ByteVector bytes = *ciphertext;
+  bytes[0] = static_cast<uint8_t>(kEncryptedPayloadVersion + 1);
+  WriteIdentityFile(bytes);
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::Newer));
+}
+
+TEST_F(IdentityStoreUnopenableTest, AnIdentityUnderAnotherKeyCannotBeOpened) {
+  Object current;
+  current.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  WriteIdentityJson(current, ByteVector(kDataEncryptionKeySize, 0x7a)); // not this vault's key
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
+TEST_F(IdentityStoreUnopenableTest, ADamagedIdentityFileCannotBeOpened) {
+  ByteVector damaged(200, 0x5c);
+  damaged[0] = kEncryptedPayloadVersion; // this build's envelope, a body that does not open (a higher byte: "newer")
+  WriteIdentityFile(damaged);
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
+TEST_F(IdentityStoreUnopenableTest, AMissingKeyIsNotAProfileProblem) {
+  // No DEK yet (the vault still locked): the PIN is what is missing, not a profile this build cannot open.
+  Object current;
+  current.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  WriteIdentityJson(current, MakeTestDek());
+  IdentityStore store(data_dir_.string(), "test-profile");
+  auto loaded = store.LoadOrCreate();
+  ASSERT_FALSE(static_cast<bool>(loaded));
+  EXPECT_EQ(ProfileUnlockGate::ProfileProblemOf(loaded.error()), std::nullopt);
 }
 
 } // namespace

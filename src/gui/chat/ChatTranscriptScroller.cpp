@@ -751,8 +751,8 @@ ChatTranscriptScroller::FirstScreen ChatTranscriptScroller::FirstScreenBound(con
       return FirstScreen::Miss;
     }
     for (auto row = rows->rbegin(); row != rows->rend(); ++row) {
-      if (row->content_type == ChatContentType::Annotation) {
-        continue; // folded onto its message, or never shown (AssembleTranscript)
+      if (row->content_type == ChatContentType::Annotation || IsHiddenNewsMessage(*row)) {
+        continue; // folded onto its message, or never shown (AssembleTranscript, InboxController::BuildTranscript)
       }
       if (++counted == shown) {
         oldest = row->display_order;
