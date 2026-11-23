@@ -324,6 +324,9 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
       contacts.OnBlockedPeopleDismissed();
       settings.RefreshBlockedCount();
     }
+    if (key == "group_list") {
+      contacts.OnGroupListDismissed();
+    }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }

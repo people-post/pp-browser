@@ -871,6 +871,8 @@
     "contacts.toast.trust_updated": "Trust updated",
     "contacts.toast.blocked": "Blocked {name}",
     "contacts.toast.unblocked": "Unblocked {name}",
+    "groups.title": "Groups",
+    "groups.empty": "No groups yet",
     "contacts.blocked.title": "Blocked",
     "contacts.blocked.help": "Blocked people can't message or call you, and they aren't told.",
     "contacts.blocked.empty": "You haven't blocked anyone.",

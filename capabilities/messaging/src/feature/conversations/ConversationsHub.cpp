@@ -1684,6 +1684,11 @@ AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
                               << recreated.error().message;
               }
             }
+            // Their chats are new rows with no message yet: the Chats list (and Contacts → Groups) is drawn again
+            // now, not at the next message or relaunch.
+            if (!restored.empty() && mesh_messaging_) {
+              mesh_messaging_->NotifyMessagesChanged();
+            }
             // Their members are checked (the roster statement is verified) and their message flow starts from now.
             AppRuntime::PostWorkerNormal([this, restored]() {
               for (const std::string& group_id : restored) {

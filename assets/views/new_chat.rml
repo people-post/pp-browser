@@ -26,6 +26,16 @@
         <p class="nc-action-label">{{i18n:new_chat.add}}</p>
       </div>
     </div>
+    <!-- The groups this account is in (view group_list): a card of its own under the two, the count on its right. -->
+    <div class="nc-actions" data-if="nc_query == ''">
+      <div class="nc-action" data-event-click="open_group_list()">
+        <div class="nc-action-icon nc-action-icon--groups">
+          <svg src="../icons/v2/group.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:groups.title}}</p>
+        <p class="nc-action-count text muted">{{group_list_count}}</p>
+      </div>
+    </div>
 
     <div data-for="section : nc_sections">
       <p class="nc-section-header">{{section.letter}}</p>
