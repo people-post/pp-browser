@@ -34,6 +34,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -41,6 +42,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/PbrCompat.h"
@@ -73,6 +75,10 @@ public:
   }
   Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
   Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  int Polls() {
+    std::lock_guard lock(mu_);
+    return polls_;
+  }
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override {
     ChatHistoryResponse response; // a gap repair's ask: the sender holds nothing in the range
     response.session_epoch = request.session_epoch;
@@ -202,7 +208,13 @@ protected:
     for (const RelayEnvelope& record : records) {
       relay_->Put(record);
     }
+    const int polls_before = relay_->Polls();
     mesh_->SyncInboxFromWake(true);
+    // The poll runs on a background worker the drain below does not wait for: a loaded box (ctest -j) can reach the
+    // drain before the poll has even started, so the chat is not there yet.
+    for (int i = 0; i < 10000 && relay_->Polls() == polls_before; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); // what the ingest started on its own worker turn
   }
