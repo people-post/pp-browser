@@ -183,12 +183,13 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
 
   ShellState expanded_base{};
   expanded_base.layout_mode = LayoutMode::Expanded;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(expanded_base), CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(expanded_base), CompactChromeFrostSurface::WidePaneHeader)
+      << "the wide layout frosts its conversation header strip (wide_frost_layout_test)";
   ShellState compact_dialog_over_chat = compact_chat_frost;
   compact_dialog_over_chat.dialog.active = true;
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).top, CompactChromeFrostSurface::None);
   EXPECT_EQ(ShellInterruption::ResolveFrost(compact_dialog_over_chat).bottom, CompactChromeFrostSurface::None);
-  EXPECT_EQ(ShellInterruption::ResolveFrost(expanded_base).bottom, CompactChromeFrostSurface::None);
+  EXPECT_EQ(ShellInterruption::ResolveFrost(expanded_base).bottom, CompactChromeFrostSurface::WideComposer);
 
   ShellState toast_state{};
   ShellFeedback::ShowToast(toast_state, "Hello", ToastDuration::Short, 1000.f);
