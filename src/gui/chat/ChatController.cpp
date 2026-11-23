@@ -7885,18 +7885,19 @@ void ChatController::AfterLayout() {
 
 namespace {
 
-/** Sets `name` to `dp` unless it already is (no relayout for an unchanged value). */
-void SetDpIfChanged(ui::Element* element, const char* name, const float dp) {
+/** Sets `name` to `dp` unless it already is (no relayout for an unchanged value). Returns whether it changed. */
+bool SetDpIfChanged(ui::Element* element, const char* name, const float dp) {
   if (!element) {
-    return;
+    return false;
   }
   if (const ui::Property* now = element->GetLocalProperty(name)) {
     const ui::NumericValue value = now->GetNumericValue();
     if (value.unit == ui::Unit::DP && std::abs(value.number - dp) < 0.5f) {
-      return;
+      return false;
     }
   }
   element->SetProperty(name, std::to_string(static_cast<int>(std::lround(dp))) + "dp");
+  return true;
 }
 
 ui::Element* FirstByClass(ui::Element* root, const char* name) {
@@ -7978,9 +7979,15 @@ void ChatController::KeepClearOfComposer(ui::Element* overlay, const char* mount
       clear_dp = bar_dp + kComposerClearGapDp;
     }
   }
-  SetDpIfChanged(FirstByClass(overlay, "composer-clear"), "height", clear_dp);
-  SetDpIfChanged(FirstByClass(overlay, "chat-composer-fade"), "bottom", bar_dp);
-  SetDpIfChanged(FirstByClass(overlay, "chat-jump-latest"), "bottom", bar_dp + kJumpLatestGapDp);
+  bool changed = SetDpIfChanged(FirstByClass(overlay, "composer-clear"), "height", clear_dp);
+  changed |= SetDpIfChanged(FirstByClass(overlay, "chat-composer-fade"), "bottom", bar_dp);
+  changed |= SetDpIfChanged(FirstByClass(overlay, "chat-jump-latest"), "bottom", bar_dp + kJumpLatestGapDp);
+  if (changed) {
+    // This runs after the frame's layout, and the frame is drawn right after it: the new spacer would be laid out (and the
+    // transcript kept at its bottom) only in the next frame, which an idle window never runs, leaving the newest messages
+    // under the panel (or a gap above it) until the next event. Ask for that frame; with nothing changed it asks for none.
+    AppRuntime::PostUI([]() {});
+  }
 }
 
 void ChatController::Shutdown() {
