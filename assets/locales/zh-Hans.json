@@ -1135,7 +1135,7 @@
     "chat.news.loading": "正在获取新闻…",
     "chat.news.reading": "正在读《{title}》",
     "chat.news.unavailable": "这篇暂时取不到内容。",
-    "chat.news.translated": "AI 翻译自原文",
+    "chat.news.translated": "AI 翻译自原文，细节以原文为准",
     "chat.news.open_original": "打开原文",
     "chat.news.previous": "上一条",
     "chat.news.next": "下一条",

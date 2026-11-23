@@ -234,7 +234,7 @@ TEST_F(NewsReaderLayoutTest, TheTranslationLineSitsUnderALongTitle) {
   ui::Element* line = First("news-reader-translated");
   ASSERT_NE(line, nullptr);
   ASSERT_TRUE(line->IsVisible());
-  EXPECT_NE(std::string(line->GetInnerRML().c_str()).find("AI 翻译自原文"), std::string::npos);
+  EXPECT_NE(std::string(line->GetInnerRML().c_str()).find("AI 翻译自原文，细节以原文为准"), std::string::npos);
   const Edges t = BorderEdges(First("news-reader-title"));
   const Edges l = BorderEdges(line);
   const Edges body = BorderEdges(First("news-reader-body"));
