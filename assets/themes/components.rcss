@@ -1210,6 +1210,113 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* The news reader sheet (news_reader.rml): the item's title, the digest, then a bar of 50dp buttons ("Open original",
+   and Previous / Next for a list). Colours: colors.rcss.tmpl. */
+.news-reader-scroll {
+  padding: 0 20dp 24dp 20dp;
+}
+
+.news-reader-title {
+  margin: 4dp 0 12dp 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+  word-break: break-word;
+}
+
+.news-reader-loading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  margin-top: 8dp;
+}
+
+.news-reader-spin {
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+  border-width: 2dp;
+  border-radius: 9dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
+.news-reader-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 22dp;
+}
+
+.news-reader-body {
+  font-size: 16dp;
+  line-height: 25dp;
+}
+
+.news-reader-body p {
+  margin: 0 0 12dp 0;
+  word-break: break-word;
+}
+
+.news-reader-body ul,
+.news-reader-body ol {
+  margin: 4dp 0 12dp 0;
+  padding-left: 0;
+}
+
+.news-reader-body li {
+  display: block;
+  position: relative;
+  padding-left: 26dp;
+  word-break: break-word;
+}
+
+.news-reader-body .md-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.7;
+}
+
+.news-reader-body .md-item {
+  display: block;
+}
+
+.news-reader-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 16dp 16dp 16dp;
+}
+
+.news-reader-open,
+.news-reader-step {
+  height: 50dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.news-reader-open {
+  flex: 1;
+  min-width: 0;
+  font-size: 16dp;
+  font-weight: bold;
+}
+
+.news-reader-step {
+  flex-shrink: 0;
+  min-width: 88dp;
+  padding: 0 14dp;
+  font-size: 15dp;
+}
+
+.news-reader-step--off {
+  opacity: 0.35;
+}
+
 /* A mention / @everyone in a group message (group-chat G015): a tinted chip, bold; a member's opens them. */
 .chat-mention {
   font-weight: bold;

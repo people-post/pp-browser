@@ -1498,6 +1498,11 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     picture_queue_->ChatDeleted(); // never revived in its draft
     SettlePictureQueue();
   }
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    CloseNewsReader(); // its digest went with the chat
+  }
+  news_reading_url_.erase(thread_id);
+  news_reads_.erase(thread_id);
   if (was_open) {
     CloseSearch();
     chat_.draft = "";
@@ -1723,6 +1728,10 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
   ForgetComposerExtras(thread_id);
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    CloseNewsReader(); // its digest was cleared with the chat
+  }
+  news_reads_.erase(thread_id);
   // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
@@ -1817,6 +1826,9 @@ void ChatController::OnProfileDataReset() {
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   picture_send_.CloseForExit();
+  CloseNewsReader();
+  news_reading_url_.clear();
+  news_reads_.clear();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();
@@ -4566,6 +4578,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
       pending_uploads_.Render(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                               presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
   agent_.DecorateAiImageRows(rows, thread_id);
+  MarkReadNewsItems(rows, thread_id);
   ArmSendMarkRedraw(next_mark_change);
   TellResentTurnedRed(thread_id, red_ids);
   return rows;
@@ -5090,27 +5103,232 @@ void ChatController::SyncDisplayFromThread() {
 // persisted assistant message id, so the live bubble is a synthetic last row that ClearStreamingRow
 // drops right before FinishAssistantReply rebuilds the rows.
 
-void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index) {
+const std::vector<MarkdownLink>* ChatController::ChatLinksOf(const std::string& thread_id,
+                                                             const std::string& entry_id) {
   auto links = chat_links_.find(entry_id);
   if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
-    // After a restart the map is empty: rebuild from the message's own stored text.
-    if (auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000)) {
-      for (const ThreadMessage& message : *messages) {
-        if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
-          links = chat_links_.emplace(entry_id, RecoverChatLinks(message.text)).first;
-          break;
-        }
-      }
+    // After a restart the map is empty: rebuild from the message's own stored text. A news item counts only in the AI
+    // assistant's own answers in an AI conversation (FinishAssistantReply decides the same), never in a hidden digest.
+    auto found = facade_->GetMessage(thread_id, entry_id);
+    if (found && *found && (*found)->sender_contact_id == kAiAssistantContactId) {
+      auto thread = facade_->GetThread(thread_id);
+      const bool news = thread && *thread && (*thread)->kind == ThreadKind::Ai && !IsHiddenNewsMessage(**found);
+      links = chat_links_.emplace(entry_id, RecoverChatLinks((*found)->text, news)).first;
     }
   }
-  if (links == chat_links_.end()) {
+  return links == chat_links_.end() ? nullptr : &links->second;
+}
+
+void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index,
+                                    const bool news_reader) {
+  const std::vector<MarkdownLink>* links = ChatLinksOf(thread_id, entry_id);
+  if (!links) {
     return;
   }
-  const std::optional<MarkdownLink> link = ResolveChatLink(links->second, link_index);
+  const std::optional<MarkdownLink> link = ResolveChatLink(*links, link_index);
   if (!link) {
     return;
   }
+  if (link->news && news_reader) {
+    OpenNewsReader(thread_id, *links, *link);
+    return;
+  }
   OpenTrustedUrl(link->url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+}
+
+void ChatController::OpenNewsReader(const std::string& thread_id, const std::vector<MarkdownLink>& links,
+                                    const MarkdownLink& tapped) {
+  if (!messaging_ready_ || !facade_ || !shell_navigation_.push_layer) {
+    return;
+  }
+  NewsReaderOpen reader;
+  reader.thread_id = thread_id;
+  for (const MarkdownLink& item : NewsItemsOf(links)) {
+    if (item.news_ordinal == tapped.news_ordinal) {
+      reader.index = reader.items.size();
+    }
+    reader.items.push_back({item.url, item.label});
+  }
+  if (reader.items.empty()) {
+    return;
+  }
+  const size_t index = reader.index;
+  news_reader_ = std::move(reader);
+  ShowNewsItem(index);
+  if (!news_reader_ || news_reader_layer_ >= 0) {
+    return; // "wait for this answer" (the sheet does not open), or the sheet is already up
+  }
+  PaneSpec spec;
+  spec.key = "news_reader";
+  spec.page_sheet = true;
+  news_reader_layer_ = shell_navigation_.push_layer(spec);
+  if (news_reader_layer_ >= 0 && flow_coordinator_.begin_modal) {
+    // Closed by a swipe, its X or a notification tap: the read goes on and is stored; only the sheet goes.
+    flow_coordinator_.begin_modal(news_reader_layer_, {}, [this]() {
+      news_reader_layer_ = -1;
+      news_reader_.reset();
+      ApplyNewsReader();
+    });
+  }
+}
+
+void ChatController::ShowNewsItem(const size_t index) {
+  if (!news_reader_ || index >= news_reader_->items.size()) {
+    return;
+  }
+  const std::string thread_id = news_reader_->thread_id;
+  const NewsItem item = news_reader_->items[index];
+  const auto reading = news_reading_url_.find(thread_id);
+  const bool reading_this =
+      reading != news_reading_url_.end() && NormalizeNewsUrl(reading->second) == NormalizeNewsUrl(item.url);
+  const bool busy = agent_.Busy().BusyIn(thread_id) || agent_.CanStart(thread_id) != TurnStart::Yes;
+  switch (DecideNewsTap(NewsReadsOf(thread_id).IsRead(item.url), reading_this, busy)) {
+    case NewsTap::Wait:
+      ShowToast(Tr("chat.news.wait")); // nothing is asked; an open sheet stays on the item it shows
+      if (news_reader_layer_ < 0) {
+        news_reader_.reset(); // never opened
+      }
+      return;
+    case NewsTap::StartRead:
+      if (agent_.StartNewsRead(thread_id,
+                               NewsReadRequestText(item.url, LocalizationService::Instance().ResolvedLanguage()),
+                               item.title) != SubmitOutcome::Started) {
+        ShowToast(Tr("chat.news.wait"));
+        if (news_reader_layer_ < 0) {
+          news_reader_.reset(); // never opened
+        }
+        return;
+      }
+      news_reading_url_[thread_id] = item.url;
+      break;
+    case NewsTap::ShowStored:
+    case NewsTap::ShowReading:
+      break;
+  }
+  news_reader_->index = index;
+  ApplyNewsReader();
+}
+
+void ChatController::StepNewsReader(const int step) {
+  if (!news_reader_ || !chat_.news_reader_has_nav) {
+    return;
+  }
+  if ((step < 0 && !chat_.news_reader_can_prev) || (step > 0 && !chat_.news_reader_can_next)) {
+    return;
+  }
+  ShowNewsItem(step < 0 ? news_reader_->index - 1 : news_reader_->index + 1);
+}
+
+void ChatController::OpenNewsOriginal() {
+  if (!news_reader_ || news_reader_->index >= news_reader_->items.size()) {
+    return;
+  }
+  OpenTrustedUrl(news_reader_->items[news_reader_->index].url); // a news item of the AI assistant's own answer
+}
+
+void ChatController::CloseNewsReader() {
+  news_reader_.reset();
+  if (news_reader_layer_ >= 0) {
+    const int layer = news_reader_layer_;
+    news_reader_layer_ = -1;
+    if (flow_coordinator_.end_modal) {
+      flow_coordinator_.end_modal();
+    }
+    if (shell_navigation_.close_layer) {
+      shell_navigation_.close_layer(layer);
+    }
+  }
+  ApplyNewsReader();
+}
+
+void ChatController::ApplyNewsReader() {
+  chat_.news_reader_title = "";
+  chat_.news_reader_loading = false;
+  chat_.news_reader_failed = false;
+  chat_.news_reader_body_rml = ""; // the digest is bound only while it shows (and never kept under a lock)
+  chat_.news_reader_has_nav = false;
+  chat_.news_reader_can_prev = false;
+  chat_.news_reader_can_next = false;
+  if (news_reader_ && news_reader_->index < news_reader_->items.size()) {
+    const NewsItem& item = news_reader_->items[news_reader_->index];
+    chat_.news_reader_title = item.title.c_str();
+    const auto reading = news_reading_url_.find(news_reader_->thread_id);
+    const bool reading_this =
+        reading != news_reading_url_.end() && NormalizeNewsUrl(reading->second) == NormalizeNewsUrl(item.url);
+    if (const NewsReads::Digest* digest = NewsReadsOf(news_reader_->thread_id).Find(item.url)) {
+      // The digest is untrusted web text: its links open the browser at most, never the reader (no news items).
+      ChatAnswerRml body = BuildMarkdownAnswer(digest->text);
+      chat_links_[digest->message_id] = std::move(body.links);
+      chat_.news_reader_body_rml = InjectEntryPlaceholders(body.rml, digest->message_id).c_str();
+    } else if (reading_this) {
+      chat_.news_reader_loading = true;
+    } else {
+      chat_.news_reader_failed = true;
+    }
+    const NewsNav nav = NewsNavFor(news_reader_->index, news_reader_->items.size(), chat_.news_reader_loading);
+    chat_.news_reader_has_nav = nav.shown;
+    chat_.news_reader_can_prev = nav.can_prev;
+    chat_.news_reader_can_next = nav.can_next;
+  }
+  for (const char* field : {"news_reader_title", "news_reader_loading", "news_reader_failed", "news_reader_body_rml",
+                            "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
+    DataModelHost::Instance().Dirty("chat", field);
+  }
+}
+
+const NewsReads& ChatController::NewsReadsOf(const std::string& thread_id) {
+  static const NewsReads kNone;
+  auto found = news_reads_.find(thread_id);
+  if (found != news_reads_.end()) {
+    return found->second;
+  }
+  if (!messaging_ready_ || !facade_ || !MessagingReady() || thread_id.empty()) {
+    return kNone; // locked or not set up: nothing is read, and nothing is remembered as "none read"
+  }
+  auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!messages) {
+    return kNone;
+  }
+  return news_reads_.emplace(thread_id, ScanNewsReads(*messages)).first->second;
+}
+
+void ChatController::MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id) {
+  const auto has_news = [](const MessageDisplayRow& row) {
+    return std::string_view(row.content_rml.c_str()).find(kNewsLinkClass) != std::string_view::npos;
+  };
+  if (thread_id.empty() || std::none_of(rows.begin(), rows.end(), has_news)) {
+    return;
+  }
+  const NewsReads& reads = NewsReadsOf(thread_id);
+  if (reads.digests.empty()) {
+    return;
+  }
+  for (MessageDisplayRow& row : rows) {
+    if (!has_news(row)) {
+      continue;
+    }
+    if (const std::vector<MarkdownLink>* links = ChatLinksOf(thread_id, row.message_id.c_str())) {
+      row.content_rml =
+          MarkNewsLinksRead(std::string(row.content_rml.c_str()), *links, [&reads](const std::string& url) {
+            return reads.IsRead(url);
+          }).c_str();
+    }
+  }
+}
+
+void ChatController::OnNewsReadEnded(const std::string& thread_id) {
+  const auto reading = news_reading_url_.find(thread_id);
+  if (reading == news_reading_url_.end()) {
+    return;
+  }
+  news_reading_url_.erase(reading);
+  news_reads_.erase(thread_id); // read again: the digest (or nothing) is stored now
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    ApplyNewsReader(); // the digest, or the fixed "can't be read" line
+  }
+  if (thread_id == ActiveThreadId()) {
+    SyncDisplayFromThread(); // the item turns grey in its list
+  }
 }
 
 bool ChatController::MessageFromAssistant(const std::string& thread_id, const std::string& entry_id) {
@@ -6718,6 +6936,9 @@ bool ChatController::Setup(ui::Context* context) {
                                DataEvent<std::string, int>(
                                    [this](const std::string& entry_id, int link) { OpenChatLink(entry_id, link); }));
         ctor.BindEventCallback("stop_turn", DataEvent([this] { agent_.OnStopTurn(); }));
+        ctor.BindEventCallback("news_reader_prev", DataEvent([this] { StepNewsReader(-1); }));
+        ctor.BindEventCallback("news_reader_next", DataEvent([this] { StepNewsReader(1); }));
+        ctor.BindEventCallback("news_reader_open_original", DataEvent([this] { OpenNewsOriginal(); }));
         ctor.BindEventCallback("cancel_queued", DataEvent([this] { CancelQueuedHere(); }));
         // The row of a picture being sent (pending-upload-…) is no message: none of the row events below acts on it.
         ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
@@ -7192,6 +7413,10 @@ void ChatController::Update() {
   }
   if (messaging_ready_ && !MessagingReady()) {
     picture_send_.CloseForExit(); // an open preview page closes by itself (nothing else closes layers on a lock)
+    if (news_reader_layer_ >= 0 || news_reader_) {
+      CloseNewsReader(); // the digest on screen is plaintext: it goes with the lock
+    }
+    news_reads_.clear();
   }
   if (messaging_ready_ && !MessagingReady()) {
     DropWaitingVoice(); // recordings that have not started are plaintext under the lock: they go, as the lock wipes them
@@ -7585,6 +7810,9 @@ void ChatController::Shutdown() {
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   picture_send_.CloseForExit();
+  CloseNewsReader();
+  news_reading_url_.clear();
+  news_reads_.clear();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();
@@ -7789,6 +8017,7 @@ void ChatController::OnSearchMessagesChanged() {
 }
 
 void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
+  OnNewsReadEnded(thread_id);
   if (!thread_id.empty() && thread_id == search_thread_) {
     OnSearchMessagesChanged(); // the answer is stored now
   }
@@ -7874,8 +8103,11 @@ bool ChatController::AskAiLastIsQuestion(const std::string& thread_id) {
   if (!messaging_ready_ || !facade_ || thread_id.empty()) {
     return false;
   }
-  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
-  return newest && !newest->empty() && newest->back().sender_contact_id == kLocalSelfContactId;
+  // A news read's hidden request is no question left unanswered: the newest message shown decides.
+  constexpr size_t kLookBack = 20;
+  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, kLookBack);
+  const ThreadMessage* shown = newest ? NewestShownMessage(*newest) : nullptr;
+  return shown && shown->sender_contact_id == kLocalSelfContactId;
 }
 
 std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, const std::string& text) {

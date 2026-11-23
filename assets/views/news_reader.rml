@@ -1,0 +1,28 @@
+<!-- The news reader (DEV/PLAN-news-inline-digest.md): a tap on a news item of an AI answer opens this page sheet over
+     the chat. The item's title on top (from the list, never from the model), then "Getting the article…" with a spinner
+     until the whole digest arrives at once, or the fixed "This article can't be read right now."; under it "Open
+     original" (the system browser) and, for a list, Previous / Next (off at the ends and while a read runs). The digest
+     is bound only while it shows. The desktop's panel is a separate view (desktop branch); state and events:
+     news_reader_title, news_reader_loading, news_reader_failed, news_reader_body_rml, news_reader_has_nav,
+     news_reader_can_prev, news_reader_can_next; news_reader_prev(), news_reader_next(), news_reader_open_original(). -->
+<div class="ac-page news-reader" data-model="chat">
+  <div class="sheet-header">
+    <p class="sheet-title"></p>
+  </div>
+  <div class="ac-scroll news-reader-scroll">
+    <h2 class="news-reader-title" selectable="text">{{news_reader_title}}</h2>
+    <div class="news-reader-loading" data-if="news_reader_loading">
+      <div class="news-reader-spin"></div>
+      <p class="news-reader-note">{{i18n:chat.news.loading}}</p>
+    </div>
+    <p class="news-reader-note" data-if="news_reader_failed">{{i18n:chat.news.unavailable}}</p>
+    <div class="news-reader-body" selectable="text" data-rml="news_reader_body_rml"></div>
+  </div>
+  <div class="news-reader-bar">
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_prev" data-event-click="news_reader_prev()">{{i18n:chat.news.previous}}</button>
+    <button class="news-reader-open" type="button" data-event-click="news_reader_open_original()">{{i18n:chat.news.open_original}}</button>
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_next" data-event-click="news_reader_next()">{{i18n:chat.news.next}}</button>
+  </div>
+</div>
