@@ -73,11 +73,16 @@ public:
     result.next_cursor = "c" + std::to_string(++polls_);
     return result;
   }
-  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
-  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
-  int Polls() {
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override {
     std::lock_guard lock(mu_);
-    return polls_;
+    ++acks_;
+    return RelayDeleteResult{};
+  }
+  Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
+  /** Batches the app took in and acked: the coordinator acks only after the receive pipeline has taken a batch. */
+  int Acks() {
+    std::lock_guard lock(mu_);
+    return acks_;
   }
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override {
     ChatHistoryResponse response; // a gap repair's ask: the sender holds nothing in the range
@@ -89,6 +94,7 @@ private:
   std::mutex mu_;
   std::vector<RelayEnvelope> inbox_;
   int polls_ = 0;
+  int acks_ = 0;
 };
 
 class RemovedChatRereadTest : public ::testing::Test {
@@ -208,13 +214,15 @@ protected:
     for (const RelayEnvelope& record : records) {
       relay_->Put(record);
     }
-    const int polls_before = relay_->Polls();
+    const int acks_before = relay_->Acks();
     mesh_->SyncInboxFromWake(true);
-    // The poll runs on a background worker the drain below does not wait for: a loaded box (ctest -j) can reach the
-    // drain before the poll has even started, so the chat is not there yet.
-    for (int i = 0; i < 10000 && relay_->Polls() == polls_before; ++i) {
+    // The poll runs on a background worker and the batch is taken in on another, neither of which a drain waits for
+    // (a loaded box can reach the drain first): wait for the outcome — the batch taken in and acked — then drain what
+    // the ingest started.
+    for (int i = 0; i < 10000 && relay_->Acks() == acks_before; ++i) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    ASSERT_GT(relay_->Acks(), acks_before) << "the mailbox was never taken in";
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); // what the ingest started on its own worker turn
   }
