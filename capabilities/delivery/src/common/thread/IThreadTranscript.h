@@ -4,6 +4,7 @@
 #include "common/ContextBudget.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,6 +15,18 @@ namespace pbr {
 struct ClearMessagesOptions {
   bool forget_memory = false;
 };
+
+/**
+ * How long the id of a message whose chat was cleared or deleted is remembered (IThreadTranscript::WasMessageRemoved):
+ * the relay keeps a record 90 days from when it stored it (SERVICE_ENDPOINTS § inbox), before the removal, so the
+ * record is gone there 90 days after it at the latest; a day more for the two clocks.
+ */
+inline constexpr int64_t kRemovedMessageIdKeepMs = 91LL * 24 * 60 * 60 * 1000;
+/**
+ * Rows older than this (by their timestamp, the sender's clock) are not remembered: the relay holds no record that
+ * old. The month over the relay's 90 days is for a sender whose clock runs slow.
+ */
+inline constexpr int64_t kRemovedMessageRowHorizonMs = 120LL * 24 * 60 * 60 * 1000;
 
 class IThreadTranscript {
 public:
@@ -130,6 +143,20 @@ public:
     return UpdateMessage(tombstone);
   }
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
+  /**
+   * Whether `message_id` was a message of a chat cleared (ClearMessages) or deleted (DeleteThread) here, while the
+   * relay may still hold its record (kRemovedMessageIdKeepMs): such a message has no row left for HasMessageId to
+   * find, so a copy that comes again — a mailbox read from its start, a sibling's sent copy, a peer's history — would
+   * be new. Ids only. A store that keeps none: never.
+   */
+  virtual Roe<bool> WasMessageRemoved(const std::string& message_id) const {
+    (void)message_id;
+    return false;
+  }
+  /**
+   * Clears the chat's rows. A store that answers WasMessageRemoved remembers their ids first (a chat with a peer or a
+   * group); it refuses to store a remembered id again.
+   */
   virtual Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) = 0;
   virtual Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(
       const std::string& thread_id, const std::optional<std::string>& max_message_id) const = 0;

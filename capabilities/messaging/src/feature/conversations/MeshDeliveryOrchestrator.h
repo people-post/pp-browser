@@ -571,6 +571,11 @@ private:
   /** A poll's batch from one of our relays, through the receive pipeline (the critical worker). */
   void TakeRelayBatch(const RelayInboxCoordinator::Batch& batch, const std::string& local_account_id);
   void IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id, RelayIngestNotes& notes);
+  /**
+   * A message of a chat cleared or deleted here, come again (IThreadTranscript::WasMessageRemoved: a mailbox read
+   * from its start, a copy sent again): dropped before the receive pipeline — no chat made, no unread, no notice.
+   */
+  bool RemovedHere(const RelayEnvelope& envelope) const;
   void PostRelayIngestNotes(RelayIngestNotes notes);
   RelayInboxCoordinator::Ports InboxPorts();
   bool InboxReady(const std::string& origin) const;

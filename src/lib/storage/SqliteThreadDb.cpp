@@ -4,6 +4,7 @@
 #include "lib/storage/SqliteChatStoreGate.h"
 #include "lib/storage/SqliteMigrations.h"
 #include "lib/storage/SqliteThreadSchema.h"
+#include "common/thread/IThreadTranscript.h"
 #include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -161,10 +162,21 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   if (*outcome == SqliteLadderOutcome::Migrated) {
     log().info << "profile.db migrated to schema " << kSqliteThreadProfileUserVersion;
   }
-  if (*outcome != SqliteLadderOutcome::BelowFloor) {
-    return {};
+  if (*outcome == SqliteLadderOutcome::BelowFloor) {
+    return ResetBelowFloor(); // opens the new file through here again
   }
-  return ResetBelowFloor();
+  if (auto removed = SqliteThreadExecSql(profile_db_, kSqliteRemovedMessagesSchema); !removed) {
+    return removed;
+  }
+  // The ids no relay can still hold a record of go (they are also pruned at every removal).
+  sqlite3_stmt* prune = nullptr;
+  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM removed_messages WHERE removed_at < ?;", -1, &prune, nullptr) ==
+      SQLITE_OK) {
+    sqlite3_bind_int64(prune, 1, util::NowUnixMs() - kRemovedMessageIdKeepMs);
+    (void)sqlite3_step(prune);
+  }
+  sqlite3_finalize(prune);
+  return {};
 }
 
 Roe<void> SqliteThreadDb::ResetBelowFloor() const {

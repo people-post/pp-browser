@@ -343,6 +343,10 @@ user changes the list.
   registration (after a revoke or a lapse) is a new mailbox the relay numbers from the start, so a cursor kept for
   another registration, or while it was not known, is dropped and that inbox read from its start (a cursor file that
   noted none at all, an older app's, drops every cursor once); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
+  A message deleted here keeps its row as a tombstone, so it is dropped the same way; the messages of a chat cleared
+  or deleted here have no row left, so their ids are kept apart for as long as the relay may hold them
+  ([DATA_LAYOUT](DATA_LAYOUT.md) `removed_messages`) and such a record is dropped before the receive pipeline: no
+  chat comes back, no unread count, no notice.
 - **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
   for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
   redelivery. One relay batch is taken in at a time.
