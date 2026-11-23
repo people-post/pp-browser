@@ -501,6 +501,38 @@ TEST_F(RelayInboxCoordinatorTest, ABacklogBehindTheOlderAppsCursorIsDelivered) {
   EXPECT_FALSE(KeptReread(dir_, kPreferred)) << "an empty page: read through";
 }
 
+// A page whose records were all unreadable (the client skips them as it reads) comes back empty but with a cursor: the
+// inbox goes on past it. Neither phase ends there — the backlog after it is delivered in phase 1 whatever its time, and
+// phase 2 goes on to what was missed.
+TEST_F(RelayInboxCoordinatorTest, APageOfUnreadableRecordsEndsNeitherPhase) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
+  auto app = Started();
+  preferred_->Queue({}, "c1:1690"); // all unreadable
+  preferred_->QueueStored({{"backlog", floor_ms - 60 * kMinute}}, "c1:1695");
+  app->Sync(false, kMe);
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1690") << "phase 1 goes on past it";
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog")}));
+  auto reread = KeptReread(dir_, kPreferred);
+  ASSERT_TRUE(reread);
+  EXPECT_FALSE(reread->backfill);
+
+  app->Sync(false, kMe);         // read through: phase 2
+  preferred_->Queue({}, "c1:2"); // all unreadable
+  preferred_->QueueStored({{"before-the-write", floor_ms - kMinute}, {"missed", written + kMinute}}, "c1:4");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  reread = KeptReread(dir_, kPreferred);
+  ASSERT_TRUE(reread);
+  EXPECT_TRUE(reread->backfill) << "phase 2 goes on past it";
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:2");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog"), At(kPreferred, "missed")}));
+  app->Sync(false, kMe);
+  EXPECT_FALSE(KeptReread(dir_, kPreferred)) << "read through";
+}
+
 // The account was deaf: a fresh registration numbered its mailbox from the start, and the older app's cursor is past
 // everything in it. Phase 1 answers an empty page at once; phase 2 reads the mailbox from its start and brings in what
 // was stored since the file's last write — the messages that device missed.

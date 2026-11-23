@@ -164,7 +164,7 @@ bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const 
     DiagLine("relay.poll_too_large").Add("n", poll->messages.size()).Emit();
     return true;
   }
-  const bool from_start = ApplyReread(*inbox, poll->messages);
+  const bool from_start = ApplyReread(*inbox, poll->messages, poll->next_cursor);
   // The cursor moves on before the next poll: a follow-up must not fetch the same batch while it waits for ingest.
   const std::string next_cursor = from_start ? std::string() : poll->next_cursor;
   if (!next_cursor.empty()) {
@@ -336,15 +336,19 @@ std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::strin
   return it == cursors_.end() ? std::string() : it->second;
 }
 
-bool RelayInboxCoordinator::ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages) {
+bool RelayInboxCoordinator::ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages,
+                                        const std::string& next_cursor) {
   std::lock_guard lock(mutex_);
   const std::string relay = RelayOriginKey(inbox.relay.origin);
   const auto reread = rereads_.find(relay);
   if (reread == rereads_.end()) {
     return false;
   }
+  // The relay has nothing further only when a page is empty and names no cursor: a page whose records were all
+  // unreadable (skipped as it was read) comes back empty with a cursor, and the inbox goes on past it.
+  const bool read_through = messages.empty() && next_cursor.empty();
   if (!reread->second.backfill) {
-    if (!messages.empty()) {
+    if (!read_through) {
       return false; // phase 1: as the older app, everything
     }
     reread->second.backfill = true; // drained: phase 2 reads the inbox from its start
@@ -353,7 +357,7 @@ bool RelayInboxCoordinator::ApplyReread(const Inbox& inbox, std::vector<RelayEnv
     SaveCursorsLocked();
     return true;
   }
-  if (messages.empty()) {
+  if (read_through) {
     rereads_.erase(reread); // read through: from now on as any inbox
     log().info << "relay inbox " << relay << ": the re-read of an older app's file is done";
     SaveCursorsLocked();

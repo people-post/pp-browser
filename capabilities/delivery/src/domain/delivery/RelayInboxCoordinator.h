@@ -123,11 +123,12 @@ private:
   std::string CursorOf(const Inbox& inbox, const std::string& account_id, const std::string& mailbox);
   void KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor);
   /**
-   * An older app's file's re-read at `inbox`, after a poll answered `messages`: phase 1 takes them all and, on an empty
-   * page, moves to phase 2 (the cursor dropped: true, the page's cursor is not kept); phase 2 takes those stored since
-   * its floor and, on an empty page, ends. None under way: nothing changes (false).
+   * An older app's file's re-read at `inbox`, after a poll answered `messages` and `next_cursor`: phase 1 takes them all
+   * and, once the inbox is read through (an empty page with no cursor), moves to phase 2 (the cursor dropped: true, the
+   * page's cursor is not kept); phase 2 takes those stored since its floor and, read through, ends. None under way:
+   * nothing changes (false).
    */
-  bool ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages);
+  bool ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages, const std::string& next_cursor);
   /** Phase 2's floor for an older app's file last written at `written_ms`; none when that time cannot be trusted. */
   static std::optional<int64_t> RereadFloor(std::optional<int64_t> written_ms);
   void LoadCursorsLocked(const std::string& account_id);

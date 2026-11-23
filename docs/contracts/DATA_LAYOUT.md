@@ -56,7 +56,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # or while it was not known, is dropped and that inbox read from its start (RelayInboxCoordinator; the receive pipeline drops what it took already);
                             # a file without the key (an older app's) is read again once per relay with a cursor, in two phases kept in reread_phase / reread_floor_ms
                             # (additive, 2026-11-23, schema stays 1; an older app ignores both and drops them when it writes — the next run then starts over, safely):
-                            # `drain` polls on from the kept cursor unfiltered, as the older app would, until an empty page; `backfill` then reads the inbox from its
+                            # `drain` polls on from the kept cursor unfiltered, as the older app would, until an empty page with no cursor (a page of unreadable records
+                            # alone carries one and goes on); `backfill` then reads the inbox from its
                             # start until an empty page, skipping records the relay stored (created_at) before reread_floor_ms = the file's last write less 10 min
                             # (chats cleared or deleted before removed_messages existed do not come back; a record with no created_at is taken in); no floor — the file
                             # time unreadable, in the future or extreme — takes everything. Never delivers less than keeping the cursor; the keys go when it ends;
