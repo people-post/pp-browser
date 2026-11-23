@@ -474,6 +474,11 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto plaintext = FileCipher::Decrypt(dek_, blob, aad);
   if (!plaintext) {
+    if (AppError::IsNewerFormat(plaintext.error())) {
+      return plaintext.error(); // a newer envelope version: update the app, never offered the wipe
+    }
+    // A newer AAD schema byte would land here too (it is only in the AAD, not in the file): it cannot be told apart
+    // from "not this vault's key" without a format change.
     return Unopenable("identity.enc does not open with this vault's key: " + plaintext.error().message);
   }
   const std::string text(plaintext->begin(), plaintext->end());
