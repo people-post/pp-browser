@@ -6,6 +6,7 @@
 #include "feature/settings/StorageSettingsSection.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 
 #include <gtest/gtest.h>
 
@@ -82,6 +83,8 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   EXPECT_FALSE(state.app_name.empty());
   EXPECT_FALSE(state.app_version.empty());
   EXPECT_FALSE(state.app_build.empty());
+  EXPECT_EQ(state.tester_build_number.empty(), !pbr::IsTesterBuild())
+      << "a tester build names itself in About; a store build shows no such line (RC022)";
   EXPECT_TRUE(about_section.IsWritable()) << "About owns the Show advanced settings switch";
 }
 

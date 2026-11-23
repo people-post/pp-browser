@@ -27,6 +27,14 @@ std::string FormatBuildIdentity(std::string_view version, std::string_view commi
 /** FormatBuildIdentity of this build (AppVersionString, BuildCommit, BuildTag). */
 std::string BuildIdentity();
 
+/**
+ * What About shows after "Tester build" (release-compatibility RC022), "" in a store build (`tester` false), which shows
+ * no such line: the TestFlight build number (CFBundleVersion) — the `<n>` of the build's `internal/<n>` tag, which
+ * ios-testflight.yml names it by — else the build's `version`. App Store Connect lets anyone submit any TestFlight
+ * build, so whoever checks one sees that it is a tester build.
+ */
+std::string TesterBuildNumber(bool tester, std::string_view tag, std::string_view version);
+
 } // namespace pbr
 
 #endif // PP_BROWSER_BUILD_INFO_H

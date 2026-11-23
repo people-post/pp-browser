@@ -52,7 +52,16 @@
               <span class="group-row-value">{{app_build}}</span>
             </span>
           </div>
+          <!-- A tester build says so, with its TestFlight build number (release-compatibility RC022); a store build has
+               no such row. -->
+          <div class="group-row" data-if="tester_build_number != ''">
+            <span class="group-row-body">
+              <span class="group-row-text">{{i18n:settings.about.tester_build}}</span>
+              <span class="group-row-value">{{tester_build_number}}</span>
+            </span>
+          </div>
         </div>
         <p class="text muted group-foot settings-desktop-only" data-event-click="tap_version()">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
         <p class="text muted group-foot settings-desktop-only">{{i18n:settings.about.build}} <span>{{app_build}}</span></p>
+        <p class="text muted group-foot settings-desktop-only" data-if="tester_build_number != ''">{{i18n:settings.about.tester_build}} <span>{{tester_build_number}}</span></p>
       </div>

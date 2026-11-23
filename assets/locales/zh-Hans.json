@@ -125,6 +125,7 @@
     "settings.help.show_advanced.hint": "打开后可以看到连接、名片有效期等更多参数。一般不用打开。",
     "settings.about.version": "版本号",
     "settings.about.build": "构建",
+    "settings.about.tester_build": "测试版",
     "compat.update_required.title": "需要更新",
     "compat.update_required.message": "这个版本的 PP 已经不再支持，请更新后继续使用。",
     "compat.update_required.action": "更新",

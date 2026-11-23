@@ -325,6 +325,8 @@ private:
     ui::String app_name;
     ui::String app_version;
     ui::String app_build;
+    /** "" in a store build: the "Tester build" line is hidden (RC022). */
+    ui::String tester_build_number;
     bool support_visible = false;
     ui::String support_display_name;
     ui::String support_subtitle;

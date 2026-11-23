@@ -86,15 +86,16 @@ TEST_F(SharedRootFilesTest, AStoreBuildReadsAProfilesFileATesterBuildWrote) {
             R"({"schema_version": 1, "active_profile_id": ")" + tester_custom + R"(",
                 "profiles": [{"id": "default", "label": "user"}, {"id": "staging", "label": "staging"},
                              {"id": "dev", "label": "dev"},
-                             {"id": ")" + tester_custom + R"(", "label": ")" + tester_custom + R"("}]})");
+                             {"id": ")" +
+                tester_custom + R"(", "label": ")" + tester_custom + R"("}]})");
 
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
   EXPECT_EQ(registry->Profiles().size(), 4u);
   ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
   EXPECT_EQ(registry->ActiveProfileId(), "default") << "the store build's own profile";
-  EXPECT_TRUE(pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()),
-                                         pbr::BuildKind::Store));
+  EXPECT_TRUE(
+      pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), pbr::BuildKind::Store));
 
   auto reloaded = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(reloaded));
@@ -104,8 +105,8 @@ TEST_F(SharedRootFilesTest, AStoreBuildReadsAProfilesFileATesterBuildWrote) {
   EXPECT_EQ(pbr::ReadProfileBackend(ProfileDir(tester_custom)), tester_custom);
 
   // A store build's custom backend at the same URL is a profile of its own, not the tester build's.
-  ASSERT_TRUE(static_cast<bool>(reloaded->SelectProfileForBackend(
-      pbr::CustomProfileKey("https://custom.example.test", pbr::BuildKind::Store))));
+  ASSERT_TRUE(static_cast<bool>(
+      reloaded->SelectProfileForBackend(pbr::CustomProfileKey("https://custom.example.test", pbr::BuildKind::Store))));
   EXPECT_NE(reloaded->ActiveProfileId(), tester_custom);
   EXPECT_EQ(reloaded->Profiles().size(), 5u);
 }
@@ -119,14 +120,13 @@ TEST_F(SharedRootFilesTest, ATesterBuildMakesItsOwnProfileBesideTheStoreBuilds) 
   const std::string prod_dir = registry->ActiveProfileDataDir();
   const std::string prod_manifest = ReadText((std::filesystem::path(prod_dir) / "manifest.json").string());
 
-  constexpr pbr::CompiledOrigins kTester{.staging = "https://staging.example.test",
-                                         .kind = pbr::BuildKind::Tester};
+  constexpr pbr::CompiledOrigins kTester{.staging = "https://staging.example.test", .kind = pbr::BuildKind::Tester};
   const std::string key = pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kTester); // a saved prod
   ASSERT_EQ(key, "staging");
   ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend(key)));
   EXPECT_EQ(registry->ActiveProfileId(), "staging");
-  EXPECT_TRUE(pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()),
-                                         pbr::BuildKind::Tester));
+  EXPECT_TRUE(
+      pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), pbr::BuildKind::Tester));
   EXPECT_FALSE(pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(prod_dir), pbr::BuildKind::Tester));
   EXPECT_EQ(ReadText((std::filesystem::path(prod_dir) / "manifest.json").string()), prod_manifest) << "untouched";
 }

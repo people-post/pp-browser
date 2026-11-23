@@ -118,10 +118,11 @@ protected:
   }
 
   /** Loads the real Help page bound to the model, with the build line the About section would hand it. */
-  void ShowHelpPage(const std::string& build) {
+  void ShowHelpPage(const std::string& build, const std::string& tester_build_number = {}) {
     SettingsHost& host = settings;
     host.UiState().app_version = "1.0.0-test";
     host.UiState().app_build = build;
+    host.UiState().tester_build_number = tester_build_number;
     host.PushToView(false);
     ASSERT_TRUE(settings.RegisterModel(context));
     document = context->LoadDocumentFromMemory("<rml><body><div data-model=\"settings\">" +
@@ -130,13 +131,15 @@ protected:
     document->Show();
     context->Update();
   }
-  /** The text of every element matching `selector`, whitespace collapsed. */
+  /** The text of every element matching `selector` that is shown (a `data-if` that is false hides its element). */
   std::vector<std::string> Texts(const std::string& selector) {
     ui::ElementList found;
     document->QuerySelectorAll(found, selector);
     std::vector<std::string> out;
     for (ui::Element* element : found) {
-      out.emplace_back(element->GetInnerRML().c_str());
+      if (element->IsVisible(true)) {
+        out.emplace_back(element->GetInnerRML().c_str());
+      }
     }
     return out;
   }
@@ -175,6 +178,38 @@ TEST_F(SettingsAboutBuildRenderTest, DesktopFootShowsBuildAfterTheVersion) {
     }
   }
   EXPECT_TRUE(found) << "a Build line on the desktop";
+}
+
+// Release-compatibility RC022: a tester build says so under the build, with its TestFlight build number, on the phone
+// and on the desktop; a store build (an empty number) shows no such line.
+TEST_F(SettingsAboutBuildRenderTest, ATesterBuildNamesItselfWithItsBuildNumber) {
+  ShowHelpPage(FormatBuildLabel("a1b2c3d4", "internal/141"), TesterBuildNumber(true, "internal/141", "1.0.0"));
+  const std::vector<std::string> labels = Texts(".settings-phone-only .group-row-body > .group-row-text");
+  const std::vector<std::string> values = Texts(".settings-phone-only .group-row-value");
+  ASSERT_GE(labels.size(), 3u);
+  ASSERT_GE(values.size(), 3u);
+  EXPECT_EQ(labels[2], "Tester build");
+  EXPECT_EQ(values[2], "141");
+  bool foot = false;
+  for (const std::string& line : Texts("p.settings-desktop-only")) {
+    foot = foot || line.find("Tester build <span>141</span>") == 0;
+  }
+  EXPECT_TRUE(foot) << "a Tester build line on the desktop";
+}
+
+TEST_F(SettingsAboutBuildRenderTest, AStoreBuildShowsNoTesterLine) {
+  ShowHelpPage("v1.0.0-rc.3 \xC2\xB7 a1b2c3d4", TesterBuildNumber(false, "v1.0.0-rc.3", "1.0.0"));
+  EXPECT_EQ(Texts(".settings-phone-only .group-row-body > .group-row-text").size(), 2u) << "Version and Build only";
+  for (const std::string& line : Texts("p.settings-desktop-only")) {
+    EXPECT_EQ(line.find("Tester build"), std::string::npos) << line;
+  }
+}
+
+// This build's About, as the section fills it: the line exactly in a tester build.
+TEST_F(SettingsAboutBuildRenderTest, ThisBuildShowsTheTesterLineExactlyWhenItIsOne) {
+  ShowHelpPage(BuildLabel(), TesterBuildNumber(IsTesterBuild(), BuildTag(), "1.0.0"));
+  const std::vector<std::string> labels = Texts(".settings-phone-only .group-row-body > .group-row-text");
+  EXPECT_EQ(std::find(labels.begin(), labels.end(), "Tester build") != labels.end(), IsTesterBuild());
 }
 
 TEST_F(SettingsAboutBuildRenderTest, ChineseNamesTheRowBuild) {

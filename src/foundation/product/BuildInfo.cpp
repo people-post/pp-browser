@@ -27,4 +27,18 @@ std::string BuildIdentity() {
   return FormatBuildIdentity(AppVersionString(), BuildCommit(), BuildTag());
 }
 
+std::string TesterBuildNumber(const bool tester, const std::string_view tag, const std::string_view version) {
+  if (!tester) {
+    return {};
+  }
+  constexpr std::string_view kInternal = "internal/";
+  if (tag.substr(0, kInternal.size()) == kInternal) {
+    const std::string_view number = tag.substr(kInternal.size());
+    if (!number.empty() && number.find_first_not_of("0123456789") == std::string_view::npos) {
+      return std::string(number);
+    }
+  }
+  return std::string(version);
+}
+
 } // namespace pbr

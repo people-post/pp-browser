@@ -51,9 +51,12 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   (open backports closed with a note, the branch protected and kept). Done 2026-11-20 in pp-browser and pp-relay-apis.
 - [ ] App builds ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store)): release-candidate tags build
   and upload automatically; the promotion workflow (App Store Connect and Play APIs, approval-gated, refuses non-candidates,
-  tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics. So far:
-  candidates build and upload, and the app names its build; the promotion workflow (needs App Store Connect and
-  Play API keys), phased releases and an Android build number (`versionCode` is 1) are left.
+  tags `vX.Y.Z`); phased store releases; the app shows its tag and commit in About and diagnostics. The promotion
+  workflow refuses a build number that has no `rc-build/<n>` tag: an `internal/<n>` tester build is never promoted
+  (it has no prod compiled in, so it would reach no relay; [RC022](DECISIONS.md#rc022--tester-builds-never-touch-production-profiles-hard-guard)).
+  So far: candidates build and upload, and the app names its build (a tester build also says "Tester build" with its
+  build number in About, RC022); the promotion workflow (needs App Store Connect and Play API keys), phased releases
+  and an Android build number (`versionCode` is 1) are left.
 - [ ] The check levels in CI ([DESIGN § Checks by level](DESIGN.md#checks-by-level)). So far: PRs to a release
   branch build every platform and run every test; the frozen-data tests (P3) and the mixed-version lab run are left.
 - [ ] Environments ([DESIGN § Environments](DESIGN.md#environments), Leo's infrastructure): dev created (relay,

@@ -157,6 +157,8 @@ struct SettingsUiState {
   std::string app_name;
   std::string app_version;
   std::string app_build; // BuildLabel(): "tag · commit", or the commit alone
+  /** TesterBuildNumber(): "" in a store build, which shows no "Tester build" line (release-compatibility RC022). */
+  std::string tester_build_number;
 };
 
 struct SettingsSectionListItem {
