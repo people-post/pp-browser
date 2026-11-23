@@ -72,6 +72,33 @@ bool DataKeyVault::Exists() const {
   return Exists(vault_path_);
 }
 
+DataKeyVault::FileCheck DataKeyVault::CheckFile(const std::string& vault_path) {
+  std::error_code ec;
+  const bool exists = std::filesystem::exists(vault_path, ec);
+  if (ec) {
+    return FileCheck::NotRead;
+  }
+  if (!exists) {
+    return FileCheck::Missing;
+  }
+  ByteVector bytes;
+  {
+    std::ifstream in(vault_path, std::ios::binary);
+    if (!in) {
+      return FileCheck::NotRead;
+    }
+    auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes);
+    if (!read) {
+      return FileCheck::NotRead;
+    }
+    bytes = std::move(*read);
+  } // closed before the answer (Windows: the file may be deleted right after)
+  if (bytes.size() >= 5 && std::memcmp(bytes.data(), kVaultMagic, 4) == 0 && bytes[4] > kVaultFileVersion) {
+    return FileCheck::Newer;
+  }
+  return CheckVaultHeader(bytes) ? FileCheck::Ok : FileCheck::Damaged;
+}
+
 void DataKeyVault::Lock() {
   if (!dek_.empty()) {
     sodium_memzero(dek_.data(), dek_.size());

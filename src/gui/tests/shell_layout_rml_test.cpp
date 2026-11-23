@@ -559,6 +559,58 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
   EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(closed));
 }
 
+// A profile this build cannot open, whatever the PIN: no PIN box at all, the reason, then "Start over" (and "Quit"
+// where the app can quit); a newer app's data on a phone has nothing to tap. The confirm: a red "Start over" and
+// Cancel. "Forgot PIN?" opens onto the same start-over.
+TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
+  const std::string kStartOver = "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">";
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.profile_problem_mode = true;
+  for (const bool keypad : {true, false}) {
+    state.pin_gate.keypad = keypad; // never left over from the door, but the page must not show it either way
+    const std::string page = ShellLayoutRml(state, false, "").PinGate();
+    EXPECT_FALSE(Has(page, "<input")) << keypad;
+    EXPECT_FALSE(Has(page, "pin_gate_key(")) << keypad;
+    EXPECT_FALSE(Has(page, "pin_gate_submit()")) << keypad;
+    EXPECT_TRUE(Has(page, kStartOver)) << keypad;
+    EXPECT_TRUE(Has(page, Tr("pin.profile_old_detail"))) << keypad;
+    EXPECT_FALSE(Has(page, "pin_gate_quit()")) << "phones have no Quit";
+  }
+  state.pin_gate.keypad = false;
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
+
+  state.pin_gate.quit_offered = true;
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").PinGate(), "data-event-click=\"pin_gate_quit()\""));
+
+  state.pin_gate.profile_problem_newer = true;
+  const std::string newer_desktop = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(newer_desktop, kStartOver)) << "nothing to wipe";
+  EXPECT_TRUE(Has(newer_desktop, "pin_gate_quit()"));
+  state.pin_gate.quit_offered = false;
+  const std::string newer_phone = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(newer_phone, kStartOver));
+  EXPECT_FALSE(Has(newer_phone, "pin_gate_quit()"));
+  EXPECT_FALSE(Has(newer_phone, "shell-pin-gate-problem")) << "no buttons: update from the store";
+
+  ShellState confirm;
+  confirm.pin_gate.active = true;
+  confirm.pin_gate.start_over_confirm_mode = true;
+  const std::string asked = ShellLayoutRml(confirm, false, "").PinGate();
+  EXPECT_TRUE(Has(asked, "<button class=\"btn btn-danger\" data-event-click=\"pin_gate_start_over_confirm()\">"));
+  EXPECT_TRUE(Has(asked, "data-event-click=\"pin_gate_cancel()\""));
+  EXPECT_FALSE(Has(asked, "<input"));
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(confirm.pin_gate));
+
+  ShellState door;
+  door.pin_gate.active = true;
+  door.pin_gate.unlock_mode = true;
+  const std::string unlock = ShellLayoutRml(door, false, "").PinGate();
+  EXPECT_TRUE(Has(unlock,
+                  "data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open && !pin_gate_waiting_device_unlock\" "
+                  "data-event-click=\"pin_gate_start_over()\""));
+}
+
 // Face / fingerprint unlock (DEV/PLAN-pin-gate-redesign.md C): the pad's bottom-left key (where no "OK" is due) with
 // the face or the fingerprint icon; the field's link by the sensor's name; the hint line when there is one.
 TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {

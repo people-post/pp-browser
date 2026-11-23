@@ -51,6 +51,8 @@ private:
   void PinGateFields(std::ostringstream& out) const;
   void PinGateKeypad(std::ostringstream& out) const;
   void PinGateBiometricFirst(std::ostringstream& out) const;
+  /** The profile-problem page and the start-over confirm (PinGateState::profile_problem_mode / start_over_confirm_mode). */
+  void PinGateProfileProblem(std::ostringstream& out) const;
   bool ChromeFrostEnabled() const;
 
   const ShellState& state_;

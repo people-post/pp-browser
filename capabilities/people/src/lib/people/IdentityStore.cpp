@@ -282,6 +282,11 @@ Object IdentityToJson(const LocalIdentity& identity) {
   return root;
 }
 
+/** identity.enc read whole, and this build can never use it (whatever the PIN): Err::Storage::Unopenable. */
+Error Unopenable(const std::string& detail) {
+  return AppError::Storage(Err::Storage::Unopenable, detail);
+}
+
 } // namespace
 
 IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
@@ -446,7 +451,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     return Error("Failed to determine identity.enc size");
   }
   if (file_size > kMaxProfileJsonFileBytes) {
-    return Error("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+    return Unopenable("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
   }
 
   ByteVector blob(static_cast<size_t>(file_size));
@@ -458,21 +463,23 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   }
   char extra = 0;
   if (in.read(&extra, 1)) {
-    return Error("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
+    return Unopenable("identity.enc exceeds limit of " + std::to_string(kMaxProfileJsonFileBytes) + " bytes");
   }
   if (!in.eof()) {
     return Error("Failed to read identity.enc");
   }
 
+  // Read whole from here on: what fails below fails at every PIN and every retry (Unopenable / NewerFormat), so the
+  // unlock says this build cannot open the profile instead of leaving the PIN door up.
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto plaintext = FileCipher::Decrypt(dek_, blob, aad);
   if (!plaintext) {
-    return plaintext.error();
+    return Unopenable("identity.enc does not open with this vault's key: " + plaintext.error().message);
   }
   const std::string text(plaintext->begin(), plaintext->end());
   auto root = TryParseObject(text);
   if (!root) {
-    return Error("Failed to parse decrypted identity");
+    return Unopenable("Failed to parse decrypted identity");
   }
 
   int version = 0;
@@ -484,35 +491,35 @@ Roe<void> IdentityStore::EnsureLoaded() const {
       }
     }
     if (!version_opt) {
-      return Error("Invalid schema_version in identity.enc");
+      return Unopenable("Invalid schema_version in identity.enc");
     }
     version = static_cast<int>(*version_opt);
     if (auto checked = SchemaVersion::Validate(*root, kSchemaVersion, "identity.enc"); !checked) {
-      return checked.error();
+      return AppError::NewerFormat(checked.error().message);
     }
   }
   if (version < kFloorSchemaVersion) {
-    return Error("identity.enc schema " + std::to_string(version) +
-                 " is from before release 1; wipe profile data and recreate");
+    return Unopenable("identity.enc schema " + std::to_string(version) +
+                      " is from before release 1; wipe profile data and recreate");
   }
 
   identity_ = IdentityFromJson(*root);
   auto private_key = Base64Decode(identity_.private_key_b64.Reveal());
   if (!private_key) {
-    return private_key.error();
+    return Unopenable("identity.enc device key: " + private_key.error().message);
   }
   if (private_key->size() != kMlDsa65SecretKeyBytes) {
-    return Error(
+    return Unopenable(
         "identity.enc device key is not ML-DSA-65; wipe profile data and recreate "
         "(libp2p-pq-transport hard cut)");
   }
   private_key_ = std::move(*private_key);
 
   if (auto peer = DerivePeerId(identity_); !peer) {
-    return peer.error();
+    return Unopenable("identity.enc: " + peer.error().message);
   }
   if (auto keys = CheckStoredKeys(identity_); !keys) {
-    return keys.error();
+    return Unopenable("identity.enc: " + keys.error().message);
   }
   if (!identity_seed_.empty()) {
     auto derived = DeriveNodeIdentitySeeds(identity_seed_);
