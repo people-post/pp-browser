@@ -603,6 +603,14 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.RegisterArray<std::vector<IndexLetterRow>>();
         ctor.RegisterArray<std::vector<ContactIdentityRow>>();
         ctor.RegisterArray<std::vector<ContactThreadRow>>();
+        if (auto group_handle = ctor.RegisterStruct<GroupListRow>()) {
+          group_handle.RegisterMember("thread_id", &GroupListRow::thread_id);
+          group_handle.RegisterMember("title", &GroupListRow::title);
+          group_handle.RegisterMember("members", &GroupListRow::members);
+          group_handle.RegisterMember("avatar_letter", &GroupListRow::avatar_letter);
+          group_handle.RegisterMember("avatar_tone", &GroupListRow::avatar_tone);
+        }
+        ctor.RegisterArray<std::vector<GroupListRow>>();
         if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
           detail_handle.RegisterMember("id", &ContactDetail::id);
           detail_handle.RegisterMember("title", &ContactDetail::title);
@@ -669,6 +677,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
         ctor.Bind("nc_has_contacts", &controller.new_chat_has_contacts_);
         ctor.Bind("nc_query", &controller.new_chat_query_);
         ctor.Bind("blocked_rows", &controller.blocked_rows_);
+        ctor.Bind("group_list_rows", &controller.group_list_rows_);
+        ctor.Bind("group_list_count", &controller.group_list_count_);
         ctor.Bind("compact_layout", &controller.compact_layout_);
         ctor.Bind("advanced", &controller.advanced_);
         ctor.Bind("selected", &controller.selected_);
@@ -742,6 +752,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
                                DataEvent<std::string>([this](const std::string& id) { OnUnblockListed(id); }));
         ctor.BindEventCallback("blocked_open_contact",
                                DataEvent<std::string>([this](const std::string& id) { OnOpenBlockedContact(id); }));
+        ctor.BindEventCallback("open_group_list", DataEvent<>([this]() { OpenGroupList(); }));
+        ctor.BindEventCallback("group_list_open",
+                               DataEvent<std::string>([this](const std::string& id) { OnGroupListOpen(id); }));
         // The strip says which list it drives: contacts_index_at('new_chat'); no argument is the Contacts tab.
         ctor.BindEventCallback("contacts_index_at",
                                [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
@@ -969,6 +982,8 @@ void ContactsController::SyncLists() {
     SyncBlocked();
     DirtyBlocked();
   }
+  SyncGroupList(); // the Groups row's count, and the page when it is up (a group left or restored meanwhile)
+  DirtyGroupList();
 }
 
 void ContactsController::SetAccountSync(const bool syncing, const bool delayed) {
@@ -1005,6 +1020,8 @@ void ContactsController::OnNavTabActivated() {
   search_query_ = "";
   compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
   SyncFromStore();
+  SyncGroupList();
+  DirtyGroupList();
   DirtyAll();
   NotifySurfaceChanged();
 }
@@ -1523,6 +1540,8 @@ void ContactsController::OpenNewChatPage() {
   }
   new_chat_query_ = "";
   SyncNewChat();
+  SyncGroupList(); // its Groups row's count
+  DirtyGroupList();
   new_chat_open_ = true;
   DataModelHost::Instance().Dirty("contacts", "nc_query");
   DirtyNewChat();
@@ -2699,6 +2718,85 @@ void ContactsController::OpenBlockedPeople() {
 void ContactsController::OnBlockedPeopleDismissed() {
   blocked_open_ = false;
   blocked_rows_.clear();
+}
+
+std::vector<ContactsController::GroupListRow> GroupListRowsByName(std::vector<GroupListEntry> entries) {
+  std::stable_sort(entries.begin(), entries.end(),
+                   [](const GroupListEntry& a, const GroupListEntry& b) { return NameIndexLess(a.title, b.title); });
+  std::vector<ContactsController::GroupListRow> rows;
+  rows.reserve(entries.size());
+  for (const GroupListEntry& entry : entries) {
+    ContactsController::GroupListRow row;
+    row.thread_id = entry.thread_id.c_str();
+    row.title = entry.title.c_str();
+    row.members = Tr("group_info.members", {{"count", std::to_string(entry.member_count)}}).c_str();
+    const AvatarGlyph glyph = MakeAvatarGlyph(entry.title, entry.stable_id);
+    row.avatar_letter = glyph.letter;
+    row.avatar_tone = glyph.tone;
+    rows.push_back(std::move(row));
+  }
+  return rows;
+}
+
+void ContactsController::SyncGroupList() {
+  group_list_rows_.clear();
+  group_list_count_ = 0;
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_groups) {
+    return;
+  }
+  auto groups = contacts_ports_.list_groups();
+  if (!groups) {
+    log().warning << "Groups not listed: " << groups.error().message;
+    return;
+  }
+  group_list_count_ = static_cast<int>(groups->size());
+  if (group_list_open_) {
+    group_list_rows_ = GroupListRowsByName(std::move(*groups));
+  }
+}
+
+void ContactsController::DirtyGroupList() {
+  auto& host = DataModelHost::Instance();
+  host.Dirty("contacts", "group_list_rows");
+  host.Dirty("contacts", "group_list_count");
+}
+
+void ContactsController::OpenGroupList() {
+  if (group_list_open_ || !shell_navigation_.push_transient) {
+    return;
+  }
+  FlushPending();
+  group_list_open_ = true;
+  SyncGroupList();
+  DirtyGroupList();
+  PaneSpec spec;
+  spec.key = "group_list";
+  shell_navigation_.push_transient(spec);
+}
+
+void ContactsController::OnGroupListDismissed() {
+  group_list_open_ = false;
+  group_list_rows_.clear();
+}
+
+void ContactsController::CloseGroupList() {
+  if (!group_list_open_) {
+    return;
+  }
+  if (shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient(); // the shell reports it back through OnGroupListDismissed
+  }
+  OnGroupListDismissed();
+}
+
+void ContactsController::OnGroupListOpen(const std::string& thread_id) {
+  if (thread_id.empty()) {
+    return;
+  }
+  // Top of the stack first: this page, then New chat when it was opened from there; then the chat.
+  CloseGroupList();
+  CloseNewChatPage();
+  OnOpenThread(thread_id);
 }
 
 void ContactsController::OnUnblockListed(const std::string& contact_id) {

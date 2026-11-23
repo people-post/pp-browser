@@ -3,10 +3,12 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "lib/messaging/ContactLocator.h"
+#include "lib/messaging/LiveGroups.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
+#include <algorithm>
 #include <memory>
 
 namespace pbr {
@@ -24,6 +26,35 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   };
   ports.remove_contact = [&hub](const std::string& contact_id) { return hub.Contacts().Remove(contact_id); };
   ports.list_threads = [&hub]() { return hub.Inbox().ListThreads(); };
+  ports.list_groups = [&hub]() -> Roe<std::vector<GroupListEntry>> {
+    std::vector<GroupListEntry> rows;
+    IGroupRosterStore* roster = hub.GroupRosterOrNull();
+    if (!hub.IsMessagingReady() || roster == nullptr) {
+      return rows;
+    }
+    auto identity = hub.Identity().Get();
+    if (!identity) {
+      return identity.error();
+    }
+    auto live = ListLiveGroups(*roster, identity->account_id);
+    if (!live) {
+      return live.error();
+    }
+    auto threads = hub.Inbox().ListThreads();
+    if (!threads) {
+      return threads.error();
+    }
+    for (const LiveGroup& group : *live) {
+      const auto thread =
+          std::find_if(threads->begin(), threads->end(), [&group](const Thread& t) { return t.id == group.thread_id; });
+      if (thread == threads->end() || thread->kind != ThreadKind::Group) {
+        continue; // its chat is gone from this device
+      }
+      const PeerDisplayLabel label = hub.Inbox().ResolveThreadLabel(*thread);
+      rows.push_back({thread->id, label.title, label.stable_id, group.member_count});
+    }
+    return rows;
+  };
   ports.sum_unread_for_contact = [&hub](const std::string& contact_id) {
     return hub.Inbox().SumUnreadForContact(contact_id);
   };

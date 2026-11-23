@@ -864,6 +864,8 @@
     "contacts.toast.trust_updated": "信任级别已更新",
     "contacts.toast.blocked": "已屏蔽 {name}",
     "contacts.toast.unblocked": "已取消屏蔽 {name}",
+    "groups.title": "群聊",
+    "groups.empty": "还没有群聊",
     "contacts.blocked.title": "已屏蔽的人",
     "contacts.blocked.help": "屏蔽的人发不了消息、打不了电话给你，对方不会被告知。",
     "contacts.blocked.empty": "你没有屏蔽任何人。",
