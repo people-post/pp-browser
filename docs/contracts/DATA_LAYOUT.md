@@ -90,6 +90,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 9, floor 9 — § Schema
                             # versions; restart_pending: a public session kept through a chat reset — Reset chats, or a profile.db below its floor — starts its next epoch on the next send);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
+                            # removed_messages (message_id PRIMARY KEY, removed_at unix ms) — the ids of the messages of a 1:1 or group
+                            # chat cleared or deleted here (rows newer than 120 days), written before the rows go; a copy that comes
+                            # again (a relay mailbox read from its start, a sibling's sent copy, a peer's history) is dropped before the
+                            # receive pipeline and never stored again. Ids only, plaintext like the other metadata; pruned 91 days after
+                            # removed_at (the relay keeps a record 90 days). Device-only; created on open (additive, no version step);
+                            # gone with Reset chats and Reset my profile. Delete-for-me / for-everyone keep their row as a tombstone instead
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
                             # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's

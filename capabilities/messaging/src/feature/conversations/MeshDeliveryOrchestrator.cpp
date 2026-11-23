@@ -1034,7 +1034,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
 
 void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id) {
   auto identity = identity_.Get();
-  if (!identity) {
+  if (!identity || RemovedHere(envelope)) {
     return;
   }
   const RelayReceiveOutcome outcome =
@@ -2365,6 +2365,9 @@ void MeshDeliveryOrchestrator::TakeRelayBatch(const RelayInboxCoordinator::Batch
 
 void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                                    RelayIngestNotes& notes) {
+  if (RemovedHere(envelope)) {
+    return;
+  }
   const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
   NoteVerifiedSender(envelope, outcome.sender_verified);
   FollowUpMembershipAfterIngest(groups_, outcome);
@@ -2421,6 +2424,15 @@ void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope
   if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
     notes.background_notices.push_back(std::move(*notice));
   }
+}
+
+bool MeshDeliveryOrchestrator::RemovedHere(const RelayEnvelope& envelope) const {
+  auto removed = store_.WasMessageRemoved(envelope.message_id);
+  if (!removed || !*removed) {
+    return false;
+  }
+  log().info << "drop message_id=" << envelope.message_id << ": its chat was cleared or deleted here";
+  return true;
 }
 
 void MeshDeliveryOrchestrator::PostRelayIngestNotes(RelayIngestNotes notes) {
