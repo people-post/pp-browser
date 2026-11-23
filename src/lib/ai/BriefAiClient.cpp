@@ -138,6 +138,7 @@ std::optional<BriefAiEvent> BriefAiClient::ParseEvent(const std::string& data) {
     event.route = StringOrEmpty(*json, "route");
     event.finish = StringOrEmpty(*json, "finish");
     event.role = StringOrEmpty(*json, "role");
+    event.answer_kind = StringOrEmpty(*json, "answer_kind");
     if (const Array* sources = json->getArray("sources")) {
       for (const Value& value : sources->elements) {
         const Object* entry = asObject(value);

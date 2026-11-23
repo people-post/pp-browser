@@ -165,9 +165,16 @@ public:
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
                             RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
-                            const std::vector<BriefAiSource>& sources = {});
+                            const std::vector<BriefAiSource>& sources = {}, const std::string& answer_kind = {});
   /** The stop key / a double Escape: stops the turn of the open thread only. */
   void OnStopTurn();
+  /**
+   * Reads a news item in AI thread `thread_id` (NewsReader): busy there with the step label "Reading “title”" until
+   * the turn ends; nothing of it streams into the chat, and an error is told by the reader, not by a banner.
+   */
+  SubmitOutcome StartNewsRead(const std::string& thread_id, const std::string& request_text, const std::string& title);
+  /** A news read runs in `thread_id`. */
+  bool ReadingNews(const std::string& thread_id) const { return news_turns_.count(thread_id) > 0; }
   /**
    * The Home composer's question (no messaging router): busy in `thread_id` once the session took it; if it did
    * not (its turn still runs), the text goes back to that composer.
@@ -361,6 +368,7 @@ private:
   };
   std::map<std::string, StreamingRow> streaming_; // by thread
   std::set<std::string> forgotten_threads_;       // deleted conversations: their late events are dropped
+  std::set<std::string> news_turns_;              // threads whose running turn reads a news item
 };
 
 } // namespace pbr

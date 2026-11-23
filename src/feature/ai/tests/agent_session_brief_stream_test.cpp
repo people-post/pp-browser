@@ -106,8 +106,9 @@ TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
   const auto requests = Requests();
   ASSERT_EQ(requests.size(), 1u);
   EXPECT_EQ(requests[0].message, "hi there");
-  // Configure registers only the web-search provider (no messaging/settings tools without a registration hook).
-  EXPECT_TRUE(requests[0].capabilities.empty());
+  // Configure registers only the web-search provider (no messaging/settings tools without a registration hook); the
+  // one capability is `news_digest` (news items open in the reader), which is no app action.
+  EXPECT_EQ(requests[0].capabilities, std::vector<std::string>{"news_digest"});
 
   const auto& entries = session_->conversation().Entries();
   ASSERT_FALSE(entries.empty());
@@ -1143,7 +1144,8 @@ TEST_F(AgentSessionLocalAppActionTest, MissStillStreams) {
 
   const auto requests = Requests();
   ASSERT_EQ(requests.size(), 1u);
-  EXPECT_EQ(requests[0].capabilities, std::vector<std::string>{"add_contact"}); // the server fallback keeps its list
+  // The server fallback keeps its list (and `news_digest`, which is no app action).
+  EXPECT_EQ(requests[0].capabilities, (std::vector<std::string>{"add_contact", "news_digest"}));
   EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
 }
 

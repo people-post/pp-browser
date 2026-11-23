@@ -247,6 +247,9 @@ void AgentTurnController::RecoverMissedTurnEnd() {
     log().warning << "AI busy without a running turn for 2 s: the turn's end was not heard; recovering";
     busy_without_session_since_.erase(thread);
     MarkAgentIdle(thread);
+    if (news_turns_.erase(thread) > 0) {
+      host_.OnAgentTurnEnded(thread); // the news reader stops waiting too
+    }
   }
   DrainQueue();
 }
@@ -267,6 +270,7 @@ void AgentTurnController::ForgetThread(const std::string& thread_id) {
   }
   (void)queue_.Take(thread_id);
   ClearStreamingRow(thread_id);
+  news_turns_.erase(thread_id);
   MarkAgentIdle(thread_id);
 }
 
@@ -278,6 +282,7 @@ void AgentTurnController::Reset() {
   ClearForgottenThreads();
   held_agent_send_.Clear();
   streaming_.clear();
+  news_turns_.clear();
   use_llm_ = false;
 }
 
@@ -838,6 +843,21 @@ void AgentTurnController::OnStopTurn() {
   }
 }
 
+SubmitOutcome AgentTurnController::StartNewsRead(const std::string& thread_id, const std::string& request_text,
+                                                 const std::string& title) {
+  if (thread_id.empty() || !AgentReady() || !agent_ports_.submit_news_read) {
+    return SubmitOutcome::Ignored;
+  }
+  const SubmitOutcome outcome = agent_ports_.submit_news_read(thread_id, request_text);
+  if (outcome != SubmitOutcome::Started) {
+    return outcome;
+  }
+  news_turns_.insert(thread_id);
+  step_status_[thread_id] = Tr("chat.news.reading", {{"title", title}});
+  MarkAgentBusy(thread_id);
+  return outcome;
+}
+
 void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const std::string& text,
                                              std::optional<std::string> payload) {
   if (!agent_ports_.submit) {
@@ -1153,7 +1173,8 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
                                                const bool from_llm, const std::string& finish_reason,
                                                const std::string& thread_id, ResponseGoal response_goal,
                                                RenderMode render_mode, const AtAiMode shared_ai_mode,
-                                               const std::vector<BriefAiSource>& sources) {
+                                               const std::vector<BriefAiSource>& sources,
+                                               const std::string& answer_kind) {
   if (thread_id.empty()) {
     log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
     return;
@@ -1166,13 +1187,21 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
   ChatAnswerRml markdown_answer;
   std::string answer_text;
   ParseResult parsed;
+  const bool shared = shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull;
   if (markdown) {
+    // A news item opens the reader only in the AI assistant's own answers in an AI conversation (never in a chat with
+    // a person, where "@ai" answers land too). ChatController::OpenChatLinkIn decides the same way after a restart.
+    bool ai_thread = false;
+    if (host_.Facade() && !shared) {
+      auto thread = host_.Facade()->GetThread(thread_id);
+      ai_thread = thread && *thread && (*thread)->kind == ThreadKind::Ai;
+    }
     // Cap the body first and append the link after: cutting the finished text at the store's limit
     // would drop exactly the trailing details link that the link table is rebuilt from.
     answer_text = WithDetailsLink(
         StructuredTextParser::StorableText(raw_output, kMaxComposeTextBytes - kDetailsLinkHeadroomBytes), sources,
-        Tr("chat.view_details"));
-    markdown_answer = BuildMarkdownAnswer(answer_text);
+        Tr("chat.view_details"), ai_thread && answer_kind == "news_pick");
+    markdown_answer = BuildMarkdownAnswer(answer_text, ai_thread);
     parsed.ok = true;
     parsed.rml = markdown_answer.rml;
   } else {
@@ -1241,7 +1270,6 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
     // A shared answer ("@ai+" / "@ai++") is stored once, by the relay below, as the "AI · shared" message
     // the peer also sees; a second local copy showed the same text twice (Kenneth 2026-10-28).
-    const bool shared = shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull;
     if (host_.MessagingIsReady() && !shared) {
       if (message_exists) {
         auto found = host_.Facade()->GetMessage(active_thread, action_entry_id);
@@ -1357,6 +1385,7 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
         if (event.thread_id.empty()) {
           home_turn_thread_.reset(); // the Home session's turn is over
         }
+        news_turns_.erase(thread);
         host_.OnAgentTurnEnded(thread);
         DrainQueue(); // a turn ended: the next question waiting, if one does
       } else {
@@ -1375,8 +1404,8 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     case AgentEventType::ToolActivity:
       // The "answer" phase has no tool and gets no label of its own: the last step ("Searching the web…")
       // stays until the text arrives. Saying "Writing…" read as the AI making the answer up.
-      if (event.tool_name.empty() && event.status == "answer") {
-        break;
+      if ((event.tool_name.empty() && event.status == "answer") || ReadingNews(EventThread(event))) {
+        break; // a news read keeps "Reading “title”" until it ends
       }
       // The step label belongs to the thread whose turn takes it; shown while that thread is open.
       step_status_[EventThread(event)] = ToolActivityLabel(event.tool_name, event.status);
@@ -1394,8 +1423,12 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
         log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
         break;
       }
+      if (ReadingNews(thread)) {
+        break; // stored hidden by the session; the reader shows it when the turn ends (OnAgentTurnEnded)
+      }
       FinishAssistantReply(event.entry_id, event.text, event.from_model, event.finish_reason, thread,
-                           event.response_goal, event.render_mode, event.shared_ai_mode, event.sources);
+                           event.response_goal, event.render_mode, event.shared_ai_mode, event.sources,
+                           event.answer_kind);
       break;
     }
     case AgentEventType::ApprovalClosed:
@@ -1403,6 +1436,9 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       break;
     case AgentEventType::Error:
       log().error << "Agent session error: " << event.message;
+      if (ReadingNews(EventThread(event))) {
+        break; // the reader says "this article can't be read right now" once the turn ends
+      }
       // A partial answer was already persisted via AssistantReady; the error toast is separate.
       UserFeedback::NeedsSetup(error_message);
       // Only the Home session's own turn (no thread, its entry named) writes into the Home conversation: an error of

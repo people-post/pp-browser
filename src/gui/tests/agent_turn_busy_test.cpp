@@ -37,6 +37,7 @@ public:
   bool messaging_ready = false;
   /** What ChatController does when a queued send starts a turn (marks that chat busy). */
   std::function<void(const std::string& thread_id)> on_started;
+  std::vector<std::string> ended; // OnAgentTurnEnded(thread), in order
 
   ConversationsFacade* Facade() const override { return nullptr; }
   bool MessagingIsReady() const override { return messaging_ready; }
@@ -61,6 +62,7 @@ public:
   void PutBackDraft(const std::string& thread_id, const std::string& text) override {
     put_back.push_back({thread_id, text});
   }
+  void OnAgentTurnEnded(const std::string& thread_id) override { ended.push_back(thread_id); }
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override {
     handed_over.push_back(item);
     if (outcomes.empty()) {
@@ -1044,6 +1046,80 @@ TEST(HomeAttachMenuTest, ListsCameraPhotosThenFileUnconditionally) {
   EXPECT_EQ(camera, 1);
   EXPECT_EQ(photos, 1);
   EXPECT_EQ(file, 1);
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+// A news read (DEV/PLAN-news-inline-digest.md) is a turn of its AI thread like any other: "thinking" with the step
+// "Reading “title”", the stop key stops it, and a question there waits for it. Its answer is never stored or drawn
+// by the chat screen (the session stored it hidden), and its end reaches the screen, which updates the reader.
+TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  std::vector<std::pair<std::string, std::string>> submitted;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text) {
+    submitted.push_back({thread_id, text});
+    return SubmitOutcome::Started;
+  };
+  ports.cancel = [this](const std::string& thread_id) {
+    ++cancel_calls_;
+    cancelled_thread_ = thread_id;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "Rates rise"),
+            SubmitOutcome::Started);
+  ASSERT_EQ(submitted.size(), 1u);
+  EXPECT_EQ(submitted[0].second, "https://n.example/a\nWhat's in the article");
+  EXPECT_TRUE(controller_.ReadingNews("A"));
+  EXPECT_TRUE(chat_.loading) << "the composer shows the stop key";
+  EXPECT_EQ(std::string(chat_.status.c_str()), "Reading \u201cRates rise\u201d");
+  EXPECT_EQ(controller_.CanStart("A"), TurnStart::BusyHere) << "a question here waits for the read";
+
+  AgentEvent step;
+  step.type = AgentEventType::ToolActivity;
+  step.tool_name = "read_url";
+  step.status = "tool";
+  step.thread_id = "A";
+  controller_.HandleAgentEvent(step);
+  EXPECT_NE(std::string(chat_.status.c_str()).find("Rates rise"), std::string::npos) << "the label stays";
+
+  AgentEvent ready;
+  ready.type = AgentEventType::AssistantReady;
+  ready.thread_id = "A";
+  ready.entry_id = "digest-1";
+  ready.text = "Source: n.example";
+  ready.render_mode = RenderMode::Markdown;
+  ready.answer_kind = "news_digest";
+  controller_.HandleAgentEvent(ready);
+  EXPECT_TRUE(chat_links_.empty()) << "the chat screen never stores or draws the digest";
+
+  controller_.OnStopTurn();
+  EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "A");
+
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_FALSE(controller_.ReadingNews("A"));
+  EXPECT_FALSE(chat_.loading);
+  EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
+}
+
+TEST_F(AgentTurnBusyTest, ANewsReadTheSessionDidNotTakeLeavesNothingBusy) {
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&) { return SubmitOutcome::BusyHere; };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  EXPECT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "T"), SubmitOutcome::BusyHere);
+  EXPECT_FALSE(controller_.ReadingNews("A"));
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
 }
 
 } // namespace
