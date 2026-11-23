@@ -2036,6 +2036,11 @@ input.checkbox:checked {
   background-color: #007aff;
 }
 
+/* Groups (Contacts and New chat → the groups this account is in): green, apart from New group's orange. */
+.nc-action-icon--groups {
+  background-color: #34c759;
+}
+
 .nc-action-icon svg {
   image-color: #ffffff;
 }

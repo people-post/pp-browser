@@ -291,8 +291,9 @@ std::string ShellLayoutRml::TransientLayer() const {
   // New chat and Add contact (TODO #176 / #177) are titled the same way: their title row is the page's, the list scrolls
   // under the frosted bar. The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
   // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
-  const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" ||
-                                             top.spec.key == "new_chat" || top.spec.key == "add_contact");
+  const bool titled = compact[0] != '\0' &&
+                      (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" ||
+                       top.spec.key == "group_list" || top.spec.key == "new_chat" || top.spec.key == "add_contact");
   out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")

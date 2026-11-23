@@ -11700,6 +11700,26 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* Groups page (view group_list, Contacts / New chat → Groups): the Blocked list's card of 60dp rows (avatar, name), each
+   row's member count on its right; a tap opens the chat, a long press the Chats list's menu. */
+.group-list-members {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 15dp;
+  line-height: 60dp;
+  white-space: nowrap;
+}
+
+/* The Groups row on Contacts and New chat (a 56dp nc-action): how many groups, on its right. */
+.nc-action-count {
+  flex: 1;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: right;
+}
+
 .blocked-unblock {
   flex-shrink: 0;
   height: 44dp;
