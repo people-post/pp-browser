@@ -731,8 +731,9 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   if (state->local_turn) {
     message.generation = kLocalActionGeneration;
   } else if (state->news_read) {
-    // Hidden like its request; "could not be read" is told by brief_AI, never guessed from the words.
-    message.generation = state->answer_kind == "news_unavailable" ? kNewsFailedGeneration : kNewsDigestGeneration;
+    // Hidden like its request. Only brief_AI's explicit "news_digest" is a digest (read); "news_unavailable", none
+    // (an older server) or anything else is "could not be read": never guessed from the words.
+    message.generation = state->answer_kind == "news_digest" ? kNewsDigestGeneration : kNewsFailedGeneration;
   }
   auto appended = state->thread_store->AppendMessage(message);
   if (!appended) {
@@ -1837,6 +1838,13 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     emit_turn("handoff");
     state->shared->brief_key_renewed.store(false);
     if (!current()) {
+      return;
+    }
+    if (state->news_read) {
+      // A news read is never an app action: no local answer may appear in the chat. Nothing is stored, so the item
+      // stays unread and the reader says it could not be read.
+      state->Log().warning << "brief_AI handed back a news read; ended unread";
+      FinishTurn(state);
       return;
     }
     if (has_image) {

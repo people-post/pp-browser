@@ -83,6 +83,54 @@ TEST_F(AgentSessionBriefStreamTest, AnUnreadableArticleIsStoredAsFailed) {
   EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsFailedGeneration);
 }
 
+// Only an explicit "news_digest" is a digest: no answer_kind (an older server), "news_pick" or anything else is stored
+// as "could not be read" (hidden, not read).
+TEST_F(AgentSessionBriefStreamTest, OnlyAnExplicitDigestCountsAsRead) {
+  for (const std::string kind : {"", "news_pick", "something_new"}) {
+    Start();
+    MemoryThreadStore store;
+    session_->SetThreadStore(&store);
+    Script({Meta(), DoneKind("some answer", kind)}, BriefAiOutcome::Done);
+    session_->SubmitNewsRead("t1", kRequest);
+    WaitForTurn();
+    ASSERT_EQ(store.messages.size(), 2u) << kind;
+    EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsFailedGeneration) << kind;
+    session_.reset();
+  }
+}
+
+// A digest cut at the length limit is still a digest (brief_AI adds its own "only the first part" line).
+TEST_F(AgentSessionBriefStreamTest, ALengthCutDigestIsStillADigest) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  BriefAiEvent done = DoneKind("long digest", "news_digest");
+  done.finish = "length";
+  Script({Meta(), done}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest);
+  WaitForTurn();
+  ASSERT_EQ(store.messages.size(), 2u);
+  EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsDigestGeneration);
+}
+
+// brief_AI handing a news read back as an app action: nothing local runs, nothing is shown or stored.
+TEST_F(AgentSessionBriefStreamTest, AHandedBackNewsReadEndsUnreadWithNoLocalAnswer) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  BriefAiEvent handoff;
+  handoff.type = BriefAiEvent::Type::Handoff;
+  handoff.capability = "add_contact";
+  handoff.reason = "app_action";
+  Script({Meta(), handoff}, BriefAiOutcome::Handoff);
+  session_->SubmitNewsRead("t1", kRequest);
+  const auto events = WaitForTurn();
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  EXPECT_TRUE(LlmRequests().empty());
+  ASSERT_EQ(store.messages.size(), 1u);
+  EXPECT_EQ(store.messages[0].generation.value_or(""), kNewsRequestGeneration);
+}
+
 // An error after part of the text: that part is no digest, so nothing is stored and the item stays unread.
 TEST_F(AgentSessionBriefStreamTest, ANewsReadErrorStoresNoAnswer) {
   Start();

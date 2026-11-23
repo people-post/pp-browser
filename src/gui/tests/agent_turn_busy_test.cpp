@@ -2,6 +2,7 @@
 // checked: what the open thread shows as it switches, the queue of AI sends of other threads and how it drains,
 // the queued bubble, the stop key, and the fate of a held send.
 #include "gui/chat/AgentTurnController.h"
+#include "feature/presenters/NewsReader.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
@@ -1108,6 +1109,65 @@ TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
   controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_FALSE(controller_.ReadingNews("A"));
   EXPECT_FALSE(chat_.loading);
+  EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
+}
+
+// What a tap on a news item does, against the chat's real busy state (ChatController::ShowNewsItem asks exactly this).
+TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
+  std::set<std::string> running; // the sessions' threads with a turn
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string&) {
+    running.insert(thread_id);
+    return SubmitOutcome::Started;
+  };
+  ports.can_start = [&](const std::string& thread_id) {
+    return running.count(thread_id) > 0 ? TurnStart::BusyHere : TurnStart::Yes;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  NewsReads reads;
+  reads.digests[NormalizeNewsUrl("https://n.example/read")] = {"d1", "digest"};
+  const auto tap = [&](const std::string& url, const std::string& reading_url) {
+    return DecideNewsTapFor(reads, url, reading_url, controller_.NewsReadMustWait("A"));
+  };
+
+  EXPECT_EQ(tap("https://n.example/new", ""), NewsTap::StartRead);
+  EXPECT_EQ(tap("https://n.example/read#comments", ""), NewsTap::ShowStored);
+
+  // Another answer runs in this chat: an unread item waits, a read one still shows at once.
+  controller_.MarkAgentBusy("A");
+  EXPECT_EQ(tap("https://n.example/new", ""), NewsTap::Wait);
+  EXPECT_EQ(tap("https://n.example/read", ""), NewsTap::ShowStored);
+  controller_.MarkAgentIdle("A");
+
+  // A read of item 1 runs (the sheet was closed): item 1 shows loading again, item 2 waits.
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/1\nWhat's in the article", "One"),
+            SubmitOutcome::Started);
+  EXPECT_EQ(tap("https://n.example/1?utm_source=x", "https://n.example/1"), NewsTap::ShowReading);
+  EXPECT_EQ(tap("https://n.example/2", "https://n.example/1"), NewsTap::Wait);
+  running.erase("A");
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_EQ(tap("https://n.example/2", ""), NewsTap::StartRead);
+}
+
+// The 2-second safety net for a turn end that was never heard also tells the reader (it stops waiting).
+TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&) { return SubmitOutcome::Started; };
+  ports.is_busy = [](const std::string&) { return false; }; // the session's turn is over; its end was lost
+  ports.any_busy = [] { return false; };
+  controller_.BindPorts(std::move(ports));
+  controller_.SetUseLlm(true);
+  Open("A");
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/1\nWhat's in the article", "One"),
+            SubmitOutcome::Started);
+  controller_.Tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+  controller_.Tick();
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
+  EXPECT_FALSE(controller_.ReadingNews("A"));
   EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
 }
 

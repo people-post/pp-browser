@@ -4574,11 +4574,18 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     return mark;
   };
   // The picture being sent is drawn after the newest message as our own (kept aside, put back by the display sync).
-  std::vector<MessageDisplayRow> rows =
-      pending_uploads_.Render(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
-                              presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
+  std::vector<TranscriptRow> transcript = facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive);
+  // The stored text of each answer with news items: their link tables come from it, with no store read per row.
+  std::map<std::string, std::string> news_texts;
+  for (const TranscriptRow& entry : transcript) {
+    if (entry.message.content_rml && entry.message.content_rml->find(kNewsLinkClass) != std::string::npos) {
+      news_texts.emplace(entry.message.id, entry.message.text);
+    }
+  }
+  std::vector<MessageDisplayRow> rows = pending_uploads_.Render(
+      std::move(transcript), facts, presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
   agent_.DecorateAiImageRows(rows, thread_id);
-  MarkReadNewsItems(rows, thread_id);
+  MarkReadNewsItems(rows, thread_id, news_texts);
   ArmSendMarkRedraw(next_mark_change);
   TellResentTurnedRed(thread_id, red_ids);
   return rows;
@@ -5162,7 +5169,12 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::vec
   spec.key = "news_reader";
   spec.page_sheet = true;
   news_reader_layer_ = shell_navigation_.push_layer(spec);
-  if (news_reader_layer_ >= 0 && flow_coordinator_.begin_modal) {
+  if (news_reader_layer_ < 0) {
+    news_reader_.reset(); // no sheet: a read that started goes on and is stored, the reader state goes
+    ApplyNewsReader();
+    return;
+  }
+  if (flow_coordinator_.begin_modal) {
     // Closed by a swipe, its X or a notification tap: the read goes on and is stored; only the sheet goes.
     flow_coordinator_.begin_modal(news_reader_layer_, {}, [this]() {
       news_reader_layer_ = -1;
@@ -5179,10 +5191,9 @@ void ChatController::ShowNewsItem(const size_t index) {
   const std::string thread_id = news_reader_->thread_id;
   const NewsItem item = news_reader_->items[index];
   const auto reading = news_reading_url_.find(thread_id);
-  const bool reading_this =
-      reading != news_reading_url_.end() && NormalizeNewsUrl(reading->second) == NormalizeNewsUrl(item.url);
-  const bool busy = agent_.Busy().BusyIn(thread_id) || agent_.CanStart(thread_id) != TurnStart::Yes;
-  switch (DecideNewsTap(NewsReadsOf(thread_id).IsRead(item.url), reading_this, busy)) {
+  switch (DecideNewsTapFor(NewsReadsOf(thread_id), item.url,
+                           reading == news_reading_url_.end() ? std::string() : reading->second,
+                           agent_.NewsReadMustWait(thread_id))) {
     case NewsTap::Wait:
       ShowToast(Tr("chat.news.wait")); // nothing is asked; an open sheet stays on the item it shows
       if (news_reader_layer_ < 0) {
@@ -5256,10 +5267,8 @@ void ChatController::ApplyNewsReader() {
     const bool reading_this =
         reading != news_reading_url_.end() && NormalizeNewsUrl(reading->second) == NormalizeNewsUrl(item.url);
     if (const NewsReads::Digest* digest = NewsReadsOf(news_reader_->thread_id).Find(item.url)) {
-      // The digest is untrusted web text: its links open the browser at most, never the reader (no news items).
-      ChatAnswerRml body = BuildMarkdownAnswer(digest->text);
-      chat_links_[digest->message_id] = std::move(body.links);
-      chat_.news_reader_body_rml = InjectEntryPlaceholders(body.rml, digest->message_id).c_str();
+      // The digest is untrusted web text: nothing in it is tappable ("Open original" is the way to the article).
+      chat_.news_reader_body_rml = MarkdownToRml(digest->text, MarkdownOptions{.links = false}).rml.c_str();
     } else if (reading_this) {
       chat_.news_reader_loading = true;
     } else {
@@ -5285,18 +5294,18 @@ const NewsReads& ChatController::NewsReadsOf(const std::string& thread_id) {
   if (!messaging_ready_ || !facade_ || !MessagingReady() || thread_id.empty()) {
     return kNone; // locked or not set up: nothing is read, and nothing is remembered as "none read"
   }
-  auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!messages) {
+  // Once per chat (until it is locked, cleared or deleted): only its hidden news rows are read and decrypted.
+  auto rows = facade_->GetMessagesByGeneration(thread_id,
+                                               {kNewsRequestGeneration, kNewsDigestGeneration, kNewsFailedGeneration});
+  if (!rows) {
     return kNone;
   }
-  return news_reads_.emplace(thread_id, ScanNewsReads(*messages)).first->second;
+  return news_reads_.emplace(thread_id, ScanNewsReads(*rows)).first->second;
 }
 
-void ChatController::MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id) {
-  const auto has_news = [](const MessageDisplayRow& row) {
-    return std::string_view(row.content_rml.c_str()).find(kNewsLinkClass) != std::string_view::npos;
-  };
-  if (thread_id.empty() || std::none_of(rows.begin(), rows.end(), has_news)) {
+void ChatController::MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id,
+                                       const std::map<std::string, std::string>& news_texts) {
+  if (thread_id.empty() || news_texts.empty()) {
     return;
   }
   const NewsReads& reads = NewsReadsOf(thread_id);
@@ -5304,15 +5313,19 @@ void ChatController::MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, con
     return;
   }
   for (MessageDisplayRow& row : rows) {
-    if (!has_news(row)) {
+    const auto text = news_texts.find(row.message_id.c_str());
+    if (text == news_texts.end()) {
       continue;
     }
-    if (const std::vector<MarkdownLink>* links = ChatLinksOf(thread_id, row.message_id.c_str())) {
-      row.content_rml =
-          MarkNewsLinksRead(std::string(row.content_rml.c_str()), *links, [&reads](const std::string& url) {
-            return reads.IsRead(url);
-          }).c_str();
-    }
+    // The link table the click uses when it is known; else parsed from the stored text (a bubble drawn with news
+    // items was stored as one; only the class changes here, a click still goes through ChatLinksOf).
+    const auto cached = chat_links_.find(text->first);
+    const std::vector<MarkdownLink> parsed =
+        cached == chat_links_.end() ? RecoverChatLinks(text->second, /*news_links=*/true) : std::vector<MarkdownLink>{};
+    const std::vector<MarkdownLink>& links = cached == chat_links_.end() ? parsed : cached->second;
+    row.content_rml = MarkNewsLinksRead(std::string(row.content_rml.c_str()), links, [&reads](const std::string& url) {
+                        return reads.IsRead(url);
+                      }).c_str();
   }
 }
 
@@ -5322,7 +5335,18 @@ void ChatController::OnNewsReadEnded(const std::string& thread_id) {
     return;
   }
   news_reading_url_.erase(reading);
-  news_reads_.erase(thread_id); // read again: the digest (or nothing) is stored now
+  // What the read stored is among the newest rows (its request, then the answer): added to what the chat has read,
+  // with no rescan. A failed read adds nothing (the item stays unread).
+  if (const auto known = news_reads_.find(thread_id); known != news_reads_.end() && facade_ && MessagingReady()) {
+    constexpr size_t kTurnRows = 8;
+    if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, kTurnRows)) {
+      for (auto& [url, digest] : ScanNewsReads(*newest).digests) {
+        known->second.digests.insert_or_assign(url, std::move(digest));
+      }
+    } else {
+      news_reads_.erase(known); // read again when next needed
+    }
+  }
   if (news_reader_ && news_reader_->thread_id == thread_id) {
     ApplyNewsReader(); // the digest, or the fixed "can't be read" line
   }
@@ -5982,7 +6006,8 @@ void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
     int64_t best_order = -1;
     for (const ThreadMessage& candidate : *page) {
       if (candidate.id == reply_message_id || candidate.display_order >= reply_order ||
-          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
+          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation ||
+          IsHiddenNewsMessage(candidate)) { // a news read's hidden rows are never drawn: no quote lands there
         continue;
       }
       if (PlainTextOf(candidate).rfind(needle, 0) == 0) {

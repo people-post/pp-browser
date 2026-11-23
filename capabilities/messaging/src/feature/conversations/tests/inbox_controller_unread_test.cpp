@@ -570,6 +570,42 @@ TEST(InboxMessageEditTest, AnEditOfTheNewestMessageIsThePreviewAndTheChatDoesNot
   EXPECT_EQ(loaded.unread_count, 0);
 }
 
+// A news read's request and digest after the list (DEV/PLAN-news-inline-digest.md) are hidden and never the preview:
+// the list is still the newest message shown, so editing it changes the preview.
+TEST(InboxMessageEditTest, AnEditOfTheMessageBeforeANewsReadIsThePreview) {
+  InboxTestEnv env("edit_preview_news");
+  const Thread chat = EditChat(env, "thread-edit-news", ThreadKind::Ai);
+  const ThreadMessage list = *env.store->AppendMessage(EditText(chat.id, "list", "1. the list", 1000));
+  ThreadMessage request = EditText(chat.id, "r1", "https://n.example/a\n这篇讲了什么", 2000);
+  request.generation = kNewsRequestGeneration;
+  ThreadMessage digest = EditText(chat.id, "d1", "the digest", 3000);
+  digest.generation = kNewsDigestGeneration;
+  ASSERT_TRUE(env.store->AppendMessage(request));
+  ASSERT_TRUE(env.store->AppendMessage(digest));
+  ASSERT_EQ(env.store->GetThread(chat.id).value().value().preview, "1. the list") << "hidden rows set no preview";
+  const ThreadMessage edit = *env.store->AppendMessage(EditOf(list, "e1", "1. the list, edited", 3500));
+  const ThreadMessage after = WithEdit(list, edit);
+  ASSERT_TRUE(env.store->UpdateMessage(after));
+
+  env.inbox->AfterMessageEdited(chat.id, list, after);
+  EXPECT_EQ(env.store->GetThread(chat.id).value().value().preview, "1. the list, edited");
+}
+
+// Deleting that list: its text must not stay in the chat list (the hidden rows behind it are not "newer").
+TEST(InboxMessageEditTest, DeletingTheMessageBeforeANewsReadClearsThePreview) {
+  InboxTestEnv env("delete_preview_news");
+  const Thread chat = EditChat(env, "thread-delete-news", ThreadKind::Ai);
+  ASSERT_TRUE(env.store->AppendMessage(EditText(chat.id, "list", "1. secret list", 1000)));
+  for (const auto& [id, generation] :
+       {std::pair{"r1", kNewsRequestGeneration}, std::pair{"f1", kNewsFailedGeneration}}) {
+    ThreadMessage hidden = EditText(chat.id, id, "hidden", 2000);
+    hidden.generation = generation;
+    ASSERT_TRUE(env.store->AppendMessage(hidden));
+  }
+  ASSERT_TRUE(env.inbox->DeleteMessageForMe(chat.id, "list"));
+  EXPECT_EQ(env.store->GetThread(chat.id).value().value().preview.find("secret"), std::string::npos);
+}
+
 TEST(InboxMessageEditTest, AnEditOfAnOlderMessageLeavesThePreview) {
   InboxTestEnv env("edit_preview_older");
   const Thread chat = EditChat(env, "thread-edit-2");

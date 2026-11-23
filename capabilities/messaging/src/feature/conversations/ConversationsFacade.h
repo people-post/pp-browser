@@ -157,6 +157,9 @@ public:
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
+  /** The rows of `thread_id` whose `generation` is one of `generations`, oldest first (IThreadTranscript). */
+  Roe<std::vector<ThreadMessage>> GetMessagesByGeneration(const std::string& thread_id,
+                                                          const std::vector<std::string>& generations);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   /** Edit our message (ConversationsHub::EditMessage); `tapped_at_ms`: when Send was tapped. */

@@ -23,6 +23,8 @@ struct MarkdownLink {
 struct MarkdownOptions {
   /** Honour the `pp:news` title: only for the AI assistant's own answers in an AI conversation. */
   bool news_links = false;
+  /** false: no link is tappable; a link shows as its text only and a bare URL as plain text (an article's digest). */
+  bool links = true;
 };
 
 struct MarkdownRml {

@@ -659,8 +659,10 @@ private:
   void ApplyNewsReader();
   /** The news items `thread_id` has read (read once, dropped when a read ends or the chat is cleared). */
   const NewsReads& NewsReadsOf(const std::string& thread_id);
-  /** Greys the news items already read in `rows` of `thread_id`. */
-  void MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id);
+  /** Greys the news items already read in `rows` of `thread_id`; `news_texts`: message id -> stored text of the
+   *  answers drawn with news items. */
+  void MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id,
+                         const std::map<std::string, std::string>& news_texts);
   /** A news read of `thread_id` ended (digest, failure, error or stop): the reader and the list show what it left. */
   void OnNewsReadEnded(const std::string& thread_id);
   /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop

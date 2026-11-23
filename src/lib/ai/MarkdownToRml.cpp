@@ -470,6 +470,9 @@ private:
       }
       url += raw_dest[k];
     }
+    if (!ctx_.options.links) {
+      url.clear(); // shown as its text only: not tappable, and no address after it
+    }
     const bool https = IsSafeHttpsUrl(url);
     const bool news = https && ctx_.options.news_links && title == kNewsLinkTitle;
     const long index = https ? static_cast<long>(ctx_.Intern(url, news, news ? PlainLabel(b.tok + 1) : "")) : -1;
@@ -486,7 +489,8 @@ private:
 
   // Not inside an open `[`: it may still become a link, and links cannot nest.
   bool TryAutolink(size_t i) {
-    if (!brackets_.empty() || !MatchCi(s_, i, "https://") || (i > 0 && IsAsciiAlnum(s_[i - 1]))) {
+    if (!ctx_.options.links || !brackets_.empty() || !MatchCi(s_, i, "https://") ||
+        (i > 0 && IsAsciiAlnum(s_[i - 1]))) {
       return false;
     }
     if (i >= 2 && s_[i - 1] == '(' && s_[i - 2] == ']') {

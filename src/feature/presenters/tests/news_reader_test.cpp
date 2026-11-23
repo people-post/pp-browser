@@ -80,6 +80,16 @@ TEST(NewsReaderTest, OneArticleWhateverItsTrackingParametersAndFragment) {
   EXPECT_NE(NormalizeNewsUrl("https://n.example/a"), NormalizeNewsUrl("https://www.n.example/a"));
 }
 
+// A hash route names the page (single-page sites): kept. Any other fragment is a place on the page: dropped.
+TEST(NewsReaderTest, AHashRouteIsPartOfTheArticle) {
+  EXPECT_NE(NormalizeNewsUrl("https://site.example/#/a/1"), NormalizeNewsUrl("https://site.example/#/a/2"));
+  EXPECT_NE(NormalizeNewsUrl("https://site.example/#!/a/1"), NormalizeNewsUrl("https://site.example/#!/a/2"));
+  EXPECT_EQ(NormalizeNewsUrl("https://site.example/?utm_source=x#/a/1"), "https://site.example/#/a/1");
+  EXPECT_EQ(NormalizeNewsUrl("https://site.example/p?id=3&utm_medium=y#!a"), "https://site.example/p?id=3#!a");
+  EXPECT_EQ(NormalizeNewsUrl("https://site.example/p#section-2"), "https://site.example/p");
+  EXPECT_EQ(NormalizeNewsUrl("https://site.example/p#"), "https://site.example/p");
+}
+
 TEST(NewsReaderTest, TheRequestIsTheUrlAndTheFixedSentence) {
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "zh-Hans"), "https://n.example/a\n这篇讲了什么");
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "en"), "https://n.example/a\nWhat's in the article");

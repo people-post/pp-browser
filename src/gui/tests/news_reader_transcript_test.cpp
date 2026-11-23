@@ -114,6 +114,17 @@ TEST(NewsReaderTranscriptTest, HiddenNewsMessagesAreNeverDrawnAndStayInTheModelH
       EXPECT_EQ(std::string(row.content_rml.c_str()).find("这篇讲了什么"), std::string::npos);
     }
 
+    // The reader's read state is built from these rows only, selected by their generation.
+    auto hidden = chat.store.GetMessagesByGeneration(
+        "ai-1", {kNewsRequestGeneration, kNewsDigestGeneration, kNewsFailedGeneration});
+    ASSERT_TRUE(hidden);
+    std::vector<std::string> hidden_ids;
+    for (const ThreadMessage& message : *hidden) {
+      hidden_ids.push_back(message.id);
+    }
+    EXPECT_EQ(hidden_ids, (std::vector<std::string>{"r1", "d1", "r2", "f2"}));
+    EXPECT_TRUE(ScanNewsReads(*hidden).IsRead("https://n.example/a"));
+
     // The model is still sent what was read, so a follow-up knows it.
     auto context = chat.store.GetMessagesForContext("ai-1", DefaultContextBudget());
     ASSERT_TRUE(context);
