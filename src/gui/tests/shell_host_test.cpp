@@ -1367,4 +1367,32 @@ TEST(RunLogSentinelPasteTest, TextPastedOnThePinGateIsNeverLogged) {
   capture.ExpectNoSentinel();
 }
 
+// The profile-problem page and its start-over confirm (desktop and phone alike): Escape / back on the confirm step is
+// "Cancel" (back to the page it came from); on the problem page itself it is eaten (no way out but a button).
+TEST(ShellHostPinGateTest, EscapeOnTheStartOverConfirmCancelsAndOnTheProblemPageIsConsumed) {
+  ShellHost& host = KeptHost();
+  int cancels = 0;
+  PinGateActionPorts ports;
+  ports.on_cancel = [&cancels]() { ++cancels; };
+  host.BindPinGateActions(ports);
+
+  PinGateState problem;
+  problem.active = true;
+  problem.profile_problem_mode = true;
+  problem.quit_offered = true;
+  host.ApplyPinGateState(problem);
+  EXPECT_TRUE(host.HandleDismiss());
+  EXPECT_EQ(cancels, 0) << "the problem page has nothing to cancel";
+
+  PinGateState confirm;
+  confirm.active = true;
+  confirm.start_over_confirm_mode = true;
+  host.ApplyPinGateState(confirm);
+  EXPECT_TRUE(host.HandleDismiss());
+  EXPECT_EQ(cancels, 1);
+
+  host.ApplyPinGateState({});
+  host.BindPinGateActions({});
+}
+
 } // namespace pbr

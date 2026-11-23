@@ -1,6 +1,6 @@
 <!-- The Contacts list column of the wide layout (desktop, wide iPad). The phone's contacts page (contacts.rml): the same
      rows (avatar, name, star), the same A-Z sections and index, the same search, the same plus menu. From the phone's
-     New chat page it takes the two entries (New group, Add contact) and, from the Chats bar, the scan button. The
+     New chat page it takes the two entries (New group, Add contact) and the Groups card and, from the Chats bar, the scan button. The
      phone's bar (round back, title) and its large title are the list header here. What a left swipe does on a phone
      contact row (Info, Voice, Video, More) is the row's hover buttons and its right-click menu here (Info is the
      click itself). -->
@@ -37,6 +37,17 @@
           <svg src="../icons/v2/user-plus.svg" width="20" height="20"></svg>
         </div>
         <p class="nc-action-label">{{i18n:new_chat.add}}</p>
+      </div>
+    </div>
+    <!-- The groups this account is in (view group_list): a card of its own under the two, the count on its right, as on
+         the phone's New chat page. -->
+    <div class="nc-actions nc-actions--groups" data-if="search_query == ''">
+      <div class="nc-action" data-event-click="open_group_list()">
+        <div class="nc-action-icon nc-action-icon--groups">
+          <svg src="../icons/v2/group.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:groups.title}}</p>
+        <p class="nc-action-count text muted">{{group_list_count}}</p>
       </div>
     </div>
     <div class="contacts-list">

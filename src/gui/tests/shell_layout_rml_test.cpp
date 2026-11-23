@@ -650,6 +650,32 @@ TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
                   "data-event-click=\"pin_gate_start_over()\""));
 }
 
+// The wide window mounts the same markup for the profile-problem page (a centred card like the PIN and device-removed
+// cards): "Quit" only where the app can quit (desktop), "Start over" with its confirm, and the phone's page unchanged.
+TEST(ShellLayoutRmlTest, TheProfileProblemPageIsTheSameCardOnTheWideWindowWithQuitOnDesktopOnly) {
+  for (const LayoutMode mode : {LayoutMode::Compact, LayoutMode::Expanded}) {
+    ShellState state;
+    state.layout_mode = mode;
+    state.pin_gate.active = true;
+    state.pin_gate.profile_problem_mode = true;
+    const std::string phone_like = ShellLayoutRml(state, false, "").PinGate();
+    EXPECT_TRUE(Has(phone_like, "class=\"shell-dialog shell-pin-gate")) << "a centred card";
+    EXPECT_TRUE(Has(phone_like, "pin_gate_start_over()"));
+    EXPECT_FALSE(Has(phone_like, "pin_gate_quit()")) << "Quit follows quit_offered, not the layout";
+    state.pin_gate.quit_offered = true;
+    const std::string desktop = ShellLayoutRml(state, false, "").PinGate();
+    EXPECT_TRUE(Has(desktop, "pin_gate_quit()"));
+    EXPECT_TRUE(Has(desktop, Tr("pin.quit")));
+    EXPECT_FALSE(Has(desktop, "<input"));
+    state.pin_gate.profile_problem_mode = false;
+    state.pin_gate.start_over_confirm_mode = true;
+    const std::string asked = ShellLayoutRml(state, false, "").PinGate();
+    EXPECT_TRUE(Has(asked, "pin_gate_start_over_confirm()"));
+    EXPECT_TRUE(Has(asked, "pin_gate_cancel()"));
+    EXPECT_FALSE(Has(asked, "pin_gate_quit()"));
+  }
+}
+
 // Face / fingerprint unlock (DEV/PLAN-pin-gate-redesign.md C): the pad's bottom-left key (where no "OK" is due) with
 // the face or the fingerprint icon; the field's link by the sensor's name; the hint line when there is one.
 TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {

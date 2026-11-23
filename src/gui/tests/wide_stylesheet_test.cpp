@@ -242,5 +242,47 @@ TEST_F(WideStylesheetTest, TheBaseLookIsSoftSurfacesLargeCornersAndHairlines) {
   EXPECT_EQ(LookOf("field1").radius, 10.f);
 }
 
+// The profile-problem page and the start-over confirm are the PIN gate's card (markup: ShellLayoutRml::PinGate); under
+// the wide root it stays one centred card of 360dp at most with its full-width buttons of at least 44dp.
+TEST_F(WideStylesheetTest, TheProfileProblemCardStaysCentredWithFullWidthButtonsOnTheWideWindow) {
+  for (const int width : {768, 1280}) {
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(width) +
+        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-dialog\" style=\"position: absolute; top: 0; left: "
+        "0; right: 0; bottom: 0;\"><div class=\"shell-dialog shell-pin-gate\" id=\"card\">"
+        "<h2 class=\"heading-2 shell-dialog-title\">Title</h2><p class=\"text shell-dialog-message\">Message</p>"
+        "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">"
+        "<button id=\"b1\" class=\"btn btn-primary\">Start over</button>"
+        "<button id=\"b2\" class=\"btn btn-secondary\">Quit</button></div></div></div></div></body></rml>";
+    ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+    context->Update();
+    auto box = [&](const char* id) {
+      ui::Element* element = document->GetElementById(id);
+      const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+      const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+      return std::vector<float>{at.x, at.y, size.x, size.y};
+    };
+    const std::vector<float> card = box("card");
+    EXPECT_LE(card[2], 360.f) << width;
+    // Anchored at the window's middle; the card's translate(-50%, -50%) (not part of the engine's offsets) centres it.
+    EXPECT_NEAR(static_cast<double>(card[0]), width / 2.0, 1.0) << "centred at " << width;
+    for (const char* id : {"b1", "b2"}) {
+      const std::vector<float> button = box(id);
+      EXPECT_GE(button[3], 44.f) << id;
+      EXPECT_GE(button[0], card[0]);
+      EXPECT_LE(button[0] + button[2], card[0] + card[2] + 0.5f);
+    }
+    document->Close();
+    context->Update();
+  }
+}
+
 } // namespace
 } // namespace pbr

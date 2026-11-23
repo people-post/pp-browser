@@ -5243,6 +5243,7 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::vec
   }
   PaneSpec spec;
   spec.key = "news_reader";
+  spec.rml_path = "news_reader"; // a key, so the wide window mounts news_reader_wide
   spec.page_sheet = true;
   news_reader_layer_ = shell_navigation_.push_layer(spec);
   if (news_reader_layer_ < 0) {
