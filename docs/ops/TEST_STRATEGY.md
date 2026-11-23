@@ -112,7 +112,7 @@ Tier C  Multi-node        isolation, deploy reachability, multi-process fan-out,
 |--------|------|------|
 | `pp_amp_l1_test` … `pp_amp_integration_test` | A/B | AMP L1–link + integration — **pp-cpp-amp** CI (not built in pp-browser) |
 
-**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** owned by **pp-cpp-amp** (`pp_amp_integration_test`). Matrix: [projects/adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md). Per-layer Tier A matrices: [projects/adp/L1_TEST_MATRIX.md](../../projects/adp/L1_TEST_MATRIX.md) and siblings under `projects/adp/`.
+**AMP integration matrix (`A-INT-*`, `A-ADV-*`):** owned by **pp-cpp-amp** (`pp_amp_integration_test`). Matrix: [pp-cpp-amp docs/testing/TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md). Per-layer Tier A matrices: [docs/testing/L1_TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/L1_TEST_MATRIX.md) and siblings in pp-cpp-amp's `docs/testing/`.
 
 ---
 

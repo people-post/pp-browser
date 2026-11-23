@@ -7,7 +7,7 @@ Wire formats and HTTP surfaces use their own version axes — this doc governs *
 escalate across owning layers** inside the process.
 
 **Related:** object ownership [OWNERSHIP.md](../architecture/OWNERSHIP.md), mesh stack
-[projects/adp/STACK.md](../../projects/adp/STACK.md), link code table
+[pp-cpp-amp STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md), link code table
 [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md), UI catalog errors `AppError` in
 `capabilities/base/src/foundation/error/AppError.h`.
 
@@ -51,7 +51,7 @@ and per-layer copies in pp-cpp-amp (`pp::amp::`, `pp::adp::`). New pp-browser mo
 
 ## Hierarchical ownership
 
-Errors follow the same tree as object ownership ([A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)):
+Errors follow the same tree as object ownership ([A027](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)):
 
 ```text
 ADP Connection

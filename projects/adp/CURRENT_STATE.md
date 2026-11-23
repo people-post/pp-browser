@@ -2,19 +2,21 @@
 
 **As of:** 2026-09-01
 
+The app's adoption record. The library's own open items (the deferred test-matrix rows, what A029 left open) are in pp-cpp-amp [docs/STATUS.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STATUS.md) ([CR026](../capability-repos/DECISIONS.md#cr026--pp-cpp-amp-takes-the-stacks-design-and-the-contracts-it-alone-implements)).
+
 ## Landed (L1)
 
 - Project docs + ADRs A001–A020
 - `src/lib/amp/L1/` → `pp_base_adp` (Asio-free)
 - Wire v1 + HMAC-SHA256-128, best-effort + reliable, path migrate, OsUdp
 - `pp_browser_adp_test` (40 tests)
-- Contract: [`docs/contracts/ADP.md`](../../docs/contracts/ADP.md)
+- Contract: [`docs/contracts/ADP.md`](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/ADP.md)
 
 ## Landed (stack spec — D0)
 
-- [STACK.md](STACK.md) — four-layer AMP model
-- [`docs/contracts/AMP-SESSION.md`](../../docs/contracts/AMP-SESSION.md) — L2 MSH + full AEAD
-- [`docs/contracts/AMP-CHANNEL.md`](../../docs/contracts/AMP-CHANNEL.md) — L3 mux, ch0, fragmentation
+- [STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md) — four-layer AMP model
+- [`docs/contracts/AMP-SESSION.md`](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-SESSION.md) — L2 MSH + full AEAD
+- [`docs/contracts/AMP-CHANNEL.md`](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md) — L3 mux, ch0, fragmentation
 - [PHASES.md](PHASES.md) — D1–D9 migration checklist
 
 ## Transitional (legacy TCP path)
@@ -58,7 +60,7 @@
 
 - `CallMediaLegCoordinator` — `/pp/realtime/1.0.0` **`call_id`-keyed channel bundle** on `MeshRuntime`: role-tagged outbound/inbound control + media; pure admit helpers in `CallMediaBundleLogic` ([A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime))
 - Dual-dial glare (L4): higher base58 PeerId keeps outbound; lower yields and adopts inbound
-- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe ([A027](DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
+- L3 remote terminal → session `on_closed` (`peer_close` / `peer_reset`); `ChannelSession::CloseQuiet` + `ReleaseHandlers` (dtor / provisional slots); Bind keeps `shared_ptr` for dispatch so TearDown-from-callback is safe ([A027](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
 - `AdoptClientChannel` must not touch `Session` after `sessions.erase` (parent-only destroy / no use-after-erase)
 - Bundle resolves `PeerLink` via `peer_key` at use sites (no long-lived raw link pointer)
 - SoftMigrate audio reopen gated to Android settle (`CaptureReopenSettleDelayMs() > 0`)
@@ -141,7 +143,7 @@
 - **`AmpMediaRelayCoordinator`** adopts circuit sessions for quote/attach (same pipe; do not close after quote)
 - **MeshHost** always Starts Amp circuit + media-relay coordinators when Amp is up; inbound hosting gated by `SetServeInbound(host_*)`
 - **DATA-plane hardening** — Fanout snapshots under lock (libp2p `MediaRelayRuntime` pattern); sync `Detach` / `AbortInflight` (no `PostIo(raw Impl*)` past Stop); protocol-keyed hop readiness (`Find(peer, protocol)`, not `HasAny` for call-media)
-- **Call-media Amp over circuit** — design locked [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md); **implemented** (step 5d)
+- **Call-media Amp over circuit** — design locked [A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md); **implemented** (step 5d)
 
 ## Landed (D9 step 5d — Amp call-media nested Session over circuit / A024)
 
@@ -204,7 +206,7 @@
 
 ## Landed (Track A — integration matrix + wire rekey)
 
-- [TEST_MATRIX.md](TEST_MATRIX.md) — `A-INT-01` … `A-INT-09` mapped to STACK failure rows
+- [TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md) — `A-INT-01` … `A-INT-09` mapped to STACK failure rows
 - `amp_integration_harness.h` + `amp_integration_test.cpp` in `pp_browser_amp_link_test` (9 Tier-B tests)
 - `SessionControl` codec (wire v2 on ch0) + `Session::ApplyRekey` grace window (1000 ms)
 - `PeerLink::RequestSessionRekey()` — coordinated rekey over ch0 after capability exchange
@@ -214,7 +216,7 @@
 
 - `PeerLinkConfig::dial_timeout` enforced in `PeerLinkManager::Tick` (Handshaking/Dialing)
 - `PeerLinkConfig::max_links` enforced on outbound dial + inbound accept
-- `A-ADV-02` … `A-ADV-08` integration tests (see [TEST_MATRIX.md](TEST_MATRIX.md))
+- `A-ADV-02` … `A-ADV-08` integration tests (see [TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md))
 - `ChannelMux::InjectSealedForTest` — harness hook for sealed FRAG injection
 
 ## Next (implementation)

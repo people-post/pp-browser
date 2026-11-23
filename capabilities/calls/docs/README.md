@@ -9,8 +9,8 @@ Audio / video calls: the call vocabulary and its store ports, the call sounds (`
 ## Docs about it
 
 - Architecture: [CALLS](../../../docs/architecture/CALLS.md)
-- Contracts: [MEDIA_CHANNELS](../../../docs/contracts/MEDIA_CHANNELS.md), [WIRE_SCHEMAS](../../../docs/contracts/WIRE_SCHEMAS.md) (§ Media frames)
-- Projects: [p2p-av-calls](../../../projects/p2p-av-calls/), [call-path-resilience](../../../projects/call-path-resilience/), [media-client-layers](../../../projects/media-client-layers/)
+- Contracts: [MEDIA_CHANNELS](../../../docs/contracts/MEDIA_CHANNELS.md), [WIRE_SCHEMAS](../../../docs/contracts/WIRE_SCHEMAS.md) (§ Media frames), [AMP-CHANNEL § Call-media bundle](../../../docs/contracts/AMP-CHANNEL.md#call-media-bundle) (a call's channels: path migration, failover, `bye`); the transport under them: [pp-cpp-amp's docs](https://github.com/people-post/pp-cpp-amp/blob/main/README.md#docs)
+- Projects: [p2p-av-calls](../../../projects/p2p-av-calls/), [call-path-resilience](../../../projects/call-path-resilience/), [media-client-layers](../../../projects/media-client-layers/), [adp](../../../projects/adp/) ([CALL_MEDIA_CIRCUIT](../../../projects/adp/CALL_MEDIA_CIRCUIT.md): a call through a circuit)
 - Decisions: [CR003](../../../projects/capability-repos/DECISIONS.md#cr003--calls-and-broadcast-are-one-repo-realtime), [CR020](../../../projects/capability-repos/DECISIONS.md#cr020--secure-delivery-below-messaging-and-realtime), [CR023](../../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first), [CR024](../../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)
 
 This folder holds the capability's own docs and leaves with its code when the capability leaves pp-browser ([CR025](../../../projects/capability-repos/DECISIONS.md#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs), [CR005](../../../projects/capability-repos/DECISIONS.md#cr005--move-a-capability-only-when-a-second-app-needs-it)). The contracts and projects above stay where they are until then; shared ones go to pp-specs after release 1.

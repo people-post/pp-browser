@@ -624,7 +624,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 
 ### Media frames
 
-One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2; frame v4 since pp-cpp-mesh v8.0.0, [V066](../../projects/p2p-av-calls/DECISIONS.md)). Big endian:
+One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2; frame v4 since pp-cpp-mesh v8.0.0, [V066](../../projects/p2p-av-calls/DECISIONS.md)). Big endian:
 
 | Bytes | Field |
 |-------|-------|

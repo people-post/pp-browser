@@ -2,7 +2,7 @@
 
 **Status:** Plan (design accepted as [N031](DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh); not started)  
 **Date:** 2026-10-31  
-**Related:** [privacy P011](../privacy/DECISIONS.md#p011--a-nodes-uptime-is-not-public-by-role), [N027](DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory), [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [MESH_DIRECTORY_AMP.md](../../docs/contracts/MESH_DIRECTORY_AMP.md), [ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md)
+**Related:** [privacy P011](../privacy/DECISIONS.md#p011--a-nodes-uptime-is-not-public-by-role), [N027](DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory), [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [MESH_DIRECTORY_AMP.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/contracts/MESH_DIRECTORY_AMP.md), [ACCOUNT_CARD.md](../../docs/contracts/ACCOUNT_CARD.md)
 
 ## Problem
 
