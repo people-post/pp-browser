@@ -265,6 +265,31 @@ TEST(SettingsTitlesTest, ResetMyDataBringsUpTheFirstRunPageInTheRunningApp) {
   EXPECT_LT(reloaded, asked) << "asked only after the stores and controllers are back";
 }
 
+// "Start over on this device" on the unlock gate (a profile this build cannot open, or a forgotten PIN) is Reset my
+// data itself, no wipe of its own; and with the vault locked or the account unreadable messaging is not ready, so the
+// relays are left alone (no revoke the device could not sign, no unregister).
+TEST(SettingsTitlesTest, StartOverOnTheUnlockGateIsResetMyDataAndLeavesTheRelaysAlone) {
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/app/Application.cpp");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string app = buffer.str();
+  const size_t begin = app.find("void Application::StartOverOnThisDevice() {");
+  ASSERT_NE(begin, std::string::npos);
+  const std::string body = app.substr(begin, app.find("\n}\n", begin) - begin);
+  EXPECT_NE(body.find("ResetActiveProfile()"), std::string::npos);
+  EXPECT_EQ(body.find("remove"), std::string::npos) << "the app's own reset code wipes, nothing else";
+
+  const size_t reset = app.find("Roe<void> Application::ResetActiveProfile() {");
+  ASSERT_NE(reset, std::string::npos);
+  const std::string reset_body = app.substr(reset, app.find("\n}\n", reset) - reset);
+  const size_t guard = reset_body.find("messaging_facade_->IsMessagingReady()");
+  const size_t leave = reset_body.find("LeaveRelaysOnReset()");
+  ASSERT_NE(guard, std::string::npos);
+  ASSERT_NE(leave, std::string::npos);
+  EXPECT_LT(guard, leave) << "leaving the relays only with messaging up";
+  EXPECT_LT(reset_body.find("ForgetProfileProblem()"), reset_body.find("unlock_gate_->EnsureUnlocked("));
+}
+
 TEST(SettingsTitlesTest, SettingsPagesScrollTheirLastRowsClearOfTheFloatingAiButton) {
   // The button is up to 76dp; both mounts (the page sheet and the pushed pane) keep that much (plus air) at the end.
   const std::string css = ReadAsset("themes/components.rcss");

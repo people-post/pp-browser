@@ -276,6 +276,7 @@ void PinGateController::OnUsePinInstead() {
 void PinGateController::Dismiss() {
   ResetSettingsFlows();
   pin_state_ = {};
+  start_over_from_problem_ = false;
   link_flow_ = false;
   phrase_flow_ = false;
   pending_link_default_pin_ = false;
@@ -368,6 +369,68 @@ void PinGateController::ShowUnlock() {
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
   }
+}
+
+void PinGateController::ShowProfileProblem(const ProfileOpenProblem problem) {
+  if (!shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  link_flow_ = false;
+  phrase_flow_ = false;
+  pending_link_default_pin_ = false;
+  pending_link_pin_.clear();
+  start_over_from_problem_ = false;
+  ResetSettingsFlows();
+  const bool newer = problem == ProfileOpenProblem::Newer;
+  pin_state_ = {};
+  pin_state_.active = true;
+  pin_state_.profile_problem_mode = true;
+  pin_state_.profile_problem_newer = newer;
+  pin_state_.quit_offered = static_cast<bool>(gate_complete_.quit);
+  pin_state_.title = Tr(newer ? "pin.profile_newer_title" : "pin.profile_old_title").c_str();
+  pin_state_.message = Tr(newer ? "pin.profile_newer_message" : "pin.profile_old_message").c_str();
+  // Up right after a PIN was typed: that tap, delivered twice, must not land on the button drawn under it.
+  NoteChoiceShown();
+  ApplyPinGate();
+  Remount();
+}
+
+void PinGateController::OnStartOver() {
+  if (!shell_pin_gate_.apply_pin_gate || !pin_state_.active || !gate_complete_.start_over || ChoiceTooSoon()) {
+    return;
+  }
+  const bool from_problem = pin_state_.profile_problem_mode && !pin_state_.profile_problem_newer;
+  const bool from_forgot =
+      pin_state_.unlock_mode && pin_state_.forgot_open && !pin_state_.keypad_busy && !pin_state_.waiting_device_unlock;
+  if (!from_problem && !from_forgot) {
+    return;
+  }
+  start_over_from_problem_ = from_problem;
+  ResetSettingsFlows();
+  pin_state_ = {};
+  pin_state_.active = true;
+  pin_state_.start_over_confirm_mode = true;
+  // Me → Storage → Reset my data's words: the same wipe, asked once.
+  pin_state_.title = Tr("settings.storage.reset_confirm_title").c_str();
+  pin_state_.message = Tr("settings.storage.reset_confirm_message").c_str();
+  NoteChoiceShown(); // its "Start over" sits where the tap that brought it up was
+  ApplyPinGate();
+  Remount();
+}
+
+void PinGateController::OnStartOverConfirm() {
+  if (!pin_state_.active || !pin_state_.start_over_confirm_mode || ChoiceTooSoon() || !gate_complete_.start_over) {
+    return;
+  }
+  const auto start_over = gate_complete_.start_over; // the reset re-binds and redraws the gate under it
+  start_over();
+}
+
+void PinGateController::OnQuit() {
+  if (!pin_state_.active || !pin_state_.profile_problem_mode || !gate_complete_.quit) {
+    return;
+  }
+  gate_complete_.quit();
 }
 
 void PinGateController::ShowCreate() {
@@ -899,6 +962,15 @@ void PinGateController::OnUseKeypad() {
 
 void PinGateController::OnCancel() {
   if (!pin_state_.active) {
+    return;
+  }
+  if (pin_state_.start_over_confirm_mode) {
+    // Not now: back to the page it came from.
+    if (start_over_from_problem_) {
+      ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+    } else {
+      ShowUnlock();
+    }
     return;
   }
   if (pin_state_.verify_mode || pin_state_.change_mode) {

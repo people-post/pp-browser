@@ -399,6 +399,21 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_saved_copy", DataEvent<>([this]() { PinGateUseSavedCopy(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
     ctor.BindEventCallback("pin_gate_use_pin_instead", DataEvent<>([this]() { PinGateUsePinInstead(); }));
+    ctor.BindEventCallback("pin_gate_start_over", DataEvent<>([this]() {
+                             if (pin_gate_actions_.on_start_over) {
+                               pin_gate_actions_.on_start_over();
+                             }
+                           }));
+    ctor.BindEventCallback("pin_gate_start_over_confirm", DataEvent<>([this]() {
+                             if (pin_gate_actions_.on_start_over_confirm) {
+                               pin_gate_actions_.on_start_over_confirm();
+                             }
+                           }));
+    ctor.BindEventCallback("pin_gate_quit", DataEvent<>([this]() {
+                             if (pin_gate_actions_.on_quit) {
+                               pin_gate_actions_.on_quit();
+                             }
+                           }));
     ctor.BindEventCallback("pin_gate_key", DataEvent<int>([this](const int digit) {
                              if (pin_gate_actions_.on_key) {
                                pin_gate_actions_.on_key(digit);
@@ -1273,7 +1288,8 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
-        state_.pin_gate.link_paste_mode || state_.pin_gate.verify_mode || state_.pin_gate.change_mode) {
+        state_.pin_gate.link_paste_mode || state_.pin_gate.verify_mode || state_.pin_gate.change_mode ||
+        state_.pin_gate.start_over_confirm_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }

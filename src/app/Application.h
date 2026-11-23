@@ -77,6 +77,12 @@ public:
   /** Wipe active profile data dir and reinitialize secrets + hub (app-owned lifecycle). */
   Roe<void> ResetActiveProfile();
   /**
+   * "Start over on this device", confirmed on the unlock gate (a profile this build cannot open, or a forgotten PIN):
+   * the gate's page closes and ResetActiveProfile runs, which brings up the first-run page. Nothing is sent to a
+   * relay (the account cannot be read, or the vault is locked). A reset that fails puts the page back with why.
+   */
+  void StartOverOnThisDevice();
+  /**
    * Wipe the active profile's chat data ({profile}/threads/: chats, outbox, peer sessions) and
    * reinitialize the hub; the account, keys, contacts and settings stay, and the vault stays open.
    */
