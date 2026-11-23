@@ -2376,6 +2376,7 @@ CallMediaFailure CallMediaLegCoordinator::WrapLinkFailure(const pp::amp::PeerLin
       code = CallMediaErr::StaleLink; // B39: the next attempt drops this link and dials fresh
       break;
     case LinkErr::EndpointNotRegistered:
+    case LinkErr::VersionMismatch: // the peer answered in another version: as the reach reads it (unreachable)
       code = CallMediaErr::Unreachable;
       break;
     case LinkErr::ChannelOpenFailed:

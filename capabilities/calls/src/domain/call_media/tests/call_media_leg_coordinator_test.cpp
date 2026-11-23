@@ -1462,6 +1462,7 @@ TEST(CallMediaLegCodesTest, ALinkThatCannotSendIsStale) {
   EXPECT_EQ(wrap(Links::Err::EndpointNotRegistered), CallMediaErr::Unreachable);
   EXPECT_EQ(wrap(Links::Err::ChannelOpenFailed), CallMediaErr::ChannelFailed);
   EXPECT_EQ(wrap(Links::Err::DialTimeout), CallMediaErr::LinkFailed);
+  EXPECT_EQ(wrap(Links::Err::VersionMismatch), CallMediaErr::Unreachable);
 }
 
 } // namespace

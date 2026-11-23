@@ -141,6 +141,9 @@ TEST(AmpDirectChatTransportCodesTest, LinkFailuresMapToDirectSendCodes) {
   EXPECT_EQ(wrap(LinkErr::HandshakeFailed), DirectSendErr::Refused);
   EXPECT_EQ(wrap(LinkErr::TransportFailed), DirectSendErr::TransportFailed);
   EXPECT_EQ(wrap(LinkErr::ChannelOpenFailed), DirectSendErr::ChannelFailed);
+  // The peer answered in another version: an update is needed, not a retry (pp-cpp-mesh v10.1.0 reports it).
+  EXPECT_EQ(wrap(LinkErr::VersionMismatch), DirectSendErr::VersionMismatch);
+  EXPECT_EQ(wrap(LinkErr::Generic), DirectSendErr::Generic);
 }
 
 } // namespace

@@ -484,6 +484,7 @@ TEST(CallMediaConnectWrapTest, AReachFailureIsWrappedAsCallMediaCodes) {
   EXPECT_EQ(wrap(ReachErr::NoAnswer).GetCode(), CallMediaErr::Timeout);
   EXPECT_EQ(wrap(ReachErr::TransportFailed).GetCode(), CallMediaErr::StaleLink);
   EXPECT_EQ(wrap(ReachErr::Cancelled).GetCode(), CallMediaErr::Aborted);
+  EXPECT_EQ(wrap(ReachErr::VersionMismatch).GetCode(), CallMediaErr::Unreachable);
   EXPECT_NE(wrap(ReachErr::NoAnswer).message.find("why"), std::string::npos);
 }
 
