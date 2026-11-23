@@ -22,8 +22,11 @@
 #include <sodium.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -799,6 +802,9 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& mes
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
+  if (auto removed = WasMessageRemoved(message.id); removed && *removed) {
+    return Error("Message was removed here with its chat"); // a copy that came again (WasMessageRemoved)
+  }
   auto thread_db = db_.OpenThreadDb(message.thread_id);
   if (!thread_db) {
     return thread_db.error();
@@ -1022,6 +1028,85 @@ Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const st
   return found;
 }
 
+Roe<bool> SqliteThreadStore::WasMessageRemoved(const std::string& message_id) const {
+  if (message_id.empty()) {
+    return false;
+  }
+  if (auto init = db_.EnsureInitialized(); !init) {
+    return init.error();
+  }
+  std::lock_guard lock(db_.profile_mutex());
+  return WasMessageRemovedUnlocked(message_id);
+}
+
+bool SqliteThreadStore::WasMessageRemovedUnlocked(const std::string& message_id) const {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT 1 FROM removed_messages WHERE message_id = ? LIMIT 1;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    return false;
+  }
+  sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  const bool found = sqlite3_step(stmt) == SQLITE_ROW;
+  sqlite3_finalize(stmt);
+  return found;
+}
+
+Roe<void> SqliteThreadStore::RememberRemovedRowsUnlocked(const Thread& thread, sqlite3* thread_db) const {
+  // What a relay or a peer may send again: a 1:1 chat's or a group's messages. An AI chat's never come from anyone.
+  const bool from_others =
+      thread.kind == ThreadKind::Group || (thread.kind == ThreadKind::Direct && ThreadChannelIsE2e(thread.channel));
+  if (!from_others) {
+    return {};
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  std::vector<std::string> ids;
+  sqlite3_stmt* read = nullptr;
+  if (sqlite3_prepare_v2(thread_db, "SELECT id FROM messages WHERE timestamp >= ?;", -1, &read, nullptr) != SQLITE_OK) {
+    return Error("Failed to read the messages of a chat being removed");
+  }
+  sqlite3_bind_int64(read, 1, now_ms - kRemovedMessageRowHorizonMs);
+  while (sqlite3_step(read) == SQLITE_ROW) {
+    if (std::string id = SqlText(read, 0); !id.empty()) {
+      ids.push_back(std::move(id));
+    }
+  }
+  sqlite3_finalize(read);
+
+  sqlite3* profile = db_.profile_db();
+  if (sqlite3_exec(profile, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+    return Error("Failed to begin removed_messages txn");
+  }
+  sqlite3_stmt* prune = nullptr;
+  if (sqlite3_prepare_v2(profile, "DELETE FROM removed_messages WHERE removed_at < ?;", -1, &prune, nullptr) ==
+      SQLITE_OK) {
+    sqlite3_bind_int64(prune, 1, now_ms - kRemovedMessageIdKeepMs);
+    (void)sqlite3_step(prune);
+  }
+  sqlite3_finalize(prune);
+  sqlite3_stmt* insert = nullptr;
+  if (sqlite3_prepare_v2(profile, "INSERT OR REPLACE INTO removed_messages (message_id, removed_at) VALUES (?, ?);", -1,
+                         &insert, nullptr) != SQLITE_OK) {
+    sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
+    return Error("Failed to prepare removed_messages insert");
+  }
+  for (const std::string& id : ids) {
+    sqlite3_reset(insert);
+    sqlite3_bind_text(insert, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(insert, 2, now_ms);
+    if (sqlite3_step(insert) != SQLITE_DONE) {
+      sqlite3_finalize(insert);
+      sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return Error("Failed to remember a removed message");
+    }
+  }
+  sqlite3_finalize(insert);
+  if (sqlite3_exec(profile, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+    sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
+    return Error("Failed to commit removed_messages");
+  }
+  return {};
+}
+
 Roe<int64_t> SqliteThreadStore::CountAnnotationsForTarget(const std::string& thread_id,
                                                           const std::string& target_message_id) const {
   if (target_message_id.empty()) {
@@ -1097,21 +1182,27 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
     }
   }
 
-  if (sqlite3_exec(*thread_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-    return Error("Failed to begin thread txn");
-  }
-  if (sqlite3_exec(*thread_db, "DELETE FROM messages;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-    sqlite3_exec(*thread_db, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return Error("Failed to clear messages");
-  }
-  if (options.forget_memory) {
-    if (sqlite3_exec(*thread_db, "DELETE FROM memory;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-      sqlite3_exec(*thread_db, "ROLLBACK;", nullptr, nullptr, nullptr);
-      return Error("Failed to clear memory");
+  {
+    std::lock_guard profile_lock(db_.profile_mutex()); // profile.db, then the chat's rows (SqliteThreadDb's order)
+    if (auto remembered = RememberRemovedRowsUnlocked(**thread, *thread_db); !remembered) {
+      return remembered.error(); // cleared without it, the relay's copies would bring the messages back
     }
-  }
-  if (sqlite3_exec(*thread_db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-    return Error("Failed to commit clear");
+    if (sqlite3_exec(*thread_db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+      return Error("Failed to begin thread txn");
+    }
+    if (sqlite3_exec(*thread_db, "DELETE FROM messages;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+      sqlite3_exec(*thread_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+      return Error("Failed to clear messages");
+    }
+    if (options.forget_memory) {
+      if (sqlite3_exec(*thread_db, "DELETE FROM memory;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_exec(*thread_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return Error("Failed to clear memory");
+      }
+    }
+    if (sqlite3_exec(*thread_db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+      return Error("Failed to commit clear");
+    }
   }
 
   {
@@ -1138,7 +1229,20 @@ Roe<bool> SqliteThreadStore::DeleteThread(const std::string& thread_id) {
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
+  auto thread = GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
   std::lock_guard profile_lock(db_.profile_mutex());
+  if (*thread) {
+    auto thread_db = db_.OpenThreadDb(thread_id);
+    if (!thread_db) {
+      return thread_db.error();
+    }
+    if (auto remembered = RememberRemovedRowsUnlocked(**thread, *thread_db); !remembered) {
+      return remembered.error(); // deleted without it, the relay's copies would bring the chat back
+    }
+  }
   ClearChatTargetThreadLinkUnlocked(thread_id);
   {
     SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
@@ -1826,6 +1930,9 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
   ThreadMessage stored = message;
   {
     std::lock_guard profile_lock(db_.profile_mutex());
+    if (WasMessageRemovedUnlocked(message.id)) {
+      return Error("Message was removed here with its chat"); // as AppendMessage
+    }
     auto thread_db = db_.OpenThreadDb(message.thread_id);
     if (!thread_db) {
       return thread_db.error();

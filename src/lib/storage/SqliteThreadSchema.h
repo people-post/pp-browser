@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS chat_targets (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
 )sql";
 
+/**
+ * profile.db: the ids of the messages of a chat cleared or deleted here (SqliteThreadStore::WasMessageRemoved), so a
+ * copy the relay still holds is not taken in again. Ids only, pruned by `removed_at` (unix ms). A table new to an
+ * existing file: created on every open (DATA_LAYOUT § Schema versions), no version step; an older app ignores it.
+ */
+inline constexpr const char* kSqliteRemovedMessagesSchema = R"sql(
+CREATE TABLE IF NOT EXISTS removed_messages (
+  message_id TEXT PRIMARY KEY,
+  removed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_removed_messages_at ON removed_messages(removed_at);
+)sql";
+
 inline constexpr const char* kSqliteThreadSchemaV2 = R"sql(
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,

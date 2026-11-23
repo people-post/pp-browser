@@ -4569,6 +4569,11 @@ void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
   on_own_devices_changed_ = std::move(callback);
 }
 
+void ConversationsHub::SetDeviceRemovedWatch(std::function<void()> callback) {
+  std::lock_guard lock(own_devices_changed_mu_);
+  device_removed_watch_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
   std::lock_guard lock(contacts_changed_mu_);
   on_contacts_changed_ = std::move(callback);
@@ -4596,12 +4601,17 @@ void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callb
 
 void ConversationsHub::NotifyOwnDevicesChanged() {
   std::function<void()> callback;
+  std::function<void()> removed_watch;
   {
     std::lock_guard lock(own_devices_changed_mu_);
     callback = on_own_devices_changed_;
+    removed_watch = device_removed_watch_;
   }
   if (callback) {
     callback();
+  }
+  if (removed_watch) {
+    removed_watch();
   }
 }
 

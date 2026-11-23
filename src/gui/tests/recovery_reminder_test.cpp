@@ -63,7 +63,8 @@ std::string ReadAsset(const std::string& relative) {
 
 TEST(RecoveryReminderTest, TheCardOffersBothActionsOnlyOnAnUnfilteredList) {
   const std::string rml = ReadAsset("views/sidebar.rml");
-  const size_t block = rml.find("class=\"sidebar-tip\"");
+  // Its own card (the removed-device notice, DeviceRemovedNotice, may sit above it).
+  const size_t block = rml.find("class=\"sidebar-tip\" data-if=\"recovery_reminder");
   ASSERT_NE(block, std::string::npos);
   const std::string tag = rml.substr(rml.rfind('<', block), rml.find('>', block) - rml.rfind('<', block));
   EXPECT_NE(tag.find("recovery_reminder"), std::string::npos);

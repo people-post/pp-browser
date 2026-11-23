@@ -267,6 +267,8 @@ struct ChatShellState {
   int home_new_people = 0;
   /** Home's Security widget: the recovery phrase has been opened once (else it asks to write it down). */
   bool home_security_ok = false;
+  /** Chats page: this device was taken off its account (DeviceRemovedNotice), above the other cards. */
+  bool device_removed_notice = false;
   /** Chats page: the "save your recovery phrase" card (RecoveryReminder.h). */
   bool recovery_reminder = false;
   /** Chats page: the "new version is available" card (UpdateCard.h), below the recovery card; with its Update button. */
