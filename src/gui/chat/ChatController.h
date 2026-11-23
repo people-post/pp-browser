@@ -6,6 +6,7 @@
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/UpdateCard.h"
 #include "feature/presenters/ChatPresenter.h"
+#include "feature/presenters/DeviceRemovedNotice.h"
 #include "feature/presenters/HomeBrief.h"
 #include "feature/presenters/HomeToday.h"
 #include "feature/presenters/ThreadSearchSession.h"
@@ -217,6 +218,12 @@ public:
   void RefreshUpdateCard();
   void OnUpdateCardOpen();
   void OnUpdateCardLater();
+  /**
+   * The Chats page notice that this device was taken off its account (DeviceRemovedNotice): checked at every messaging
+   * start and whenever the device list changes; "Link again" hands over to the reset flow, "OK" hides it this launch.
+   */
+  void BindDeviceRemovedNotice(DeviceRemovedNoticePorts ports);
+  bool DeviceRemovedNoticeShows() const { return device_removed_.Shows(); }
   void OnSessionsTabActivated();
   /**
    * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
@@ -877,6 +884,8 @@ private:
   /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
   std::optional<bool> recovery_phrase_present_;
   UpdateCardPorts update_card_;
+  DeviceRemovedNotice device_removed_{[this] { OnDeviceRemovedNoticeChanged(); }};
+  void OnDeviceRemovedNoticeChanged();
   /** machine.json's memory of "Later", read when the announced version changes (not on every list refresh). */
   UpdateCardState update_card_state_;
   std::optional<std::string> update_card_state_for_;

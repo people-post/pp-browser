@@ -204,6 +204,10 @@ void ConversationsFacade::SetOnOwnDevicesChanged(std::function<void()> callback)
   hub_.SetOnOwnDevicesChanged(std::move(callback));
 }
 
+void ConversationsFacade::SetDeviceRemovedWatch(std::function<void()> callback) {
+  hub_.SetDeviceRemovedWatch(std::move(callback));
+}
+
 Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
   return hub_.OurRelays();
 }

@@ -1696,6 +1696,7 @@ void ChatController::OnProfileDataReset() {
   video_bubble_thread_.clear();
   messaging_ready_ = false;
   recovery_phrase_present_.reset();
+  device_removed_.Forget();
   ++messaging_session_; // a task result of the old profile never reaches the new one
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown(); // the teardown dropped work still queued: free its runs
@@ -2174,6 +2175,18 @@ void ChatController::OnRecoveryReminderLater() {
   prefs.recovery_reminder_dismissals = std::min(2, prefs.recovery_reminder_dismissals + 1);
   prefs.recovery_reminder_dismissed_ms = util::NowUnixMs();
   (void)Store().SaveProfilePrefs(prefs); // the prefs listener refreshes the card
+}
+
+void ChatController::BindDeviceRemovedNotice(DeviceRemovedNoticePorts ports) {
+  device_removed_.BindPorts(std::move(ports));
+  if (messaging_ready_) {
+    device_removed_.Check();
+  }
+}
+
+void ChatController::OnDeviceRemovedNoticeChanged() {
+  shell_.device_removed_notice = device_removed_.Shows();
+  DataModelHost::Instance().Dirty("shell", "device_removed_notice");
 }
 
 void ChatController::BindUpdateCard(UpdateCardPorts ports) {
@@ -6008,6 +6021,7 @@ void ChatController::WireMessagingBindings() {
   }
   messaging_ready_ = true;
   recovery_phrase_present_.reset();
+  device_removed_.Check(); // still on the account's device list? (also listens for the next change)
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
   // slot (one at a time); what is triggered below runs once more after it.
   ++messaging_session_;
@@ -6560,6 +6574,8 @@ bool ChatController::Setup(ui::Context* context) {
                                  }
                                }));
         ctor.BindEventCallback("recovery_reminder_later", DataEvent([this] { OnRecoveryReminderLater(); }));
+        ctor.BindEventCallback("device_removed_relink", DataEvent([this] { device_removed_.Relink(); }));
+        ctor.BindEventCallback("device_removed_ok", DataEvent([this] { device_removed_.Ok(); }));
         ctor.BindEventCallback("update_card_open", DataEvent([this] { OnUpdateCardOpen(); }));
         ctor.BindEventCallback("update_card_later", DataEvent([this] { OnUpdateCardLater(); }));
         ctor.BindEventCallback("home_open_favorite",
@@ -7150,6 +7166,7 @@ void ChatController::Shutdown() {
   video_bubble_thread_.clear();
   messaging_ready_ = false;
   recovery_phrase_present_.reset();
+  device_removed_.Forget();
   ++messaging_session_; // a task result still on its way is dropped
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();

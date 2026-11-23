@@ -120,6 +120,8 @@ public:
   Roe<void> StartNewDeviceList();
   /** Our device list changed, or where getting it back stands (read OwnDevices again); runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /** The same change, to the Chats page's removed-device notice (ConversationsHub::SetDeviceRemovedWatch). */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
   /** Me → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
   Roe<OurRelaysStatus> OurRelays();
   /** Adds the relay a relay link names (MR008: `https://host#<PeerId>`). */

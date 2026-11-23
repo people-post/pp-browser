@@ -167,6 +167,11 @@ public:
   /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
   void OpenSection(const std::string& section_id);
   /**
+   * Me → Storage → Reset my profile from elsewhere (the Chats page's "this device is no longer on your account"
+   * notice): the same confirm, then the same reset.
+   */
+  void StartResetProfile() { security_actions_.ResetProfile(); }
+  /**
    * The chats list's "reconnect" row or alert (B216): register again, as Me → Profile's button does, without its
    * "renewed" line ("Reconnected" comes when a poll gets through). `done(registered)` when it ends
    * (SettingsProfileActions::Register).

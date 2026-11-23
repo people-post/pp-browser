@@ -355,6 +355,11 @@ public:
   /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
   /**
+   * A second listener to the same change, for the Chats page's notice that this device was taken off its account
+   * (Me → My devices keeps the first while it is open). Runs on any thread; null clears it.
+   */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
+  /**
    * The address book changed (a contact added, renamed, removed, blocked, or refreshed from its card or the
    * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
    */
@@ -858,6 +863,7 @@ private:
   void NotifyOwnDevicesChanged();
   std::mutex own_devices_changed_mu_;
   std::function<void()> on_own_devices_changed_;
+  std::function<void()> device_removed_watch_;
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
   std::mutex our_relays_changed_mu_;
