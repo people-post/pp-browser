@@ -1081,5 +1081,99 @@ TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheDeviceRemovedNoticeAboveTheOthe
   EXPECT_EQ(cards[0]->GetComputedValues().background_color(), cards[1]->GetComputedValues().background_color());
 }
 
+// The news reader on the wide window (news_reader_wide.rml): a panel centred over the conversation in the shell's
+// frame, 720dp at most, title on top, a scrolling body, then one bar with "Open original" and Previous / Next. The
+// phone's sheet view is untouched, and a news link hovers on the wide layout only.
+TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
+  state.news_reader_title = "Chip makers brace for new export rules";
+  state.news_reader_body_rml = "<p>The digest.</p>";
+  state.news_reader_has_nav = true;
+  state.news_reader_can_prev = false;
+  state.news_reader_can_next = true;
+  EXPECT_EQ(ViewCatalog::KeyForLayout("news_reader", true), "news_reader_wide");
+  EXPECT_EQ(ViewCatalog::KeyForLayout("news_reader", false), "news_reader");
+  const std::string phone = ViewCatalog::LoadBody("news_reader");
+  EXPECT_NE(phone.find("sheet-header"), std::string::npos) << "the phone's sheet view as it was";
+  const std::string wide = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("news_reader", true));
+  for (const char* binding : {"news_reader_prev()", "news_reader_next()", "news_reader_open_original()",
+                              "news_reader_loading", "news_reader_failed", "news_reader_body_rml",
+                              "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
+    EXPECT_NE(wide.find(binding), std::string::npos) << binding;
+  }
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(window) +
+        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-overlay\" style=\"position: absolute; top: 0; left: "
+        "0; right: 0; bottom: 0;\"><div class=\"shell-scrim\"></div>"
+        "<div id=\"frame\" class=\"shell-frame shell-frame--news_reader\"><div class=\"shell-overlay-body\">" +
+        wide + "</div></div></div></div></body></rml>";
+    document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+    context->Update();
+    const Box frame = BoxOf(document->GetElementById("frame"));
+    EXPECT_LE(frame.W(), 720.f);
+    EXPECT_NEAR(static_cast<double>((frame.left + frame.right) / 2.f), window / 2.0, 1.0) << "centred";
+    EXPECT_GE(frame.left, 0.f);
+    EXPECT_LE(frame.right, static_cast<float>(window));
+    ui::Element* title = First("news-reader-title");
+    ASSERT_NE(title, nullptr);
+    EXPECT_EQ(title->GetInnerRML(), "Chip makers brace for new export rules");
+    ui::Element* scroll = First("news-reader-scroll--wide");
+    ASSERT_NE(scroll, nullptr);
+    EXPECT_GE(BoxOf(title).top, frame.top);
+    EXPECT_LE(BoxOf(title).right, frame.right - 36.f + 0.5f) << "clear of the close button";
+    ui::Element* bar = First("news-reader-bar--wide");
+    ASSERT_NE(bar, nullptr);
+    EXPECT_GE(BoxOf(bar).top, BoxOf(scroll).bottom - 0.5f) << "the bar under the scrolling body";
+    EXPECT_LE(BoxOf(bar).bottom, frame.bottom + 0.5f);
+    const ui::ElementList open = All("news-reader-open");
+    const ui::ElementList steps = All("news-reader-step");
+    ASSERT_EQ(open.size(), 1u);
+    ASSERT_EQ(steps.size(), 2u);
+    EXPECT_LT(BoxOf(steps[0]).left, BoxOf(open[0]).left) << "Previous, Open original, Next";
+    EXPECT_GT(BoxOf(steps[1]).left, BoxOf(open[0]).left);
+    for (ui::Element* button : {open[0], steps[0], steps[1]}) {
+      EXPECT_GE(BoxOf(button).H(), 44.f);
+      EXPECT_LE(BoxOf(button).right, frame.right);
+    }
+    EXPECT_EQ(All("sheet-header").size(), 0u);
+    EXPECT_EQ(First("news-reader-spin")->GetBox().GetSize(ui::BoxArea::Border).y, 0.f) << "no spinner when loaded";
+    document->Close();
+    context->Update();
+  }
+  // Loading: the spinner and line; failed: the fixed line.
+  state.news_reader_loading = true;
+  state.news_reader_body_rml = "";
+  DataModelHost::Instance().Dirty("chat", "news_reader_loading");
+  DataModelHost::Instance().Dirty("chat", "news_reader_body_rml");
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body><div class=\"shell-body shell-body--wide\" style=\"width: 900dp; height: 700dp;\">" + wide +
+      "</div></body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  EXPECT_GT(BoxOf(First("news-reader-spin")).H(), 0.f);
+  document->Close();
+}
+
+TEST_F(ChatWideLayoutTest, ANewsLinkHoversOnTheWideLayoutOnly) {
+  for (const char* theme : {"light", "dark"}) {
+    const std::string colors = Asset((std::string("themes/colors-") + theme + ".rcss").c_str());
+    EXPECT_NE(colors.find(".shell-body--wide .chat-link.news-link:hover"), std::string::npos) << theme;
+    EXPECT_NE(colors.find(".shell-body--wide .bubble-user .chat-link.news-link:hover"), std::string::npos) << theme;
+    EXPECT_NE(colors.find(".chat-link.news-read"), std::string::npos) << "read items stay grey (the phone's rule)";
+  }
+}
+
 } // namespace
 } // namespace pbr

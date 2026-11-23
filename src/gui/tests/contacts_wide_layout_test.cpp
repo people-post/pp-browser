@@ -43,6 +43,15 @@ public:
   double GetElapsedTime() override { return 0.0; }
 };
 
+GroupListEntry GroupEntry(const std::string& thread_id, const std::string& title, const size_t members) {
+  GroupListEntry entry;
+  entry.thread_id = thread_id;
+  entry.title = title;
+  entry.stable_id = "group:" + thread_id;
+  entry.member_count = members;
+  return entry;
+}
+
 std::string ReadAll(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
@@ -88,6 +97,12 @@ protected:
       return chrome;
     };
     nav.set_primary_pane = [this](const std::string& key) { primary_ = key; };
+    nav.push_transient = [this](const PaneSpec& spec) { pushed_.push_back(spec.key); };
+    nav.pop_transient = [this]() {
+      if (!pushed_.empty()) {
+        pushed_.pop_back();
+      }
+    };
     nav.clear_primary_pane = [this]() { primary_.clear(); };
     controller_.BindShellNavigation(nav);
 
@@ -108,6 +123,7 @@ protected:
       }
       return std::optional<Contact>{};
     };
+    ports.list_groups = [this]() -> Roe<std::vector<GroupListEntry>> { return groups_; };
     controller_.BindContactsPorts(ports);
     controller_.OnNavTabActivated();
     ASSERT_TRUE(controller_.RegisterModel(context_));
@@ -158,6 +174,24 @@ protected:
     context_->Update();
     context_->Update();
   }
+  /** One view alone in a wide-root window `window_dp` wide (a pushed page: the transient layer is the whole window). */
+  void LoadPage(const char* key, const int window_dp) {
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(window_dp) +
+        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-transient\">"
+        "<div id=\"page\" class=\"shell-pane shell-pane-transient\" style=\"position: absolute; left: 0; width: " +
+        std::to_string(window_dp) + "dp; height: 700dp;\"><div class=\"shell-pane-body\">" + View(key) +
+        "</div></div></div></div></body></rml>";
+    document_ = context_->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    context_->Update();
+    context_->Update();
+  }
   struct Box {
     float left, top, right, bottom;
     float W() const { return right - left; }
@@ -199,6 +233,8 @@ protected:
   ui::ElementDocument* document_ = nullptr;
   ContactsController controller_;
   std::vector<Contact> store_;
+  std::vector<GroupListEntry> groups_;
+  std::vector<std::string> pushed_;
   std::string primary_;
 };
 
@@ -349,6 +385,88 @@ TEST_F(ContactsWideLayoutTest, ALongNameDoesNotPushTheRowOrThePageOutOfTheirColu
     EXPECT_LE(BoxOf(title).right, column.right);
   }
   EXPECT_LE(BoxOf(One(".contact-detail-title-block")).right, BoxOf(One("#detail")).right);
+}
+
+// The Groups card (phone: a row on Contacts and on New chat; here the list column holds both pages' entries): a card of
+// its own under New group / Add contact, the count on its right, a click pushes the Groups list. Hidden while searching.
+TEST_F(ContactsWideLayoutTest, TheGroupsCardIsUnderTheTwoTilesWithItsCountAndOpensTheList) {
+  groups_ = {GroupEntry("t1", "Book club", 3), GroupEntry("t2", "Walkers", 5)};
+  controller_.Refresh();
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    Load(window);
+    const Box column = BoxOf(One("#list"));
+    ui::Element* card = One(".nc-actions--groups .nc-action");
+    ASSERT_NE(card, nullptr);
+    EXPECT_GE(BoxOf(card).H(), 44.f);
+    EXPECT_GE(BoxOf(card).left, column.left);
+    EXPECT_LE(BoxOf(card).right, column.right);
+    const ui::ElementList tiles = All(".nc-actions .nc-action");
+    ASSERT_EQ(tiles.size(), 3u);
+    EXPECT_GE(BoxOf(card).top, BoxOf(tiles[0]).bottom - 0.5f) << "under New group / Add contact";
+    EXPECT_EQ(One(".nc-actions--groups .nc-action-label")->GetInnerRML(), Tr("groups.title"));
+    EXPECT_EQ(One(".nc-actions--groups .nc-action-count")->GetInnerRML(), "2");
+    EXPECT_LE(BoxOf(One(".nc-actions--groups .nc-action-count")).right, BoxOf(card).right);
+    document_->Close();
+    context_->Update();
+  }
+  Load(900);
+  pushed_.clear();
+  One(".nc-actions--groups .nc-action")->DispatchEvent(ui::EventId::Click, {});
+  EXPECT_EQ(pushed_, (std::vector<std::string>{"group_list"}));
+  controller_.OnGroupListDismissed();
+}
+
+// The phone's pages are untouched: its Groups row is on contacts.rml, the wide page has the card instead.
+TEST_F(ContactsWideLayoutTest, ThePhonePagesKeepTheirGroupsRowAndTheWideOnesMapToTheirOwnViews) {
+  EXPECT_EQ(ViewCatalog::KeyForLayout("group_list", true), "group_list_wide");
+  EXPECT_EQ(ViewCatalog::KeyForLayout("group_list", false), "group_list");
+  const std::string phone = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("contacts", false));
+  EXPECT_NE(phone.find("contacts-groups-row"), std::string::npos);
+  EXPECT_EQ(phone.find("nc-actions--groups"), std::string::npos);
+  EXPECT_EQ(View("contacts").find("contacts-groups-row"), std::string::npos);
+  EXPECT_NE(View("contacts").find("open_group_list()"), std::string::npos);
+  EXPECT_NE(ViewCatalog::LoadBody("group_list").find("page-large-title"), std::string::npos) << "phone page as it was";
+}
+
+// The Groups list on the wide window: the phone's card of rows in a column of 640dp at most, the large title above; each
+// row 60dp and carrying `session-id` (a right click gives the Chats list's menu for the group); empty line when none.
+TEST_F(ContactsWideLayoutTest, TheWideGroupListIsACentredColumnOfRowsWithTheirSessionIds) {
+  groups_ = {GroupEntry("t1", "Book club", 3), GroupEntry("t2", "Walkers", 5)};
+  controller_.Refresh();
+  controller_.OpenGroupList();
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    LoadPage("group_list", window);
+    const Box page = BoxOf(One("#page"));
+    ui::Element* column = One(".group-list-column");
+    ASSERT_NE(column, nullptr);
+    EXPECT_LE(BoxOf(column).W(), 640.f);
+    EXPECT_GE(BoxOf(column).left, page.left);
+    EXPECT_LE(BoxOf(column).right, page.right);
+    EXPECT_EQ(All(".page-large-title").size(), 0u);
+    ASSERT_NE(One(".group-list-wide-title"), nullptr);
+    const ui::ElementList rows = All(".group-list-row");
+    ASSERT_EQ(rows.size(), 2u);
+    for (ui::Element* row : rows) {
+      EXPECT_GE(BoxOf(row).H(), 44.f);
+      EXPECT_LE(BoxOf(row).right, BoxOf(column).right);
+      EXPECT_FALSE(row->GetAttribute("session-id", ui::String()).empty());
+    }
+    EXPECT_EQ(std::string(rows[0]->GetAttribute("session-id", ui::String()).c_str()), "t1");
+    EXPECT_EQ(All(".blocked-empty").size(), 0u);
+    document_->Close();
+    context_->Update();
+  }
+  controller_.OnGroupListDismissed();
+  groups_.clear();
+  controller_.Refresh();
+  controller_.OpenGroupList();
+  LoadPage("group_list", 900);
+  EXPECT_EQ(All(".group-list-row").size(), 0u);
+  ASSERT_EQ(All(".blocked-empty").size(), 1u);
+  EXPECT_EQ(All(".blocked-empty")[0]->GetInnerRML(), Tr("groups.empty"));
+  controller_.OnGroupListDismissed();
 }
 
 } // namespace

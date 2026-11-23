@@ -1,0 +1,23 @@
+<!-- The news reader for the wide window (news_reader.rml's layout for a computer / an iPad window): a panel centred over
+     the conversation, in the shell's frame (its x, Escape and a click on the dimmed window close it). The item's title on
+     top (from the list, never from the model), "Getting the article..." with a spinner until the digest arrives at once,
+     or the fixed "can't be read" line; "Open original" and, for a list, Previous / Next in a row at the bottom. Same
+     data model and events as the phone's view (ChatController). Styles: assets/themes/wide.rcss. -->
+<div class="news-reader news-reader--wide" data-model="chat">
+  <div class="news-reader-scroll news-reader-scroll--wide">
+    <h2 class="news-reader-title" selectable="text">{{news_reader_title}}</h2>
+    <div class="news-reader-loading" data-if="news_reader_loading">
+      <div class="news-reader-spin"></div>
+      <p class="news-reader-note">{{i18n:chat.news.loading}}</p>
+    </div>
+    <p class="news-reader-note" data-if="news_reader_failed">{{i18n:chat.news.unavailable}}</p>
+    <div class="news-reader-body" selectable="text" data-rml="news_reader_body_rml"></div>
+  </div>
+  <div class="news-reader-bar news-reader-bar--wide">
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_prev" data-event-click="news_reader_prev()">{{i18n:chat.news.previous}}</button>
+    <button class="news-reader-open" type="button" data-event-click="news_reader_open_original()">{{i18n:chat.news.open_original}}</button>
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_next" data-event-click="news_reader_next()">{{i18n:chat.news.next}}</button>
+  </div>
+</div>

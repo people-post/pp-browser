@@ -3011,11 +3011,10 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       continue;
     }
-    // The send-preview page has its own layout for the wide window (a centred card); same model, same events.
-    const std::string body = ViewCatalog::LoadBody(
-        overlay.key == "picture_send"
-            ? ViewCatalog::KeyForLayout(overlay.rml_path, state_.layout_mode == LayoutMode::Expanded)
-            : overlay.rml_path);
+    // A page with its own layout for the wide window (the send-preview and the news reader: a card centred over the
+    // conversation) has a `<key>_wide` view; same model, same events. An rml_path that is a file path has none.
+    const std::string body =
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(overlay.rml_path, state_.layout_mode == LayoutMode::Expanded));
     if (!body.empty()) {
       RmlMount::MountInner(target, body);
     }
