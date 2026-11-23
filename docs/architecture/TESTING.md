@@ -129,7 +129,7 @@ Every high-risk behavior should have a **named home tier and evidence**, or an *
 | Doctrine (this file): design-as-oracle, tiers, push-down, skips, layer map | [`docs/architecture/TESTING.md`](TESTING.md) |
 | CI ladder, purpose IDs (`N-*` / `B-*` / `N-HARD-*`), compose PR set, scripts, soak/chaos | [`docs/ops/TEST_STRATEGY.md`](../ops/TEST_STRATEGY.md) |
 | Hard lab topology / scenario ladder (Tier C deploy simulation) | [`packaging/pp-node/HARD_LAB.md`](../../packaging/pp-node/HARD_LAB.md) — delivery [projects/hard-lab/](../../projects/hard-lab/) |
-| In-flight matrices while a project ships | `projects/<name>/TEST_MATRIX.md` (e.g. [adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md)) |
+| In-flight matrices while a project ships | `projects/<name>/TEST_MATRIX.md` (adp's left with the library: [pp-cpp-amp docs/testing/](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md)) |
 | Suite coverage ledger (behaviors ↔ gtests ↔ skips) | `src/<layer>/<module>/tests/README.md` when non-obvious |
 | Layer orientation | Optional short “Testing” blurb in `src/<layer>/README.md` linking here |
 

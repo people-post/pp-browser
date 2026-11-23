@@ -9,7 +9,7 @@ Node services and roles: what a node hosts, its DHT and directory config, its ow
 ## Docs about it
 
 - Architecture: [BUILD § Headless mesh node (`pp-node`)](../../../docs/ops/BUILD.md#headless-mesh-node-pp-node)
-- Contracts: [NODE_METRICS](../../../docs/contracts/NODE_METRICS.md)
+- Contracts: [NODE_METRICS](../../../docs/contracts/NODE_METRICS.md); the directory a node serves on the mesh: pp-cpp-mesh [MESH_DIRECTORY_AMP](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/contracts/MESH_DIRECTORY_AMP.md)
 - Projects: [p2p-mesh](../../../projects/p2p-mesh/), [hard-lab](../../../projects/hard-lab/)
 - Decisions: [CR017](../../../projects/capability-repos/DECISIONS.md#cr017--pp-node-is-an-app-the-node-capability-is-domainnode), [CR022](../../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)
 

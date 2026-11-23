@@ -2,7 +2,7 @@
 
 **Tier:** contracts  
 **Status:** Accepted design (2026-09-04) — [A028](../../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes) · [N030](../../projects/p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate)  
-**Stack:** [STACK.md](../../projects/adp/STACK.md) · L3 [AMP-CHANNEL.md](AMP-CHANNEL.md)
+**Stack:** [STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md) · L3 [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md)
 
 ## Role
 
@@ -18,7 +18,7 @@ Add a new L4 `protocol_id` **only** when the conversation contract is new:
 
 | Need a new id when… | Prefer ops / fields / composition when… |
 |---------------------|----------------------------------------|
-| Different QoS / duplex / lifetime (see [AMP-CHANNEL channel classes](AMP-CHANNEL.md#channel-classes)) | New message or envelope type |
+| Different QoS / duplex / lifetime (see [AMP-CHANNEL channel classes](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md#channel-classes)) | New message or envelope type |
 | Different security posture (E2E session vs blind hop vs opaque splice) | New codec, media channel, or frame mark |
 | Different failure model (one-shot RPC vs long-lived session machine — [V033](../../projects/p2p-av-calls/DECISIONS.md)) | New hop attach/pricing step |
 | | New NAT / reachability trick |
@@ -48,10 +48,10 @@ Namespaces: **`/pp/*`** = product conversation protocols (any PP app); **`/pp-me
 
 | Kind | Contract |
 |------|----------|
-| **identify** | After Session Established, dialer opens ch0; both sides exchange PeerId, listen multiaddrs, `protocols[]`, capability flags ([A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane)). |
+| **identify** | After Session Established, dialer opens ch0; both sides exchange PeerId, listen multiaddrs, `protocols[]`, capability flags ([A016](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a016--channel-0--capability--identify-plane)). |
 | **discover** | Control JSON with `op` discrimination (list/find/store/…). DHT and directory may keep separate ids if state machines differ; same family. |
 | **reach** | Short control probes and coordinated dial assist (dial-back, punch). Preference order stays publish → punch → circuit → fail — not parallel NAT toolkits. |
-| **circuit** | Broker opens a live opaque tunnel; bridge JSON selects `target_protocol` for the far side ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel), [A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)). Multi-hop = **ops on the same kind**, not a new family. |
+| **circuit** | Broker opens a live opaque tunnel; bridge JSON selects `target_protocol` for the far side ([A019](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a019--circuit-relay--channel-tunnel), [A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)). Multi-hop = **ops on the same kind**, not a new family. |
 | **rpc** | Reliable half-duplex (or short full) typed messages; one-shot or short exchanges — not long-lived media SMs ([V033](../../projects/p2p-av-calls/DECISIONS.md)). Envelopes, history queries, future inbox assist share this shape. |
 | **blob** | Large content by hash/meta; ciphertext or error; CDN may be secondary. Same contract for chat attachments, profile icons, documents. |
 | **realtime** | Two postures under one kind: **E2E session** (call-media bundle: Reliable control + BestEffort media) and **blind hop** (media-relay / conceptual `datagram_relay` — content-agnostic fan-out, [N021](../../projects/p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types)). |
@@ -60,7 +60,7 @@ Namespaces: **`/pp/*`** = product conversation protocols (any PP app); **`/pp-me
 
 | Current id | Kind | Notes |
 |------------|------|-------|
-| Channel 0 capability plane | **identify** | [A016](../../projects/adp/DECISIONS.md#a016--channel-0--capability--identify-plane) |
+| Channel 0 capability plane | **identify** | [A016](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a016--channel-0--capability--identify-plane) |
 | `/pp-mesh/directory/1.0.0` | **discover** | |
 | `/pp-mesh/dht/1.0.0` | **discover** | Separate id while Kademlia SM differs |
 | `/pp-mesh/reach/1.0.0` | **reach** | Dial-back probe |
@@ -88,7 +88,7 @@ Namespaces: **`/pp/*`** = product conversation protocols (any PP app); **`/pp-me
 | 1:1 / group A/V | **realtime** E2E (`call-media`) |
 | SFU / media hop / live opaque fan-out | **realtime** blind hop (`media-relay`) |
 | NAT traversal | **reach**, then direct; else **circuit** |
-| Call over NAT | **circuit** → carrier → nested Session → **realtime** E2E ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)) |
+| Call over NAT | **circuit** → carrier → nested Session → **realtime** E2E ([A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)) |
 | Phone book / PeerId routing | **discover** |
 | SoftMigrate attach | Existing **realtime** hop control ops ([N026](../../projects/p2p-mesh/DECISIONS.md#n026--media_relay-per-stream-attach-state-machine)) |
 
@@ -107,7 +107,7 @@ Cheap forward-compat: identify capability bits (`blob_pieces`, `blob_provide`, `
 
 ## Behavior matrix (as implemented)
 
-Dimensions below describe **conversation behavior** on the OPEN, not delivery path (direct / punch / circuit / HTTP). Channel-class and policy details: [AMP-CHANNEL.md](AMP-CHANNEL.md).
+Dimensions below describe **conversation behavior** on the OPEN, not delivery path (direct / punch / circuit / HTTP). Channel-class and policy details: [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md).
 
 ### App / product conversations
 
@@ -162,6 +162,6 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 ## Related
 
 - [NETWORKING.md](../architecture/NETWORKING.md) — HTTP + Amp doctrine  
-- [AMP-CHANNEL.md](AMP-CHANNEL.md) — L3 classes and OPEN `protocol_id`  
+- [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md) — L3 classes and OPEN `protocol_id`  
 - [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md) — envelope / history payloads  
 - [RELAY_SCOPE.md](../../projects/p2p-mesh/RELAY_SCOPE.md) — relay roles (not new kinds)  

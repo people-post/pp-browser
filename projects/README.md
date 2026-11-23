@@ -64,7 +64,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment/discovery scenarios (Wave 1–3 partial scaffold) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |
 | [multi-device-account](multi-device-account/) | Account ID, shared DEK, link-device |
-| [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |
+| [adp](adp/) | The app's move onto the Amp stack (mesh underlay); the stack's own docs are in [pp-cpp-amp](https://github.com/people-post/pp-cpp-amp/blob/main/README.md#docs) |
 | [feature-layer-reorg](feature-layer-reorg/) | `app → feature → domain → …` cleanup |
 | [group-chat](group-chat/) | Group threads: signed roster, member check, mentions (G015) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
