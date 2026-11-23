@@ -106,4 +106,20 @@ inline bool IsLocalActionMessage(const ThreadMessage& message) {
   return message.generation && *message.generation == kLocalActionGeneration;
 }
 
+/**
+ * `ThreadMessage::generation` of a news item read in an AI conversation (DEV/PLAN-news-inline-digest.md): the request
+ * (the item's URL and a fixed sentence), the faithful digest of the article, and the "could not be read" answer. Never
+ * shown in the chat (the digest shows in the reader sheet), never a preview, an unread count or the chat's name; they
+ * stay in the history sent to the model, so a follow-up knows what was read.
+ */
+inline constexpr const char* kNewsRequestGeneration = "news_request";
+inline constexpr const char* kNewsDigestGeneration = "news_digest";
+inline constexpr const char* kNewsFailedGeneration = "news_failed";
+
+inline bool IsHiddenNewsMessage(const ThreadMessage& message) {
+  return message.generation &&
+         (*message.generation == kNewsRequestGeneration || *message.generation == kNewsDigestGeneration ||
+          *message.generation == kNewsFailedGeneration);
+}
+
 } // namespace pbr

@@ -1039,7 +1039,7 @@ private:
   std::optional<PendingReply> pending_reply_;
 
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
-  std::map<std::string, std::vector<std::string>> chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
