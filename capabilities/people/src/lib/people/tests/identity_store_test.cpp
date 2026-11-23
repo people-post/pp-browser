@@ -563,6 +563,20 @@ TEST_F(IdentityStoreUnopenableTest, ANewerAppsIdentityAsksForAnUpdate) {
   EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::Newer));
 }
 
+// A newer app's envelope (its version byte above this build's): "update PP", never the wipe.
+TEST_F(IdentityStoreUnopenableTest, ANewerEnvelopeAsksForAnUpdate) {
+  Object current;
+  current.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
+  const std::string json = DumpJson(current, 2);
+  auto ciphertext = FileCipher::Encrypt(MakeTestDek(), ByteVector(json.begin(), json.end()),
+                                        FileCipher::BuildAad("identity", "test-profile"));
+  ASSERT_TRUE(static_cast<bool>(ciphertext));
+  ByteVector bytes = *ciphertext;
+  bytes[0] = static_cast<uint8_t>(kEncryptedPayloadVersion + 1);
+  WriteIdentityFile(bytes);
+  EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::Newer));
+}
+
 TEST_F(IdentityStoreUnopenableTest, AnIdentityUnderAnotherKeyCannotBeOpened) {
   Object current;
   current.set("schema_version", static_cast<int64_t>(IdentityStore::kSchemaVersion));
@@ -571,7 +585,9 @@ TEST_F(IdentityStoreUnopenableTest, AnIdentityUnderAnotherKeyCannotBeOpened) {
 }
 
 TEST_F(IdentityStoreUnopenableTest, ADamagedIdentityFileCannotBeOpened) {
-  WriteIdentityFile(ByteVector(200, 0x5c));
+  ByteVector damaged(200, 0x5c);
+  damaged[0] = kEncryptedPayloadVersion; // this build's envelope, a body that does not open (a higher byte: "newer")
+  WriteIdentityFile(damaged);
   EXPECT_EQ(ProblemOnLoad(), std::optional(ProfileOpenProblem::CannotOpen));
 }
 

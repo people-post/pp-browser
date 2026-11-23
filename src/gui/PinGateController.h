@@ -164,6 +164,8 @@ private:
   bool ChoiceTooSoon() const;
   /** The start-over confirm came from the problem page (else from the unlock door's "Forgot PIN?"). */
   bool start_over_from_problem_ = false;
+  /** This confirm's "Start over" was sent (OnStartOverConfirm): a second delivery of the tap does nothing. */
+  bool start_over_sent_ = false;
   bool link_flow_ = false;
   /** Within the link flow: the paste page takes a recovery phrase (M023), not a transfer code. */
   bool phrase_flow_ = false;
