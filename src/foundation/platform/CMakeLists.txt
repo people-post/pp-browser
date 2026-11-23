@@ -275,6 +275,25 @@ target_compile_definitions(pp_foundation_platform_core PRIVATE
   PP_RELAY_ID_PROD="${PP_RELAY_ID_PROD}"
   PP_RELAY_ID_STAGING="${PP_RELAY_ID_STAGING}"
   PP_RELAY_ID_DEV="${PP_RELAY_ID_DEV}")
+# A tester build (release-compatibility RC022): an internal/<n> TestFlight upload, a tester APK, a desktop tester
+# package. It shares the store app's data on a phone, so it never offers or opens production: CMake refuses a prod
+# origin and a prod relay id in it, compiles no prod certificate, and the app never runs prod or opens a `prod` /
+# `custom-…` profile (DeploymentProfile.h BuildKind). OFF: a store build (release, release candidate) or a developer's.
+option(PP_TESTER_BUILD "Tester build: no production backend, tester profiles only (release-compatibility RC022)" OFF)
+if(PP_TESTER_BUILD)
+  if(PP_BROWSER_UI_DEMO)
+    message(FATAL_ERROR "PP_TESTER_BUILD is ON: the UI demo app is a developer build of its own, not a tester build")
+  endif()
+  if(NOT "${PP_API_URL_PROD}" STREQUAL "")
+    message(FATAL_ERROR "PP_TESTER_BUILD is ON: a tester build compiles no prod origin (PP_API_URL_PROD). Configure it "
+                        "with -DPP_API_URL_PROD= and staging / dev origins only (release-compatibility RC022).")
+  endif()
+  if(NOT "${PP_RELAY_ID_PROD}" STREQUAL "" AND NOT "${PP_RELAY_ID_PROD}" STREQUAL "pending")
+    message(FATAL_ERROR "PP_TESTER_BUILD is ON: a tester build compiles no prod relay id (PP_RELAY_ID_PROD). Leave it "
+                        "pending (-DPP_RELAY_ID_PROD=pending; release-compatibility RC022).")
+  endif()
+  target_compile_definitions(pp_foundation_platform_core PRIVATE PP_TESTER_BUILD=1)
+endif()
 
 # Each environment's newest relay certificate at build time (SIGNED_FORMATS § 3.5, Q10): the floor a fresh install
 # starts from, so it knows the audience before its first fetch and never goes below it. A file holds the certificate's
@@ -312,7 +331,11 @@ function(pp_browser_relay_certificate_literal file out_var)
   endwhile()
   set(${out_var} "${_literal}" PARENT_SCOPE)
 endfunction()
-pp_browser_relay_certificate_literal("${PP_RELAY_CERT_FILE_PROD}" _relay_cert_prod)
+if(PP_TESTER_BUILD)
+  set(_relay_cert_prod "\"\"") # a tester build compiles no prod certificate (RC022)
+else()
+  pp_browser_relay_certificate_literal("${PP_RELAY_CERT_FILE_PROD}" _relay_cert_prod)
+endif()
 pp_browser_relay_certificate_literal("${PP_RELAY_CERT_FILE_STAGING}" _relay_cert_staging)
 pp_browser_relay_certificate_literal("${PP_RELAY_CERT_FILE_DEV}" _relay_cert_dev)
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/CompiledRelayCertificates.inc" CONTENT

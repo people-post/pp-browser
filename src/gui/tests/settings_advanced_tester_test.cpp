@@ -101,7 +101,8 @@ protected:
     host().UiState().show_advanced_settings = "off";
     host().UiState().show_tester_options = "off";
     host().UiState().backend_env = "prod";
-    host().UiState().backend_staging_available = true; // a build with staging and dev addresses
+    host().UiState().backend_prod_available = true; // a store build with staging and dev addresses
+    host().UiState().backend_staging_available = true;
     host().UiState().backend_dev_available = true;
     host().PushToView(false);
 
@@ -230,6 +231,10 @@ protected:
 };
 
 TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwayFromProd) {
+  if (!BackendAvailable(BackendEnv::Prod)) {
+    GTEST_SKIP() << "a tester build has no prod (release-compatibility RC022): a saved \"prod\" runs as its tester "
+                    "environment, and stays saved (SharedRootFilesTest)";
+  }
   ExpectSwitchesLeaveTheSavedServiceAlone("prod");
 }
 
@@ -250,6 +255,26 @@ TEST_F(SettingsAdvancedTesterServiceTest, TheSwitchesNeverMoveTheSavedServiceAwa
     GTEST_SKIP() << "this build has no dev address (-DPP_API_URL_DEV), so a saved \"dev\" is read as \"prod\"";
   }
   ExpectSwitchesLeaveTheSavedServiceAlone("dev");
+}
+
+// Release-compatibility RC022: a tester build's row never lists Production, with the tester options off or on; its
+// staging / dev are listed without them (there is no prod to keep a store user on).
+TEST_F(SettingsAdvancedTesterTest, ATesterBuildsServiceRowNeverListsProduction) {
+  host().UiState().backend_prod_available = false;
+  host().UiState().backend_env = "staging";
+  host().PushToView(false);
+  ASSERT_EQ(Text("tst"), "0");
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"staging", "dev", "custom"}));
+  Click("toggle_adv");
+  for (int i = 0; i < 5; ++i) {
+    Click("version");
+  }
+  ASSERT_EQ(Text("tst"), "1");
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"staging", "dev", "custom"}));
+  host().UiState().backend_staging_available = false;
+  host().UiState().backend_dev_available = false;
+  host().PushToView(false);
+  EXPECT_EQ(ServiceIds(), (std::vector<std::string>{"custom"})) << "neither compiled: a custom backend only";
 }
 
 TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExactlyCustom) {
@@ -698,7 +723,11 @@ TEST_F(SettingsRealViewTest, ResettingTheCustomAddressesClosesThePageAndCancelli
 // platform has no quit, says to reopen and pins a banner); cancelling keeps the original; the same environment says nothing.
 TEST_F(SettingsRealViewTest, PickingAnotherServiceAsksToConfirmThenSavesAndQuits) {
   ResetActiveBackendForTest();
-  LatchActiveBackend(BackendEnv::Prod); // the service this "run" is on
+  LatchActiveBackend(BackendEnv::Prod); // the service this "run" is on: prod, or a tester build's staging / dev (RC022)
+  const std::string running = BackendEnvName(ActiveBackend());
+  ASSERT_NE(running, "custom") << "this test needs a compiled environment to switch away from";
+  host().UiState().backend_prod_available = BackendAvailable(BackendEnv::Prod); // this build's row
+  host().PushToView(false);
   struct Confirm {
     std::string title, message, ok;
     std::function<void(bool)> answer;
@@ -744,13 +773,17 @@ TEST_F(SettingsRealViewTest, PickingAnotherServiceAsksToConfirmThenSavesAndQuits
     RealClick(rows[index]);
   };
 
-  pick("prod"); // already the one selected
+  pick(running.c_str()); // already the one selected
   EXPECT_TRUE(confirms.empty());
 
   pick("custom");
   ASSERT_EQ(confirms.size(), 1u);
-  EXPECT_EQ(confirms[0].message,
-            "You are switching the relay from Production to Custom. The app must restart for this to take effect.");
+  EXPECT_EQ(confirms[0].message, "You are switching the relay from " + Tr("settings.network.backend." + running) +
+                                     " to Custom. The app must restart for this to take effect.");
+  if (running == "prod") {
+    EXPECT_EQ(confirms[0].message,
+              "You are switching the relay from Production to Custom. The app must restart for this to take effect.");
+  }
   EXPECT_EQ(confirms[0].ok, "Yes");
   EXPECT_NE(store.Snapshot().config.backend.env, "custom") << "nothing is saved before the answer";
 

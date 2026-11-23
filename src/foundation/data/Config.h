@@ -37,7 +37,15 @@ struct SearchConfig {
  * saved in the config file. A change applies on the next start.
  */
 struct BackendConfig {
+  /** The backend this config runs (ResolveLatchedBackend of the saved choice): one this build can run. */
   std::string env = "prod";
+  /**
+   * `backend.env` as the file names it when this build cannot run it ("" otherwise): a tester build reading `prod`, a
+   * store build reading `staging`. A save writes it back, so the saved choice is never rewritten just because this build
+   * runs another (a store build after a tester build still finds `prod`, release-compatibility RC022); only a user's
+   * switch (ApplyNetworkSettingsDraft) replaces it.
+   */
+  std::string unavailable_env;
   /**
    * The relay / directory / registration URLs as saved in the file, kept when the loaded values were
    * replaced by an origin (prod / staging / dev / PP_BROWSER_ORIGIN) so a save does not overwrite the custom URLs.

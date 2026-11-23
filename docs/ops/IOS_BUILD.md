@@ -275,6 +275,8 @@ push vX.Y.Z-rc.<n> on release/app-X.Y           (release.yml calls this workflow
   → version X.Y.Z exactly → ios_build.sh ipa → upload-ipa → tag rc-build/<build number>
 ```
 
+A dev build is a **tester build** (`PP_TESTER_BUILD=ON`: staging and dev, no prod; it never opens the App Store app's production profiles in the shared container — [BUILD § Backend origin](BUILD.md#backend-origin)); a candidate is a store build (prod only, `PP_TESTER_BUILD=OFF`).
+
 Defaults: a dev build's marketing version is `PP_BROWSER_VERSION` in `CMakeLists.txt`; a candidate's is its tag's X.Y.Z. The build number is one counter for both: the next after the highest `internal/<n>` or `rc-build/<n>` tag (and after 143, the last upload before builds were tagged); a `build_number` override that is already a tag is refused. The tag is made only after the upload succeeded, so `TestFlight X.Y.Z (<n>)` maps to one commit.
 
 ### Repository secrets

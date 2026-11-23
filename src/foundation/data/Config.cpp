@@ -67,6 +67,8 @@ AppConfig Config::DefaultAppConfig(const bool ui_demo) {
 
 AppConfig Config::DefaultAppConfigFor(const std::string& origin, const bool ui_demo) {
   AppConfig config = PlatformDefaults::For(Platform::Detect(), origin);
+  // With no saved choice a build runs its fallback: prod in a store build, never prod in a tester build.
+  config.backend.env = BackendEnvName(FallbackBackendIn(BuildCompiledOrigins()));
   NormalizeMeshConfig(config.mesh);
   if (ui_demo) {
     ApplyUiDemoConfig(config);
@@ -145,9 +147,12 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path, const bool ui_demo)
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(ui_demo), *root);
-  config.backend.env =
-      BackendEnvName(ResolveLatchedBackend(ParseBackendEnv(config.backend.env), BuildCompiledOrigins()));
-  LatchActiveBackend(ParseBackendEnv(config.backend.env));
+  // The run's backend is one this build can run; the saved choice stays as the file has it (unavailable_env).
+  const BackendEnv saved_env = ParseBackendEnv(config.backend.env);
+  const BackendEnv runs_env = ResolveLatchedBackend(saved_env, BuildCompiledOrigins());
+  config.backend.unavailable_env = runs_env == saved_env ? std::string() : std::string(BackendEnvName(saved_env));
+  config.backend.env = BackendEnvName(runs_env);
+  LatchActiveBackend(runs_env);
   if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
     ApplyBackendOverride(config);
   }

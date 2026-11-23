@@ -51,7 +51,13 @@ TEST(DeploymentProfileTest, TrailingSlashIsTrimmed) {
 
 TEST(DeploymentProfileTest, EmptyEnvFallsBackToCompiledDefault) {
   ScopedOrigin origin("");
-  EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledDefaultOrigin()));
+  pbr::ResetActiveBackendForTest();
+  const pbr::CompiledOrigins compiled = pbr::BuildCompiledOrigins();
+  // No latch: the build's fallback — prod in a store build, the tester environment in a tester build.
+  EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledOriginFor(pbr::FallbackBackendIn(compiled), compiled)));
+  if (!pbr::IsTesterBuild()) {
+    EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledDefaultOrigin()));
+  }
 }
 
 // Compile-time origins as each build variant has them: the decisions take them as inputs, so every variant runs here.
@@ -211,4 +217,132 @@ TEST(DeploymentProfileTest, TheOrgRelayIsTakenOnFirstUseOnlyInDeveloperBuildsOrO
   EXPECT_TRUE(pbr::OrgRelayFirstUseAllowed(true, false)) << "a developer build's custom backend";
   EXPECT_TRUE(pbr::OrgRelayFirstUseAllowed(false, true)) << "a dogfood build's compiled backend, warned";
   EXPECT_FALSE(pbr::OrgRelayFirstUseAllowed(false, false)) << "a release build's custom backend: not used";
+}
+
+// Release-compatibility RC022: a tester build (PP_TESTER_BUILD) shares the store app's data on a phone, so it never
+// offers, runs or resolves to prod — whatever the compiled origins hold — and a store build is unchanged.
+namespace {
+
+constexpr pbr::CompiledOrigins kTesterAll{.staging = "https://staging.example.test",
+                                          .dev = "https://dev.example.test",
+                                          .staging_relay_id = "relay:staging",
+                                          .dev_relay_id = "relay:dev",
+                                          .staging_relay_certificate = "c3RhZ2luZw==",
+                                          .dev_relay_certificate = "ZGV2",
+                                          .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterDevOnly{
+    .dev = "https://dev.example.test", .dev_relay_id = "relay:dev", .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterNone{.kind = pbr::BuildKind::Tester};
+// A tester build's struct that names prod anyway (CMake refuses that build): still never prod.
+constexpr pbr::CompiledOrigins kTesterWithProdNamed{.prod = "https://prod.example.test",
+                                                    .staging = "https://staging.example.test",
+                                                    .prod_relay_id = "relay:prod",
+                                                    .staging_relay_id = "relay:staging",
+                                                    .prod_relay_certificate = "cHJvZA==",
+                                                    .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kStoreAll{.prod = "https://prod.example.test",
+                                         .staging = "https://staging.example.test",
+                                         .dev = "https://dev.example.test",
+                                         .prod_relay_id = "relay:prod",
+                                         .staging_relay_id = "relay:staging",
+                                         .dev_relay_id = "relay:dev",
+                                         .prod_relay_certificate = "cHJvZA=="};
+
+constexpr pbr::BackendEnv kAllEnvs[] = {pbr::BackendEnv::Prod, pbr::BackendEnv::Staging, pbr::BackendEnv::Dev,
+                                        pbr::BackendEnv::Custom};
+
+} // namespace
+
+TEST(DeploymentProfileTesterBuildTest, ProductionIsNeverAvailableNorCompiledInATesterBuild) {
+  for (const pbr::CompiledOrigins& compiled : {kTesterAll, kTesterDevOnly, kTesterNone, kTesterWithProdNamed}) {
+    EXPECT_FALSE(pbr::BackendAvailableIn(pbr::BackendEnv::Prod, compiled));
+    EXPECT_STREQ(pbr::CompiledOriginFor(pbr::BackendEnv::Prod, compiled), "");
+    EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Custom, compiled));
+  }
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Staging, kTesterAll));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Dev, kTesterAll));
+  EXPECT_FALSE(pbr::BackendAvailableIn(pbr::BackendEnv::Staging, kTesterDevOnly));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Prod, kStoreAll)) << "a store build: as before";
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Prod, kNoOrigins)) << "a store build with no origin";
+}
+
+TEST(DeploymentProfileTesterBuildTest, ATesterBuildFallsBackToStagingThenDevThenCustomNeverProd) {
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterAll), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterDevOnly), pbr::BackendEnv::Dev);
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterNone), pbr::BackendEnv::Custom) << "neither compiled: a custom backend only";
+  EXPECT_EQ(pbr::FallbackBackendIn(kStoreAll), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::FallbackBackendIn(kNoOrigins), pbr::BackendEnv::Prod);
+
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kTesterAll), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kTesterDevOnly), pbr::BackendEnv::Dev);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kTesterDevOnly), pbr::BackendEnv::Dev);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kTesterNone), pbr::BackendEnv::Custom);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kTesterNone), pbr::BackendEnv::Custom);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kTesterWithProdNamed), pbr::BackendEnv::Staging);
+  for (const pbr::BackendEnv env : {pbr::BackendEnv::Staging, pbr::BackendEnv::Dev, pbr::BackendEnv::Custom}) {
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kTesterAll), env) << "what it can run, it runs";
+  }
+  for (const pbr::CompiledOrigins& compiled : {kTesterAll, kTesterDevOnly, kTesterNone, kTesterWithProdNamed}) {
+    for (const pbr::BackendEnv env : kAllEnvs) {
+      EXPECT_NE(pbr::ResolveLatchedBackend(env, compiled), pbr::BackendEnv::Prod);
+    }
+  }
+  // A store build, as before: what it cannot run is prod.
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kProdOnly), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kStoreAll), pbr::BackendEnv::Prod);
+}
+
+TEST(DeploymentProfileTesterBuildTest, ATesterBuildsOriginIsNeverProds) {
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterAll),
+            "https://staging.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly),
+            "https://dev.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterNone), "");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Dev, kTesterAll), "https://dev.example.test");
+  for (const pbr::BackendEnv env : kAllEnvs) {
+    EXPECT_NE(pbr::ResolveBriefOrigin(false, nullptr, env, kTesterWithProdNamed), "https://prod.example.test");
+  }
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAll), "https://prod.example.test")
+      << "a store build's custom backend keeps prod's origin for the org's services";
+}
+
+// Store builds give a custom backend prod's org relay identity; a tester build the tester environment's, or none.
+TEST(DeploymentProfileTesterBuildTest, ATesterBuildsCustomBackendNeverGetsProdsOrgRelayIdentity) {
+  const auto custom = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterAll);
+  EXPECT_EQ(custom.relay_id, "relay:staging");
+  EXPECT_EQ(custom.certificate_b64, "c3RhZ2luZw==");
+  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly).relay_id,
+            "relay:dev");
+  const auto none = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterNone);
+  EXPECT_TRUE(none.relay_id.empty() && none.certificate_b64.empty()) << "no tester environment: none";
+  for (const pbr::BackendEnv env : kAllEnvs) {
+    const auto identity = pbr::ResolveOrgRelayIdentity(false, nullptr, env, kTesterWithProdNamed);
+    EXPECT_NE(identity.relay_id, "relay:prod");
+    EXPECT_NE(identity.certificate_b64, "cHJvZA==");
+  }
+  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Staging, kTesterAll).relay_id,
+            "relay:staging");
+  const auto store_custom = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kStoreAll);
+  EXPECT_EQ(store_custom.relay_id, "relay:prod") << "a store build: as before";
+  EXPECT_EQ(store_custom.certificate_b64, "cHJvZA==");
+}
+
+// This build's own facts follow its kind (the ctest run with -DPP_TESTER_BUILD=ON checks the tester side).
+TEST(DeploymentProfileTesterBuildTest, ThisBuildsCompiledOriginsCarryItsKind) {
+  const pbr::CompiledOrigins compiled = pbr::BuildCompiledOrigins();
+  EXPECT_EQ(compiled.kind, pbr::ThisBuildKind());
+  EXPECT_EQ(pbr::IsTesterBuild(), pbr::ThisBuildKind() == pbr::BuildKind::Tester);
+  EXPECT_EQ(pbr::BackendAvailable(pbr::BackendEnv::Prod), !pbr::IsTesterBuild());
+  pbr::ResetActiveBackendForTest();
+  if (pbr::IsTesterBuild()) {
+    EXPECT_STREQ(pbr::CompiledDefaultOrigin(), "") << "CMake refuses a prod origin in a tester build";
+    EXPECT_STREQ(pbr::CompiledDefaultRelayCertificate(), "");
+    EXPECT_FALSE(pbr::CompiledDefaultRelayId()[0] == 'r') << "no prod relay id: pending or none";
+    EXPECT_NE(pbr::ActiveBackend(), pbr::BackendEnv::Prod) << "not even before the latch";
+    pbr::LatchActiveBackend(pbr::BackendEnv::Prod);
+    EXPECT_NE(pbr::ActiveBackend(), pbr::BackendEnv::Prod);
+  } else {
+    EXPECT_EQ(pbr::ActiveBackend(), pbr::BackendEnv::Prod);
+  }
+  pbr::ResetActiveBackendForTest();
 }

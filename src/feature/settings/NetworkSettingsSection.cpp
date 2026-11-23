@@ -26,6 +26,7 @@ SettingsFlushMode NetworkSettingsSection::FlushMode() const {
 
 void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.backend_env = bootstrap.config.backend.env;
+  state.backend_prod_available = BackendAvailable(BackendEnv::Prod);
   state.backend_staging_available = BackendAvailable(BackendEnv::Staging);
   state.backend_dev_available = BackendAvailable(BackendEnv::Dev);
   state.backend_restart_pending = ParseBackendEnv(state.backend_env) != ActiveBackend();

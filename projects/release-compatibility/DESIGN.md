@@ -371,8 +371,9 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
   prod relay alone; Me → Network offers prod and a custom server, as Leo asked, and no Staging row reaches store
   users. Testers reach staging on a candidate through a custom relay link (`https://…#<PeerId>`), which release
   builds accept when the link names the PeerId ([CONFIGURATION](../../docs/ops/CONFIGURATION.md)); the binary they
-  tested is the one prod users get. Dev builds compile in prod and staging and switch in Me → Network
-  (`backend.env`).
+  tested is the one prod users get. Dev (tester) builds compile in staging and dev, never prod, and switch in
+  Me → Network (`backend.env`): they share the store app's data container, so they never open a production profile
+  ([RC022](DECISIONS.md#rc022--tester-builds-never-touch-production-profiles-hard-guard)).
 - **Hotfixes** take the same path from their release branch. A security fix may go from internal testers straight
   to the store with an expedited review, skipping external testers.
 - **Store releases are phased.** The App Store's 7-day phased release (and a staged rollout on Play) is used for

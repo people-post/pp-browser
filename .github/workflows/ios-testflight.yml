@@ -4,7 +4,9 @@ name: ios-testflight
 # in build.yml. Two ways in (release-compatibility DESIGN § App builds, docs/ops/RELEASE.md):
 #
 # - By hand (Actions → ios-testflight → Run workflow, any branch or tag): a dev build for internal testers, never
-#   promoted. After the upload succeeds the built commit is tagged internal/<build number>.
+#   promoted. After the upload succeeds the built commit is tagged internal/<build number>. It is a tester build
+#   (PP_TESTER_BUILD=ON, release-compatibility RC022): staging and dev only, no prod — it shares the App Store app's
+#   data container, so it never offers or opens production.
 # - From release.yml (workflow_call) for a release candidate tag vX.Y.Z-rc.<n> on release/app-X.Y: built with its
 #   final version X.Y.Z (only the build number differs between candidates). After the upload succeeds the commit is
 #   tagged rc-build/<build number>.
@@ -254,17 +256,21 @@ jobs:
           # About and diagnostics name the build (GenBuildInfo.cmake): the candidate tag, else internal/<build number>.
           PP_BUILD_TAG: ${{ inputs.candidate_tag || steps.ver.outputs.tag }}
           PP_BUILD_COMMIT: ${{ steps.ver.outputs.commit }}
-          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          # A release candidate is a store build: prod only (RC015). A hand-run build is a tester build: staging and
+          # dev only, never prod (RC022; CMake refuses a prod origin or relay id with PP_TESTER_BUILD=ON).
+          PP_TESTER_BUILD: ${{ inputs.candidate_tag == '' && 'ON' || 'OFF' }}
+          PP_API_URL_PROD: ${{ inputs.candidate_tag != '' && (secrets.PP_API_URL_PROD) || '' }}
           PP_API_URL_STAGING: ${{ inputs.candidate_tag == '' && (secrets.PP_API_URL_STAGING) || '' }}
           PP_API_URL_DEV: ${{ inputs.candidate_tag == '' && (secrets.PP_API_URL_DEV) || '' }}
-          PP_RELAY_ID_PROD: ${{ vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD }}
+          PP_RELAY_ID_PROD: ${{ inputs.candidate_tag != '' && (vars.PP_RELAY_ID_PROD || secrets.PP_RELAY_ID_PROD) || '' }}
           PP_RELAY_ID_STAGING: ${{ inputs.candidate_tag == '' && (vars.PP_RELAY_ID_STAGING || secrets.PP_RELAY_ID_STAGING) || '' }}
           PP_RELAY_ID_DEV: ${{ inputs.candidate_tag == '' && (vars.PP_RELAY_ID_DEV || secrets.PP_RELAY_ID_DEV) || '' }}
           PP_RELAY_CONTENT_SHA256: ${{ vars.PP_RELAY_CONTENT_SHA256 }}
         run: |
           set -euo pipefail
-          # A release candidate compiles prod only (RC015) and needs its id and certificate; a tester build also compiles
-          # staging and dev, and an environment whose operator set is not made yet stays unusable (fails closed).
+          # A release candidate compiles prod only (RC015) and needs its id and certificate; a tester build compiles
+          # staging and dev only (RC022), and an environment whose operator set is not made yet stays unusable (fails
+          # closed).
           if [[ -n "${{ inputs.candidate_tag }}" ]]; then
             ./scripts/check/check_relay_ids.sh release
           else
@@ -298,7 +304,7 @@ jobs:
             if [[ -n "${CANDIDATE_TAG}" ]]; then
               echo "| Build | release candidate \`${CANDIDATE_TAG}\` |"
             else
-              echo "| Build | dev build (internal testers only; never promoted) |"
+              echo "| Build | tester build (internal testers only; staging and dev, no prod; never promoted) |"
             fi
             echo "| Tag | \`${{ steps.ver.outputs.tag }}\` (next job) |"
             echo ""

@@ -19,6 +19,14 @@ def ppBrowserCmakeArgs = [
 // UI demo app (plan DEV/PLAN-ui-demo-data.md): ./gradlew assembleRelease -PppBrowserUiDemo=true with
 // PP_BROWSER_DEV_TOOLS=1. A separate app (applicationIdSuffix) with fake data and no backend address.
 def ppBrowserUiDemo = (project.findProperty('ppBrowserUiDemo') ?: 'false').toString() == 'true'
+// A tester build (release-compatibility RC022): PP_TESTER_BUILD=ON. It shares the store app's package and data, so it
+// compiles no prod (CMake refuses PP_API_URL_PROD / a PP_RELAY_ID_PROD relay id with it) and never opens the store app's
+// profiles. Always passed, so a reused .cxx configure never keeps an earlier kind. Unset: OFF (a store or developer build).
+def ppTesterBuild = (System.getenv('PP_TESTER_BUILD') ?: 'OFF').toUpperCase()
+if (ppTesterBuild != 'ON' && ppTesterBuild != 'OFF') {
+    throw new GradleException("PP_TESTER_BUILD must be ON or OFF (got '${System.getenv('PP_TESTER_BUILD')}')")
+}
+ppBrowserCmakeArgs += ["-DPP_TESTER_BUILD=${ppTesterBuild}"]
 def ppApiUrlProd = System.getenv('PP_API_URL_PROD') ?: ''
 if (ppApiUrlProd && !ppBrowserUiDemo) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_PROD=${ppApiUrlProd}"]

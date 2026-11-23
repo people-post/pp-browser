@@ -116,13 +116,16 @@ constexpr const char* kBackendProdConfig = R"({
 
 } // namespace
 
+// Prod in a store build; a tester build's fallback (staging, else dev, else custom) — never prod (release-compatibility
+// RC022).
 TEST(ConfigBackendTest, BackendEnvParsesAndDefaultsToProd) {
   pbr::ResetActiveBackendForTest();
   ScopedOrigin origin(nullptr);
   const std::string path = WriteConfig("pp_browser_config_backend_default.json", R"({"config_version": 1})");
   auto loaded = pbr::Config::LoadFromFile(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
-  EXPECT_EQ(loaded->backend.env, "prod");
+  EXPECT_EQ(loaded->backend.env, pbr::BackendEnvName(pbr::FallbackBackendIn(pbr::BuildCompiledOrigins())));
+  EXPECT_EQ(loaded->backend.env == "prod", !pbr::IsTesterBuild());
   std::filesystem::remove(path);
   pbr::ResetActiveBackendForTest();
 }
@@ -263,7 +266,8 @@ TEST(ConfigBackendTest, ReloadAfterChoosingAnotherBackendKeepsTheLatchedOne) {
   auto loaded = pbr::Config::LoadFromFile(switched);
   ASSERT_TRUE(static_cast<bool>(loaded));
   EXPECT_EQ(loaded->backend.env, "custom") << "the pick is kept for the next start";
-  EXPECT_EQ(pbr::ActiveBackend(), pbr::BackendEnv::Prod) << "this run keeps its backend";
+  EXPECT_EQ(pbr::ActiveBackend(), pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, pbr::BuildCompiledOrigins()))
+      << "this run keeps its backend";
   EXPECT_EQ(loaded->relay.base_url, pbr::BriefRelayBaseUrl());
   std::filesystem::remove(path);
   std::filesystem::remove(switched);

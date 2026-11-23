@@ -28,6 +28,8 @@ struct SettingsUiState {
   std::vector<McpServerUiState> mcp_servers;
   /** Backend picked in Me -> Network: prod | staging | dev | custom (config `backend.env`). */
   std::string backend_env = "prod";
+  /** False in a tester build (release-compatibility RC022): Production is not offered. */
+  bool backend_prod_available = true;
   /** False when the build has no staging / dev origin: that choice is not offered. */
   bool backend_staging_available = false;
   bool backend_dev_available = false;

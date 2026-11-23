@@ -669,7 +669,8 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("search", SearchConfigToObject(config.search));
   object.set("context", ContextBudgetToObject(config.context));
   Object backend;
-  backend.set("env", config.backend.env);
+  // The saved choice as the file had it when this build runs another (BackendConfig::unavailable_env).
+  backend.set("env", config.backend.unavailable_env.empty() ? config.backend.env : config.backend.unavailable_env);
   object.set("backend", backend);
   const bool saved = config.backend.has_saved_urls;
   Object relay = ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay);
