@@ -327,6 +327,106 @@ TEST(DeploymentProfileTesterBuildTest, ATesterBuildsCustomBackendNeverGetsProdsO
   EXPECT_EQ(store_custom.certificate_b64, "cHJvZA==");
 }
 
+// A tester build offers and starts only on an environment it can use: compiled, and its relay id not the placeholder
+// (its operator set not made yet: that relay is refused, so account setup there fails with no way out). Store builds
+// ignore the relay ids here (release-compatibility RC022).
+namespace {
+
+constexpr pbr::CompiledOrigins kTesterStagingPendingDevSet{.staging = "https://staging.example.test",
+                                                           .dev = "https://dev.example.test",
+                                                           .staging_relay_id = pbr::kPendingRelayId,
+                                                           .dev_relay_id = "relay:dev",
+                                                           .dev_relay_certificate = "ZGV2",
+                                                           .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterBothSet{.staging = "https://staging.example.test",
+                                              .dev = "https://dev.example.test",
+                                              .staging_relay_id = "relay:staging",
+                                              .dev_relay_id = "relay:dev",
+                                              .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterBothPending{.staging = "https://staging.example.test",
+                                                  .dev = "https://dev.example.test",
+                                                  .staging_relay_id = pbr::kPendingRelayId,
+                                                  .dev_relay_id = pbr::kPendingRelayId,
+                                                  .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterStagingSetDevPending{.staging = "https://staging.example.test",
+                                                           .dev = "https://dev.example.test",
+                                                           .staging_relay_id = "relay:staging",
+                                                           .dev_relay_id = pbr::kPendingRelayId,
+                                                           .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kStoreAllPending{.prod = "https://prod.example.test",
+                                                .staging = "https://staging.example.test",
+                                                .dev = "https://dev.example.test",
+                                                .prod_relay_id = pbr::kPendingRelayId,
+                                                .staging_relay_id = pbr::kPendingRelayId,
+                                                .dev_relay_id = pbr::kPendingRelayId};
+
+} // namespace
+
+TEST(DeploymentProfileUsableEnvTest, AFreshTesterBuildStartsOnTheFirstUsableEnvironment) {
+  // A fresh install runs the fallback (Config::DefaultAppConfigFor, the latch before any config).
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterStagingPendingDevSet), pbr::BackendEnv::Dev) << "staging pending: dev";
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterBothSet), pbr::BackendEnv::Staging) << "both set: staging first";
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterStagingSetDevPending), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::FallbackBackendIn(kTesterBothPending), pbr::BackendEnv::Custom) << "none usable: custom only";
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterBothPending), "")
+      << "custom only: no compiled origin for the org's services";
+  const auto none = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterBothPending);
+  EXPECT_TRUE(none.relay_id.empty() && none.certificate_b64.empty());
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kTesterStagingPendingDevSet), pbr::BackendEnv::Dev)
+      << "a store build's saved prod, read by a tester build";
+}
+
+TEST(DeploymentProfileUsableEnvTest, ASavedChoiceATesterBuildCannotUseRunsTheFirstUsableOne) {
+  // The user's half-done Staging setup: the saved choice stays (Config: unavailable_env), the run is Dev's.
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kTesterStagingPendingDevSet), pbr::BackendEnv::Dev);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Dev, kTesterStagingPendingDevSet), pbr::BackendEnv::Dev);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Dev, kTesterStagingSetDevPending), pbr::BackendEnv::Staging);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Staging, kTesterBothPending), pbr::BackendEnv::Custom);
+  EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Custom, kTesterStagingPendingDevSet), pbr::BackendEnv::Custom);
+  for (const pbr::BackendEnv env : {pbr::BackendEnv::Staging, pbr::BackendEnv::Dev}) {
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kTesterBothSet), env) << "both usable: what is saved runs";
+  }
+}
+
+TEST(DeploymentProfileUsableEnvTest, ATesterBuildListsOnlyTheEnvironmentsItCanUse) {
+  EXPECT_FALSE(pbr::BackendAvailableIn(pbr::BackendEnv::Staging, kTesterStagingPendingDevSet));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Dev, kTesterStagingPendingDevSet));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Staging, kTesterBothSet));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Dev, kTesterBothSet));
+  EXPECT_FALSE(pbr::BackendAvailableIn(pbr::BackendEnv::Staging, kTesterBothPending));
+  EXPECT_FALSE(pbr::BackendAvailableIn(pbr::BackendEnv::Dev, kTesterBothPending));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Custom, kTesterBothPending));
+  EXPECT_TRUE(pbr::BackendAvailableIn(pbr::BackendEnv::Dev, kTesterDevOnly)) << "a named relay id: usable";
+}
+
+TEST(DeploymentProfileUsableEnvTest, ATesterBuildTakesNoOriginOrRelayOfAnEnvironmentItCannotUse) {
+  // Whatever backend is passed — the latched one is always usable — none of these takes staging's pending relay.
+  for (const pbr::BackendEnv env : kAllEnvs) {
+    EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, env, kTesterStagingPendingDevSet), "https://dev.example.test")
+        << pbr::BackendEnvName(env);
+    const auto identity = pbr::ResolveOrgRelayIdentity(false, nullptr, env, kTesterStagingPendingDevSet);
+    EXPECT_EQ(identity.relay_id, "relay:dev") << pbr::BackendEnvName(env);
+    EXPECT_EQ(identity.certificate_b64, "ZGV2");
+  }
+}
+
+TEST(DeploymentProfileUsableEnvTest, AStoreBuildIsUnchangedWithPendingRelayIds) {
+  for (const pbr::BackendEnv env : kAllEnvs) {
+    EXPECT_TRUE(pbr::BackendAvailableIn(env, kStoreAllPending)) << pbr::BackendEnvName(env);
+    EXPECT_EQ(pbr::ResolveLatchedBackend(env, kStoreAllPending), env);
+  }
+  EXPECT_EQ(pbr::FallbackBackendIn(kStoreAllPending), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Staging, kStoreAllPending),
+            "https://staging.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAllPending),
+            "https://prod.example.test");
+  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Staging, kStoreAllPending).relay_id,
+            pbr::kPendingRelayId)
+      << "a store build's pending relay fails closed where it is used, as before";
+  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Prod, kStoreAllPending).relay_id,
+            pbr::kPendingRelayId);
+}
+
 // This build's own facts follow its kind (the ctest run with -DPP_TESTER_BUILD=ON checks the tester side).
 TEST(DeploymentProfileTesterBuildTest, ThisBuildsCompiledOriginsCarryItsKind) {
   const pbr::CompiledOrigins compiled = pbr::BuildCompiledOrigins();

@@ -56,6 +56,49 @@ TEST(BackendChoicesTest, ATesterBuildNeverOffersProductionAndShowsItsEnvironment
   }
 }
 
+// The row as NetworkSettingsSection fills it (BackendAvailable of each), with the compiled origins passed in: a tester
+// build lists only the environments it can use — compiled, and their relay id not pending (release-compatibility RC022).
+namespace {
+
+std::vector<std::string> OfferedFor(const CompiledOrigins& compiled, const bool tester_options) {
+  return OfferedIn(BackendAvailableIn(BackendEnv::Prod, compiled), BackendAvailableIn(BackendEnv::Staging, compiled),
+                   BackendAvailableIn(BackendEnv::Dev, compiled), tester_options);
+}
+
+} // namespace
+
+TEST(BackendChoicesTest, ATesterBuildListsOnlyTheEnvironmentsItCanUse) {
+  constexpr CompiledOrigins kStagingPending{.staging = "https://staging.example.test",
+                                            .dev = "https://dev.example.test",
+                                            .staging_relay_id = kPendingRelayId,
+                                            .dev_relay_id = "relay:dev",
+                                            .kind = BuildKind::Tester};
+  constexpr CompiledOrigins kBothSet{.staging = "https://staging.example.test",
+                                     .dev = "https://dev.example.test",
+                                     .staging_relay_id = "relay:staging",
+                                     .dev_relay_id = "relay:dev",
+                                     .kind = BuildKind::Tester};
+  constexpr CompiledOrigins kBothPending{.staging = "https://staging.example.test",
+                                         .dev = "https://dev.example.test",
+                                         .staging_relay_id = kPendingRelayId,
+                                         .dev_relay_id = kPendingRelayId,
+                                         .kind = BuildKind::Tester};
+  constexpr CompiledOrigins kStorePending{.prod = "https://prod.example.test",
+                                          .staging = "https://staging.example.test",
+                                          .dev = "https://dev.example.test",
+                                          .prod_relay_id = kPendingRelayId,
+                                          .staging_relay_id = kPendingRelayId,
+                                          .dev_relay_id = kPendingRelayId};
+  for (const bool tester_options : {false, true}) {
+    EXPECT_EQ(OfferedFor(kStagingPending, tester_options), (std::vector<std::string>{"dev", "custom"}));
+    EXPECT_EQ(OfferedFor(kBothSet, tester_options), (std::vector<std::string>{"staging", "dev", "custom"}));
+    EXPECT_EQ(OfferedFor(kBothPending, tester_options), (std::vector<std::string>{"custom"}));
+  }
+  // A store build, as before: the relay ids do not hide anything.
+  EXPECT_EQ(OfferedFor(kStorePending, true), (std::vector<std::string>{"prod", "staging", "dev", "custom"}));
+  EXPECT_EQ(OfferedFor(kStorePending, false), (std::vector<std::string>{"prod", "custom"}));
+}
+
 // The Settings row as this build's state fills it (NetworkSettingsSection: BackendAvailable(Prod)).
 TEST(BackendChoicesTest, ProductionIsListedExactlyWhereTheBuildCanRunIt) {
   const bool prod = BackendAvailable(BackendEnv::Prod);
