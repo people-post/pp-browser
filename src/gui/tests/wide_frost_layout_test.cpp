@@ -248,11 +248,14 @@ TEST_F(WideFrostLayoutTest, TheChatPageFrostsTheHeaderAndComposerStripsAndTheTra
   EXPECT_NEAR(Bottom(bar), Bottom(column), 0.5f) << "the composer strip sits on the column's bottom edge";
   EXPECT_GE(Bottom(messages), Bottom(column) - 0.5f) << "and the transcript runs down under it";
   EXPECT_GT(Height(bar), 40.f) << "the composer is mounted in the strip";
-  EXPECT_NEAR(Height(blurred[1]), Height(bar), 0.5f);
+  EXPECT_NEAR(Height(blurred[1]), Height(bar) - 16.f, 0.5f) << "the panel is the strip minus its 16dp bottom margin";
 
-  // The colour is the phone bars' see-through one (x-bar-blur, 78%) on both strips.
-  EXPECT_EQ(blurred[0]->GetComputedValues().background_color(), blurred[1]->GetComputedValues().background_color());
+  // The header strip is the phone bar's see-through colour (x-bar-blur, 78%); the floating composer panel is more
+  // translucent still (x-composer-float, 62%) so the messages read through it.
   EXPECT_LT(blurred[0]->GetComputedValues().background_color().alpha, 255);
+  EXPECT_LT(blurred[1]->GetComputedValues().background_color().alpha,
+            blurred[0]->GetComputedValues().background_color().alpha);
+  EXPECT_GT(blurred[1]->GetComputedValues().background_color().alpha, 0);
 }
 
 TEST_F(WideFrostLayoutTest, TransparencyOffLeavesTheSameBarColourSolidAndNoBlurOnTheChatPage) {
@@ -265,7 +268,137 @@ TEST_F(WideFrostLayoutTest, TransparencyOffLeavesTheSameBarColourSolidAndNoBlurO
   ASSERT_TRUE(header_material && composer_material);
   EXPECT_EQ(header_material->GetComputedValues().background_color().alpha, 255) << "solid";
   EXPECT_EQ(header_material->GetComputedValues().background_color(),
-            composer_material->GetComputedValues().background_color());
+            composer_material->GetComputedValues().background_color())
+      << "the floating panel is the bar colour, solid";
+}
+
+/** The composer panel of the chat page: its material (the shape), the strip behind it, the mount. */
+struct ComposerParts {
+  ui::Element* bar = nullptr;
+  ui::Element* material = nullptr;
+  ui::Element* mount = nullptr;
+  ui::Element* column = nullptr;
+};
+
+ComposerParts PartsOf(ui::ElementDocument* document) {
+  ComposerParts parts;
+  parts.bar = document->QuerySelector(".shell-pane-composer-bar");
+  parts.material = document->QuerySelector(".shell-pane-composer-bar > .bar-material");
+  parts.mount = document->QuerySelector("#pane-composer-chat");
+  parts.column = document->QuerySelector("#pane-chat");
+  return parts;
+}
+
+// The composer floats: one rounded panel 16dp in from the column's left, right and bottom edges; the strip behind it is
+// clear (no band); the panel has a hairline and the blur-free stacked shadow, and is blurred and see-through with
+// Transparency on, solid and unblurred with it off, in both themes. The mount is the panel plus its bottom margin, so the
+// transcript's end spacer (KeepClearOfComposer measures the mount) leaves the newest message above the panel.
+TEST_F(WideFrostLayoutTest, TheComposerIsOneFloatingRoundedPanelInTheColumnsMargins) {
+  for (const bool reduce : {false, true}) {
+    for (const char* theme : {"light", "dark"}) {
+      SCOPED_TRACE(std::string(theme) + (reduce ? " solid" : " frosted"));
+      ShellState state = Wide(NavTab::Sessions, "chat");
+      state.reduce_transparency = reduce;
+      Load(state, theme);
+      const ComposerParts p = PartsOf(document_);
+      ASSERT_TRUE(p.bar && p.material && p.mount && p.column);
+      const float dp = context_->GetDensityIndependentPixelRatio();
+      const auto left = [](ui::Element* e) { return e->GetAbsoluteOffset(ui::BoxArea::Border).x; };
+      const auto width = [](ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border).x; };
+      EXPECT_NEAR(left(p.material), left(p.column) + 16.f, 0.5f);
+      EXPECT_NEAR(left(p.material) + width(p.material), left(p.column) + width(p.column) - 16.f, 0.5f);
+      EXPECT_NEAR(Bottom(p.material), Bottom(p.column) - 16.f, 0.5f);
+      EXPECT_NEAR(Bottom(p.mount), Bottom(p.column), 0.5f);
+      EXPECT_NEAR(Height(p.mount), Height(p.material) + 16.f, 0.5f);
+      EXPECT_GE(p.material->GetComputedValues().border_top_left_radius(), 22.f * dp - 0.5f);
+      EXPECT_GT(p.material->GetComputedValues().border_top_width(), 0.f) << "a hairline";
+      const ui::String shadow = p.material->GetProperty<ui::String>("box-shadow");
+      EXPECT_FALSE(shadow.empty() || shadow == "none") << "the stacked shadow lifts it off the messages";
+      EXPECT_EQ(p.bar->GetComputedValues().background_color().alpha, 0) << "no band behind the panel";
+      // The row, the buttons and the hint are inside the panel.
+      for (const char* inner : {".prompt-composer-row", ".prompt-composer-hint", ".prompt-composer-pill"}) {
+        ui::Element* e = document_->QuerySelector(inner);
+        ASSERT_NE(e, nullptr) << inner;
+        EXPECT_GE(left(e), left(p.material)) << inner;
+        EXPECT_LE(left(e) + width(e), left(p.material) + width(p.material) + 0.5f) << inner;
+        EXPECT_GE(Top(e), Top(p.material) - 0.5f) << inner;
+        EXPECT_LE(Bottom(e), Bottom(p.material) + 0.5f) << inner;
+      }
+      const ui::Colourb fill = p.material->GetComputedValues().background_color();
+      if (reduce) {
+        EXPECT_TRUE(Blurred().empty());
+        EXPECT_EQ(fill.alpha, 255);
+      } else {
+        const std::vector<ui::Element*> blurred = Blurred();
+        ASSERT_EQ(blurred.size(), 2U) << "header + composer";
+        EXPECT_EQ(blurred[1], p.material);
+        EXPECT_GT(fill.alpha, 0);
+        EXPECT_LT(fill.alpha, 199) << "more translucent than the phone bars' 78%";
+      }
+    }
+  }
+}
+
+// Every state of the composer stays inside the panel (the mount is the panel's padding): the reply / edit strip, the
+// status row (an attachment chip, the stop key), and the recording pill; the panel grows upward and the mount follows.
+TEST_F(WideFrostLayoutTest, TheComposersStripsAndRecordingStayInsideTheFloatingPanel) {
+  struct Case {
+    const char* name;
+    const char* inner;
+    void (*apply)(ChatScreenState&);
+  };
+  const Case cases[] = {
+      {"reply strip", ".prompt-quote",
+       [](ChatScreenState& s) {
+         s.quote_reply = true;
+         s.quote_reply_text = "Earlier message";
+       }},
+      {"edit strip", ".prompt-quote",
+       [](ChatScreenState& s) {
+         s.editing_message = true;
+         s.quote_reply_text = "Edit message";
+       }},
+      {"picture chip", ".prompt-composer-status", [](ChatScreenState& s) { s.image_chip = true; }},
+      {"stop key", ".prompt-composer-status", [](ChatScreenState& s) { s.loading = true; }},
+      {"recording", ".prompt-voice-live-pill",
+       [](ChatScreenState& s) {
+         s.voice_recording = true;
+         s.voice_timer = "0:03";
+       }},
+  };
+  float plain_height = 0.f;
+  {
+    Load(Wide(NavTab::Sessions, "chat"));
+    plain_height = Height(PartsOf(document_).material);
+  }
+  for (const Case& c : cases) {
+    SCOPED_TRACE(c.name);
+    ChatScreenState fresh;
+    fresh.use_messages_layout = chat_.use_messages_layout;
+    fresh.has_turns = true;
+    fresh.thread_title = chat_.thread_title;
+    fresh.messages = chat_.messages;
+    c.apply(fresh);
+    chat_ = fresh;
+    Load(Wide(NavTab::Sessions, "chat"));
+    const ComposerParts p = PartsOf(document_);
+    ASSERT_TRUE(p.material && p.mount);
+    ui::Element* inner = document_->QuerySelector(c.inner);
+    ASSERT_NE(inner, nullptr);
+    ASSERT_GT(Height(inner), 0.f);
+    const float inner_left = inner->GetAbsoluteOffset(ui::BoxArea::Border).x;
+    const float inner_right = inner_left + inner->GetBox().GetSize(ui::BoxArea::Border).x;
+    const float m_left = p.material->GetAbsoluteOffset(ui::BoxArea::Border).x;
+    const float m_right = m_left + p.material->GetBox().GetSize(ui::BoxArea::Border).x;
+    EXPECT_GE(inner_left, m_left);
+    EXPECT_LE(inner_right, m_right + 0.5f);
+    EXPECT_GE(Top(inner), Top(p.material) - 0.5f) << "inside, not above the panel";
+    EXPECT_LE(Bottom(inner), Bottom(p.material) + 0.5f);
+    EXPECT_NEAR(Height(p.mount), Height(p.material) + 16.f, 0.5f);
+    if (std::string(c.inner) != ".prompt-voice-live-pill") {
+      EXPECT_GT(Height(p.material), plain_height) << "the panel grows to hold it";
+    }
+  }
 }
 
 // The cost limit on every wide page, Transparency on: at most two blurred regions (never more than three).

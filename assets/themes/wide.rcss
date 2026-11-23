@@ -684,8 +684,33 @@
   z-index: 2;
 }
 
+/* The composer floats: one rounded panel 16dp in from the column's left, right and bottom edges, the messages scrolling
+   under it and showing round it; the bar behind it is clear. The mount (what ChatController::KeepClearOfComposer
+   measures for the transcript's end spacer) is the panel plus its 16dp margin, so the margin is in the measured height;
+   its padding holds the panel's 12dp inside space. The material is the panel's own surface: inset by the margin, large
+   corners, a hairline, the blur-free stacked shadow (a blurred shadow on a repositioned panel draws displaced). The reply
+   / edit strip, the status row (attachments, stop), the row, the recording pill and the hint all sit inside the mount's
+   padding, so inside the panel. */
+.shell-body--wide .shell-pane-composer-bar > .bar-material {
+  top: 0;
+  left: 16dp;
+  right: 16dp;
+  bottom: 16dp;
+  border-radius: 24dp;
+}
+
 .shell-body--wide .shell-pane-composer {
   position: relative;
+  padding: 10dp 28dp 28dp 28dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .shell-pane-composer .prompt-composer--wide {
+  margin: 0;
+}
+
+.shell-body--wide .shell-pane-composer .prompt-quote {
+  margin: 0 0 8dp 0;
 }
 
 .shell-body--wide .shell-composer-mount {
