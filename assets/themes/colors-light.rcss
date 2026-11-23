@@ -302,6 +302,30 @@ select selectbox option:hover {
   color: #007aff;
 }
 
+/* A news item already read (MarkNewsLinksRead): grey in its list, like a visited link. */
+.chat-link.news-read {
+  color: #3c3c4399;
+}
+
+/* The news reader sheet (news_reader.rml). */
+.news-reader-spin {
+  border-color: #3c3c434c #3c3c434c #3c3c434c transparent;
+}
+
+.news-reader-note {
+  color: #3c3c4399;
+}
+
+.news-reader-open {
+  background-color: #007aff;
+  color: #ffffff;
+}
+
+.news-reader-step {
+  background-color: #78788033;
+  color: #000000;
+}
+
 .chat-mention {
   color: #5856d6;
   background-color: #007aff1f;

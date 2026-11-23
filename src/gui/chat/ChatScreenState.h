@@ -158,6 +158,15 @@ struct ChatScreenState {
   std::vector<MessageDisplayRow> messages;
   /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
   std::vector<ReactorDisplayRow> reactor_rows;
+  /** The news reader sheet (view "news_reader"): the item's title, loading / failed, the digest (bound only while it
+   *  shows) and Previous / Next for a list. */
+  ui::String news_reader_title;
+  bool news_reader_loading = false;
+  bool news_reader_failed = false;
+  ui::String news_reader_body_rml;
+  bool news_reader_has_nav = false;
+  bool news_reader_can_prev = false;
+  bool news_reader_can_next = false;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;
