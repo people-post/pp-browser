@@ -7997,15 +7997,22 @@ float ChatController::VoiceTopLimitDp() const {
 
 void ChatController::SyncComposerOverlay() {
   if (context_ && context_->GetNumDocuments() > 0) {
-    KeepClearOfComposer(context_->GetDocument(0)->GetElementById("shell-chat-overlay"));
+    ui::ElementDocument* doc = context_->GetDocument(0);
+    if (ui::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
+      KeepClearOfComposer(overlay);
+    } else if (ui::Element* pane = doc->GetElementById("pane-chat")) {
+      // The wide layout: the composer strip floats over the conversation column's end (wide.rcss).
+      KeepClearOfComposer(pane, "pane-composer-chat");
+    }
   }
 }
 
-void ChatController::KeepClearOfComposer(ui::Element* overlay) {
+void ChatController::KeepClearOfComposer(ui::Element* overlay, const char* mount_id) {
   // A phone chat's composer is a clear bar with a floating pill over the transcript (TODO #202), which runs down under it: the
   // transcript's end spacer, its fade and the "new messages" pill follow the bar's height (one line or five, a
   // picture chip, a quote, the home indicator or the keyboard), so the newest message and the pill stay above it.
-  ui::Element* mount = overlay ? overlay->GetElementById("shell-composer-mount") : nullptr;
+  // The wide layout's frosted composer strip does the same over its column.
+  ui::Element* mount = overlay ? overlay->GetElementById(mount_id) : nullptr;
   ui::Context* context = mount ? mount->GetContext() : nullptr;
   if (!context) {
     return;

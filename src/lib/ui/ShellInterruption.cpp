@@ -37,6 +37,11 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
 CompactChromeFrost ShellInterruption::ResolveFrost(const ShellState& state) {
   using Surface = CompactChromeFrostSurface;
   if (state.layout_mode != LayoutMode::Compact) {
+    // The wide layout: the conversation column's header strip and composer strip, the phone chat's top and bottom
+    // positions, two blurs. Anything over the base (a pushed page, a sheet, a dialog, a call) leaves them solid.
+    if (Top(state) == InterruptionKind::None) {
+      return {.top = Surface::WidePaneHeader, .bottom = Surface::WideComposer};
+    }
     return {};
   }
   switch (Top(state)) {
