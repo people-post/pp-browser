@@ -366,6 +366,11 @@ Roe<bool> InMemoryDeliveryStore::WasMessageRemoved(const std::string& message_id
   return removed_.count(message_id) > 0;
 }
 
+void InMemoryDeliveryStore::ForgetRemovedIds() {
+  std::lock_guard lock(mutex_);
+  removed_.clear();
+}
+
 void InMemoryDeliveryStore::RememberRemovedLocked(const std::string& thread_id) {
   const auto thread = threads_.find(thread_id);
   if (thread == threads_.end()) {

@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -33,7 +34,8 @@ struct RelayInbox {
  * its id. A cursor counts in one mailbox: the registration we held there (Ports::mailbox, kept beside the cursor). A
  * fresh registration is a new mailbox numbered from the start, so a cursor kept for another one, or while it was not
  * known, is dropped and that inbox is read from its start (what was taken already is dropped as seen); cursors from a
- * file that noted no mailbox at all (an older app's) are dropped once, all of them. A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
+ * file that noted no mailbox at all (an older app's) are dropped once, all of them, and that re-read skips the records
+ * stored before the file's last write (kRereadFloorSlackMs). A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
  * relay_upgrade_required` / `unsupported_sign_version`, `401 wrong_audience`; release-compatibility T14) is not polled
  * again, forced or not, for kRefusedFirstMs, doubling to kRefusedMaxMs while it keeps refusing; an answer ends the
  * back-off. Thread-safe; the polls' HTTP runs on the `poll` lane.
@@ -44,6 +46,11 @@ public:
   /** After a permanent refusal (T14): the first wait before that relay is polled again, and the longest. */
   static constexpr int64_t kRefusedFirstMs = 60 * 1000;
   static constexpr int64_t kRefusedMaxMs = 30 * 60 * 1000;
+  /**
+   * The re-read from the start of an older app's cursor file skips the records the relay stored before the file's last
+   * write less this (clock skew between this device and the relay).
+   */
+  static constexpr int64_t kRereadFloorSlackMs = 10 * 60 * 1000;
 
   using Post = std::function<void(std::function<void()>)>;
 
@@ -74,6 +81,8 @@ public:
      * —, the same across renewals); empty: unknown, the cursor kept is used. None: always unknown.
      */
     std::function<std::string(const std::string& origin, bool preferred)> mailbox;
+    /** When the cursor file in `profile_data_dir` was last written (Unix ms); none: RelayInboxCursorFileWrittenMs. */
+    std::function<std::optional<int64_t>(const std::string& profile_data_dir)> cursors_written_ms;
   };
 
   explicit RelayInboxCoordinator(Ports ports);
@@ -112,6 +121,11 @@ private:
   /** The cursor kept for `inbox`; none when it was kept for another `mailbox` than this one (dropped then). */
   std::string CursorOf(const Inbox& inbox, const std::string& account_id, const std::string& mailbox);
   void KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor);
+  /**
+   * A poll's `messages` from `inbox`, less the records an older app's file's re-read skips there (kRereadFloorSlackMs;
+   * none under way: all of them). An empty page ends that re-read.
+   */
+  void ApplyRereadFloor(const Inbox& inbox, std::vector<RelayEnvelope>& messages);
   void LoadCursorsLocked(const std::string& account_id);
   /** Drops the cursors of relays not listed and writes the file (cursors read for an account). */
   void SaveCursorsLocked();
@@ -129,6 +143,8 @@ private:
   std::map<std::string, std::string> cursors_;
   /** The mailbox each relay's cursor counts in (the registration id), by relay (RelayOriginKey). */
   std::map<std::string, std::string> mailboxes_;
+  /** An older app's file's re-read under way, by relay (RelayOriginKey): records stored before this Unix ms skipped. */
+  std::map<std::string, int64_t> reread_floors_;
   uint64_t syncs_ = 0;
 };
 

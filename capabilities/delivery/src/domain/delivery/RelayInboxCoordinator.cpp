@@ -56,6 +56,7 @@ void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::str
       cursors_account_.clear(); // read again for the next sync
       cursors_.clear();
       mailboxes_.clear();
+      reread_floors_.clear();
     }
   }
   if (save) {
@@ -163,6 +164,7 @@ bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const 
     DiagLine("relay.poll_too_large").Add("n", poll->messages.size()).Emit();
     return true;
   }
+  ApplyRereadFloor(*inbox, poll->messages);
   // The cursor moves on before the next poll: a follow-up must not fetch the same batch while it waits for ingest.
   const std::string next_cursor = poll->next_cursor;
   if (!next_cursor.empty()) {
@@ -202,12 +204,14 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
   cursors_account_ = account_id;
   cursors_.clear();
   mailboxes_.clear();
+  reread_floors_.clear();
   if (profile_data_dir_.empty()) {
     return;
   }
   const RelayInboxCursors kept = LoadRelayInboxCursors(profile_data_dir_, account_id);
   cursors_ = kept.others;
   mailboxes_ = kept.registrations.value_or(std::map<std::string, std::string>{});
+  reread_floors_ = kept.reread_floors_ms; // a re-read under way when the app stopped goes on as it was
   if (!kept.preferred.empty()) {
     // A file from before My relays names no relay for it: the preferred one's.
     std::string relay = kept.preferred_relay;
@@ -222,8 +226,22 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
     // Kept by an app that did not note their mailbox: one may be gone (a revoke or a lapse, then a fresh registration:
     // a new mailbox numbered from the start, which the old cursor skips until its numbers pass it). Every inbox is read
     // from its start, once — the file says from now on — and what was taken already is dropped as seen.
-    log().warning << "relay inbox cursors kept without their mailbox: reading every inbox from its start once";
+    // That re-read skips what the relay stored before the file's last write: every record this device took in already
+    // was stored before it (the older app wrote the file as a cursor moved on), and a deaf device's missed messages came
+    // after it (its cursor stood still: no write) — unless another relay's cursor or the relay list changed since, and
+    // then the ones before that write stay missed, as without this re-read. The old chats the person cleared or deleted
+    // (no ids kept for them before this build) stay gone. It errs toward taking a record in: one without a store time
+    // is taken, and with no time for the file there is no floor.
+    const std::optional<int64_t> written = ports_.cursors_written_ms ? ports_.cursors_written_ms(profile_data_dir_)
+                                                                     : RelayInboxCursorFileWrittenMs(profile_data_dir_);
+    log().warning << "relay inbox cursors kept without their mailbox: reading every inbox from its start once"
+                  << (written ? "" : " (the file's time unknown: everything in it)");
     DiagLine("relay.inbox_restart").Add("reason", "file").Emit();
+    if (written) {
+      for (const auto& [relay, cursor] : cursors_) {
+        reread_floors_[relay] = *written - kRereadFloorSlackMs;
+      }
+    }
     cursors_.clear();
     SaveCursorsLocked();
   }
@@ -250,11 +268,13 @@ void RelayInboxCoordinator::SaveCursorsLocked() {
   };
   std::erase_if(cursors_, not_ours);
   std::erase_if(mailboxes_, not_ours);
+  std::erase_if(reread_floors_, not_ours);
   if (profile_data_dir_.empty() || cursors_account_.empty()) {
     return;
   }
   RelayInboxCursors file;
   file.registrations = mailboxes_;
+  file.reread_floors_ms = reread_floors_;
   for (const auto& [relay, cursor] : cursors_) {
     if (!inboxes_.empty() && relay == RelayOriginKey(inboxes_.front()->relay.origin)) {
       file.preferred = cursor;
@@ -294,6 +314,32 @@ std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::strin
   }
   const auto it = cursors_.find(relay);
   return it == cursors_.end() ? std::string() : it->second;
+}
+
+void RelayInboxCoordinator::ApplyRereadFloor(const Inbox& inbox, std::vector<RelayEnvelope>& messages) {
+  std::lock_guard lock(mutex_);
+  const std::string relay = RelayOriginKey(inbox.relay.origin);
+  const auto kept = reread_floors_.find(relay);
+  if (kept == reread_floors_.end()) {
+    return;
+  }
+  if (messages.empty()) {
+    reread_floors_.erase(kept); // read through to its end: from now on as any inbox
+    log().info << "relay inbox " << relay << ": the re-read of an older app's file is done";
+    SaveCursorsLocked();
+    return;
+  }
+  const int64_t floor_ms = kept->second;
+  const size_t before = messages.size();
+  // The cursor still moves past what is skipped (the page's next_cursor).
+  std::erase_if(messages, [floor_ms](const RelayEnvelope& envelope) {
+    return envelope.relay_created_at_ms && *envelope.relay_created_at_ms > 0 &&
+           *envelope.relay_created_at_ms < floor_ms;
+  });
+  if (messages.size() < before) {
+    log().info << "relay inbox " << relay << ": re-read of an older app's file skipped " << (before - messages.size())
+               << " record(s) stored before it was last written";
+  }
 }
 
 void RelayInboxCoordinator::KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor) {

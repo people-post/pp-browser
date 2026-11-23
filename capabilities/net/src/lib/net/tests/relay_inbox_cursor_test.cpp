@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -92,6 +94,71 @@ TEST_F(RelayInboxCursorTest, TheFileSaysItsVersionAndANewerOneIsLeftAlone) {
   EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), "account:me"), RelayInboxCursors{});
   SaveRelayInboxCursors(dir_.string(), "account:me", {.preferred = "p2", .others = {}});
   EXPECT_EQ(read(), newer) << "never written over";
+}
+
+/** The file as the app before `registrations` / `reread_floor_ms` read it (its LoadRelayInboxCursors, verbatim). */
+RelayInboxCursors ReadAsAnOlderApp(const std::string& text, const std::string& account_id) {
+  RelayInboxCursors cursors;
+  const auto root = TryParseObject(text);
+  if (!root || root->getNonNegInt("schema_version").value_or(1) > 1 || root->getString("account_id") != account_id) {
+    return cursors;
+  }
+  cursors.preferred = root->getString("cursor").value_or("");
+  cursors.preferred_relay = root->getString("cursor_relay").value_or("");
+  if (const Object* relays = root->getObject("relays")) {
+    for (const auto& [origin, value] : relays->entries()) {
+      if (auto cursor = asString(value); cursor && !origin.empty() && !cursor->empty()) {
+        cursors.others[origin] = *cursor;
+      }
+    }
+  }
+  return cursors;
+}
+
+// An older app's file's re-read under way (RelayInboxCoordinator) is kept beside the cursors, additively: the version
+// stays 1 and an older app reads the cursors as before; it is not written when there is none.
+TEST_F(RelayInboxCursorTest, AReReadFloorComesBackAndAnOlderAppReadsTheFileAsBefore) {
+  const RelayInboxCursors cursors{.preferred = "c1:7",
+                                  .preferred_relay = "https://a.example/api/relay",
+                                  .others = {{"https://b.example/api/relay", "c1:3"}},
+                                  .registrations = std::map<std::string, std::string>{},
+                                  .reread_floors_ms = {{"https://a.example/api/relay", 1'700'000'000'000}}};
+  SaveRelayInboxCursors(dir_.string(), "account:me", cursors);
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), "account:me"), cursors);
+
+  const auto read = [this]() {
+    std::ifstream in(dir_ / "relay_inbox_cursor.json");
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  };
+  const std::string text = read();
+  EXPECT_NE(text.find("\"schema_version\":1"), std::string::npos) << text;
+  EXPECT_NE(text.find("\"reread_floor_ms\":{\"https://a.example/api/relay\":1700000000000}"), std::string::npos)
+      << text;
+  EXPECT_EQ(ReadAsAnOlderApp(text, "account:me"),
+            (RelayInboxCursors{.preferred = "c1:7",
+                               .preferred_relay = "https://a.example/api/relay",
+                               .others = {{"https://b.example/api/relay", "c1:3"}}}))
+      << "an older app ignores the key";
+
+  SaveRelayInboxCursors(dir_.string(), "account:me", {.preferred = "c1:8", .others = {}});
+  EXPECT_EQ(read().find("reread_floor_ms"), std::string::npos) << "none: not written";
+}
+
+// The file's last write, on the wall clock (the relay's store times are Unix ms): none without a file.
+TEST_F(RelayInboxCursorTest, TheFilesLastWriteIsReadOnTheWallClock) {
+  EXPECT_FALSE(RelayInboxCursorFileWrittenMs(dir_.string()));
+  EXPECT_FALSE(RelayInboxCursorFileWrittenMs(""));
+  { // closed before its time is set: Windows
+    std::ofstream(dir_ / "relay_inbox_cursor.json") << R"({"account_id":"account:me","cursor":"c1:1"})";
+  }
+  std::filesystem::last_write_time(dir_ / "relay_inbox_cursor.json",
+                                   std::filesystem::file_time_type::clock::now() - std::chrono::hours(3));
+  const int64_t now_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  const auto written = RelayInboxCursorFileWrittenMs(dir_.string());
+  ASSERT_TRUE(written);
+  EXPECT_NEAR(static_cast<double>(*written), static_cast<double>(now_ms - 3 * 3600 * 1000), 60'000.0);
 }
 
 } // namespace

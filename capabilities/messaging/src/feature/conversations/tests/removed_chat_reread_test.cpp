@@ -37,6 +37,8 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -123,6 +125,11 @@ protected:
     ASSERT_TRUE(keys_.AddAccountCard(carol_.DeviceCard(), util::NowUnixMs(), "test"));
     ASSERT_TRUE(carol_store_.SetDek(TestDek(9)) && carol_psk_.SetDek(TestDek(9)));
     relay_ = std::make_shared<MailboxRelay>();
+    StartApp();
+  }
+
+  /** Alice's messaging over her stores (again: a restart). */
+  void StartApp() {
     mesh_ =
         std::make_unique<MeshDeliveryOrchestrator>(store_, contacts_, identity_, relay_, inbox_, keys_, psk_, roster_);
     mesh_->SetProfileDataDir(dir_.string());
@@ -225,6 +232,27 @@ protected:
     ASSERT_GT(relay_->Acks(), acks_before) << "the mailbox was never taken in";
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); // what the ingest started on its own worker turn
+  }
+
+  /** The app stopped, an older app wrote its relay cursor file again (no `registrations`) `age` ago, and it started. */
+  void RestartWithAnOlderAppsCursorFile(const std::chrono::minutes age) {
+    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+    mesh_.reset();
+    const auto path = dir_ / "relay_inbox_cursor.json";
+    std::string text;
+    { // closed before the file is replaced: Windows
+      std::ifstream in(path);
+      text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    auto root = TryParseObject(text);
+    ASSERT_TRUE(root && root->contains("registrations") && root->contains("cursor")) << text;
+    root->erase("registrations");
+    {
+      std::ofstream out(path, std::ios::trunc);
+      out << DumpJson(*root);
+    }
+    std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now() - age);
+    StartApp();
   }
 
   std::optional<Thread> ChatWithCarol() {
@@ -365,6 +393,35 @@ TEST_F(RemovedChatRereadTest, ADeletedPublicChatIsNotMadeAgainAndANewMessageMake
   ASSERT_EQ(rows.size(), 1u);
   EXPECT_EQ(rows.front().id, m2.message_id);
   EXPECT_EQ(inbound_.size(), inbound_before + 1);
+}
+
+// A chat cleared under an older app has no removed ids kept. When that app's cursor file (it noted no registrations)
+// makes the inbox be read again from its start, what the relay stored before the file was last written is skipped: the
+// chat does not fill again, while a message stored since still arrives.
+TEST_F(RemovedChatRereadTest, AChatClearedUnderAnOlderAppDoesNotFillAgainWhenItsCursorFileIsReadAgain) {
+  const int64_t stored_long_ago = util::NowUnixMs() - 3 * 3600 * 1000;
+  RelayEnvelope m1 = FromCarol("one");
+  RelayEnvelope m2 = FromCarol("two");
+  m1.relay_created_at_ms = stored_long_ago;
+  m2.relay_created_at_ms = stored_long_ago;
+  Poll({m1, m2});
+  const auto chat = ChatWithCarol();
+  ASSERT_TRUE(chat);
+  ASSERT_EQ(Rows(chat->id).size(), 2u);
+  ASSERT_TRUE(inbox_.ClearThreadHistory(chat->id, false));
+  store_.ForgetRemovedIds(); // the older app kept none
+  RestartWithAnOlderAppsCursorFile(std::chrono::hours(1));
+  const size_t inbound_before = inbound_.size();
+
+  RelayEnvelope m3 = FromCarol("after the update");
+  m3.relay_created_at_ms = util::NowUnixMs();
+  Poll({m1, m2, m3}); // the mailbox from its start, and one new
+
+  const std::vector<ThreadMessage> rows = Rows(chat->id);
+  ASSERT_EQ(rows.size(), 1u) << "the cleared messages stay gone";
+  EXPECT_EQ(rows.front().id, m3.message_id);
+  EXPECT_EQ(inbound_.size(), inbound_before + 1);
+  EXPECT_EQ(Unread(chat->id), 1);
 }
 
 TEST_F(RemovedChatRereadTest, AClearedGroupChatGetsNothingBackAndANewMessageStillArrives) {

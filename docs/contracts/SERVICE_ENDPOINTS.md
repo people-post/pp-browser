@@ -395,7 +395,7 @@ user changes the list.
   one mailbox: the registration we held there when it was kept (`registration_id`, kept beside it). A fresh
   registration (after a revoke or a lapse) is a new mailbox the relay numbers from the start, so a cursor kept for
   another registration, or while it was not known, is dropped and that inbox read from its start (a cursor file that
-  noted none at all, an older app's, drops every cursor once); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
+  noted none at all, an older app's, drops every cursor once, and that re-read skips the records stored before the file was last written, less 10 minutes — `reread_floor_ms`); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
   A message deleted here keeps its row as a tombstone, so it is dropped the same way; the messages of a chat cleared
   or deleted here have no row left, so their ids are kept apart for as long as the relay may hold them
   ([DATA_LAYOUT](DATA_LAYOUT.md) `removed_messages`) and such a record is dropped before the receive pipeline: no

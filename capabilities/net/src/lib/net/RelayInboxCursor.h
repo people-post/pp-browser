@@ -25,6 +25,12 @@ struct RelayInboxCursors {
    * again — says nothing of any cursor's mailbox. Always written (empty too).
    */
   std::optional<std::map<std::string, std::string>> registrations;
+  /**
+   * By relay origin (RelayOriginKey): a re-read from the start of an older app's file (no `registrations`) under way
+   * there — the records the relay stored before this Unix ms are skipped (RelayInboxCoordinator). Written as
+   * `reread_floor_ms` (additive: an older app ignores it); none: no such re-read.
+   */
+  std::map<std::string, int64_t> reread_floors_ms;
 
   bool operator==(const RelayInboxCursors&) const = default;
 };
@@ -37,5 +43,7 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
 /** Replaces the file whole (frequent writes: not synced); a newer app's file is left as it is. */
 void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::string& account_id,
                            const RelayInboxCursors& cursors);
+/** When the file was last written, Unix ms (wall clock); none: no file, or its time cannot be read. */
+std::optional<int64_t> RelayInboxCursorFileWrittenMs(const std::string& profile_data_dir);
 
 } // namespace pbr

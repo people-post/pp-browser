@@ -49,12 +49,16 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the relay id each relay origin of ours must prove, and the highest certificate per relay id (SIGNED_FORMATS § 3, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}}:
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}, reread_floor_ms?: {origin: unix_ms}}:
                             # the preferred relay's (cursor_relay names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
                             # registrations (additive, 2026-11-22, schema stays 1 (INVENTORY S3); always written, empty too; an older app ignores it and drops it when it writes): the
                             # registration each relay's cursor counts in — a fresh registration is a new mailbox numbered from the start, so a cursor kept for another one,
                             # or while it was not known, is dropped and that inbox read from its start; a file without the key drops every cursor once
                             # (RelayInboxCoordinator; the receive pipeline drops what it took already);
+                            # reread_floor_ms (additive, 2026-11-23, schema stays 1; an older app ignores it and drops it when it writes): that once-only re-read of a
+                            # file without registrations skips the records the relay stored (created_at) before the file's last write less 10 min — every record taken
+                            # in already was stored before it, so chats cleared or deleted before removed_messages existed do not come back; a record with no created_at
+                            # is taken in; no readable file time: no floor. Written per relay whose cursor was dropped, removed once a poll there answers an empty page;
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)

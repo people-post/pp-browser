@@ -5,8 +5,10 @@
 
 #include "common/ValueJson.h"
 
+#include <chrono>
 #include <fstream>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include "common/PbrCompat.h"
@@ -65,6 +67,14 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
       }
     }
   }
+  if (const Object* floors = root->getObject("reread_floor_ms")) {
+    for (const auto& [origin, value] : floors->entries()) {
+      if (auto ms = asNonNegInt(value);
+          ms && !origin.empty() && *ms > 0 && *ms <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        cursors.reread_floors_ms[origin] = static_cast<int64_t>(*ms);
+      }
+    }
+  }
   return cursors;
 }
 
@@ -101,9 +111,34 @@ void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::strin
     registrations.set(origin, id);
   }
   root.set("registrations", std::move(registrations));
+  if (!cursors.reread_floors_ms.empty()) { // additive too: an older app ignores it
+    Object floors;
+    for (const auto& [origin, ms] : cursors.reread_floors_ms) {
+      floors.set(origin, ms);
+    }
+    root.set("reread_floor_ms", std::move(floors));
+  }
   // Replaced whole, not synced: written at every sync, and a cursor lost to a crash only fetches again what the
   // inbox drops as already seen.
   (void)AtomicFileWrite::Write(CursorPath(profile_data_dir).string(), DumpJson(root), AtomicFileWrite::Sync::None);
+}
+
+std::optional<int64_t> RelayInboxCursorFileWrittenMs(const std::string& profile_data_dir) {
+  if (profile_data_dir.empty()) {
+    return std::nullopt;
+  }
+  std::error_code ec;
+  const auto written = std::filesystem::last_write_time(CursorPath(profile_data_dir), ec);
+  if (ec) {
+    return std::nullopt;
+  }
+  // The file clock's epoch differs by library (and clock_cast / file_clock::to_sys are not everywhere): its age, read
+  // on the file clock, taken from the wall clock's now.
+  using std::chrono::duration_cast;
+  using std::chrono::milliseconds;
+  const auto age = duration_cast<milliseconds>(std::filesystem::file_time_type::clock::now() - written);
+  const auto now = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+  return (now - age).count();
 }
 
 } // namespace pbr
