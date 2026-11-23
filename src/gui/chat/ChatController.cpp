@@ -4711,11 +4711,11 @@ void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::str
   if (links == chat_links_.end()) {
     return;
   }
-  const std::optional<std::string> url = ResolveChatLink(links->second, link_index);
-  if (!url) {
+  const std::optional<MarkdownLink> link = ResolveChatLink(links->second, link_index);
+  if (!link) {
     return;
   }
-  OpenTrustedUrl(*url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+  OpenTrustedUrl(link->url); // chat_links_ holds the AI assistant's answers only (articles, sources)
 }
 
 bool ChatController::MessageFromAssistant(const std::string& thread_id, const std::string& entry_id) {

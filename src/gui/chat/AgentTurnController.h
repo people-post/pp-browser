@@ -13,6 +13,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "lib/ai/BriefAiClient.h"
+#include "lib/ai/MarkdownToRml.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/ai/TurnPlan.h"
 #include "lib/messaging/AtAiParser.h"
@@ -124,7 +125,7 @@ public:
   static AgentConfig ProjectAgent(const AppConfig& config);
 
   AgentTurnController(AgentTurnHost& host, ChatScreenState& chat,
-                      std::map<std::string, std::vector<std::string>>& chat_links, ChatWidgetHost& widgets,
+                      std::map<std::string, std::vector<MarkdownLink>>& chat_links, ChatWidgetHost& widgets,
                       WorkingSetController& working_set, ShellFeedbackPorts& shell_feedback);
 
   // --- the agent -------------------------------------------------------------------------------
@@ -297,7 +298,7 @@ private:
   AgentTurnHost& host_;
   ChatScreenState& chat_;
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
-  std::map<std::string, std::vector<std::string>>& chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>>& chat_links_;
   ChatWidgetHost& widgets_;
   WorkingSetController& working_set_;
   ShellFeedbackPorts& shell_feedback_;

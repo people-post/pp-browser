@@ -332,6 +332,10 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   if (IsEditAnnotation(message)) {
     return {};
   }
+  // A news item read in an AI chat is not drawn there: the chat keeps its preview and its place in the list.
+  if (IsHiddenNewsMessage(message)) {
+    return {};
+  }
   std::lock_guard lock(db_.profile_mutex());
   // A membership event in a direct chat is not something to read there: it neither moves the chat up the list
   // nor becomes its preview (the last message the user can see stays).

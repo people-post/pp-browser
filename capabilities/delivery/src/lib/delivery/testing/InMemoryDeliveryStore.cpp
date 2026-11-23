@@ -117,8 +117,8 @@ Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessag
                           ? ChatPayloadCodec::DecodeAnnotationJson(stored.payload_json)
                           : Roe<ChatAnnotationFields>(Error("not an annotation"));
     const bool edit = annotation && annotation->annotation_type == kAnnotationTypeEdit;
-    const bool hidden =
-        edit || (thread->second.kind == ThreadKind::Direct && hidden_in_direct_ && hidden_in_direct_(stored));
+    const bool hidden = edit || IsHiddenNewsMessage(stored) ||
+                        (thread->second.kind == ThreadKind::Direct && hidden_in_direct_ && hidden_in_direct_(stored));
     if (!hidden) {
       thread->second.updated_at = stored.timestamp;
       thread->second.preview = stored.text;

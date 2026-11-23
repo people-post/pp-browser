@@ -157,7 +157,7 @@ void RemoveSessionFile(const std::string& path) {
 } // namespace
 
 AgentTurnController::AgentTurnController(AgentTurnHost& host, ChatScreenState& chat,
-                                         std::map<std::string, std::vector<std::string>>& chat_links,
+                                         std::map<std::string, std::vector<MarkdownLink>>& chat_links,
                                          ChatWidgetHost& widgets, WorkingSetController& working_set,
                                          ShellFeedbackPorts& shell_feedback)
     : host_(host),
