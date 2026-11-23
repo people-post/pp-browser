@@ -559,7 +559,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 |-------|------|
 | **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
 | **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
-| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather; punch planned H009). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) H007 — no app addr gather; punch planned H009). |
 | **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
 | **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
 | **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |
@@ -572,7 +572,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Dogfood claimed (2026-08-02):** Android ↔ Android LAN 1:1 bidirectional voice on libp2p `call-media` (moto g7 play ↔ Samsung SM-T380). Desktop matrix and NAT/hop not claimed. Details: [CURRENT_STATE.md](CURRENT_STATE.md).
 
-**Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
+**Cross-link:** [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (dialability); mesh N018–N022.
 
 ---
 
@@ -1236,7 +1236,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Still open (not this ADR):** B30 CN-reachable relay / push (client poll fail-fast landed) — see [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md). B26 reflexive IPv4, B27 circuit reserve/ServeDial + re-park, B28 RegisterEndpoints probing, and B29 H012 signaling punch are landed.
 
-**Cross-link:** [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
+**Cross-link:** [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
 
 ---
 

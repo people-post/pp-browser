@@ -9,7 +9,7 @@
 namespace pbr {
 
 /**
- * pp-browser's owner threads besides UI and Mesh I/O (projects/thread-ownership T001), registered with
+ * pp-browser's owner threads besides UI and Mesh I/O (thread-ownership T001), registered with
  * pp-cpp-common's AppRuntime: the ones its capabilities name (calls: kMediaSessionsOwner). Mesh control runs
  * on the mesh's own io lane (THREADING.md § Mesh threads).
  */

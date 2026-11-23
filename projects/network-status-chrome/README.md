@@ -4,7 +4,7 @@
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [WINDOW_SHELL.md](../../docs/ui/WINDOW_SHELL.md), [UI_DESIGN_SYSTEM.md](../../docs/ui/UI_DESIGN_SYSTEM.md), [NETWORKING.md](../../docs/architecture/NETWORKING.md)  
-**Related:** [p2p-mesh](../p2p-mesh/) (relay policy / helping), [media-hop-reachability](../media-hop-reachability/) (reachability stack), [i18n](../i18n/)
+**Related:** [p2p-mesh](../p2p-mesh/) (relay policy / helping), [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (reachability stack), [i18n](../i18n/)
 
 ## One-line goal
 

@@ -191,7 +191,7 @@ Shared Amp helpers live in `pp-cpp-amp` + `pp-cpp-mesh`. Frame size caps: `pp::a
 
 ### Mesh threads: control runs on the I/O lane
 
-The mesh is a library ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md)
+The mesh is a library ([projects/_archive/thread-ownership](../../projects/_archive/thread-ownership/DECISIONS.md)
 T001 / T004 for the owner model it fits into), and its side of the contract — the I/O lane that
 runs Amp **and** mesh control, the per-instance `work` / `blocking` executors, and the four rules (the
 mesh never calls app code synchronously; it tells the app through events on the I/O lane; waits go
@@ -223,7 +223,7 @@ saves; revisit if a rewire ever shows as a UI stall.
 
 ### Owner threads
 
-Model ([projects/thread-ownership](../../projects/thread-ownership/DESIGN.md), T001): every piece of mutable product state has **one owner** — Mesh I/O (Amp drive, L4 protocol engines and mesh control — [§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)), Media sessions, or UI. Rules:
+Model ([projects/_archive/thread-ownership](../../projects/_archive/thread-ownership/DESIGN.md), T001): every piece of mutable product state has **one owner** — Mesh I/O (Amp drive, L4 protocol engines and mesh control — [§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)), Media sessions, or UI. Rules:
 
 1. **One owner per object.** Public methods assert they run on it (`PP_ASSERT_ON_OWNER`, debug builds abort with the call site) or post to it.
 2. **Messages between owners.** Posted closures carry values; shared views are immutable snapshots (`shared_ptr<const T>`). Ports are bound once, on the owner, and invoked there — never rebound from another thread.
@@ -403,4 +403,4 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 ---
 
-History (dated changes, phases): [projects/thread-ownership/CURRENT_STATE.md](../../projects/thread-ownership/CURRENT_STATE.md).
+History (dated changes, phases): [projects/_archive/thread-ownership/CURRENT_STATE.md](../../projects/_archive/thread-ownership/CURRENT_STATE.md).

@@ -7,7 +7,7 @@
 namespace pbr {
 
 /**
- * The owner thread calls run their sessions on, and broadcast on calls' engine (projects/thread-ownership T001).
+ * The owner thread calls run their sessions on, and broadcast on calls' engine (thread-ownership T001).
  * Calls names it; the app registers it with AppRuntime (MediaSessionsOwnerThread in its owner list).
  */
 inline constexpr OwnerThreadId kMediaSessionsOwner{0};

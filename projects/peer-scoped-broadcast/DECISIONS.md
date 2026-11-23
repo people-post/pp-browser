@@ -18,7 +18,7 @@
 ## B002 — Broadcast allows multi-SFU media tree; calls do not
 
 **Date:** 2026-09-05  
-**Decision:** **Broadcast** may copy sealed realtime frames through a **degree-capped tree** of blind `media_relay` nodes ([MEDIA_TREE.md](MEDIA_TREE.md)). **Group calls** keep the existing non-goal: one subcontracted media hop; circuit multi-hop is reachability only ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)). Hard-lab `N-HARD-MULTI-HOP-MEDIA` stays call-off unless product revisits calls.  
+**Decision:** **Broadcast** may copy sealed realtime frames through a **degree-capped tree** of blind `media_relay` nodes ([MEDIA_TREE.md](MEDIA_TREE.md)). **Group calls** keep the existing non-goal: one subcontracted media hop; circuit multi-hop is reachability only ([MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)). Hard-lab `N-HARD-MULTI-HOP-MEDIA` stays call-off unless product revisits calls.  
 **Rationale:** Seed/first-tier pressure under massive subscribers is a media-capacity problem; circuit brokers do not multiply bytes.  
 **Alternatives:** More org seeds only (ops help, no log scaling); CDN off-mesh for all live (deferred / optional overflow later).
 

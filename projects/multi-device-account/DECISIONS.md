@@ -2,7 +2,7 @@
 
 Format: **ID**, **date**, **decision**, **rationale**, **alternatives**.
 
-Cross-project: [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+Cross-project: [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../_archive/at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 ---
 
@@ -37,7 +37,7 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 **Superseded:** by [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) from d2 — each device signs its envelopes; the account key signs the device list (the card).  
 **Updated:** 2026-08-11 — aggressive PQ: account signing is **ML-DSA-65 only** (not Ed25519 hybrid).  
 **Updated:** 2026-08-13 — dogfood is **one active sender** across linked devices (**M016**); `sender_instance_id` (D074) still later.  
-**Updated:** 2026-08-17 — [libp2p-pq-transport P004](../libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025): device endpoint key is **ML-DSA-65** (not Ed25519).  
+**Updated:** 2026-08-17 — [libp2p-pq-transport P004](../_archive/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025): device endpoint key is **ML-DSA-65** (not Ed25519).  
 **Decision:** **Account** key = **ML-DSA-65** (vendored `mldsa-native`) signs all relay envelopes. **Device** ML-DSA-65 keypair derives Peer ID / libp2p Noise identity only — not envelope `signature`. Installs distinguished by `sender_instance_id` when multi-writer ships (D074).  
 **Rationale:** Maximize PQ for person-level auth and mesh endpoint identity.  
 **Alternatives:** Ed25519+ML-DSA hybrid (S1 classic); device signs + account attests (S2); classical Ed25519 Peer ID (rejected — P004).
@@ -85,7 +85,7 @@ Directory / identity publish the full **1952-byte ML-DSA-65** public key; Accoun
 ## M008 — PQ libraries and KEM: mlkem-native + mldsa-native; ML-KEM-768 only
 
 **Date:** 2026-08-11  
-**Updated:** 2026-08-17 — libp2p Noise/PeerId also use mlkem-native / mldsa-native ([libp2p-pq-transport](../libp2p-pq-transport/)).  
+**Updated:** 2026-08-17 — libp2p Noise/PeerId also use mlkem-native / mldsa-native ([libp2p-pq-transport](../_archive/libp2p-pq-transport/)).  
 **Decision:** Vendor **mlkem-native v2.0.0** (ML-KEM-768, C backend) and **mldsa-native v2.0.0** (ML-DSA-65, C backend) under `third_party/`. Public auto-key uses **ML-KEM-768 only** (no X25519 hybrid). App wrappers: `HybridKem` (ML-KEM-768; name retained) and `MlDsa`. Symmetric stack remains libsodium. Libp2p product path: device PeerId/Noise auth = ML-DSA-65; Noise secrecy = ML-KEM-768 (`/noise-mlkem768/1.0.0`). BoringSSL remains for HTTPS/curl and classical crypto still present in the fork for non-product paths.  
 **Rationale:** High-assurance PQCP implementations; matches aggressive PQ account + mesh model; Brief updates KEM blob size to 1184 in parallel.  
 **Alternatives:** liboqs umbrella; keep X25519+Kyber-draft BoringSSL experimental path; classical Noise (rejected — P002).
@@ -397,10 +397,10 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M023 — Account state: a recovery phrase is the root; an encrypted account locker any provider can hold
 
 **Date:** 2026-10-30  
-**Status:** Accepted (Hongwei, 2026-10-30) — **partly built** (phases **s1–s6**, [PHASES.md](PHASES.md#s--account-state-m023)): the phrase, the relay locker, contact sync between siblings and restore from a typed phrase work; the recovery tiers (synced keychain), more providers and the master-signed list do not yet. The shipped format, sync and restore are in [docs/contracts/ACCOUNT_LOCKER.md](../../docs/contracts/ACCOUNT_LOCKER.md), which wins where this entry differs; the local account backup is gone from the code (only the retired Keychain item's cleanup remains, [at-rest A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)).  
+**Status:** Accepted (Hongwei, 2026-10-30) — **partly built** (phases **s1–s6**, [PHASES.md](PHASES.md#s--account-state-m023)): the phrase, the relay locker, contact sync between siblings and restore from a typed phrase work; the recovery tiers (synced keychain), more providers and the master-signed list do not yet. The shipped format, sync and restore are in [docs/contracts/ACCOUNT_LOCKER.md](../../docs/contracts/ACCOUNT_LOCKER.md), which wins where this entry differs; the local account backup is gone from the code (only the retired Keychain item's cleanup remains, [at-rest A011](../_archive/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)).  
 **Amends (as its phases ship):** [M021](#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §8 and limit 6 (the account key's backup is the recovery phrase, not the local account backup); [M015](#m015--account-kem-for-publicgroup-auto-key-private-e2e-stays-device-local) §6 (the deferred sibling chat-index refresh is the change log below).  
 **Supersedes:** [M018](#m018--link-paste-includes-contacts--public-thread-index) (never built — a linked device reads account state from the locker, the link bundle carries no contacts or thread index); the local account backup ([DATA_LAYOUT § Retired: local account backup](../../docs/contracts/DATA_LAYOUT.md#retired-local-account-backup-ios-keychain-outside-the-data-dir), `LocalAccountBackup`) as the restore mechanism — its contents become locker snapshots and it is not re-enabled in the Keychain.  
-**Cross-project:** [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device) §4 and [A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product); [group-chat G013](../group-chat/DECISIONS.md#g013--roster-sync-after-restore-group_roster_request--group_roster_reply) (groups ride in the locker).
+**Cross-project:** [at-rest A010](../_archive/at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device) §4 and [A011](../_archive/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product); [group-chat G013](../group-chat/DECISIONS.md#g013--roster-sync-after-restore-group_roster_request--group_roster_reply) (groups ride in the locker).
 
 **Problem:** with sessions per device pair (M021) nothing session-level needs syncing, but **account state** does — contacts, groups, card floors, preferences — and a device must find it when its siblings are offline or all gone (restore). Making a directory the agreed home for it hurts privacy and decentralization; the Keychain backup (A011) was device-local, PIN-guessable offline, and never covered a lost phone.
 

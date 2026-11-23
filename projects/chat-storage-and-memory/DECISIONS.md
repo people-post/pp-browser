@@ -1370,7 +1370,7 @@ Identity strings serve different verbs — do not treat them as interchangeable 
 **Amends:** [D096](#d096--identity-roles-peer-id-who-caip-10-find-relay-route) (person/endpoint/route split; ends “one keypair” for multi-device).  
 **Does not amend:** D082 string rules for `relay:` **as a route id**; D091 (CAIP-10 find-only).  
 **Canonical spec:** [multi-device-account](../multi-device-account/) ([DESIGN](../multi-device-account/DESIGN.md), [M001–M019](../multi-device-account/DECISIONS.md)).  
-**Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+**Cross-project:** [e2e E025](../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced), [at-rest A010](../_archive/at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
 

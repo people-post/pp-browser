@@ -95,7 +95,7 @@ Record significant choices here so future sessions (human or agent) do not re-li
 
 **Date:** 2026-06-29  
 **Updated:** 2026-07-02 — superseded `sessions.json`; columns on `chat_targets` (D084).  
-**Updated:** 2026-07-11 — at-rest encryption shipped ([at-rest A005](../at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk)); PSK + retired ledger blobs encrypted under profile DEK; fingerprints remain plaintext.  
+**Updated:** 2026-07-11 — at-rest encryption shipped ([at-rest A005](../_archive/at-rest-crypto/DECISIONS.md#a005--supersedes-e008-deferred-at-rest-for-psk)); PSK + retired ledger blobs encrypted under profile DEK; fingerprints remain plaintext.  
 **Decision:** PSK material lives in **`profile.db` → `chat_targets`** for **`e2e`** and **`e2e_public`** channels (D090). On disk, `master_psk_b64` and retired `master_psk_b64` entries are **AEAD ciphertext** (base64) under the profile DEK from `vault.bin` — see [AT_REST_ENCRYPTION.md](../../docs/contracts/AT_REST_ENCRYPTION.md).  
 **Rationale:** Crypto session is per chat target, not per thread shell; colocating PSK with seq/epoch avoids cross-file races on epoch bump and survives delete/recreate of `local_thread_id`.  
 **Alternatives:** `sessions.json` sidecar (rejected — dual-store sync); PSK in `thread.db` (rejected — shell is ephemeral); block c1 on keychain integration.
@@ -404,11 +404,11 @@ Optional **`psk_verified_at`** on `e2e_public` remains deferred (D089) — no ma
 **Updated:** 2026-08-13 — public auto-key encapsulate-to is account KEM (**M015**).  
 **Amends:** E016/E024 verify target (account key once Account ID is on wire); E011 private PSK distribution remains OOB — **not** fan-out on link-device.  
 **Canonical:** [multi-device-account](../multi-device-account/) M003, M005, M008, **M015** ([DESIGN](../multi-device-account/DESIGN.md)).  
-**Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [at-rest A010](../at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
+**Cross-project:** [chat-storage D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [at-rest A010](../_archive/at-rest-crypto/DECISIONS.md#a010--shared-dek-per-device-vault-wrap-multi-device).
 
 **Decision:**
 
-1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device ML-DSA-65 is for Peer ID / libp2p Noise identity only ([libp2p-pq-transport P004](../libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)).
+1. **Account ML-DSA-65 signs** all relay envelopes (`mldsa-native`). Device ML-DSA-65 is for Peer ID / libp2p Noise identity only ([libp2p-pq-transport P004](../_archive/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)).
 2. Friends verify using the **ML-DSA-65** account public key bound to Account ID (hash-binding M002; directory/cache — resolver seam as E016, key kind shifts with D099/m2).
 3. **Private (`e2e`) PSKs are not auto-synced** to linked devices. New device needs OOB/import or explicit opt-in; default link-device does **not** copy private `chat_targets` PSK material.
 4. **Public (`e2e_public`) / group** conversation PSKs **may** sync with account/DEK when those tiers + link-device ship. Directory auto-key encapsulate-to is the **account KEM** (copied on link — **M015** / E024).

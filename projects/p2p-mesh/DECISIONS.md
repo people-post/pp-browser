@@ -86,7 +86,7 @@ Empty `mesh.bootstrap_peers` in config fills these; a non-empty config list **re
 ## N012 — Reachability status + guided network help
 
 **Date:** 2026-07-26  
-**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; AutoNAT-style probes and **Amp Coordinated Punch** ([H009](../media-hop-reachability/DECISIONS.md#h009--amp-coordinated-punch-acp)) come later in-stack.  
+**Decision:** When Node participation matters, surface a **reachability status** (Reachable / Outbound only / Blocked / Unknown) based on measurable signals (private vs public listen IP, dial to seed, later dial-back / AutoNAT) — not definitive “you are behind a firewall” claims. Me → Network shows a Connection card; soft banner + guided sheet teach **port forwarding** (outbound-only + private IP), firewall allowlisting (blocked), and always offer **relay / skip**. Clients are not nagged to port-forward. `pp-node` gets ops status, not consumer copy. Cheap detection + help UI is phase **nr**; AutoNAT-style probes and **Amp Coordinated Punch** ([H009](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md#h009--amp-coordinated-punch-acp)) come later in-stack.  
 **Rationale:** Mutual-help nodes fail silently behind NAT; users need to learn what is wrong and what they can do without feeling broken or blamed.
 
 ## N013 — Prefer IPv6 + UPnP/NAT-PMP before manual port forward
@@ -292,7 +292,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 | Track | Direction |
 |-------|-----------|
-| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); **Amp Coordinated Punch** planned ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md), H009) — program: [media-hop-reachability](../media-hop-reachability/) (**in-stack**, not app gather) |
+| Reachability | Listen, UPnP, dial-back, strengthen circuit (toward PeerId-friendly paths); **Amp Coordinated Punch** planned ([HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md), H009) — program: [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (**in-stack**, not app gather) |
 | Discovery | Contacts ∪ bootstrap now; directory; DHT per N015 timing |
 | Transmission | N021 framing/QoS; lossy audio-friendly paths; budgets N019 |
 | Incentives | Quotes/ceilings; volunteer → paid as regulation (N020); contact-first admission |
@@ -315,7 +315,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 | **Provider** | **Auto-cap scope** from reachability + capability + pricing — no tier picker. Volunteer default: `link \| site \| social`; `public` requires paid + opt-in. |
 | **Partition escape** | When seed/global fails, use **bridge score** within social graph — not geo IP. |
 | **Roles** | Gateway / island store / infrastructure are **topology outcomes**, not user job titles. |
-| **Ownership** | Policy in **p2p-mesh** ([RELAY_SCOPE.md](RELAY_SCOPE.md)); dialability in [media-hop-reachability](../media-hop-reachability/) (H001). |
+| **Ownership** | Policy in **p2p-mesh** ([RELAY_SCOPE.md](RELAY_SCOPE.md)); dialability in [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (H001). |
 | **Messages** | HTTP Brief remains org/global durability fallback; peer `message_relay` may add link/site/island queues later. |
 | **Short term** | Consumer mask stops at **`org`**; `public` ineligible. `link`/`site` order eligible **contacts** only — no LAN strangers. |
 | **Algorithm** | Outer scope bands + inner N020 scorer — not the rejected hardcoded N014 stage list. |
@@ -330,7 +330,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 
 **Date:** 2026-08-01  
 **Updated:** 2026-08-01 (bundled media + SLA; supersedes circuit-only wording)  
-**Status:** Accepted (plan — pairs with [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
+**Status:** Accepted (plan — pairs with [H008](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned))  
 **Decision:** When consumer **A** uses immediate relay **R1** (circuit path and/or brokered call attach), **A pays R1 only**. R1 is the **single commercial and SLA face** — priced and experienced like “the hop,” even when R1 subcontracted upstream **`circuit_relay`** (R2+) and **`media_relay`** (B) capacity behind the scenes.
 
 | Rule | Detail |
@@ -340,7 +340,7 @@ Same capability may later carry other real-time opaque fan-out (e.g. in-call dat
 | **Upstream circuit** | R1 chooses R2+; R1 pays upstream circuit cost; must keep **positive margin** when paid |
 | **Downstream media (brokered calls)** | R1 subcontracts **`media_relay`** on **call-agreed B**; **R1 absorbs B’s wholesale** in its retail quote to A and may add markup for path + **latency / delivery guarantee** |
 | **SLA owner** | R1 owns **path + attach delivery** to the **call-agreed** target; see **re-pick bounds** below |
-| **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](../media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
+| **Direct attach (unchanged)** | When A **direct-dials B** without a broker, **A pays B** per N019 / [H005](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md#h005--circuit-last-resort-bill-media-hop) — friend volunteer SFU, no R1 markup |
 | **Volunteer R1** | May bundle volunteer upstream (R2, B) at rate 0 to A; still one relationship with R1 |
 
 ### Re-pick bounds (calls — B is roster-bound)
@@ -367,7 +367,7 @@ Paid mode: never exceed the **accepted ceiling** without explicit re-accept (sam
 **Rationale:** One payer and one SLA owner matches “R1 feels like the real B at a different price”; enables latency guarantees only the orchestrator can offer on **path to** the agreed SFU; R1 optimizes subcontract mix for margin. **B** remains call-scoped — SFU re-pick is coordinator policy (V023), not broker discretion.  
 **Alternatives:** A pays B separately while using R1 for circuit only (rejected — splits SLA, confuses UX); pay-each-hop (rejected); R1 forbidden from marking up B (rejected — no incentive to broker); **R1 unilateral B swap** (rejected — breaks roster / group-agreed media hub).  
 **Implementation notes (later):** R1↔B wholesale quote/attach protocol; inter-relay settlement (HTTP preferred per N022); SoftMigrate **brokered** vs **direct** attach modes.  
-**Spec:** [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).
+**Spec:** [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md). **Stack phase:** [L3.5](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2). **Policy phase:** [ns3](PHASES.md#ns3--multi-hop-circuit-policy).
 
 ---
 

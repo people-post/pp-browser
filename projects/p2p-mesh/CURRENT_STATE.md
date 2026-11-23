@@ -76,7 +76,7 @@
 
 | Area | State |
 |------|-------|
-| Protocol | `/pp-mesh/circuit/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
+| Protocol | `/pp-mesh/circuit/1.0.0` stream bridge — **single-hop today**; multi-hop v2 planned ([MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)) |
 | Config | `libp2p.capabilities.circuit_relay` + JSON round-trip — **host only** (N009); CallStack consume independent |
 | UI | **Help others connect** checkbox under Help the network (hot refresh via `RefreshMeshCapabilities`) |
 | Seed | `packaging/pp-node/config.json.example` enables `circuit_relay: true` |

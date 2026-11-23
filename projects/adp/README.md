@@ -3,7 +3,7 @@
 **Status:** L1 foundation landed; **AMP stack spec locked** (D0)  
 **Owner:** Hongwei + agents  
 **Stable refs:** [ADP.md](../../docs/contracts/ADP.md) (L1) · [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) (L2) · [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) (L3)  
-**Related:** [STACK.md](STACK.md), [libp2p-pq-transport](../libp2p-pq-transport/), [p2p-av-calls](../p2p-av-calls/), [p2p-mesh](../p2p-mesh/)
+**Related:** [STACK.md](STACK.md), [libp2p-pq-transport](../_archive/libp2p-pq-transport/), [p2p-av-calls](../p2p-av-calls/), [p2p-mesh](../p2p-mesh/)
 
 ## One-line goal
 

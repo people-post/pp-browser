@@ -14,7 +14,7 @@ namespace pbr {
 
 /**
  * What the GUI reads about the call stack, published by the calls owner after each of its steps
- * (projects/thread-ownership t2b): the GUI never reads owner memory directly.
+ * (thread-ownership t2b): the GUI never reads owner memory directly.
  */
 struct CallUiState {
   // Lifecycle

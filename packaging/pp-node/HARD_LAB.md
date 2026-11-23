@@ -56,7 +56,7 @@ A ──► R1 ──x──► B     (R1 cannot dial B)
 A ──► R1 ──► R2 ──► B (R1 brokers upstream; A configures R1 only)
 ```
 
-See [MULTI_HOP_CIRCUIT.md](../../projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md). Prefer loopback multi-host for protocol correctness first; hard lab proves netns + packaging of the same shape.
+See [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md). Prefer loopback multi-host for protocol correctness first; hard lab proves netns + packaging of the same shape.
 
 ---
 
@@ -143,7 +143,7 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 | 13 | **N-HARD-MHOP-LOOP** | Cycle / `max_hops` exceeded → reject cleanly; no hang |
 | 14 | **N-HARD-MHOP-REPICK** | Kill/pause R2 → fail clean or R1 re-pick within documented bounds |
 
-**Non-goal:** multi-SFU media bitpaths (one subcontracted media hop — [MULTI_HOP_CIRCUIT.md](../../projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)).
+**Non-goal:** multi-SFU media bitpaths (one subcontracted media hop — [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)).
 
 ### Wave 5 — NAT shapes (weekly / manual heavy)
 

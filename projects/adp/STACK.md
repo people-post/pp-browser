@@ -113,7 +113,7 @@ Port today’s `StreamIoPolicy` concepts (`CallMediaIoPolicy`, `ControlJsonIoPol
 
 ## L2-full security (summary)
 
-- **MSH** (Message Session Handshake): PQ peer authentication + forward secrecy — message-native transcript; semantic reference [libp2p-pq-transport](../libp2p-pq-transport/DESIGN.md) (ML-KEM-768 + ML-DSA-65).
+- **MSH** (Message Session Handshake): PQ peer authentication + forward secrecy — message-native transcript; semantic reference [libp2p-pq-transport](../_archive/libp2p-pq-transport/DESIGN.md) (ML-KEM-768 + ML-DSA-65).
 - **Session profile:** **full only** on the product path ([A013](DECISIONS.md#a013--l2-full-session-only)).
 - **Key separation** ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript)):
   - `K_assoc` → ADP L1 HMAC only

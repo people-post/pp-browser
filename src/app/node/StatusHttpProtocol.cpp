@@ -307,7 +307,7 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, con
   }
 
   if (request.path == "/metrics") {
-    // Operator scrape (projects/node-monitoring): Prometheus text, names in NODE_METRICS.md.
+    // Operator scrape (node-monitoring): Prometheus text, names in NODE_METRICS.md.
     StatusHttpResponse r;
     r.status_code = 200;
     r.content_type = "text/plain; version=0.0.4; charset=utf-8";
