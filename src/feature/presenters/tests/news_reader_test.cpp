@@ -31,6 +31,10 @@ ThreadMessage Digest(const std::string& id, const std::string& text) {
   return Message(id, kAiAssistantContactId, text, kNewsDigestGeneration);
 }
 
+ThreadMessage TranslatedDigest(const std::string& id, const std::string& text) {
+  return Message(id, kAiAssistantContactId, text, kNewsDigestTranslatedGeneration);
+}
+
 ThreadMessage Failed(const std::string& id) {
   return Message(id, kAiAssistantContactId, "这篇暂时取不到内容。", kNewsFailedGeneration);
 }
@@ -103,6 +107,40 @@ TEST(NewsReaderTest, ANewsPicksTitleIsItsHeadline) {
   EXPECT_EQ(NewsPickTitle("[View details](https://n.example/a \"pp:news\")", "https://n.example/a?x=1"), "n.example");
 }
 
+// A translated digest counts as read like any digest, and says it is a translation.
+TEST(NewsReaderTest, ATranslatedDigestIsReadAndKnownAsTranslated) {
+  const NewsReads reads = ScanNewsReads({Request("r1", "https://n.example/a"), TranslatedDigest("d1", "译文"),
+                                         Request("r2", "https://n.example/b"), Digest("d2", "same language")});
+  ASSERT_NE(reads.Find("https://n.example/a"), nullptr);
+  EXPECT_TRUE(reads.Find("https://n.example/a")->translated);
+  ASSERT_NE(reads.Find("https://n.example/b"), nullptr);
+  EXPECT_FALSE(reads.Find("https://n.example/b")->translated);
+}
+
+// The "AI translation of the original" line: only on a translated digest; not on another digest, while loading, or on
+// the failure line.
+TEST(NewsReaderTest, TheTranslationLineShowsOnlyOnATranslatedDigest) {
+  const NewsReads reads = ScanNewsReads({Request("r1", "https://n.example/t"), TranslatedDigest("d1", "译文"),
+                                         Request("r2", "https://n.example/u"), Digest("d2", "same language")});
+  NewsReaderShows shows = NewsReaderShowsFor(reads, "https://n.example/t", "");
+  ASSERT_NE(shows.digest, nullptr);
+  EXPECT_TRUE(shows.translated);
+  EXPECT_FALSE(shows.loading || shows.failed);
+
+  shows = NewsReaderShowsFor(reads, "https://n.example/u", "");
+  ASSERT_NE(shows.digest, nullptr);
+  EXPECT_FALSE(shows.translated);
+
+  shows = NewsReaderShowsFor(reads, "https://n.example/new", "https://n.example/new");
+  EXPECT_TRUE(shows.loading);
+  EXPECT_FALSE(shows.translated);
+  EXPECT_EQ(shows.digest, nullptr);
+
+  shows = NewsReaderShowsFor(reads, "https://n.example/new", "");
+  EXPECT_TRUE(shows.failed);
+  EXPECT_FALSE(shows.translated);
+}
+
 TEST(NewsReaderTest, TheRequestIsTheUrlAndTheFixedSentence) {
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "zh-Hans"), "https://n.example/a\n这篇讲了什么");
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "en"), "https://n.example/a\nWhat's in the article");
@@ -169,6 +207,7 @@ TEST(NewsReaderTest, TheNewestShownMessageSkipsHiddenNewsMessages) {
   ASSERT_NE(shown, nullptr);
   EXPECT_EQ(shown->id, "a1") << "a hidden request is no question waiting for an answer";
   EXPECT_EQ(NewestShownMessage({Request("r1", "https://n.example/a"), Digest("d1", "x")}), nullptr);
+  EXPECT_EQ(NewestShownMessage({Request("r1", "https://n.example/a"), TranslatedDigest("d1", "x")}), nullptr);
 }
 
 } // namespace

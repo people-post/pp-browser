@@ -31,6 +31,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.RegisterArray<std::vector<ReactorDisplayRow>>();
   ctor.Bind("reactor_rows", &state.reactor_rows);
   ctor.Bind("news_reader_title", &state.news_reader_title);
+  ctor.Bind("news_reader_translated", &state.news_reader_translated);
   ctor.Bind("news_reader_loading", &state.news_reader_loading);
   ctor.Bind("news_reader_failed", &state.news_reader_failed);
   ctor.Bind("news_reader_body_rml", &state.news_reader_body_rml);

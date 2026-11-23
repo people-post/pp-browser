@@ -47,6 +47,7 @@ struct NewsReads {
   struct Digest {
     std::string message_id;
     std::string text;
+    bool translated = false; // brief_AI translated it from the article's language: the reader says so
   };
   std::map<std::string, Digest> digests;
 
@@ -78,6 +79,15 @@ NewsTap DecideNewsTap(bool stored, bool reading_this, bool busy);
 /** DecideNewsTap for the item at `item_url`: `reading_url` is the URL the chat's running read reads ("" when none). */
 NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
                          bool busy);
+
+/** What the reader shows for one item: its digest (and whether it is an AI translation), loading, or the failure line. */
+struct NewsReaderShows {
+  const NewsReads::Digest* digest = nullptr; // points into the NewsReads passed in
+  bool translated = false;                   // only with a digest: the line "AI translation of the original"
+  bool loading = false;
+  bool failed = false;
+};
+NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url);
 
 /** Previous / Next under the reader: only for a list (two or more items), off at the ends and while a read runs. */
 struct NewsNav {

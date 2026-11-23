@@ -110,16 +110,24 @@ inline bool IsLocalActionMessage(const ThreadMessage& message) {
  * `ThreadMessage::generation` of a news item read in an AI conversation (DEV/PLAN-news-inline-digest.md): the request
  * (the item's URL and a fixed sentence), the faithful digest of the article, and the "could not be read" answer. Never
  * shown in the chat (the digest shows in the reader sheet), never a preview, an unread count or the chat's name; they
- * stay in the history sent to the model, so a follow-up knows what was read.
+ * stay in the history sent to the model, so a follow-up knows what was read. A digest brief_AI translated from the
+ * article's language (done.translated) is kNewsDigestTranslatedGeneration: the same as a digest everywhere, and the
+ * reader says it is an AI translation.
  */
 inline constexpr const char* kNewsRequestGeneration = "news_request";
 inline constexpr const char* kNewsDigestGeneration = "news_digest";
+inline constexpr const char* kNewsDigestTranslatedGeneration = "news_digest_translated";
 inline constexpr const char* kNewsFailedGeneration = "news_failed";
 
-inline bool IsHiddenNewsMessage(const ThreadMessage& message) {
+/** A news read's digest, translated or not (it counts as read). */
+inline bool IsNewsDigestMessage(const ThreadMessage& message) {
   return message.generation &&
-         (*message.generation == kNewsRequestGeneration || *message.generation == kNewsDigestGeneration ||
-          *message.generation == kNewsFailedGeneration);
+         (*message.generation == kNewsDigestGeneration || *message.generation == kNewsDigestTranslatedGeneration);
+}
+
+inline bool IsHiddenNewsMessage(const ThreadMessage& message) {
+  return IsNewsDigestMessage(message) || (message.generation && (*message.generation == kNewsRequestGeneration ||
+                                                                 *message.generation == kNewsFailedGeneration));
 }
 
 } // namespace pbr

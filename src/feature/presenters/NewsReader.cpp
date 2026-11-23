@@ -154,8 +154,9 @@ NewsReads ScanNewsReads(const std::vector<ThreadMessage>& oldest_first) {
     const std::string& generation = *message.generation;
     if (generation == kNewsRequestGeneration && message.sender_contact_id == kLocalSelfContactId) {
       asked = NormalizeNewsUrl(RequestUrl(message.text));
-    } else if (generation == kNewsDigestGeneration && message.sender_contact_id == kAiAssistantContactId && asked) {
-      reads.digests[*asked] = NewsReads::Digest{message.id, message.text};
+    } else if (IsNewsDigestMessage(message) && message.sender_contact_id == kAiAssistantContactId && asked) {
+      reads.digests[*asked] =
+          NewsReads::Digest{message.id, message.text, generation == kNewsDigestTranslatedGeneration};
       asked.reset();
     } else if (generation == kNewsFailedGeneration && message.sender_contact_id == kAiAssistantContactId) {
       asked.reset();
@@ -187,6 +188,20 @@ NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, co
                          const bool busy) {
   const bool reading_this = !reading_url.empty() && NormalizeNewsUrl(reading_url) == NormalizeNewsUrl(item_url);
   return DecideNewsTap(reads.IsRead(item_url), reading_this, busy);
+}
+
+NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url,
+                                   const std::string& reading_url) {
+  NewsReaderShows shows;
+  shows.digest = reads.Find(item_url);
+  if (shows.digest) {
+    shows.translated = shows.digest->translated;
+  } else if (!reading_url.empty() && NormalizeNewsUrl(reading_url) == NormalizeNewsUrl(item_url)) {
+    shows.loading = true;
+  } else {
+    shows.failed = true;
+  }
+  return shows;
 }
 
 NewsNav NewsNavFor(const size_t index, const size_t count, const bool loading) {

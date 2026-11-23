@@ -1156,6 +1156,7 @@
     "chat.news.loading": "Getting the article…",
     "chat.news.reading": "Reading “{title}”",
     "chat.news.unavailable": "This article can't be read right now.",
+    "chat.news.translated": "AI translation of the original",
     "chat.news.open_original": "Open original",
     "chat.news.previous": "Previous",
     "chat.news.next": "Next",

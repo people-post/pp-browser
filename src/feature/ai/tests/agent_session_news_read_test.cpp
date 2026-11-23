@@ -72,6 +72,22 @@ TEST_F(AgentSessionBriefStreamTest, ANewsReadStoresAHiddenRequestAndDigest) {
   EXPECT_FALSE(IsLocalActionMessage(store.messages[0])) << "it stays in the history sent to the model";
 }
 
+// done.translated on a digest: stored as the translated digest (hidden and read like any digest).
+TEST_F(AgentSessionBriefStreamTest, ATranslatedDigestIsStoredAsSuch) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  BriefAiEvent done = DoneKind("来源：Reuters\n\n文章说……", "news_digest");
+  done.translated = true;
+  Script({Meta(), done}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest);
+  WaitForTurn();
+  ASSERT_EQ(store.messages.size(), 2u);
+  EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsDigestTranslatedGeneration);
+  EXPECT_TRUE(IsHiddenNewsMessage(store.messages[1]));
+  EXPECT_TRUE(IsNewsDigestMessage(store.messages[1]));
+}
+
 TEST_F(AgentSessionBriefStreamTest, AnUnreadableArticleIsStoredAsFailed) {
   Start();
   MemoryThreadStore store;

@@ -222,6 +222,37 @@ TEST_F(NewsReaderLayoutTest, WhileLoadingTheRowStillSitsAtTheBottom) {
   EXPECT_LE(BorderEdges(loading).bottom, BorderEdges(First("news-reader-bar")).top);
 }
 
+// A translated digest: the "AI translation of the original" line sits under a long title, above the digest, and nothing
+// overlaps the row.
+TEST_F(NewsReaderLayoutTest, TheTranslationLineSitsUnderALongTitle) {
+  const std::string title =
+      "以色列总理内塔尼亚胡与反对派领袖艾森科特的政党结束新一轮组阁谈判但未能达成任何协议各方仍在继续接触";
+  Fill(title, "来源：Reuters\n\n译文说，双方在周日结束了新一轮谈判。");
+  state_.news_reader_translated = true;
+  Show("zh-Hans");
+  ExpectTheBarAtTheBottomAndTappable();
+  ui::Element* line = First("news-reader-translated");
+  ASSERT_NE(line, nullptr);
+  ASSERT_TRUE(line->IsVisible());
+  EXPECT_NE(std::string(line->GetInnerRML().c_str()).find("AI 翻译自原文"), std::string::npos);
+  const Edges t = BorderEdges(First("news-reader-title"));
+  const Edges l = BorderEdges(line);
+  const Edges body = BorderEdges(First("news-reader-body"));
+  EXPECT_GT(t.Height(), 40.f) << "the long title wraps";
+  EXPECT_GE(l.top, t.bottom - 0.5f - 6.f) << "under the title";
+  EXPECT_GT(l.top, t.top + t.Height() / 2) << "under the title";
+  EXPECT_LE(l.bottom, body.top + 0.5f) << "above the digest";
+  EXPECT_GT(l.Height(), 10.f);
+
+  // An untranslated digest: no line.
+  state_.news_reader_translated = false;
+  DataModelHost::Instance().Dirty("chat", "news_reader_translated");
+  for (int i = 0; i < 3; ++i) {
+    context_->Update();
+  }
+  EXPECT_FALSE(First("news-reader-translated")->IsVisible());
+}
+
 // The walk could not type Chinese: the zh-Hans strings and a long Chinese title (it wraps, nothing overlaps).
 TEST_F(NewsReaderLayoutTest, ChineseStringsAndALongChineseTitleWrapWithoutOverlap) {
   const std::string title =

@@ -52,6 +52,7 @@ struct BriefAiEvent {
   std::string response, finish;       // Done
   std::string role;                   // Done (empty when absent)
   std::string answer_kind;            // Done: "news_pick", "news_digest", "news_unavailable" (empty when absent)
+  bool translated = false;            // Done: a news digest translated from the article's language (false: absent)
   std::vector<BriefAiSource> sources; // Done
   std::string capability;             // Handoff (empty when the server sent null)
   std::string reason;                 // Handoff: "app_action", "user_confirmed", ... (empty when absent)

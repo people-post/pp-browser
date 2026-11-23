@@ -4864,6 +4864,7 @@ void ChatController::CloseNewsReader() {
 
 void ChatController::ApplyNewsReader() {
   chat_.news_reader_title = "";
+  chat_.news_reader_translated = false;
   chat_.news_reader_loading = false;
   chat_.news_reader_failed = false;
   chat_.news_reader_body_rml = ""; // the digest is bound only while it shows (and never kept under a lock)
@@ -4874,23 +4875,24 @@ void ChatController::ApplyNewsReader() {
     const NewsItem& item = news_reader_->items[news_reader_->index];
     chat_.news_reader_title = item.title.c_str();
     const auto reading = news_reading_url_.find(news_reader_->thread_id);
-    const bool reading_this =
-        reading != news_reading_url_.end() && NormalizeNewsUrl(reading->second) == NormalizeNewsUrl(item.url);
-    if (const NewsReads::Digest* digest = NewsReadsOf(news_reader_->thread_id).Find(item.url)) {
+    const NewsReaderShows shows =
+        NewsReaderShowsFor(NewsReadsOf(news_reader_->thread_id), item.url,
+                           reading == news_reading_url_.end() ? std::string() : reading->second);
+    if (shows.digest) {
       // The digest is untrusted web text: nothing in it is tappable ("Open original" is the way to the article).
-      chat_.news_reader_body_rml = MarkdownToRml(digest->text, MarkdownOptions{.links = false}).rml.c_str();
-    } else if (reading_this) {
-      chat_.news_reader_loading = true;
-    } else {
-      chat_.news_reader_failed = true;
+      chat_.news_reader_body_rml = MarkdownToRml(shows.digest->text, MarkdownOptions{.links = false}).rml.c_str();
     }
+    chat_.news_reader_translated = shows.translated;
+    chat_.news_reader_loading = shows.loading;
+    chat_.news_reader_failed = shows.failed;
     const NewsNav nav = NewsNavFor(news_reader_->index, news_reader_->items.size(), chat_.news_reader_loading);
     chat_.news_reader_has_nav = nav.shown;
     chat_.news_reader_can_prev = nav.can_prev;
     chat_.news_reader_can_next = nav.can_next;
   }
-  for (const char* field : {"news_reader_title", "news_reader_loading", "news_reader_failed", "news_reader_body_rml",
-                            "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
+  for (const char* field :
+       {"news_reader_title", "news_reader_translated", "news_reader_loading", "news_reader_failed",
+        "news_reader_body_rml", "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
     DataModelHost::Instance().Dirty("chat", field);
   }
 }
@@ -4905,8 +4907,8 @@ const NewsReads& ChatController::NewsReadsOf(const std::string& thread_id) {
     return kNone; // locked or not set up: nothing is read, and nothing is remembered as "none read"
   }
   // Once per chat (until it is locked, cleared or deleted): only its hidden news rows are read and decrypted.
-  auto rows = facade_->GetMessagesByGeneration(thread_id,
-                                               {kNewsRequestGeneration, kNewsDigestGeneration, kNewsFailedGeneration});
+  auto rows = facade_->GetMessagesByGeneration(thread_id, {kNewsRequestGeneration, kNewsDigestGeneration,
+                                                           kNewsDigestTranslatedGeneration, kNewsFailedGeneration});
   if (!rows) {
     return kNone;
   }

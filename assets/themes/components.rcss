@@ -1170,6 +1170,14 @@ select selectbox option {
   word-break: break-word;
 }
 
+/* "AI translation of the original": one small line under the title of a translated digest. */
+.news-reader-translated {
+  margin: -6dp 0 12dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  word-break: break-word;
+}
+
 .news-reader-loading {
   display: flex;
   flex-direction: row;

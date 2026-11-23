@@ -101,7 +101,7 @@ TEST(NewsReaderWiringTest, TheAskAiPanelAndItsQuestionCheckIgnoreTheReader) {
 TEST(NewsReaderWiringTest, TheDigestHasNothingToTap) {
   // The article is untrusted: no link in the digest is tappable ("Open original" is the way out).
   const std::string apply = Body(kController, "void ChatController::ApplyNewsReader(");
-  EXPECT_NE(apply.find("MarkdownToRml(digest->text, MarkdownOptions{.links = false})"), std::string::npos);
+  EXPECT_NE(apply.find("MarkdownToRml(shows.digest->text, MarkdownOptions{.links = false})"), std::string::npos);
   EXPECT_EQ(apply.find("chat_links_"), std::string::npos);
   // After a restart a hidden digest's links are rebuilt without news items, and only in an AI chat do they count.
   const std::string links = Body(kController, "const std::vector<MarkdownLink>* ChatController::ChatLinksOf(");

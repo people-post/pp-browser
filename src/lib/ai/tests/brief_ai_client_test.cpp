@@ -292,6 +292,15 @@ TEST(BriefAiClientTest, ParseDoneAnswerKind) {
   auto plain = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r"})");
   ASSERT_TRUE(plain.has_value());
   EXPECT_TRUE(plain->answer_kind.empty());
+  EXPECT_FALSE(plain->translated) << "absent: not translated";
+  auto translated =
+      pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r","answer_kind":"news_digest","translated":true})");
+  ASSERT_TRUE(translated.has_value());
+  EXPECT_TRUE(translated->translated);
+  auto same = pbr::BriefAiClient::ParseEvent(
+      R"({"type":"done","response":"r","answer_kind":"news_digest","translated":false})");
+  ASSERT_TRUE(same.has_value());
+  EXPECT_FALSE(same->translated);
 }
 
 // A news read is an ordinary request: the item's URL and a fixed sentence as the message, `news_digest` among the

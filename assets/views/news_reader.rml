@@ -3,7 +3,7 @@
      until the whole digest arrives at once, or the fixed "This article can't be read right now."; under it "Open
      original" (the system browser) and, for a list, Previous / Next (off at the ends and while a read runs). The digest
      is bound only while it shows. The desktop's panel is a separate view (desktop branch); state and events:
-     news_reader_title, news_reader_loading, news_reader_failed, news_reader_body_rml, news_reader_has_nav,
+     news_reader_title, news_reader_translated, news_reader_loading, news_reader_failed, news_reader_body_rml, news_reader_has_nav,
      news_reader_can_prev, news_reader_can_next; news_reader_prev(), news_reader_next(), news_reader_open_original(). -->
 <div class="news-reader" data-model="chat">
   <div class="sheet-header">
@@ -11,6 +11,7 @@
   </div>
   <div class="news-reader-scroll">
     <h2 class="news-reader-title" selectable="text">{{news_reader_title}}</h2>
+    <p class="news-reader-translated" data-if="news_reader_translated">{{i18n:chat.news.translated}}</p>
     <div class="news-reader-loading" data-if="news_reader_loading">
       <div class="news-reader-spin"></div>
       <p class="news-reader-note">{{i18n:chat.news.loading}}</p>

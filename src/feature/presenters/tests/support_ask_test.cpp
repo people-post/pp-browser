@@ -31,7 +31,8 @@ TEST(SupportAskTest, HiddenNewsRowsAreNoPanelMessages) {
   message.sender_contact_id = kLocalSelfContactId;
   message.text = "https://n.example/a\n这篇讲了什么";
   EXPECT_TRUE(SupportMessageOf(message, SendMark::None).has_value());
-  for (const char* generation : {kNewsRequestGeneration, kNewsDigestGeneration, kNewsFailedGeneration}) {
+  for (const char* generation :
+       {kNewsRequestGeneration, kNewsDigestGeneration, kNewsDigestTranslatedGeneration, kNewsFailedGeneration}) {
     message.generation = generation;
     EXPECT_FALSE(SupportMessageOf(message, SendMark::None).has_value()) << generation;
   }

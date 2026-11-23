@@ -579,7 +579,7 @@ TEST(InboxMessageEditTest, AnEditOfTheMessageBeforeANewsReadIsThePreview) {
   ThreadMessage request = EditText(chat.id, "r1", "https://n.example/a\n这篇讲了什么", 2000);
   request.generation = kNewsRequestGeneration;
   ThreadMessage digest = EditText(chat.id, "d1", "the digest", 3000);
-  digest.generation = kNewsDigestGeneration;
+  digest.generation = kNewsDigestTranslatedGeneration; // a translated digest is hidden like any other
   ASSERT_TRUE(env.store->AppendMessage(request));
   ASSERT_TRUE(env.store->AppendMessage(digest));
   ASSERT_EQ(env.store->GetThread(chat.id).value().value().preview, "1. the list") << "hidden rows set no preview";
@@ -597,7 +597,9 @@ TEST(InboxMessageEditTest, DeletingTheMessageBeforeANewsReadClearsThePreview) {
   const Thread chat = EditChat(env, "thread-delete-news", ThreadKind::Ai);
   ASSERT_TRUE(env.store->AppendMessage(EditText(chat.id, "list", "1. secret list", 1000)));
   for (const auto& [id, generation] :
-       {std::pair{"r1", kNewsRequestGeneration}, std::pair{"f1", kNewsFailedGeneration}}) {
+       {std::pair{"r1", kNewsRequestGeneration}, std::pair{"f1", kNewsFailedGeneration},
+        std::pair{"r2", kNewsRequestGeneration}, std::pair{"d2", kNewsDigestGeneration},
+        std::pair{"r3", kNewsRequestGeneration}, std::pair{"t3", kNewsDigestTranslatedGeneration}}) {
     ThreadMessage hidden = EditText(chat.id, id, "hidden", 2000);
     hidden.generation = generation;
     ASSERT_TRUE(env.store->AppendMessage(hidden));

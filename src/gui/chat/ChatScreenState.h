@@ -161,6 +161,7 @@ struct ChatScreenState {
   /** The news reader sheet (view "news_reader"): the item's title, loading / failed, the digest (bound only while it
    *  shows) and Previous / Next for a list. */
   ui::String news_reader_title;
+  bool news_reader_translated = false; // the digest shown is an AI translation: one line under the title says so
   bool news_reader_loading = false;
   bool news_reader_failed = false;
   ui::String news_reader_body_rml;

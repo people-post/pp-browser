@@ -127,7 +127,9 @@ TEST(ThreadSearchTest, HiddenNewsMessagesAreNotIndexed) {
   digest.generation = kNewsDigestGeneration;
   ThreadMessage failed = Text("failed", 3, "这篇暂时取不到内容。");
   failed.generation = kNewsFailedGeneration;
-  const std::vector<ThreadMessage> messages = {request, digest, failed, Text("shown", 4, "利率怎么了")};
+  ThreadMessage translated = Text("translated", 4, "译文：利率上调");
+  translated.generation = kNewsDigestTranslatedGeneration;
+  const std::vector<ThreadMessage> messages = {request, digest, failed, translated, Text("shown", 5, "利率怎么了")};
   EXPECT_EQ(Search(messages, "利率"), (std::vector<std::string>{"shown"}));
   EXPECT_TRUE(Search(messages, "n.example").empty());
 }

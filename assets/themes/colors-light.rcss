@@ -312,7 +312,8 @@ select selectbox option:hover {
   border-color: #3c3c434c #3c3c434c #3c3c434c transparent;
 }
 
-.news-reader-note {
+.news-reader-note,
+.news-reader-translated {
   color: #3c3c4399;
 }
 

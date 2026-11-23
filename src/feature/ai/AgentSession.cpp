@@ -233,6 +233,7 @@ struct AgentSession::Impl : public Module {
   std::string news_title; // the read item's title (client.news_title)
   /** The streamed answer's done.answer_kind (empty: none); set by on_done for the persist and the ready event. */
   std::string answer_kind;
+  bool translated = false; // the streamed digest's done.translated
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
@@ -415,6 +416,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->pending_direct_action.reset();
   state->news_read = false;
   state->answer_kind.clear();
+  state->translated = false;
   state->pending_entry_id.clear();
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
@@ -734,7 +736,9 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   } else if (state->news_read) {
     // Hidden like its request. Only brief_AI's explicit "news_digest" is a digest (read); "news_unavailable", none
     // (an older server) or anything else is "could not be read": never guessed from the words.
-    message.generation = state->answer_kind == "news_digest" ? kNewsDigestGeneration : kNewsFailedGeneration;
+    message.generation = state->answer_kind != "news_digest" ? kNewsFailedGeneration
+                         : state->translated                 ? kNewsDigestTranslatedGeneration
+                                                             : kNewsDigestGeneration;
   }
   auto appended = state->thread_store->AppendMessage(message);
   if (!appended) {
@@ -1747,6 +1751,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     request.news_title = state->news_title; // data beside the two-line message, never in it
   }
   state->answer_kind.clear();
+  state->translated = false;
 
   // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
   // still draining then sees a stale generation and must not touch the new turn's state.
@@ -1817,9 +1822,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     }
   };
   sinks.on_meta = [stats](const std::string& route) { stats->route = route; };
-  sinks.on_done = [state, current, emit_turn, role_thread_id](const std::string& response, const std::string& finish,
-                                                              const std::vector<BriefAiSource>& sources,
-                                                              const std::string& role, const std::string& answer_kind) {
+  sinks.on_done = [state, current, emit_turn, role_thread_id](
+                      const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
+                      const std::string& role, const std::string& answer_kind, const bool translated) {
     emit_turn(finish == "length" ? ShareWord("done_truncated") : ShareWord("done"));
     state->shared->brief_key_renewed.store(false); // the key works: a later 401 may renew it again
     if (!current()) {
@@ -1835,6 +1840,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
       }
     }
     state->answer_kind = answer_kind;
+    state->translated = translated;
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };

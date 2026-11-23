@@ -99,6 +99,11 @@ TEST(NewsReaderTranscriptTest, HiddenNewsMessagesAreNeverDrawnAndStayInTheModelH
         Message("ai-1", "r2", kLocalSelfContactId, "https://n.example/b\n这篇讲了什么", 5000, kNewsRequestGeneration)));
     ASSERT_TRUE(chat.store.AppendMessage(
         Message("ai-1", "f2", kAiAssistantContactId, "这篇暂时取不到内容。", 6000, kNewsFailedGeneration)));
+    // And one brief_AI translated from the article's language.
+    ASSERT_TRUE(chat.store.AppendMessage(
+        Message("ai-1", "r3", kLocalSelfContactId, "https://n.example/c\n这篇讲了什么", 7000, kNewsRequestGeneration)));
+    ASSERT_TRUE(chat.store.AppendMessage(Message("ai-1", "t3", kAiAssistantContactId, "来源：Reuters\n\n译文……", 8000,
+                                                 kNewsDigestTranslatedGeneration)));
 
     // The chat's row in the list: same place, same preview, nothing unread, same name.
     const auto after = chat.store.GetThread("ai-1");
@@ -115,14 +120,14 @@ TEST(NewsReaderTranscriptTest, HiddenNewsMessagesAreNeverDrawnAndStayInTheModelH
     }
 
     // The reader's read state is built from these rows only, selected by their generation.
-    auto hidden = chat.store.GetMessagesByGeneration(
-        "ai-1", {kNewsRequestGeneration, kNewsDigestGeneration, kNewsFailedGeneration});
+    auto hidden = chat.store.GetMessagesByGeneration("ai-1", {kNewsRequestGeneration, kNewsDigestGeneration,
+                                                              kNewsDigestTranslatedGeneration, kNewsFailedGeneration});
     ASSERT_TRUE(hidden);
     std::vector<std::string> hidden_ids;
     for (const ThreadMessage& message : *hidden) {
       hidden_ids.push_back(message.id);
     }
-    EXPECT_EQ(hidden_ids, (std::vector<std::string>{"r1", "d1", "r2", "f2"}));
+    EXPECT_EQ(hidden_ids, (std::vector<std::string>{"r1", "d1", "r2", "f2", "r3", "t3"}));
     EXPECT_TRUE(ScanNewsReads(*hidden).IsRead("https://n.example/a"));
 
     // The model is still sent what was read, so a follow-up knows it.
@@ -132,7 +137,7 @@ TEST(NewsReaderTranscriptTest, HiddenNewsMessagesAreNeverDrawnAndStayInTheModelH
     for (const ThreadMessage& message : *context) {
       sent.push_back(message.id);
     }
-    for (const char* id : {"r1", "d1", "r2", "f2"}) {
+    for (const char* id : {"r1", "d1", "r2", "f2", "r3", "t3"}) {
       EXPECT_NE(std::find(sent.begin(), sent.end(), id), sent.end()) << id;
     }
   }
@@ -149,7 +154,11 @@ TEST(NewsReaderTranscriptTest, HiddenNewsMessagesAreNeverDrawnAndStayInTheModelH
     ASSERT_NE(digest, nullptr);
     EXPECT_EQ(digest->message_id, "d1");
     EXPECT_EQ(digest->text, "来源：n.example\n\n文章说……");
+    EXPECT_FALSE(digest->translated);
     EXPECT_FALSE(reads.IsRead("https://n.example/b"));
+    const NewsReads::Digest* translated = reads.Find("https://n.example/c");
+    ASSERT_NE(translated, nullptr) << "a translated digest is read";
+    EXPECT_TRUE(translated->translated) << "and still known as a translation after the restart";
     const ThreadMessage* shown = NewestShownMessage(*page);
     ASSERT_NE(shown, nullptr);
     EXPECT_EQ(shown->id, "list");

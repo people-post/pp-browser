@@ -47,6 +47,7 @@ struct Recorder {
   std::vector<std::string> statuses;
   int done = 0, handoff = 0, error = 0, cancelled = 0;
   std::string response, finish, role, answer_kind, error_message, partial, capability, reason;
+  bool translated = false;
   size_t sources = 0;
   bool retryable = false;
 
@@ -59,12 +60,13 @@ struct Recorder {
       statuses.push_back(tool + ":" + phase);
     };
     sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s,
-                           const std::string& ro, const std::string& kind) {
+                           const std::string& ro, const std::string& kind, bool tr) {
       ++done;
       response = r;
       finish = f;
       role = ro;
       answer_kind = kind;
+      translated = tr;
       sources = s.size();
     };
     sinks.on_handoff = [this](const std::string& c, const std::string& r) {
@@ -127,8 +129,10 @@ TEST(BriefTurnRunnerTest, DoneAnswerKindReachesTheSink) {
   Recorder rec;
   BriefAiEvent done = Done("digest");
   done.answer_kind = "news_digest";
+  done.translated = true;
   RunScript(Script({Token("digest"), done}, BriefAiOutcome::Done), rec);
   EXPECT_EQ(rec.answer_kind, "news_digest");
+  EXPECT_TRUE(rec.translated);
 }
 
 TEST(BriefTurnRunnerTest, EmptyDoneResponseUsesAccumulatedText) {
