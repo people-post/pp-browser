@@ -1062,10 +1062,12 @@ TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("en");
   std::vector<std::pair<std::string, std::string>> submitted;
+  std::string sent_title;
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text) {
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text, const std::string& title) {
     submitted.push_back({thread_id, text});
+    sent_title = title;
     return SubmitOutcome::Started;
   };
   ports.cancel = [this](const std::string& thread_id) {
@@ -1079,6 +1081,7 @@ TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
             SubmitOutcome::Started);
   ASSERT_EQ(submitted.size(), 1u);
   EXPECT_EQ(submitted[0].second, "https://n.example/a\nWhat's in the article");
+  EXPECT_EQ(sent_title, "Rates rise") << "the title goes beside the message, as data";
   EXPECT_TRUE(controller_.ReadingNews("A"));
   EXPECT_TRUE(chat_.loading) << "the composer shows the stop key";
   EXPECT_EQ(std::string(chat_.status.c_str()), "Reading \u201cRates rise\u201d");
@@ -1117,7 +1120,7 @@ TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
   std::set<std::string> running; // the sessions' threads with a turn
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [&](const std::string& thread_id, const std::string&) {
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string&, const std::string&) {
     running.insert(thread_id);
     return SubmitOutcome::Started;
   };
@@ -1155,7 +1158,9 @@ TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
 TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [](const std::string&, const std::string&) { return SubmitOutcome::Started; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+    return SubmitOutcome::Started;
+  };
   ports.is_busy = [](const std::string&) { return false; }; // the session's turn is over; its end was lost
   ports.any_busy = [] { return false; };
   controller_.BindPorts(std::move(ports));
@@ -1174,7 +1179,9 @@ TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
 TEST_F(AgentTurnBusyTest, ANewsReadTheSessionDidNotTakeLeavesNothingBusy) {
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [](const std::string&, const std::string&) { return SubmitOutcome::BusyHere; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+    return SubmitOutcome::BusyHere;
+  };
   controller_.BindPorts(std::move(ports));
   Open("A");
   EXPECT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "T"), SubmitOutcome::BusyHere);

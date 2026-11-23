@@ -33,7 +33,10 @@ struct BriefAiRequest {
   std::string last_role; // context.last_role: the role that answered the previous turn (omitted when empty)
   std::string app_version, platform, lang; // client.version / platform / lang (omitted when empty)
   std::vector<std::string> capabilities;   // client.capabilities (omitted when empty, and always when image is set)
-  std::optional<BriefAiImage> image;       // null on the wire when nullopt; at most kMaxImageBytes decoded
+  /** client.news_title: a news read's item title, as data (never in `message`); cleaned by CleanNewsTitle, omitted
+   *  when empty. The server only checks the fetched page is about that story. */
+  std::string news_title;
+  std::optional<BriefAiImage> image; // null on the wire when nullopt; at most kMaxImageBytes decoded
 };
 
 struct BriefAiSource {
@@ -77,6 +80,8 @@ public:
   // Error when the image mime is unsupported or its data is empty / above kMaxImageBytes.
   static Roe<void> ValidateImage(const BriefAiRequest& request);
   static std::string BuildRequestJson(const BriefAiRequest& request);
+  /** client.news_title as sent: control characters and URLs removed, spaces folded, trimmed, at most 200 characters. */
+  static std::string CleanNewsTitle(std::string_view title);
   // nullopt: "[DONE]", an unknown type, or not JSON.
   static std::optional<BriefAiEvent> ParseEvent(const std::string& data);
 

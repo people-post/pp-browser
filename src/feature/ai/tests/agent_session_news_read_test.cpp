@@ -48,12 +48,13 @@ TEST_F(AgentSessionBriefStreamTest, ANewsReadStoresAHiddenRequestAndDigest) {
   session_->SetThreadStore(&store);
   Script({Meta(), Token("来源：n.example\n\n文章说……"), DoneKind("来源：n.example\n\n文章说……", "news_digest")},
          BriefAiOutcome::Done);
-  ASSERT_EQ(session_->SubmitNewsRead("t1", kRequest), SubmitOutcome::Started);
+  ASSERT_EQ(session_->SubmitNewsRead("t1", kRequest, "Rates rise"), SubmitOutcome::Started);
   const auto events = WaitForTurn();
 
   const auto requests = Requests();
   ASSERT_EQ(requests.size(), 1u);
-  EXPECT_EQ(requests[0].message, kRequest);
+  EXPECT_EQ(requests[0].message, kRequest) << "two lines, no title";
+  EXPECT_EQ(requests[0].news_title, "Rates rise") << "the title is data beside the message";
   EXPECT_FALSE(requests[0].intent.has_value()) << "no new intent: an unknown one is a 400";
   EXPECT_TRUE(HasNewsDigest(requests[0]));
 
@@ -216,6 +217,7 @@ TEST_F(AgentSessionBriefStreamTest, ThreadTurnsDeclareNewsDigest) {
   ASSERT_EQ(requests.size(), 2u);
   EXPECT_TRUE(HasNewsDigest(requests[0]));
   EXPECT_FALSE(HasNewsDigest(requests[1]));
+  EXPECT_TRUE(requests[0].news_title.empty()) << "only a news read carries a title";
 }
 
 // A few reads pushed the list out of the last six turns: it goes first, the newest five follow.

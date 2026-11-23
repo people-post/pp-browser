@@ -230,6 +230,7 @@ struct AgentSession::Impl : public Module {
   std::optional<AgentImageTurn> pending_image; // at most one per turn; SubmitToThread only
   /** This turn reads a news item (SubmitNewsRead): its messages are stored hidden, nothing streams into the chat. */
   bool news_read = false;
+  std::string news_title; // the read item's title (client.news_title)
   /** The streamed answer's done.answer_kind (empty: none); set by on_done for the persist and the ready event. */
   std::string answer_kind;
   std::string pending_entry_id;
@@ -1742,6 +1743,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     // its headline lists and news picks. Only here: AppActionCapabilities also feeds the app-action classifier.
     request.capabilities.push_back("news_digest");
   }
+  if (state->news_read) {
+    request.news_title = state->news_title; // data beside the two-line message, never in it
+  }
   state->answer_kind.clear();
 
   // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
@@ -2721,7 +2725,8 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
   return SubmitOutcome::Started;
 }
 
-SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const std::string& request_text) {
+SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                                           const std::string& title) {
   if (thread_id.empty() || request_text.empty()) {
     return SubmitOutcome::Ignored;
   }
@@ -2740,6 +2745,7 @@ SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const s
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
   impl_->news_read = true;
+  impl_->news_title = title;
 
   PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {

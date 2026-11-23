@@ -848,7 +848,7 @@ SubmitOutcome AgentTurnController::StartNewsRead(const std::string& thread_id, c
   if (thread_id.empty() || !AgentReady() || !agent_ports_.submit_news_read) {
     return SubmitOutcome::Ignored;
   }
-  const SubmitOutcome outcome = agent_ports_.submit_news_read(thread_id, request_text);
+  const SubmitOutcome outcome = agent_ports_.submit_news_read(thread_id, request_text, title);
   if (outcome != SubmitOutcome::Started) {
     return outcome;
   }

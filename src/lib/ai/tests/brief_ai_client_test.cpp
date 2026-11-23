@@ -311,6 +311,33 @@ TEST(BriefAiClientTest, RequestJsonNewsReadHasTheCapabilityAndNoIntent) {
   EXPECT_EQ(pbr::asString(capabilities->elements[1]).value_or(""), "news_digest");
 }
 
+// The item's title travels as data beside the two-line message: cleaned, and only when there is one.
+TEST(BriefAiClientTest, RequestJsonNewsTitleIsCleanedDataBesideTheMessage) {
+  pbr::BriefAiRequest request;
+  request.message = "https://example.com/a\nWhat's in the article";
+  request.capabilities = {"news_digest"};
+  request.news_title =
+      "  Rates\trise \x01"
+      "again see https://evil.example/x and www.evil.example \n ";
+  const pbr::Object json = ParsedRequest(request);
+  EXPECT_EQ(json.getString("message").value_or(""), "https://example.com/a\nWhat's in the article");
+  const pbr::Object* client = json.getObject("client");
+  ASSERT_NE(client, nullptr);
+  EXPECT_EQ(client->getString("news_title").value_or(""), "Rates rise again see and");
+
+  request.news_title.clear();
+  EXPECT_FALSE(ParsedRequest(request).getObject("client")->contains("news_title"));
+
+  // At most 200 characters (code points, so a Chinese title is cut on a character).
+  const std::string long_title(300, 'a');
+  EXPECT_EQ(pbr::BriefAiClient::CleanNewsTitle(long_title).size(), 200u);
+  std::string chinese;
+  for (int i = 0; i < 250; ++i) {
+    chinese += "新";
+  }
+  EXPECT_EQ(pbr::BriefAiClient::CleanNewsTitle(chinese).size(), 200u * 3);
+}
+
 TEST(BriefAiClientTest, ParseDoneWithoutRoleIsEmpty) {
   auto e = pbr::BriefAiClient::ParseEvent(R"({"type":"done","response":"r","route":"web"})");
   ASSERT_TRUE(e.has_value());

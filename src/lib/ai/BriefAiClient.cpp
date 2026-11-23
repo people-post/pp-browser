@@ -110,8 +110,50 @@ std::string BriefAiClient::BuildRequestJson(const BriefAiRequest& request) {
     }
     client.set("capabilities", ArrayValue(std::move(capabilities)));
   }
+  if (const std::string title = CleanNewsTitle(request.news_title); !title.empty()) {
+    client.set("news_title", title);
+  }
   body.set("client", client);
   return DumpJson(body);
+}
+
+std::string BriefAiClient::CleanNewsTitle(const std::string_view title) {
+  constexpr size_t kMaxChars = 200;
+  // Words split on whitespace and control characters; a word that is a URL goes.
+  std::vector<std::string> words;
+  std::string word;
+  const auto end_word = [&]() {
+    std::string lower = word;
+    for (char& c : lower) {
+      c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    if (!word.empty() && lower.find("://") == std::string::npos && lower.rfind("www.", 0) != 0) {
+      words.push_back(word);
+    }
+    word.clear();
+  };
+  for (const char c : title) {
+    const auto byte = static_cast<unsigned char>(c);
+    if (byte < 0x20 || byte == 0x7f || c == ' ') {
+      end_word();
+    } else {
+      word += c;
+    }
+  }
+  end_word();
+  std::string out;
+  size_t chars = 0;
+  for (const std::string& w : words) {
+    std::string piece = (out.empty() ? "" : " ") + w;
+    for (size_t i = 0; i < piece.size(); ++i) {
+      const bool starts_char = (static_cast<unsigned char>(piece[i]) & 0xC0) != 0x80;
+      if (starts_char && ++chars > kMaxChars) {
+        return out;
+      }
+      out += piece[i];
+    }
+  }
+  return out;
 }
 
 std::optional<BriefAiEvent> BriefAiClient::ParseEvent(const std::string& data) {

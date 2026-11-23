@@ -213,9 +213,11 @@ public:
    * `request_text` is the item's URL and the fixed sentence (NewsReadRequestText). The request is stored with
    * kNewsRequestGeneration; the answer with kNewsDigestGeneration, or kNewsFailedGeneration when brief_AI says the
    * article could not be read (done.answer_kind). An error or a stop stores no answer (the item stays unread), and
-   * nothing of the turn streams into the chat.
+   * nothing of the turn streams into the chat. `title` (the item's, from the list) goes as client.news_title, data the
+   * server checks the page against; never in the message.
    */
-  SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text);
+  SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                               const std::string& title = {});
   /**
    * Resume a parked tool-permission confirm from an in-chat choice payload.
    * decision: allow_once | allow_always | deny

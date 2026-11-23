@@ -109,7 +109,8 @@ public:
                                    std::optional<std::string> user_payload = std::nullopt,
                                    AtAiMode mode = AtAiMode::Local);
   /** A news item read in an AI thread (AgentSession::SubmitNewsRead); counts like any thread turn. */
-  SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text);
+  SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                               const std::string& title = {});
   /** An empty `thread_id` runs in the Home session. */
   SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
                                   Object args, bool in_peer_chat = false);
