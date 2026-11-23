@@ -520,6 +520,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.app_name = ui_state_.app_name.c_str();
   bindings_.app_version = ui_state_.app_version.c_str();
   bindings_.app_build = ui_state_.app_build.c_str();
+  bindings_.tester_build_number = ui_state_.tester_build_number.c_str();
 
   bindings_.mcp_servers.clear();
   bindings_.mcp_servers.reserve(ui_state_.mcp_servers.size());
@@ -762,6 +763,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("app_name", &controller.bindings_.app_name);
     ctor.Bind("app_version", &controller.bindings_.app_version);
     ctor.Bind("app_build", &controller.bindings_.app_build);
+    ctor.Bind("tester_build_number", &controller.bindings_.tester_build_number);
     ctor.Bind("support_visible", &controller.bindings_.support_visible);
     ctor.Bind("support_display_name", &controller.bindings_.support_display_name);
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
@@ -1031,6 +1033,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "app_name");
   host.Dirty("settings", "app_version");
   host.Dirty("settings", "app_build");
+  host.Dirty("settings", "tester_build_number");
   host.Dirty("settings", "support_visible");
   host.Dirty("settings", "support_display_name");
   host.Dirty("settings", "support_subtitle");

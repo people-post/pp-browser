@@ -1,6 +1,7 @@
 #include "feature/settings/AboutSettingsSection.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/AppVersion.h"
 #include "foundation/product/BuildInfo.h"
 #include "foundation/product/ProductBranding.h"
@@ -28,6 +29,7 @@ void AboutSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, Set
   state.app_name = kProductName;
   state.app_version = AppVersionString();
   state.app_build = BuildLabel();
+  state.tester_build_number = TesterBuildNumber(IsTesterBuild(), BuildTag(), AppVersionString());
   state.show_advanced_settings = bootstrap.profile_prefs.show_advanced_settings ? "on" : "off";
   state.show_tester_options = bootstrap.profile_prefs.show_tester_options ? "on" : "off";
 }

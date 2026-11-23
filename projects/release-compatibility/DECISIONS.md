@@ -566,6 +566,11 @@ profile:
    back on save, so a later store build still finds `prod`; only a switch the user makes replaces it.
 5. **Shared root files** (`config.json`, `profiles.json`, `machine.json`) change version only in a release; a tester
    build may only add optional keys, which older builds ignore or drop.
+6. **A tester build says what it is:** About shows "Tester build" with its TestFlight build number (the `<n>` of its
+   `internal/<n>` tag; else its version); a store build shows no such line. App Store Connect lets anyone submit any
+   TestFlight build, so an `internal/<n>` build could be promoted by mistake; the line lets whoever checks a build see
+   it. The guard itself is the P2 promotion workflow's ([PHASES](PHASES.md)): it refuses a build number with no
+   `rc-build/<n>` tag — a tester build is never promoted, and with no prod compiled in it would reach no relay.
 **Rationale:**
 - Hard over soft: no path from a tester build to prod data, instead of a warning that can be clicked through. A tester
   who opened prod data in a pre-release build could migrate the store user's `profile.db` or `identity.enc` to a
