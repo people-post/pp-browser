@@ -637,6 +637,21 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
       (*pending)->group_id != refused->group_id) {
     return Error("group_invite_refused for no invite of ours from its sender");
   }
+  // A refusal answers our accept of that invite, so only while it is still waiting or accepted. One that comes again
+  // later (a relay mailbox read again, any late copy) finds it refused already — or finds us stated into the group by
+  // its owner at a newer epoch, through a later invite — and changes nothing: no roster change, no line.
+  bool stale = (*pending)->status != InviteStatus::Pending && (*pending)->status != InviteStatus::Accepted;
+  if (auto metadata = group_roster_.LoadMetadata(refused->group_id); !stale && metadata && *metadata) {
+    if (const auto held = group_roster_sync::Held(**metadata); held && held->roster_epoch > (*pending)->roster_epoch) {
+      stale =
+          std::any_of(held->members.begin(), held->members.end(),
+                      [&local_account](const GroupRosterStatementMember& m) { return m.identity == local_account; });
+    }
+  }
+  if (stale) {
+    log().info << "group invite refused again or superseded group_id=" << refused->group_id << ": nothing changes";
+    return {};
+  }
   (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
   if (refused->reason == kInviteRefusedGroupDissolved) {
     // G016: the owner ended the group before our accept reached it. If we had already made the group on accept, it
