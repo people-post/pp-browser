@@ -640,11 +640,17 @@ Roe<void> Application::ResetActiveProfile() {
   return {};
 }
 
-void Application::StartOverOnThisDevice() {
+bool Application::StartOverOnThisDevice() {
   if (!unlock_gate_->ReleaseForStartOver()) {
-    return; // an unlock is running: the page stays, the button works once it is done
+    return false; // an unlock is running: the page stays, the button works once it is done
   }
   log().warning << "Starting over on this device from the unlock gate";
+  // A call answered on the locked phone waits on the system call screen for this account's messaging; with the account
+  // wiped it can never connect: it goes now, not at its cap. (No call media runs here: calls need messaging, which is
+  // not up while this gate is.)
+  if (ICallSystemUi::Instance().HasPendingPushCall()) {
+    ICallSystemUi::Instance().EndPendingPushCall();
+  }
   // The vault is locked here (or the account cannot be read): messaging is not ready, so ResetActiveProfile leaves
   // the relays alone — no revoke, no unregister — and only wipes this device.
   if (auto reset = ResetActiveProfile(); !reset) {
@@ -657,6 +663,7 @@ void Application::StartOverOnThisDevice() {
       UserFeedback::Fail(message);
     }
   }
+  return true;
 }
 
 Roe<void> Application::ResetChatData() {
@@ -1893,7 +1900,7 @@ void Application::WireUnlockPinAndFlow() {
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     gate_complete.use_device_pin_instead = [this]() { unlock_gate_->UseDevicePinInstead(); };
     gate_complete.try_biometric = [this]() { unlock_gate_->TryBiometric(); };
-    gate_complete.start_over = [this]() { StartOverOnThisDevice(); };
+    gate_complete.start_over = [this]() { return StartOverOnThisDevice(); };
     if (Platform::IsDesktop()) {
       gate_complete.quit = []() { Backend::RequestExit(); }; // phones have no "Quit": the system closes apps
     }

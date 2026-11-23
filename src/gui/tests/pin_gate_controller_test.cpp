@@ -945,7 +945,10 @@ protected:
       typed_create_ = create_mode;
       ++completes_;
     };
-    complete.start_over = [this]() { ++start_overs_; };
+    complete.start_over = [this]() {
+      ++start_overs_;
+      return start_over_begins_;
+    };
     if (with_quit) {
       complete.quit = [this]() { ++quits_; };
     }
@@ -953,6 +956,7 @@ protected:
   }
 
   int start_overs_ = 0;
+  bool start_over_begins_ = true;
   int quits_ = 0;
 };
 
@@ -1003,6 +1007,38 @@ TEST_F(PinGateStartOverTest, TheConfirmIgnoresTheTapThatBroughtItUp) {
   clock_ += PinGateController::kChoiceTapGuard;
   controller_.OnStartOverConfirm();
   EXPECT_EQ(start_overs_, 1);
+}
+
+// The same tap delivered twice (a trackpad's touch and the click made from it), after the tap guard: one reset.
+TEST_F(PinGateStartOverTest, ATapDeliveredTwiceStartsOneReset) {
+  BindStartOver(/*with_quit=*/false);
+  controller_.ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 1);
+}
+
+// Not begun (an unlock was running): the confirm stays and works again.
+TEST_F(PinGateStartOverTest, AStartOverNotBegunCanBeTappedAgain) {
+  BindStartOver(/*with_quit=*/false);
+  start_over_begins_ = false;
+  controller_.ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  ASSERT_EQ(start_overs_, 1);
+  EXPECT_TRUE(shown_.start_over_confirm_mode);
+  start_over_begins_ = true;
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 2);
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 2) << "begun: latched";
+  // A new confirm (back, then Start over again) is a new tap.
+  controller_.OnCancel();
+  EXPECT_TRUE(shown_.profile_problem_mode);
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 3);
 }
 
 TEST_F(PinGateStartOverTest, ANewerAppsDataOffersNothingToWipe) {
@@ -1094,14 +1130,17 @@ TEST_F(PinGateStartOverTest, AnOldAccountStartsOverOntoTheFirstRunPage) {
   };
   // As Application::StartOverOnThisDevice: the page closes, the reset wipes and asks the gate again.
   complete.start_over = [&]() {
-    ASSERT_TRUE(gate.ReleaseForStartOver());
+    if (!gate.ReleaseForStartOver()) {
+      return false;
+    }
     ++resets;
     engine.Shutdown();
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    ASSERT_TRUE(engine.Initialize(dir.string()));
+    EXPECT_TRUE(engine.Initialize(dir.string()));
     gate.ForgetProfileProblem();
     gate.EnsureUnlocked(nullptr);
+    return true;
   };
   controller_.BindGateComplete(std::move(complete));
 

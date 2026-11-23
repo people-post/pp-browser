@@ -11,6 +11,7 @@
 #include "common/AtomicFileWrite.h"
 #include "foundation/error/AppError.h"
 
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -81,6 +82,12 @@ DataKeyVault::FileCheck DataKeyVault::CheckFile(const std::string& vault_path) {
   if (!exists) {
     return FileCheck::Missing;
   }
+  // Only what was read whole counts: a read error can look like a short file (the stream reports end of file).
+  const bool regular = std::filesystem::is_regular_file(vault_path, ec);
+  const auto size = regular && !ec ? std::filesystem::file_size(vault_path, ec) : std::uintmax_t{0};
+  if (!regular || ec) {
+    return FileCheck::NotRead;
+  }
   ByteVector bytes;
   {
     std::ifstream in(vault_path, std::ios::binary);
@@ -88,7 +95,7 @@ DataKeyVault::FileCheck DataKeyVault::CheckFile(const std::string& vault_path) {
       return FileCheck::NotRead;
     }
     auto read = ReadBoundedBytes(in, kMaxProfileJsonFileBytes);
-    if (!read) {
+    if (!read || read->size() != size) {
       return FileCheck::NotRead;
     }
     bytes = std::move(*read);

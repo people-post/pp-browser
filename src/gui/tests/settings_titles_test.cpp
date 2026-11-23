@@ -273,10 +273,12 @@ TEST(SettingsTitlesTest, StartOverOnTheUnlockGateIsResetMyDataAndLeavesTheRelays
   std::stringstream buffer;
   buffer << in.rdbuf();
   const std::string app = buffer.str();
-  const size_t begin = app.find("void Application::StartOverOnThisDevice() {");
+  const size_t begin = app.find("bool Application::StartOverOnThisDevice() {");
   ASSERT_NE(begin, std::string::npos);
   const std::string body = app.substr(begin, app.find("\n}\n", begin) - begin);
   EXPECT_NE(body.find("ResetActiveProfile()"), std::string::npos);
+  // A call answered on the locked phone (waiting on the system call screen) goes before the wipe, never left behind.
+  EXPECT_LT(body.find("EndPendingPushCall()"), body.find("ResetActiveProfile()"));
   EXPECT_EQ(body.find("remove"), std::string::npos) << "the app's own reset code wipes, nothing else";
 
   const size_t reset = app.find("Roe<void> Application::ResetActiveProfile() {");

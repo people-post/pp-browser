@@ -410,6 +410,7 @@ void PinGateController::OnStartOver() {
     return;
   }
   start_over_from_problem_ = from_problem;
+  start_over_sent_ = false;
   ResetSettingsFlows();
   pin_state_ = {};
   pin_state_.active = true;
@@ -423,11 +424,16 @@ void PinGateController::OnStartOver() {
 }
 
 void PinGateController::OnStartOverConfirm() {
-  if (!pin_state_.active || !pin_state_.start_over_confirm_mode || ChoiceTooSoon() || !gate_complete_.start_over) {
+  if (!pin_state_.active || !pin_state_.start_over_confirm_mode || start_over_sent_ || ChoiceTooSoon() ||
+      !gate_complete_.start_over) {
     return;
   }
+  // Latched before the reset runs: the same tap delivered twice (a trackpad's touch and its click) starts one reset.
+  start_over_sent_ = true;
   const auto start_over = gate_complete_.start_over; // the reset re-binds and redraws the gate under it
-  start_over();
+  if (!start_over()) {
+    start_over_sent_ = false; // not begun (an unlock was running): the button works again
+  }
 }
 
 void PinGateController::OnQuit() {

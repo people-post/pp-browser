@@ -1161,6 +1161,23 @@ TEST_F(ProfileUnlockGateProblemTest, AccountDataWithoutItsVaultIsKnownBeforeTheP
   EXPECT_EQ(forks_, 0);
 }
 
+// A vault.bin that cannot be read now (here a directory in its place; on a locked phone, file protection): nothing is
+// concluded from it — the PIN door, never the problem page.
+TEST_F(ProfileUnlockGateProblemTest, AVaultNotReadNowIsNoProblem) {
+  std::filesystem::create_directories(dir_ / "vault.bin");
+  EXPECT_EQ(DataKeyVault::CheckFile((dir_ / "vault.bin").string()), DataKeyVault::FileCheck::NotRead);
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(doors_, 1);
+}
+
+TEST_F(ProfileUnlockGateProblemTest, AnEmptyVaultIsDamaged) {
+  WriteFile("vault.bin", ByteVector{});
+  EXPECT_EQ(DataKeyVault::CheckFile((dir_ / "vault.bin").string()), DataKeyVault::FileCheck::Damaged);
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::optional(ProfileOpenProblem::CannotOpen));
+}
+
 TEST_F(ProfileUnlockGateProblemTest, AGoodVaultAndAFreshInstallAreNoProblem) {
   CreateVault();
   EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::nullopt);
