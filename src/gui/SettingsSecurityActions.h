@@ -80,6 +80,8 @@ public:
    * seals the DEK with it, off the UI thread), then "Turned on"; off needs no PIN.
    */
   void ToggleBiometric();
+  /** Me → Storage → Reset my profile: its confirm (with the checkbox), then PerformResetProfile. */
+  void ResetProfile();
 
 private:
   /** The PIN opens the vault again (on a worker); `done` on the UI thread. */
@@ -105,7 +107,6 @@ private:
   void SaveAccountCopy();
   void ClearUndeliveredOlderThan();
   void ResetToolPermissions();
-  void ResetProfile();
   void PerformResetProfile();
   void ResetChats();
   void PerformResetChats();

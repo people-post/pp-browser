@@ -208,6 +208,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("home_mentions_where", &state.home_mentions_where);
   ctor.Bind("home_new_people", &state.home_new_people);
   ctor.Bind("home_security_ok", &state.home_security_ok);
+  ctor.Bind("device_removed_notice", &state.device_removed_notice);
   ctor.Bind("recovery_reminder", &state.recovery_reminder);
   ctor.Bind("update_card", &state.update_card);
   ctor.Bind("update_card_link", &state.update_card_link);
@@ -359,14 +360,14 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "ai_sessions_count_label");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
-  for (const char* name : {"home_widgets",           "home_favorites",     "home_recent",
-                           "home_missed_calls",      "home_calls_latest",  "home_mentions",
-                           "home_mentions_where",    "home_new_people",    "home_security_ok",
-                           "recovery_reminder",      "update_card",        "update_card_link",
-                           "update_card_note_shown", "update_card_note",   "update_card_held",
-                           "home_show_dynamic",      "home_brief",         "home_edit_on",
-                           "home_edit_off",          "home_edit_dragging", "home_fav_avatar",
-                           "home_fav_avatar_radius"}) {
+  for (const char* name : {"home_widgets",          "home_favorites",         "home_recent",
+                           "home_missed_calls",     "home_calls_latest",      "home_mentions",
+                           "home_mentions_where",   "home_new_people",        "home_security_ok",
+                           "device_removed_notice", "recovery_reminder",      "update_card",
+                           "update_card_link",      "update_card_note_shown", "update_card_note",
+                           "update_card_held",      "home_show_dynamic",      "home_brief",
+                           "home_edit_on",          "home_edit_off",          "home_edit_dragging",
+                           "home_fav_avatar",       "home_fav_avatar_radius"}) {
     DataModelHost::Instance().Dirty("shell", name);
   }
   DataModelHost::Instance().Dirty("shell", "archived_count");
