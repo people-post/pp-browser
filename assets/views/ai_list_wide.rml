@@ -20,6 +20,15 @@
     <p class="chat-search-label" data-if="ai_sessions_query == ''">{{i18n:ai_drawer.search_placeholder}}</p>
   </div>
   <div class="sidebar-sessions ai-list-sessions root-scroll" id="ai-list-sessions" data-event-scroll="ai_sessions_scroll()">
+    <!-- This device was taken off its account (DeviceRemovedNotice): the Chats list's card, here too, since the AI section
+         is the desktop's Home; the same words and the same two buttons. -->
+    <div class="sidebar-tip" data-if="device_removed_notice &amp;&amp; ai_sessions_query == '' &amp;&amp; !showing_archived_ai">
+      <p class="sidebar-tip-body">{{i18n:device_removed.body}}</p>
+      <div class="sidebar-tip-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="device_removed_relink()">{{i18n:device_removed.relink}}</button>
+        <button class="btn btn-ghost sidebar-tip-later" type="button" data-event-click="device_removed_ok()">{{i18n:device_removed.ok}}</button>
+      </div>
+    </div>
     <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
