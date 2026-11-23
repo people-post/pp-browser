@@ -990,5 +990,52 @@ TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheSyncIndicatorWhileTheAccountIsS
   EXPECT_EQ(drawn(".sidebar-empty").size(), 1u) << "the empty state once the sync is over";
 }
 
+// The Chats list column of the wide layout (sidebar.rml) with the device-removed notice (DeviceRemovedNotice): the first
+// tip card, above the recovery reminder, the same card (width, corner, colour), inside the column.
+TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheDeviceRemovedNoticeAboveTheOtherCards) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  ASSERT_TRUE(DataModelHost::Instance().Register(
+      context, "shell", [this](ui::DataModelConstructor& ctor) { BindChatShellState(ctor, shell); }));
+  shell.device_removed_notice = true;
+  shell.recovery_reminder = true;
+  context->ActivateTheme("light", true);
+  const std::string list = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("sidebar", /*wide=*/true));
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+      "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; width: 1280dp; height: 700dp;\">"
+      "<div class=\"shell-layer shell-layer-base\"><div id=\"list\" class=\"shell-pane shell-pane-secondary\" "
+      "style=\"position: absolute; left: 64dp; width: 320dp; height: 700dp;\"><div class=\"shell-pane-body\">" +
+      list + "</div></div></div></div></body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  context->Update();
+  ui::ElementList cards;
+  for (ui::Element* card : All("sidebar-tip")) {
+    if (BoxOf(card).H() > 0.f) {
+      cards.push_back(card);
+    }
+  }
+  ASSERT_EQ(cards.size(), 2u);
+  const Box column = BoxOf(document->GetElementById("list"));
+  const Box removed = BoxOf(cards[0]);
+  const Box recovery = BoxOf(cards[1]);
+  EXPECT_NE(std::string(cards[0]->GetInnerRML().c_str()).find(Tr("device_removed.relink")), std::string::npos);
+  EXPECT_NE(std::string(cards[1]->GetInnerRML().c_str()).find(Tr("recovery_reminder.now")), std::string::npos);
+  EXPECT_LT(removed.bottom, recovery.top + 0.5f) << "above the recovery reminder";
+  EXPECT_GE(removed.left, column.left);
+  EXPECT_LE(removed.right, column.right);
+  EXPECT_FLOAT_EQ(removed.left, recovery.left);
+  EXPECT_FLOAT_EQ(removed.W(), recovery.W());
+  EXPECT_FLOAT_EQ(cards[0]->GetComputedValues().border_top_left_radius(),
+                  cards[1]->GetComputedValues().border_top_left_radius());
+  EXPECT_GT(cards[0]->GetComputedValues().background_color().alpha, 0) << "a filled card";
+  EXPECT_EQ(cards[0]->GetComputedValues().background_color(), cards[1]->GetComputedValues().background_color());
+}
+
 } // namespace
 } // namespace pbr

@@ -80,8 +80,8 @@ protected:
     shell_.ai_sessions_count_label = "2 conversations";
     ASSERT_TRUE(DataModelHost::Instance().Register(context_, "shell", [this](ui::DataModelConstructor& ctor) {
       BindChatShellState(ctor, shell_);
-      for (const char* name :
-           {"new_chat", "select_thread", "ai_sessions_search_changed", "toggle_archived_ai", "ai_sessions_scroll"}) {
+      for (const char* name : {"new_chat", "select_thread", "ai_sessions_search_changed", "toggle_archived_ai",
+                               "ai_sessions_scroll", "device_removed_relink", "device_removed_ok"}) {
         ctor.BindEventCallback(name, [this, name](ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
           calls_.push_back(std::string(name) +
                            (args.empty() ? "" : ":" + std::string(args[0].Get<ui::String>().c_str())));
@@ -187,6 +187,62 @@ TEST_F(AiWideLayoutTest, ARowOpensItsConversationAndThePlusStartsANewOne) {
   ASSERT_EQ(calls_.size(), 2u);
   EXPECT_EQ(calls_[0], "select_thread:ai-Kyoto in three days");
   EXPECT_EQ(calls_[1], "new_chat");
+}
+
+// A linked device its account took off its list (DeviceRemovedNotice): the AI column, the desktop's Home, shows the
+// Chats list's card at its top, above the conversations, inside the column, with "Link again" and "OK" reaching the
+// controller's handlers; not while searching, and gone once the model says so.
+TEST_F(AiWideLayoutTest, TheDeviceRemovedNoticeIsTheCardAtTheTopOfTheList) {
+  context_->ActivateTheme("light", true); // the colour file's rules sit under @media (theme: light)
+  shell_.device_removed_notice = true;
+  for (const int window : {768, 1280}) {
+    SCOPED_TRACE(window);
+    Load(window);
+    const Box column = BoxOf(All("#list")[0]);
+    const ui::ElementList cards = All(".sidebar-tip");
+    ASSERT_EQ(cards.size(), 1u);
+    const Box card = BoxOf(cards[0]);
+    EXPECT_GE(card.left, column.left + 15.5f) << "the list's 8dp padding and the card's 8dp margin";
+    EXPECT_LE(card.right, column.right - 15.5f);
+    EXPECT_GT(card.top, BoxOf(All(".chat-search")[0]).bottom - 0.5f) << "under the search field";
+    EXPECT_LT(card.bottom, BoxOf(All(".sidebar-session")[0]).top + 0.5f) << "above the conversations";
+    EXPECT_FLOAT_EQ(cards[0]->GetComputedValues().border_top_left_radius(), 14.f) << "the tip cards' corner";
+    EXPECT_GT(cards[0]->GetComputedValues().background_color().alpha, 0) << "a filled card, as on the Chats list";
+    ui::ElementList body;
+    cards[0]->GetElementsByClassName(body, "sidebar-tip-body");
+    ASSERT_EQ(body.size(), 1u);
+    EXPECT_EQ(std::string(body[0]->GetInnerRML().c_str()), Tr("device_removed.body"));
+    ui::ElementList buttons;
+    cards[0]->GetElementsByTagName(buttons, "button");
+    ASSERT_EQ(buttons.size(), 2u);
+    EXPECT_EQ(std::string(buttons[0]->GetInnerRML().c_str()), Tr("device_removed.relink"));
+    EXPECT_EQ(std::string(buttons[1]->GetInnerRML().c_str()), Tr("device_removed.ok"));
+    for (ui::Element* button : buttons) {
+      EXPECT_GT(BoxOf(button).H(), 0.f);
+      EXPECT_LE(BoxOf(button).right, card.right);
+    }
+    document_->Close();
+    context_->Update();
+  }
+  Load(900);
+  ui::ElementList buttons;
+  All(".sidebar-tip")[0]->GetElementsByTagName(buttons, "button");
+  ASSERT_EQ(buttons.size(), 2u);
+  buttons[0]->DispatchEvent(ui::EventId::Click, {});
+  buttons[1]->DispatchEvent(ui::EventId::Click, {});
+  EXPECT_EQ(calls_, (std::vector<std::string>{"device_removed_relink", "device_removed_ok"}));
+
+  document_->Close();
+  context_->Update();
+  shell_.ai_sessions_query = "kyoto"; // searching: the list is the matches only
+  Load(900);
+  EXPECT_EQ(All(".sidebar-tip").size(), 0u);
+  document_->Close();
+  context_->Update();
+  shell_.ai_sessions_query = "";
+  shell_.device_removed_notice = false; // "OK", or the device was linked again
+  Load(900);
+  EXPECT_EQ(All(".sidebar-tip").size(), 0u);
 }
 
 // The phone's AI home has no "PP" heading above the mascot; in the wide root the older heading is hidden as well.

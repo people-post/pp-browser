@@ -142,6 +142,33 @@ TEST_F(DeviceRemovedNoticeTest, AnAnswerFromBeforeMessagingWentDownIsDropped) {
   EXPECT_FALSE(notice->Shows());
 }
 
+// "Link again" confirmed: the profile reset tears messaging down (ChatController::OnProfileDataReset -> Forget) and the
+// card goes with the old profile, even with an answer still on its way; the empty profile behind the first-run page
+// (the same process on a phone, a new one on the desktop) is on no device list, so the card does not come back.
+TEST_F(DeviceRemovedNoticeTest, AfterLinkAgainTheResetHidesItAndTheEmptyProfileDoesNotBringItBack) {
+  signed_out_ = true;
+  auto notice = Launch();
+  notice->Check();
+  Settle();
+  ASSERT_TRUE(notice->Shows());
+  notice->Relink();
+  ASSERT_EQ(relinks_, 1);
+  notice->Check();  // a device-list change heard just before the wipe: its answer is still out
+  notice->Forget(); // the reset
+  EXPECT_FALSE(notice->Shows());
+  Settle();
+  EXPECT_FALSE(notice->Shows()) << "the old profile's answer is dropped";
+
+  signed_out_ = false; // no account yet: messaging is not up, so the list reads as not signed out
+  notice->Check();     // the same process: the next messaging start (a new account, or linked again)
+  Settle();
+  EXPECT_FALSE(notice->Shows());
+  auto restarted = Launch(); // the desktop: a new process on the empty profile
+  restarted->Check();
+  Settle();
+  EXPECT_FALSE(restarted->Shows());
+}
+
 TEST_F(DeviceRemovedNoticeTest, ASendFromARemovedDeviceSaysWhyInsteadOfTheGenericLine) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
