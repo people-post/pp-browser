@@ -4503,6 +4503,18 @@ input.checkbox:checked {
   background-color: {{x-bar-blur}};
 }
 
+/* The floating composer panel (wide.rcss): the phone bar's colour as the panel, see-through at 62% over the blur on a
+   frosted row, solid (x-bar, from .bar-material) with Transparency off; a hairline and the blur-free stacked shadow lift
+   it off the messages in both. */
+.shell-body--wide .shell-pane-composer-bar > .bar-material {
+  border: 0.5dp {{separator}};
+  box-shadow: 0 3.9dp 0 0.85dp {{x-menu-shadow}}, 0 4.8dp 0 1.7dp {{x-menu-shadow}}, 0 5.7dp 0 2.55dp {{x-menu-shadow}}, 0 6.6dp 0 3.4dp {{x-menu-shadow}}, 0 7.5dp 0 4.25dp {{x-menu-shadow}}, 0 8.4dp 0 5.1dp {{x-menu-shadow}}, 0 9.3dp 0 5.95dp {{x-menu-shadow}}, 0 10.2dp 0 6.8dp {{x-menu-shadow}}, 0 11.1dp 0 7.65dp {{x-menu-shadow}}, 0 12dp 0 8.5dp {{x-menu-shadow}}, 0 12.9dp 0 9.35dp {{x-menu-shadow}}, 0 13.8dp 0 10.2dp {{x-menu-shadow}}, 0 14.7dp 0 11.05dp {{x-menu-shadow}}, 0 15.6dp 0 11.9dp {{x-menu-shadow}}, 0 16.5dp 0 12.75dp {{x-menu-shadow}}, 0 17.4dp 0 13.6dp {{x-menu-shadow}};
+}
+
+.shell-body--wide .shell-pane-composer-bar > .bar-material--frost {
+  background-color: {{x-composer-float}};
+}
+
 /* What runs under the header strip stays under a banner. */
 .shell-body--wide .chat-gap-banner {
   background-color: {{bg-grouped}};

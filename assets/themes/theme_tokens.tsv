@@ -65,6 +65,7 @@ x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
 x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Transparency off or under a dialog; Home's tab bar
 x-bar-blur	#f2f2f7c7	#1a1a1cc7	extra: phone bars frosted (78%, with blur 20): Transparency on
 x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
+x-composer-float	#f2f2f79e	#1a1a1c9e	extra: the wide floating composer panel, frosted (Transparency on): the bar colour at 62%, over the blur, so the messages show through; solid it is x-bar
 x-float-shadow	#00000029	#00000099	extra: phone composer: shadow of the floating pill and the round mic / Send button
 x-menu-shadow	#00000005	#00000012	extra: wide floating surfaces (menus, hover bar, popovers): one thin layer of a stacked, blur-free shadow (16 layers, see colors.rcss.tmpl): a blurred shadow on a re-positioned menu was drawn displaced on iOS
 x-jump-glass	#ffffffb8	#2c2c2eb8	extra: phone chat: the round jump-to-latest disc, a translucent glass over the transcript (72%, no blur of its own)
