@@ -4,13 +4,13 @@
 **Stack ADRs:** [B001–B007](DECISIONS.md)  
 **Product home:** [DESIGN.md](DESIGN.md) (announce + live planes)  
 **Program spine:** [PROGRAM.md](PROGRAM.md) **Spine F**  
-**Related:** [MEDIA_RELAY_ATTACH](../p2p-mesh/MEDIA_RELAY_ATTACH.md), [HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md), [RELAY_SCOPE](../p2p-mesh/RELAY_SCOPE.md), [MULTI_HOP_CIRCUIT](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)
+**Related:** [MEDIA_RELAY_ATTACH](../p2p-mesh/MEDIA_RELAY_ATTACH.md), [HOST_RECEIVE_POLICY](../p2p-av-calls/HOST_RECEIVE_POLICY.md), [RELAY_SCOPE](../p2p-mesh/RELAY_SCOPE.md), [MULTI_HOP_CIRCUIT](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)
 
 ## Problem
 
 Spine C live join uses **one** blind `media_relay` hop (contact/seed). Publisher uplink is already “encrypt once”; hop egress still scales as **~N × bitrate**. Massive audiences melt the seed / first-tier hop.
 
-Circuit multi-hop ([MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)) only helps **reach** a single SFU. It does **not** multiply media capacity.
+Circuit multi-hop ([MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md)) only helps **reach** a single SFU. It does **not** multiply media capacity.
 
 ## Goal
 

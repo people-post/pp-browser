@@ -244,7 +244,7 @@ d0 (complete)
 - **Group E2E** — pairwise sender-keys (E022)
 - **Public tier auto-key** — after c3 (E021/E013/E024)
 - libp2p direct transport crypto rewrite
-- Encrypting `identity.json` at rest — **done** in [at-rest-crypto](../at-rest-crypto/) (`identity.enc` + PIN vault)
+- Encrypting `identity.json` at rest — **done** in [at-rest-crypto](../_archive/at-rest-crypto/) (`identity.enc` + PIN vault)
 
 ## Suggested implementation order (cross-project)
 

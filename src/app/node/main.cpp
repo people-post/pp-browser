@@ -489,7 +489,7 @@ int main(int argc, char** argv) {
   const std::shared_ptr<pbr::RelayPins> relay_pins = OpenNodeRelayPins(*boot);
   const std::shared_ptr<pbr::IRelayAudience> relay_audience =
       relay_pins->AudienceFor(boot->config.registration.base_url);
-  // Operator metrics for /metrics (projects/node-monitoring); goes before the mesh stops.
+  // Operator metrics for /metrics (node-monitoring); goes before the mesh stops.
   pbr::ScopedMetricsCollector node_metrics = pbr::RegisterNodeMetrics(*boot);
   // Heartbeat runs only where the operator turned it on and this node publishes itself to a mesh directory
   // (opt-in: it tells the directory when the node is up and from where — privacy P011).

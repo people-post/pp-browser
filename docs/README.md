@@ -13,7 +13,57 @@ pp-browser docs are split by **stability and blast radius**, not by feature name
 
 **Active feature work:** [`projects/README.md`](../projects/README.md) — DESIGN → PHASES → CURRENT_STATE → DECISIONS; promote normative outcomes into **contracts/** (or the matching tier) when shipped.
 
-Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable docs).
+Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable docs), [§ Where docs live](#where-docs-live) (which repo holds what).
+
+---
+
+## Where docs live
+
+Decided in [CR025](../projects/capability-repos/DECISIONS.md#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs) (2026-11-23), in three steps: step 1 is done, step 2 comes after release 1, step 3 when a second app needs a capability.
+
+1. **A doc lives with what it describes:** the repo of the code, or of the contract.
+2. **Anything that spans repos has one neutral home**, and everything else links there.
+3. **Decision ids never change.** RC020 stays RC020 wherever its file lives. Code cites ids (`thread-ownership T001`), not paths.
+
+Specs and designs are public. Plans and infrastructure details are private, as [AGENTS.md § Documentation authority](../AGENTS.md#documentation-authority) draws the line for the relay's deployment.
+
+### The organisation's repositories
+
+| Repository | Visibility | Its docs |
+|------------|------------|----------|
+| **pp-browser** (this one) | public | The app: architecture, ops, UI ([tiers above](#documentation-map)), app-local contracts ([DATA_LAYOUT](contracts/DATA_LAYOUT.md), [AT_REST_ENCRYPTION](contracts/AT_REST_ENCRYPTION.md)), app-only projects, a `capabilities/<name>/docs/` per capability. Until step 2 it also holds the shared contracts, the vector files and the cross-repo programs (next table). |
+| **pp-specs** | public; not created yet (step 2) | Contracts more than one repo implements, every `*_vectors.json` (tagged, pinned by each implementation), cross-repo programs |
+| **pp-plan** | private | Roadmap, priorities and to-dos, with the organisation's project board #3. Nothing technical: whatever code relies on stays public. |
+| [pp-cpp-common](https://github.com/people-post/pp-cpp-common) | public | README: the shared C++ base, the runtime core ([CR002](../projects/capability-repos/DECISIONS.md#cr002--runtime-core-goes-to-pp-cpp-common)); writes `ext_area_vectors.json` |
+| [pp-cpp-crypto](https://github.com/people-post/pp-cpp-crypto) | public | README: shared crypto and PeerId; writes `alg_id_vectors.json` |
+| [pp-cpp-amp](https://github.com/people-post/pp-cpp-amp) | public | `docs/`: the stack, ownership, keepalive, tuning, link-plane ADRs, fault and performance cases |
+| [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh) | public | `docs/`: DHT, directory, errors, peer reach, threading; `docs/projects/media-hop-reachability/` (moved in step 1) |
+| [pp-cpp-ui](https://github.com/people-post/pp-cpp-ui) | public | `AGENTS.md`, `docs/`: the engine's layout ADRs, source layout, upstream provenance |
+| [pp-ledger](https://github.com/people-post/pp-ledger) | public | Its own `docs/` (architecture, contracts, ops, product) and `projects/` |
+| [pp-ledger-apps](https://github.com/people-post/pp-ledger-apps) | public | `docs/` (release, reproducible builds, guides) and `projects/` (one per app) |
+| pp-relay-apis | private | The relay: `SPECS.md` and `openapi/relay.yaml` (what each route does), `docs/` (architecture, conventions, local stack, operators), its server designs, the relay's deployment |
+| pp-relay-support-site | private | The support staff's console for the relay's admin API |
+| The infrastructure repositories | private | The relay's, the chain's and the management account's infrastructure, and the infrastructure halves of the cross-repo programs. Not named in this public repo; pp-relay-apis' README lists the relay's. |
+| [pp-js-lib](https://github.com/people-post/pp-js-lib), [people-post.github.io](https://github.com/people-post/people-post.github.io) | public | A JS library; the homepage |
+| pp-js-api, pp-js-app, pp-js-main, pp-js-node | public, archived | The retired JS stack; frozen |
+
+### Cross-repo things: today and in step 2
+
+| What | Today | Step 2 (after release 1) |
+|------|-------|--------------------------|
+| Contracts another repo implements too: [SERVICE_ENDPOINTS](contracts/SERVICE_ENDPOINTS.md), [WIRE_SCHEMAS](contracts/WIRE_SCHEMAS.md), [ACCOUNT_CARD](contracts/ACCOUNT_CARD.md), [ACCOUNT_LOCKER](contracts/ACCOUNT_LOCKER.md), [SIGNED_EXTENSIONS](contracts/SIGNED_EXTENSIONS.md), [MESSAGE_ENCRYPTION](contracts/MESSAGE_ENCRYPTION.md) (the relay implements each) | [`contracts/`](contracts/) here | pp-specs, a stub here per file |
+| Contracts the libraries implement, alone or with the app: ADP, AMP-SESSION, AMP-CHANNEL, AMP-LINK-ERRORS, MESH_DHT, MESH_DIRECTORY_AMP, L4_PROTOCOL_KINDS, MEDIA_CHANNELS, CODED_FAILURE, NODE_METRICS | [`contracts/`](contracts/) here | pp-specs when more than one repo implements one, else the library that does (rule 1); settled per file in step 2 |
+| Vector files (`*_vectors.json`, [SIGNED_EXTENSIONS § Vector files](contracts/SIGNED_EXTENSIONS.md#vector-files)) | Beside their tests, `capabilities/<name>/src/**/tests/data/` (14 files); pp-cpp-common and pp-cpp-crypto write one each; the relay keeps byte-for-byte copies of nine | pp-specs, tagged; every implementation pins a tag instead of copying |
+| Cross-repo programs: [release-compatibility](../projects/release-compatibility/), [multi-relay](../projects/multi-relay/), [support-chat](../projects/support-chat/), [push-notifications](../projects/push-notifications/), [relay-blob-upload](../projects/relay-blob-upload/), [capability-repos](../projects/capability-repos/) | `projects/` here (their server sides in pp-relay-apis) | pp-specs; their infrastructure halves to the infrastructure repositories |
+| Library projects | [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) in pp-cpp-mesh (step 1, a stub here per file). [adp](../projects/adp/) and [p2p-mesh](../projects/p2p-mesh/) stay here: they span the app and the libraries | — |
+| A capability's docs | `capabilities/<name>/docs/README.md` (what it is, its paths, the contracts and projects about it) | Stay; they leave with the capability (step 3, [CR005](../projects/capability-repos/DECISIONS.md#cr005--move-a-capability-only-when-a-second-app-needs-it)) |
+| Finished projects | [`projects/_archive/`](../projects/_archive/README.md) | — |
+
+### Moving a doc
+
+- **Across repos:** copy it, with a header line in the copy ("Moved from pp-browser `<path>` at `<commit>`"), and replace the old file with a one-line stub naming the new URL, so every old link (other repos', code comments') keeps working. Links back into this repo become absolute `https://github.com/people-post/pp-browser/blob/main/…` URLs.
+- **Inside one repo:** `git mv` and fix every link, code comments included; no stubs.
+- Ids and headings stay as they were, so anchors survive the move.
 
 ---
 
@@ -112,5 +162,5 @@ Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURA
 2. Ship behind `PHASES`; keep `CURRENT_STATE` accurate.
 3. When a wire/disk/HTTP shape is **shipped**, promote the normative text into **`docs/contracts/`** in the same release window.
 4. Mark project ADRs **superseded by** the contract doc for outcomes; leave rationale in `DECISIONS.md`.
-5. Mark the project **Done / archived** in [`projects/README.md`](../projects/README.md) when delivery ends (folder may remain for ADR history).
+5. When delivery ends, `git mv` the project to [`projects/_archive/`](../projects/_archive/README.md), fix its links, and list it under **Done / archived** in [`projects/README.md`](../projects/README.md) (CR025; its ids stay valid).
 6. Never mirror phase status into [`AGENTS.md`](../AGENTS.md).

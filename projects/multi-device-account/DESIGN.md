@@ -1,7 +1,7 @@
 # Multi-device account — design
 
 **Status:** Design freeze (m0) + **M009–M020**, then **M021 / M022** (sessions per device pair — supersede the session and link-bundle parts below as d-phases ship) and **M023** (account state: recovery phrase + encrypted locker — supersedes the m4c paste below). Where this file and those decisions differ, the decisions win; current state: [CURRENT_STATE.md](CURRENT_STATE.md).  
-**Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
+**Related:** [e2e-message-crypto](../e2e-message-crypto/), [at-rest-crypto](../_archive/at-rest-crypto/), [chat-storage D096](../chat-storage-and-memory/DECISIONS.md#d096--multi-device-and-sync-amends-d092) / [D099](../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device) / [D100](../chat-storage-and-memory/DECISIONS.md#d100--release-scope-b-pq-account-id), [docs/contracts/COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md).
 
 ## Problem
 

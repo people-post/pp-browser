@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-crypto/](../../projects/at-rest-crypto/).
+Normative spec for profile secrets on disk. Planning ADRs: [projects/_archive/at-rest-crypto/](../../projects/_archive/at-rest-crypto/).
 
 **Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (wire E2E), [DATA_LAYOUT.md](DATA_LAYOUT.md), [COMPATIBILITY.md](COMPATIBILITY.md).
 
@@ -60,14 +60,14 @@ AAD for wrap: `vault-dek|{profile_id}|1`.
 
 ### PIN grace window (`grace.bin` + a keychain entry)
 
-After a PIN unlock the DEK is kept for the window the user chose (default 15 minutes; 0 = off; "Always" = until the phone restarts), so a cold start or a call answered on the phone within it does not ask again ([A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Two pieces, written and deleted together (`GraceUnlock`):
+After a PIN unlock the DEK is kept for the window the user chose (default 15 minutes; 0 = off; "Always" = until the phone restarts), so a cold start or a call answered on the phone within it does not ask again ([A013](../../projects/_archive/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Two pieces, written and deleted together (`GraceUnlock`):
 
 | Piece | Where | Holds |
 |-------|-------|-------|
 | `grace.bin` | the profile directory | `EncryptedPayload` (XChaCha20-Poly1305, as § Payload AEAD) of the DEK under `K_grace`; AAD `grace|{profile_id}` |
 | `{profile_id}/unlock_grace` | the OS secure store (iOS Keychain, `WhenUnlockedThisDeviceOnly`; Android 9+ / API 28+ an AES-256-GCM file sealed by an AndroidKeyStore key made with `setUnlockedDeviceRequired`, [DATA_LAYOUT](DATA_LAYOUT.md#pin-grace-window-ios-keychain--android-keystore-outside-the-data-dir)) | version `1` (1 byte), `K_grace` (32), `boot_id` (16), `expires_mono` (i64 LE, seconds) |
 
-- **"Always"** ([A015](../../projects/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)): `unlock_grace_minutes` is the sentinel `-1` (`kUnlockGraceAlways`; other negatives read back as 15), and the entry's `expires_mono` is written as `INT64_MAX`. The format and version stay as above; the boot id is still compared, so another boot reads as expired and the PIN is asked once. The protection class is unchanged. The foreground touch/timer skip it. Offered in the auto-lock chooser (last, label 从不 / Never); 2026-11-15: offered again at the owner's request; a restart still asks once (owner accepted).
+- **"Always"** ([A015](../../projects/_archive/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)): `unlock_grace_minutes` is the sentinel `-1` (`kUnlockGraceAlways`; other negatives read back as 15), and the entry's `expires_mono` is written as `INT64_MAX`. The format and version stay as above; the boot id is still compared, so another boot reads as expired and the PIN is asked once. The protection class is unchanged. The foreground touch/timer skip it. Offered in the auto-lock chooser (last, label 从不 / Never); 2026-11-15: offered again at the owner's request; a restart still asks once (owner accepted).
 - **Never stored:** the PIN, or the DEK in the clear. The keychain alone holds no DEK; `grace.bin` alone (a backup copy) cannot be opened.
 - **Device clocks, not the wall clock:** the window ends at `expires_mono` on the device's monotonic clock of the boot `boot_id` (iOS `kern.bootsessionuuid` + `mach_continuous_time`; Android `Settings.Global.BOOT_COUNT` + `CLOCK_BOOTTIME`). Another boot reads as expired (a restart asks for the PIN again); changing the system time changes nothing.
 - **Read** before the dev PIN and the unlock screen, never with `pin_is_default`. Expired, one piece missing, or not decryptable (another profile's): both pieces are deleted and the PIN is asked. The keychain not readable (the phone locked): nothing is deleted; the read is retried when the phone is unlocked or the app comes to the foreground, and a call answered on the locked phone waits up to 3 minutes for that unlock before the PIN screen.
@@ -77,7 +77,7 @@ After a PIN unlock the DEK is kept for the window the user chose (default 15 min
 
 ### Face ID / Touch ID unlock (`biometric.bin` + a keychain entry)
 
-With the switch in Me → Security on, the gate opens with the enrolled face / finger instead of the PIN ([A014](../../projects/at-rest-crypto/DECISIONS.md#a014--face-id--touch-id-unlock-the-dek-behind-the-enrolled-biometry)). The same two pieces as the grace window, without a clock (`SealedDek`, `BiometricUnlock`):
+With the switch in Me → Security on, the gate opens with the enrolled face / finger instead of the PIN ([A014](../../projects/_archive/at-rest-crypto/DECISIONS.md#a014--face-id--touch-id-unlock-the-dek-behind-the-enrolled-biometry)). The same two pieces as the grace window, without a clock (`SealedDek`, `BiometricUnlock`):
 
 | Piece | Where | Holds |
 |-------|-------|-------|
@@ -98,7 +98,7 @@ AAD examples: `identity|{profile_id}|1`, `psk|{profile_id}|1`.
 ### Identity plaintext (inside `identity.enc`)
 
 JSON fields: `schema_version` (**4**, also its floor: an older or unversioned file is an unlock error and the profile is wiped — release 1 starts clean, release-compatibility RC017), device `public_key_b64` / `private_key_b64` (**ML-DSA-65** — PeerId / Noise), account ML-DSA + `account_id`, **account** `kem_*` (ML-KEM-768 — **M015**), `nickname`, `brief_llm_api_key` (the registered slot: the relay's `llm_token`), optional `brief_llm_token_expires_at` (its expiry, ISO-8601; missing → renewed at once, [SERVICE_ENDPOINTS § Brief LLM gateway](SERVICE_ENDPOINTS.md#brief-llm-gateway)), `brief_llm_guest_api_key`, `registered`, `registration_expires_at`, optional `registered_backend_url` (normalized registration base URL the identity registered at; missing or different from the backend in use → the registration is renewed there), optional `initiation_floor` (pp_credit minor units; missing → 0; published in the account card), optional `registered_card_issued_at` (the `issued_at` of the account card the relay last answered for at `register/finish`; a newer card registers again — [SERVICE_ENDPOINTS](SERVICE_ENDPOINTS.md)), device `device_kem_*` (M021), optional `recovery_seed_b64` — the 32-byte recovery seed the account ML-DSA and KEM keys derive from (HKDF-SHA256, salt `pp-browser-recovery-v1`, labels `account-ml-dsa` / `account-ml-kem`; [M023](../../projects/multi-device-account/DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold) §2). Every account minted since M023 s1 has one; one minted before (random keys) or a pp-node (its own seed) has none. Its phrase is the BIP-0039 English encoding of the seed (24 words), never BIP-0039's PBKDF2 seed. A link bundle carries it when present (`recovery_seed_b64`), refused unless it derives the bundle's account keys. Optional `card_intent` (`fresh` / `join`, M021 d4): how the device enters its account's device list on its next card — set when a new account is created and by a restore or the person's *Start a new device list…* (fresh), or by a link (join), cleared once done ([ACCOUNT_CARD § Main device](ACCOUNT_CARD.md)).
-Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
+Pre-v3 (Ed25519 device keys) **fail closed** — wipe profile and recreate ([libp2p-pq-transport P004](../../projects/_archive/libp2p-pq-transport/DECISIONS.md#p004--hard-cut--wipe-amend-m003m008e025)). Unsupported **newer** versions fail load.
 (`peer_id` remains in-memory only.)  
 AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_version` field.
 
@@ -190,5 +190,5 @@ Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp m
 
 An account minted since M023 s1 derives its account keys from a 32-byte recovery seed kept in `identity.enc` (§ Identity plaintext); the seed also derives the keys of the **account locker**, the encrypted snapshot of the account's state a provider holds for it ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Me → Security shows the recovery phrase (the seed as 24 words) only after the profile PIN is entered. A fresh install restores from the typed phrase under a PIN the user chooses; the DEK is new (nothing sealed under the old one comes back — the locker holds the state). Whoever has the phrase has the account.
 
-The earlier PIN-sealed local account backup (iOS Keychain) is retired ([A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); an item an earlier build wrote is deleted once messaging is up, until app version 1.1.0 ([DATA_LAYOUT](DATA_LAYOUT.md#retired-local-account-backup-ios-keychain-outside-the-data-dir)).
+The earlier PIN-sealed local account backup (iOS Keychain) is retired ([A011](../../projects/_archive/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); an item an earlier build wrote is deleted once messaging is up, until app version 1.1.0 ([DATA_LAYOUT](DATA_LAYOUT.md#retired-local-account-backup-ios-keychain-outside-the-data-dir)).
 

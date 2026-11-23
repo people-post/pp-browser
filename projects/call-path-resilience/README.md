@@ -3,7 +3,7 @@
 **Status:** Planned — design agreed 2026-09-24; no phase landed  
 **Owner:** Hongwei + agents  
 **Stable refs:** [CALLS.md](../../docs/architecture/CALLS.md), [MESH.md](../../docs/architecture/MESH.md), [NETWORKING.md](../../docs/architecture/NETWORKING.md)  
-**Related:** [p2p-av-calls](../p2p-av-calls/) (planners, V038/V049), [media-hop-reachability](../media-hop-reachability/) (punch / circuit, L3.25c), [adp](../adp/) (A003 path migrate, A024 nested carrier), [network-status-chrome](../network-status-chrome/) (path display), [hard-lab](../hard-lab/)
+**Related:** [p2p-av-calls](../p2p-av-calls/) (planners, V038/V049), [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (punch / circuit, L3.25c), [adp](../adp/) (A003 path migrate, A024 nested carrier), [network-status-chrome](../network-status-chrome/) (path display), [hard-lab](../hard-lab/)
 
 ## One-line goal
 

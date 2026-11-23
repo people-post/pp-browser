@@ -27,7 +27,7 @@ O (open groups, G017–G022, calls V062): o1 ── o2 ── o4 ── o5
 - [x] G012 owner-signed roster statement with an owner chain (`GroupRosterStatement`), re-signed after a leave, carried by roster events
 - [x] G013 member check (`GroupRosterSync`, request / reply on the control lane — `MakeGroupRosterSyncFamily`), send gate while checking / removed
 - [x] Groups and card floors in the local account backup; lab `group_restore_checks_members`, `group_removed_member_restores`, `group_restored_owner_takes_newer_roster`
-- Restore itself is unsupported in the product ([at-rest A011](../at-rest-crypto/DECISIONS.md)): the member check only runs in the lab until restore returns
+- Restore itself is unsupported in the product ([at-rest A011](../_archive/at-rest-crypto/DECISIONS.md)): the member check only runs in the lab until restore returns
 
 ## L — Group size limit (G014)
 

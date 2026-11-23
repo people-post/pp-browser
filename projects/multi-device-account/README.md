@@ -2,7 +2,7 @@
 
 **Status:** **m1–m3**, **m4a–m4b**, per-device sessions **d1–d2**, the master device **d4** (as a policy) and account state **M023** (but its easy tier) done; **next:** the M023 easy tier (needs a device), d6, and the cryptographic d4. Read **M021** (sessions per device pair; supersedes M003 / M015 §2–3 / M016 / M020 / D074 as its phases ship) and **M023** (recovery phrase + encrypted account locker; supersedes M018 and the local account backup) before anything older. Status detail: [CURRENT_STATE.md](CURRENT_STATE.md)  
 **Owner:** Hongwei + agents  
-**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
+**Related:** [chat-storage-and-memory](../chat-storage-and-memory/) (D096→D100), [e2e-message-crypto](../e2e-message-crypto/) (E025), [at-rest-crypto](../_archive/at-rest-crypto/) (A010), [push-notifications](../push-notifications/) (device wake)
 
 ## One-line goal
 

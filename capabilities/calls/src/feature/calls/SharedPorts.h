@@ -8,7 +8,7 @@
 namespace pbr {
 
 /**
- * A ports struct that is swapped whole and read as an immutable snapshot (projects/thread-ownership
+ * A ports struct that is swapped whole and read as an immutable snapshot (thread-ownership
  * rule 2). Readers take one `Get()` per operation and use only that snapshot — a check and the call
  * it guards must see the same ports, even if `Set` runs meanwhile on another thread. Replaces
  * rebinding a live struct under callers (the port-rebind race: a running std::function destroyed

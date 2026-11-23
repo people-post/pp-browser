@@ -2,7 +2,7 @@
 
 **Project:** [p2p-mesh](README.md)  
 **ADRs:** [N023](DECISIONS.md#n023--relay-scope-and-domain-bridging-not-geography-tiers) (scope model), [N014/N020](DECISIONS.md) (pick + incentives)  
-**Stack dialability:** [media-hop-reachability](../media-hop-reachability/) (Amp mesh; **not** this doc)  
+**Stack dialability:** [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (Amp mesh; **not** this doc)  
 **Networking:** [NETWORKING.md](../../docs/architecture/NETWORKING.md)
 
 ## One-line goal
@@ -128,13 +128,13 @@ bridge_score = dialable_from_me
 Where **`r1_reaches_target`** is true when R1 can complete a path to B:
 
 - **Today (single-hop):** R1 can **direct-dial** B (or seed reachable from R1 when B is org-scoped).
-- **Planned (multi-hop, [H008](../media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned)):** R1 advertises or proves reachability to B **directly or via subcontract** (upstream R2 within hop cap). Consumer A still scores **R1 only** — not R2 ([N024](DECISIONS.md#n024--immediate-relay-as-service-broker)).
+- **Planned (multi-hop, [H008](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md#h008--multi-hop-circuit-chains-planned)):** R1 advertises or proves reachability to B **directly or via subcontract** (upstream R2 within hop cap). Consumer A still scores **R1 only** — not R2 ([N024](DECISIONS.md#n024--immediate-relay-as-service-broker)).
 
 No user selects “country tier.” The client discovers: *seed unreachable from me; contact Alice (R1) still reaches the target.*
 
 ### Multi-hop bridge score
 
-See [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summary:
+See [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summary:
 
 | Side | Algorithm |
 |------|-----------|
@@ -158,12 +158,12 @@ See [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md). Summ
 
 | Layer | Owns |
 |-------|------|
-| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: addr book, ch0 ads, UPnP/dial-back, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
+| **[media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability)** | In-stack **dialability**: addr book, ch0 ads, UPnP/dial-back, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
 | **This doc / p2p-mesh policy** | **Who** may relay, **which scope**, bridge score, escalate order, admission, quotes, settle |
 | **p2p-av-calls** | SoftMigrate **consumes** ranked hops + dialability |
 | **HTTP Brief** | Message inbox durability (global/org backstop) |
 
-Do **not** expand media-hop-reachability to cover scope routing or incentives — that splits ownership locked in [H001](../media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-amp-mesh).
+Do **not** expand media-hop-reachability to cover scope routing or incentives — that splits ownership locked in [H001](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md#h001--separate-project-implementation-in-amp-mesh).
 
 ## Code anchors (ns1 landed → ns2 open)
 
@@ -173,7 +173,7 @@ Do **not** expand media-hop-reachability to cover scope routing or incentives �
 | `CandidateRelayScopes` | Contact → social/site/link; OrgSeed → org; same-/24 v1 (needs **bound** listen, not `0.0.0.0`) |
 | `RankMediaHopsEscalating` | Media consumer pick in `CallTopologyController` |
 | `OrderCircuitHops` | Circuit immediate-relay order (nf); ns2: escalate + bridge score |
-| Multi-hop circuit v2 | **Not implemented** — [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md), [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
+| Multi-hop circuit v2 | **Not implemented** — [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md), [N024](DECISIONS.md#n024--immediate-relay-as-service-broker) |
 | `ProviderServeScopeMask` + `serve_scope_mask` | Admission on circuit + media relay |
 | `ApplyMeshAdmissionPolicies` | Reachability-aware stranger limit; re-run on probe update |
 | `prefer_contacts_only` on admission structs | Legacy field; **admission uses `serve_scope_mask`** |
@@ -193,7 +193,7 @@ Default is **auto** from reachability + capabilities.
 
 ## Phasing
 
-See [PHASES.md § ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023). Depends on **nr/nu** signals and **nf/n4-media** scorer; does not block [media-hop-reachability L1–L3](../media-hop-reachability/PHASES.md).
+See [PHASES.md § ns](PHASES.md#ns--relay-scope-and-domain-bridging-n023). Depends on **nr/nu** signals and **nf/n4-media** scorer; does not block [media-hop-reachability L1–L3](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/PHASES.md).
 
 ## Related
 

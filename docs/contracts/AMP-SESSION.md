@@ -26,7 +26,7 @@ L4 application E2E (chat `payload_b64`, call-media AEAD) is unchanged and comple
 | Cross-channel confusion | The frame (channel id, seq) travels sealed |
 | UDP inject without membership | Sealed packets: the AEAD tag; handshake and control packets: L1 HMAC (`K_assoc` once established) |
 
-PQ bar aligns with [libp2p-pq-transport P001](../../projects/libp2p-pq-transport/DECISIONS.md#p001--full-pq-threat-bar-transport-secrecy--peeridauth) — transport semantics move from Noise-on-TCP to **MSH-on-ADP**.
+PQ bar aligns with [libp2p-pq-transport P001](../../projects/_archive/libp2p-pq-transport/DECISIONS.md#p001--full-pq-threat-bar-transport-secrecy--peeridauth) — transport semantics move from Noise-on-TCP to **MSH-on-ADP**.
 
 ## Cryptographic profile (v1)
 
@@ -38,7 +38,7 @@ PQ bar aligns with [libp2p-pq-transport P001](../../projects/libp2p-pq-transport
 | Session AEAD | XChaCha20-Poly1305, the nonce derived from the packet number (§ Sealing packets) |
 | KDF | HKDF-SHA256 from handshake transcript hash |
 
-Semantic reference for KEM token order: [libp2p-pq-transport DESIGN](../projects/libp2p-pq-transport/DESIGN.md) (XXkem message order); MSH encodes the same semantics as **discrete messages**, not a byte pipe.
+Semantic reference for KEM token order: [libp2p-pq-transport DESIGN](../../projects/_archive/libp2p-pq-transport/DESIGN.md) (XXkem message order); MSH encodes the same semantics as **discrete messages**, not a byte pipe.
 
 ## MSH v1 transcript (outline)
 

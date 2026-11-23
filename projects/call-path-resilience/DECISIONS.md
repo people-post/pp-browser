@@ -22,7 +22,7 @@ Prefix **K**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** Migration opens the new path, switches TX, and releases the old path only after both sides have RX on the new path and a `path_release` is acked. Timers never release a path that carries or backs a live call. The relay path, when superseded, becomes **warm standby** (keepalive-only), not closed (see K003).  
 **Rationale:** Supplies "safe" for L3.25c "request circuit close when safe". The 2026-09-24 trace lost media 10 s after the punch while the planner kept media on the relay — exactly the unowned-relay failure. The existing `TryUpgradeToDirectAsync` cancels the tunnel before moving media.  
 **Alternatives rejected:** Close relay on punch success (break-before-make); close after fixed grace (races slow peers, loses media on asymmetric switch).  
-**Cross-link:** [media-hop-reachability HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) L3.25c; H005 billing.
+**Cross-link:** [media-hop-reachability HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md) L3.25c; H005 billing.
 
 ---
 
@@ -105,7 +105,7 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 **Decision:** A standby reservation is free. Relayed bytes after a failover are billed as brokered relay use (H005 unchanged for media). Abuse control: a per-account cap on concurrent standby reservations, and a standby reservation is valid only while its call is live (released at hangup).  
 **Rationale:** Standby costs the relay almost nothing (no media); per-minute quoting would add payment traffic to every call.  
 **Alternatives rejected:** Per-minute standby fee; free-up-to-N-minutes (complexity for negligible cost).  
-**Cross-link:** [H005](../media-hop-reachability/DECISIONS.md) brokered relay billing; [pricing](../pricing/).
+**Cross-link:** [H005](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md) brokered relay billing; [pricing](../pricing/).
 
 ---
 

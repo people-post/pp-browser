@@ -176,7 +176,7 @@ Built as a **policy** (Hongwei, 2026-10-30): the rules below are followed by the
 
 ## s — Account state (M023)
 
-Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold). Nothing here is built. Today restore is unsupported ([at-rest A011](../at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); the lab drives the old `LocalAccountBackup` path only to keep that code honest until s5 replaces it.
+Decision: [M023](DECISIONS.md#m023--account-state-a-recovery-phrase-is-the-root-an-encrypted-account-locker-any-provider-can-hold). Nothing here is built. Today restore is unsupported ([at-rest A011](../_archive/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); the lab drives the old `LocalAccountBackup` path only to keep that code honest until s5 replaces it.
 
 ### s1 — Recovery phrase
 
