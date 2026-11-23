@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <ratio>
 #include <sstream>
 #include "common/PbrCompat.h"
 
@@ -33,6 +34,20 @@ std::optional<Object> ReadCursorFile(const std::string& profile_data_dir) {
 /** A newer app's file (INVENTORY S3): not read, and never written over. A file without a version is this one's. */
 bool IsNewer(const Object& root) {
   return root.getNonNegInt("schema_version").value_or(kRelayInboxCursorSchemaVersion) > kRelayInboxCursorSchemaVersion;
+}
+
+/** `reread_phase` values (RelayInboxReread). */
+constexpr const char* kRereadDrain = "drain";
+constexpr const char* kRereadBackfill = "backfill";
+
+/** `out` = a - b; false (out untouched) when that overflows. */
+bool CheckedSub(const int64_t a, const int64_t b, int64_t& out) {
+  if ((b > 0 && a < std::numeric_limits<int64_t>::min() + b) ||
+      (b < 0 && a > std::numeric_limits<int64_t>::max() + b)) {
+    return false;
+  }
+  out = a - b;
+  return true;
 }
 
 } // namespace
@@ -67,12 +82,26 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
       }
     }
   }
-  if (const Object* floors = root->getObject("reread_floor_ms")) {
-    for (const auto& [origin, value] : floors->entries()) {
+  std::map<std::string, int64_t> floors;
+  if (const Object* kept = root->getObject("reread_floor_ms")) {
+    for (const auto& [origin, value] : kept->entries()) {
       if (auto ms = asNonNegInt(value);
-          ms && !origin.empty() && *ms > 0 && *ms <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-        cursors.reread_floors_ms[origin] = static_cast<int64_t>(*ms);
+          ms && *ms > 0 && *ms <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        floors[origin] = static_cast<int64_t>(*ms);
       }
+    }
+  }
+  if (const Object* phases = root->getObject("reread_phase")) {
+    for (const auto& [origin, value] : phases->entries()) {
+      const auto phase = asString(value);
+      if (origin.empty() || !phase || (*phase != kRereadDrain && *phase != kRereadBackfill)) {
+        continue; // not one this app knows: no re-read there (a floor alone is none either)
+      }
+      RelayInboxReread reread{.backfill = *phase == kRereadBackfill};
+      if (const auto floor = floors.find(origin); floor != floors.end()) {
+        reread.floor_ms = floor->second;
+      }
+      cursors.rereads[origin] = reread;
     }
   }
   return cursors;
@@ -111,12 +140,19 @@ void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::strin
     registrations.set(origin, id);
   }
   root.set("registrations", std::move(registrations));
-  if (!cursors.reread_floors_ms.empty()) { // additive too: an older app ignores it
+  if (!cursors.rereads.empty()) { // additive too: an older app ignores both
+    Object phases;
     Object floors;
-    for (const auto& [origin, ms] : cursors.reread_floors_ms) {
-      floors.set(origin, ms);
+    for (const auto& [origin, reread] : cursors.rereads) {
+      phases.set(origin, reread.backfill ? kRereadBackfill : kRereadDrain);
+      if (reread.floor_ms) {
+        floors.set(origin, *reread.floor_ms);
+      }
     }
-    root.set("reread_floor_ms", std::move(floors));
+    root.set("reread_phase", std::move(phases));
+    if (!floors.empty()) {
+      root.set("reread_floor_ms", std::move(floors));
+    }
   }
   // Replaced whole, not synced: written at every sync, and a cursor lost to a crash only fetches again what the
   // inbox drops as already seen.
@@ -132,13 +168,23 @@ std::optional<int64_t> RelayInboxCursorFileWrittenMs(const std::string& profile_
   if (ec) {
     return std::nullopt;
   }
-  // The file clock's epoch differs by library (and clock_cast / file_clock::to_sys are not everywhere): its age, read
-  // on the file clock, taken from the wall clock's now.
+  // The file clock's epoch and representation differ by library (libc++: 128-bit ns; MSVC: 100 ns ticks from 1601), and
+  // clock_cast / file_clock::to_sys are not everywhere: the file's age, read on the file clock, taken from the wall
+  // clock's now. Both file times go to ms first (a division: no overflow), and each subtraction is checked — an
+  // extreme time (a copied or corrupt one) is none, never undefined arithmetic.
   using std::chrono::duration_cast;
   using std::chrono::milliseconds;
-  const auto age = duration_cast<milliseconds>(std::filesystem::file_time_type::clock::now() - written);
-  const auto now = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-  return (now - age).count();
+  using FileTime = std::filesystem::file_time_type;
+  static_assert(std::ratio_less_equal_v<FileTime::period, std::milli>, "a file time to ms must be a division");
+  const int64_t written_ms = duration_cast<milliseconds>(written.time_since_epoch()).count();
+  const int64_t file_now_ms = duration_cast<milliseconds>(FileTime::clock::now().time_since_epoch()).count();
+  const int64_t wall_now_ms = duration_cast<milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  int64_t age_ms = 0;
+  int64_t at_ms = 0;
+  if (!CheckedSub(file_now_ms, written_ms, age_ms) || !CheckedSub(wall_now_ms, age_ms, at_ms)) {
+    return std::nullopt;
+  }
+  return at_ms;
 }
 
 } // namespace pbr

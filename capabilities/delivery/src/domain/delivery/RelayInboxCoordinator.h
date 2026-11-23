@@ -34,8 +34,9 @@ struct RelayInbox {
  * its id. A cursor counts in one mailbox: the registration we held there (Ports::mailbox, kept beside the cursor). A
  * fresh registration is a new mailbox numbered from the start, so a cursor kept for another one, or while it was not
  * known, is dropped and that inbox is read from its start (what was taken already is dropped as seen); cursors from a
- * file that noted no mailbox at all (an older app's) are dropped once, all of them, and that re-read skips the records
- * stored before the file's last write (kRereadFloorSlackMs). A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
+ * file that noted no mailbox at all (an older app's) are read again once, in two phases per relay (RelayInboxReread):
+ * first on from the kept cursor exactly as before, until an empty page; then from the inbox's start, skipping what the
+ * relay stored before the file's last write (kRereadFloorSlackMs), until an empty page. A relay that refuses the poll for good (IsPermanentRelayRefusal: `426 client_upgrade_required`, `400
  * relay_upgrade_required` / `unsupported_sign_version`, `401 wrong_audience`; release-compatibility T14) is not polled
  * again, forced or not, for kRefusedFirstMs, doubling to kRefusedMaxMs while it keeps refusing; an answer ends the
  * back-off. Thread-safe; the polls' HTTP runs on the `poll` lane.
@@ -47,8 +48,8 @@ public:
   static constexpr int64_t kRefusedFirstMs = 60 * 1000;
   static constexpr int64_t kRefusedMaxMs = 30 * 60 * 1000;
   /**
-   * The re-read from the start of an older app's cursor file skips the records the relay stored before the file's last
-   * write less this (clock skew between this device and the relay).
+   * Phase 2 of an older app's file's re-read skips the records the relay stored before the file's last write less this
+   * (clock skew between this device and the relay).
    */
   static constexpr int64_t kRereadFloorSlackMs = 10 * 60 * 1000;
 
@@ -122,10 +123,13 @@ private:
   std::string CursorOf(const Inbox& inbox, const std::string& account_id, const std::string& mailbox);
   void KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor);
   /**
-   * A poll's `messages` from `inbox`, less the records an older app's file's re-read skips there (kRereadFloorSlackMs;
-   * none under way: all of them). An empty page ends that re-read.
+   * An older app's file's re-read at `inbox`, after a poll answered `messages`: phase 1 takes them all and, on an empty
+   * page, moves to phase 2 (the cursor dropped: true, the page's cursor is not kept); phase 2 takes those stored since
+   * its floor and, on an empty page, ends. None under way: nothing changes (false).
    */
-  void ApplyRereadFloor(const Inbox& inbox, std::vector<RelayEnvelope>& messages);
+  bool ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages);
+  /** Phase 2's floor for an older app's file last written at `written_ms`; none when that time cannot be trusted. */
+  static std::optional<int64_t> RereadFloor(std::optional<int64_t> written_ms);
   void LoadCursorsLocked(const std::string& account_id);
   /** Drops the cursors of relays not listed and writes the file (cursors read for an account). */
   void SaveCursorsLocked();
@@ -143,8 +147,8 @@ private:
   std::map<std::string, std::string> cursors_;
   /** The mailbox each relay's cursor counts in (the registration id), by relay (RelayOriginKey). */
   std::map<std::string, std::string> mailboxes_;
-  /** An older app's file's re-read under way, by relay (RelayOriginKey): records stored before this Unix ms skipped. */
-  std::map<std::string, int64_t> reread_floors_;
+  /** An older app's file's re-reads under way, by relay (RelayOriginKey). */
+  std::map<std::string, RelayInboxReread> rereads_;
   uint64_t syncs_ = 0;
 };
 

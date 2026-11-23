@@ -96,7 +96,7 @@ TEST_F(RelayInboxCursorTest, TheFileSaysItsVersionAndANewerOneIsLeftAlone) {
   EXPECT_EQ(read(), newer) << "never written over";
 }
 
-/** The file as the app before `registrations` / `reread_floor_ms` read it (its LoadRelayInboxCursors, verbatim). */
+/** The file as the app before `registrations` / `reread_*` read it (its LoadRelayInboxCursors, verbatim). */
 RelayInboxCursors ReadAsAnOlderApp(const std::string& text, const std::string& account_id) {
   RelayInboxCursors cursors;
   const auto root = TryParseObject(text);
@@ -115,14 +115,18 @@ RelayInboxCursors ReadAsAnOlderApp(const std::string& text, const std::string& a
   return cursors;
 }
 
-// An older app's file's re-read under way (RelayInboxCoordinator) is kept beside the cursors, additively: the version
-// stays 1 and an older app reads the cursors as before; it is not written when there is none.
-TEST_F(RelayInboxCursorTest, AReReadFloorComesBackAndAnOlderAppReadsTheFileAsBefore) {
-  const RelayInboxCursors cursors{.preferred = "c1:7",
-                                  .preferred_relay = "https://a.example/api/relay",
-                                  .others = {{"https://b.example/api/relay", "c1:3"}},
-                                  .registrations = std::map<std::string, std::string>{},
-                                  .reread_floors_ms = {{"https://a.example/api/relay", 1'700'000'000'000}}};
+// An older app's file's re-read under way (RelayInboxCoordinator: its phase, and phase 2's floor when there is one) is
+// kept beside the cursors, additively: the version stays 1 and an older app reads the cursors as before; nothing is
+// written when there is none; a phase this app does not know, or a floor alone, is no re-read.
+TEST_F(RelayInboxCursorTest, AReReadUnderWayComesBackAndAnOlderAppReadsTheFileAsBefore) {
+  const RelayInboxCursors cursors{
+      .preferred = "c1:7",
+      .preferred_relay = "https://a.example/api/relay",
+      .others = {{"https://b.example/api/relay", "c1:3"}, {"https://c.example/api/relay", "c1:9"}},
+      .registrations = std::map<std::string, std::string>{},
+      .rereads = {{"https://a.example/api/relay", {.backfill = true, .floor_ms = 1'700'000'000'000}},
+                  {"https://b.example/api/relay", {.backfill = false, .floor_ms = 1'700'000'000'000}},
+                  {"https://c.example/api/relay", {.backfill = true, .floor_ms = std::nullopt}}}};
   SaveRelayInboxCursors(dir_.string(), "account:me", cursors);
   EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), "account:me"), cursors);
 
@@ -132,16 +136,26 @@ TEST_F(RelayInboxCursorTest, AReReadFloorComesBackAndAnOlderAppReadsTheFileAsBef
   };
   const std::string text = read();
   EXPECT_NE(text.find("\"schema_version\":1"), std::string::npos) << text;
-  EXPECT_NE(text.find("\"reread_floor_ms\":{\"https://a.example/api/relay\":1700000000000}"), std::string::npos)
-      << text;
-  EXPECT_EQ(ReadAsAnOlderApp(text, "account:me"),
-            (RelayInboxCursors{.preferred = "c1:7",
-                               .preferred_relay = "https://a.example/api/relay",
-                               .others = {{"https://b.example/api/relay", "c1:3"}}}))
-      << "an older app ignores the key";
+  EXPECT_NE(text.find("\"https://a.example/api/relay\":\"backfill\""), std::string::npos) << text;
+  EXPECT_NE(text.find("\"https://b.example/api/relay\":\"drain\""), std::string::npos) << text;
+  EXPECT_NE(text.find("\"reread_floor_ms\":{\"https://a.example/api/relay\":1700000000000"), std::string::npos) << text;
+  EXPECT_EQ(
+      ReadAsAnOlderApp(text, "account:me"),
+      (RelayInboxCursors{.preferred = "c1:7",
+                         .preferred_relay = "https://a.example/api/relay",
+                         .others = {{"https://b.example/api/relay", "c1:3"}, {"https://c.example/api/relay", "c1:9"}}}))
+      << "an older app ignores the keys";
 
   SaveRelayInboxCursors(dir_.string(), "account:me", {.preferred = "c1:8", .others = {}});
-  EXPECT_EQ(read().find("reread_floor_ms"), std::string::npos) << "none: not written";
+  EXPECT_EQ(read().find("reread"), std::string::npos) << "none: not written";
+
+  { // closed before it is read: Windows
+    std::ofstream out(dir_ / "relay_inbox_cursor.json", std::ios::trunc);
+    out << R"({"schema_version":1,"account_id":"account:me","cursor":"c1:8","registrations":{},)"
+        << R"("reread_phase":{"https://a.example/api/relay":"later"},)"
+        << R"("reread_floor_ms":{"https://a.example/api/relay":5,"https://b.example/api/relay":5}})";
+  }
+  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), "account:me").rereads.empty());
 }
 
 // The file's last write, on the wall clock (the relay's store times are Unix ms): none without a file.
@@ -159,6 +173,31 @@ TEST_F(RelayInboxCursorTest, TheFilesLastWriteIsReadOnTheWallClock) {
   const auto written = RelayInboxCursorFileWrittenMs(dir_.string());
   ASSERT_TRUE(written);
   EXPECT_NEAR(static_cast<double>(*written), static_cast<double>(now_ms - 3 * 3600 * 1000), 60'000.0);
+}
+
+// A file time at either end of what the file clock holds (a copied or corrupt profile) converts without overflow: it is
+// none, or a time the coordinator does not trust (in the future, or before 1970 plus its slack).
+TEST_F(RelayInboxCursorTest, AnExtremeFileTimeIsReadWithoutOverflow) {
+  const auto path = dir_ / "relay_inbox_cursor.json";
+  { // closed before its time is set: Windows
+    std::ofstream(path) << R"({"account_id":"account:me","cursor":"c1:1"})";
+  }
+  using FileTime = std::filesystem::file_time_type;
+  for (const FileTime extreme : {FileTime::min(), FileTime::max(), FileTime{}}) {
+    std::error_code ec;
+    std::filesystem::last_write_time(path, extreme, ec);
+    if (ec) {
+      continue; // this file system refuses that time: nothing to read back
+    }
+    const auto written = RelayInboxCursorFileWrittenMs(dir_.string()); // must not trap or overflow
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    if (written) {
+      EXPECT_TRUE(*written > now_ms || *written < now_ms - 24LL * 3600 * 1000 * 365)
+          << "an extreme time reads as an extreme one: " << *written;
+    }
+  }
 }
 
 } // namespace

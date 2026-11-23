@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -141,6 +142,13 @@ protected:
       return it == mailboxes_.end() ? std::string() : it->second;
     };
     return ports;
+  }
+
+  /** A coordinator started again over the same profile (a restart), with `ports` (none: the fixture's). */
+  std::unique_ptr<RelayInboxCoordinator> Started(std::optional<RelayInboxCoordinator::Ports> ports = std::nullopt) {
+    auto started = std::make_unique<RelayInboxCoordinator>(ports ? std::move(*ports) : Ports());
+    started->SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+    return started;
   }
 
   std::filesystem::path dir_;
@@ -368,34 +376,6 @@ TEST_F(RelayInboxCoordinatorTest, EachRelaysCursorFollowsItsOwnRegistration) {
   EXPECT_EQ(other_->polled_with.back(), "") << "only the relay that registered us again starts over";
 }
 
-// The devices already deaf when this shipped: their cursors were kept by an app that noted no mailbox — whether the
-// registration there is known now or not, each inbox is read once from its start (the receive pipeline drops what was
-// taken already), then on from there, across restarts too.
-TEST_F(RelayInboxCoordinatorTest, CursorsFromAFileThatNotedNoMailboxAreReadFromTheStartOnce) {
-  std::ofstream(dir_ / "relay_inbox_cursor.json")
-      << R"({"schema_version":1,"account_id":")" << kMe << R"(","cursor":"c1:1684","cursor_relay":")"
-      << RelayOriginKey(kPreferred) << R"(","relays":{")" << RelayOriginKey(kOther) << R"(":"b-9"}})";
-  mailboxes_[kPreferred] = "reg-now"; // the other relay's: not known
-  RelayInboxCoordinator again(Ports());
-  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  preferred_->Queue({"m1", "m2"}, "c1:2");
-  other_->Queue({"m3"}, "b-1");
-  again.Sync(true, kMe);
-  EXPECT_EQ(preferred_->polled_with.back(), "");
-  EXPECT_EQ(other_->polled_with.back(), "") << "every cursor of that file";
-  again.Sync(true, kMe);
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "once";
-  EXPECT_EQ(other_->polled_with.back(), "b-1");
-
-  RelayInboxCoordinator third(Ports());
-  third.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  third.Sync(true, kMe);
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "not again after a restart";
-  EXPECT_EQ(other_->polled_with.back(), "b-1");
-  EXPECT_EQ(std::count(preferred_->polled_with.begin(), preferred_->polled_with.end(), ""), 1);
-  EXPECT_EQ(std::count(other_->polled_with.begin(), other_->polled_with.end(), ""), 1);
-}
-
 // A cursor kept while the registration there was not known (no id answered yet) is used as it is; once a registration
 // is known it counts in that one, and when it changes the inbox starts over.
 TEST_F(RelayInboxCoordinatorTest, ACursorKeptWhileTheRegistrationWasNotKnownStartsOverOnceItIs) {
@@ -408,131 +388,298 @@ TEST_F(RelayInboxCoordinatorTest, ACursorKeptWhileTheRegistrationWasNotKnownStar
   EXPECT_EQ(preferred_->polled_with.back(), "");
 }
 
-// ---- the re-read of an older app's file skips what the relay stored before the file was last written ----------------
+// ---- an older app's cursor file: each inbox read on as before, then once from its start above a time floor ---------
 
-/** An older app's cursor file (cursors for both relays, no `registrations`), last written `age` ago; that time, Unix ms. */
-int64_t WriteOlderAppsFile(const std::filesystem::path& dir, const std::chrono::minutes age) {
+/**
+ * An older app's cursor file (no `registrations`): the preferred relay's cursor c1:1684 and, `with_other`, the other
+ * relay's b-9; last written `age` ago (negative: in the future). That time, Unix ms (0: none).
+ */
+int64_t WriteOlderAppsFile(const std::filesystem::path& dir, const std::chrono::minutes age,
+                           const bool with_other = true) {
   const auto path = dir / "relay_inbox_cursor.json";
   { // closed before its time is set and before the coordinator replaces it: Windows
     std::ofstream out(path, std::ios::trunc);
     out << R"({"schema_version":1,"account_id":")" << kMe << R"(","cursor":"c1:1684","cursor_relay":")"
-        << RelayOriginKey(kPreferred) << R"(","relays":{")" << RelayOriginKey(kOther) << R"(":"b-9"}})";
+        << RelayOriginKey(kPreferred) << R"(")";
+    if (with_other) {
+      out << R"(,"relays":{")" << RelayOriginKey(kOther) << R"(":"b-9"})";
+    }
+    out << "}";
   }
   std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now() - age);
-  const auto written = RelayInboxCursorFileWrittenMs(dir.string());
-  EXPECT_TRUE(written);
-  return written.value_or(0);
+  return RelayInboxCursorFileWrittenMs(dir.string()).value_or(0);
 }
 
+/** A minute: records sit this far either side of a floor (the file's time is read on the wall clock each time). */
 constexpr int64_t kMinute = 60'000;
+
+int64_t WallNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
 
 std::string At(const char* origin, const std::string& id) {
   return std::string(origin) + " " + id;
 }
 
-// Every record the device took in from an older app's inbox was stored before that app last wrote its file (it wrote it
-// as the cursor moved); a deaf device's missed messages were stored after (its cursor stood still). So the once-only
-// re-read skips what was stored before the file's last write (less kRereadFloorSlackMs): chats cleared or deleted under
-// the older app, which kept no removed ids, do not come back; the missed messages arrive. A record with no store time is
-// taken in. The cursor moves past what is skipped; the registration is noted from now on.
-TEST_F(RelayInboxCoordinatorTest, AnOlderAppsFileIsReadAgainOnlyFromTheTimeItWasLastWritten) {
-  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
-  const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
-  mailboxes_[kPreferred] = "reg-now";
-  RelayInboxCoordinator again(Ports());
-  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  // A minute either side of the floor: the file's time is read on the wall clock each time, a millisecond apart.
-  preferred_->QueueStored({{"cleared-under-the-older-app", floor_ms - kMinute},
-                           {"in-the-slack", floor_ms + kMinute},
-                           {"missed", written + kMinute},
-                           {"no-store-time", std::nullopt}},
-                          "c1:4");
-
-  again.Sync(false, kMe);
-
-  EXPECT_EQ(preferred_->polled_with.back(), "") << "from its start";
-  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "in-the-slack"), At(kPreferred, "missed"),
-                                              At(kPreferred, "no-store-time")}));
-  RelayInboxCursors kept = LoadRelayInboxCursors(dir_.string(), kMe);
-  EXPECT_EQ(kept.preferred, "c1:4") << "past what was skipped";
-  ASSERT_TRUE(kept.registrations);
-  EXPECT_EQ(kept.registrations->at(RelayOriginKey(kPreferred)), "reg-now");
-  ASSERT_EQ(kept.reread_floors_ms.size(), 2u) << "each relay whose cursor went";
-  EXPECT_NEAR(static_cast<double>(kept.reread_floors_ms.at(RelayOriginKey(kPreferred))), static_cast<double>(floor_ms),
-              1000.0);
-  EXPECT_EQ(kept.reread_floors_ms.at(RelayOriginKey(kOther)), kept.reread_floors_ms.at(RelayOriginKey(kPreferred)));
-  const std::map<std::string, int64_t> floors = kept.reread_floors_ms;
-
-  again.Sync(false, kMe); // an empty page: read through
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:4");
-  kept = LoadRelayInboxCursors(dir_.string(), kMe);
-  EXPECT_EQ(kept.reread_floors_ms,
-            (std::map<std::string, int64_t>{{RelayOriginKey(kOther), floors.at(RelayOriginKey(kOther))}}))
-      << "the other relay's re-read is still under way";
+/** The re-read kept in the file for `origin`; none: no re-read there. */
+std::optional<RelayInboxReread> KeptReread(const std::filesystem::path& dir, const char* origin) {
+  const RelayInboxCursors kept = LoadRelayInboxCursors(dir.string(), kMe);
+  const auto found = kept.rereads.find(RelayOriginKey(origin));
+  return found == kept.rereads.end() ? std::nullopt : std::optional<RelayInboxReread>(found->second);
 }
 
-// The app stopped in the middle of the re-read: the floor is read back from the file (whose own time is new by then)
-// and skips on until a page comes back empty; after that an old record is taken in as any.
-TEST_F(RelayInboxCoordinatorTest, ARestartDuringTheReReadKeepsItsFloorUntilAnEmptyPage) {
+// The devices already deaf when this shipped, and every other install: their cursors were kept by an app that noted no
+// mailbox. Each relay is polled on from its cursor as that app would (whether the registration there is known now or
+// not), and once that answers an empty page it is read once from its start — then on from there, across restarts too.
+TEST_F(RelayInboxCoordinatorTest, CursorsFromAFileThatNotedNoMailboxArePolledOnThenReadFromTheStartOnce) {
+  WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  mailboxes_[kPreferred] = "reg-now"; // the other relay's: not known
+  auto app = Started();
+  preferred_->Queue({"m1", "m2"}, "c1:1690");
+  other_->Queue({"m3"}, "b-10");
+  app->Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684") << "phase 1: the kept cursor, as the older app";
+  EXPECT_EQ(other_->polled_with.back(), "b-9");
+  const RelayInboxCursors noted = LoadRelayInboxCursors(dir_.string(), kMe);
+  ASSERT_TRUE(noted.registrations);
+  EXPECT_EQ(noted.registrations->at(RelayOriginKey(kPreferred)), "reg-now") << "its registration noted from now on";
+
+  app->Sync(true, kMe); // empty pages: drained
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1690");
+  EXPECT_EQ(other_->polled_with.back(), "b-10");
+  preferred_->Queue({"m1"}, "c1:2");
+  other_->Queue({"m3"}, "b-1");
+  app->Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "") << "phase 2: from its start";
+  EXPECT_EQ(other_->polled_with.back(), "");
+  app->Sync(true, kMe); // empty pages: done
+  EXPECT_FALSE(KeptReread(dir_, kPreferred));
+  EXPECT_FALSE(KeptReread(dir_, kOther));
+
+  auto restarted = Started();
+  restarted->Sync(true, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "not again after a restart";
+  EXPECT_EQ(other_->polled_with.back(), "b-1");
+  EXPECT_EQ(std::count(preferred_->polled_with.begin(), preferred_->polled_with.end(), ""), 1);
+  EXPECT_EQ(std::count(other_->polled_with.begin(), other_->polled_with.end(), ""), 1);
+}
+
+// The older app kept its cursor before a batch was taken in (KeepCursor, then the ingest lane): records behind that
+// cursor may never have been taken in, though stored long before the file's last write. Phase 1 delivers them, whatever
+// their time; phase 2 then skips what was stored before the floor (they among it: taken already) and takes the rest. A
+// record with no store time is taken in. The cursor moves past what is skipped.
+TEST_F(RelayInboxCoordinatorTest, ABacklogBehindTheOlderAppsCursorIsDelivered) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
+  auto app = Started();
+  preferred_->QueueStored({{"backlog", written - 60 * kMinute}, {"since", written + kMinute}}, "c1:1690");
+  app->Sync(false, kMe);
+  app->Sync(false, kMe); // drained
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog"), At(kPreferred, "since")}));
+
+  preferred_->QueueStored({{"cleared-under-the-older-app", floor_ms - kMinute},
+                           {"backlog", written - 60 * kMinute},
+                           {"in-the-slack", floor_ms + kMinute},
+                           {"since", written + kMinute},
+                           {"no-store-time", std::nullopt}},
+                          "c1:5");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog"), At(kPreferred, "since"),
+                                              At(kPreferred, "in-the-slack"), At(kPreferred, "since"),
+                                              At(kPreferred, "no-store-time")}))
+      << "phase 2 hands on what is above the floor; what was taken already the receive pipeline drops as seen";
+  const auto reread = KeptReread(dir_, kPreferred);
+  ASSERT_TRUE(reread);
+  EXPECT_TRUE(reread->backfill);
+  ASSERT_TRUE(reread->floor_ms);
+  EXPECT_NEAR(static_cast<double>(*reread->floor_ms), static_cast<double>(floor_ms), 1000.0);
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred, "c1:5") << "past what was skipped";
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:5");
+  EXPECT_FALSE(KeptReread(dir_, kPreferred)) << "an empty page: read through";
+}
+
+// The account was deaf: a fresh registration numbered its mailbox from the start, and the older app's cursor is past
+// everything in it. Phase 1 answers an empty page at once; phase 2 reads the mailbox from its start and brings in what
+// was stored since the file's last write — the messages that device missed.
+TEST_F(RelayInboxCoordinatorTest, ADeafAccountsMissedMessagesArriveInPhaseTwo) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
+  mailboxes_[kPreferred] = "reg-new";
+  auto app = Started();
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684");
+  EXPECT_TRUE(taken_.empty());
+  preferred_->QueueStored({{"before-the-write", floor_ms - kMinute},
+                           {"missed-1", written + kMinute},
+                           {"missed-2", written + 30 * kMinute},
+                           {"no-store-time", std::nullopt}},
+                          "c1:3");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "missed-1"), At(kPreferred, "missed-2"),
+                                              At(kPreferred, "no-store-time")}));
+}
+
+// A file time in the future (the clock set back since, a copied profile) is not trusted: phase 1 still delivers what
+// came in while the app was closed, from the kept cursor, and phase 2 takes everything — nothing is lost.
+TEST_F(RelayInboxCoordinatorTest, AFileTimeInTheFutureLosesNothing) {
+  const int64_t written = WriteOlderAppsFile(dir_, -std::chrono::minutes(60));
+  ASSERT_GT(written, WallNowMs());
+  auto app = Started();
+  preferred_->QueueStored({{"arrived-while-closed", WallNowMs()}}, "c1:1690");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684");
+  app->Sync(false, kMe); // drained
+  const auto reread = KeptReread(dir_, kPreferred);
+  ASSERT_TRUE(reread);
+  EXPECT_FALSE(reread->floor_ms) << "no floor";
+  preferred_->QueueStored({{"a-day-old", WallNowMs() - 24 * 60 * kMinute}, {"ancient", 1}}, "c1:2");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "arrived-while-closed"), At(kPreferred, "a-day-old"),
+                                              At(kPreferred, "ancient")}));
+}
+
+// This device's clock an hour ahead of the relay's: the file's time (ours) is an hour later than the store times
+// (the relay's) of what came in after it. Phase 1 still delivers everything after the kept cursor; only phase 2's
+// healing is narrowed (what was stored in that hour sits below its floor).
+TEST_F(RelayInboxCoordinatorTest, ADeviceClockAheadOfTheRelayStillGetsEverythingAfterTheCursor) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::minutes(0));
+  const int64_t relay_written = written - 60 * kMinute; // the same moment on the relay's clock
+  auto app = Started();
+  preferred_->QueueStored({{"after-1", relay_written + kMinute}, {"after-2", relay_written + 20 * kMinute}}, "c1:1690");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "after-1"), At(kPreferred, "after-2")}));
+  app->Sync(false, kMe); // drained
+  preferred_->QueueStored({{"after-1", relay_written + kMinute}, {"after-2", relay_written + 20 * kMinute}}, "c1:2");
+  app->Sync(false, kMe);
+  EXPECT_EQ(taken_.size(), 2u) << "phase 2 skips them (below its floor by the skew): delivered once, in phase 1";
+}
+
+// No time to trust for the older app's file — none read, or one at an extreme — means no floor: phase 2 takes everything
+// (old chats may come back once; nothing is lost), and nothing traps on the arithmetic.
+TEST_F(RelayInboxCoordinatorTest, AnUnreadableOrExtremeFileTimeMeansPhaseTwoTakesEverything) {
+  const std::vector<std::optional<int64_t>> times = {std::nullopt, std::numeric_limits<int64_t>::min(), 0,
+                                                     RelayInboxCoordinator::kRereadFloorSlackMs,
+                                                     std::numeric_limits<int64_t>::max()};
+  for (size_t i = 0; i < times.size(); ++i) {
+    SCOPED_TRACE(i);
+    WriteOlderAppsFile(dir_, std::chrono::hours(2), false);
+    RelayInboxCoordinator::Ports ports = Ports();
+    ports.cursors_written_ms = [time = times[i]](const std::string&) { return time; };
+    auto app = Started(std::move(ports));
+    app->Sync(false, kMe); // phase 1: an empty page at once
+    const auto reread = KeptReread(dir_, kPreferred);
+    ASSERT_TRUE(reread);
+    EXPECT_FALSE(reread->floor_ms);
+    const std::string id = "ancient-" + std::to_string(i);
+    preferred_->QueueStored({{id, 1}}, "c1:" + std::to_string(i));
+    app->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.back(), "");
+    ASSERT_FALSE(taken_.empty());
+    EXPECT_EQ(taken_.back(), At(kPreferred, id));
+  }
+}
+
+// Stopped during phase 1: it goes on from the cursor it kept, unfiltered, then on to phase 2.
+TEST_F(RelayInboxCoordinatorTest, ARestartInPhaseOneGoesOnUnfilteredFromTheSavedCursor) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  {
+    auto app = Started();
+    preferred_->QueueStored({{"backlog-1", written - 60 * kMinute}}, "c1:1690");
+    app->Sync(false, kMe);
+  }
+  auto restarted = Started();
+  preferred_->QueueStored({{"backlog-2", written - 60 * kMinute}}, "c1:1695");
+  restarted->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1690") << "on from where it stopped";
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog-1"), At(kPreferred, "backlog-2")}));
+  restarted->Sync(false, kMe); // drained
+  restarted->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "") << "then phase 2";
+}
+
+// Stopped during phase 2: it goes on from phase 2's cursor, still above the floor read back from the file (whose own
+// time is new by then), until an empty page; after that an old record is taken in as any.
+TEST_F(RelayInboxCoordinatorTest, ARestartInPhaseTwoGoesOnFilteredFromItsCursor) {
   const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
   const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
   {
-    RelayInboxCoordinator first(Ports());
-    first.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-    preferred_->QueueStored({{"old-1", floor_ms - kMinute}, {"new-1", written + kMinute}}, "c1:2");
-    first.Sync(false, kMe);
+    auto app = Started();
+    app->Sync(false, kMe); // drained at once
+    preferred_->QueueStored({{"old-1", floor_ms - kMinute}, {"new-1", written + kMinute}}, "c1:3");
+    app->Sync(false, kMe);
+    EXPECT_EQ(preferred_->polled_with.back(), "");
   }
-  RelayInboxCoordinator second(Ports());
-  second.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  preferred_->QueueStored({{"old-2", floor_ms - kMinute}, {"new-2", written + kMinute}}, "c1:4");
-  second.Sync(false, kMe);
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:2") << "on from where it stopped";
-
-  second.Sync(false, kMe); // an empty page: read through
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:4");
-  EXPECT_FALSE(LoadRelayInboxCursors(dir_.string(), kMe).reread_floors_ms.contains(RelayOriginKey(kPreferred)));
-  preferred_->QueueStored({{"old-3", floor_ms - kMinute}}, "c1:5");
-  second.Sync(false, kMe);
-
-  RelayInboxCoordinator third(Ports());
-  third.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  preferred_->QueueStored({{"old-4", floor_ms - kMinute}}, "c1:6");
-  third.Sync(false, kMe);
-  EXPECT_EQ(preferred_->polled_with.back(), "c1:5");
-  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "new-1"), At(kPreferred, "new-2"), At(kPreferred, "old-3"),
-                                              At(kPreferred, "old-4")}));
+  auto restarted = Started();
+  preferred_->QueueStored({{"old-2", floor_ms - kMinute}, {"new-2", written + kMinute}}, "c1:6");
+  restarted->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:3") << "on from phase 2's cursor";
+  restarted->Sync(false, kMe); // an empty page: read through
+  EXPECT_FALSE(KeptReread(dir_, kPreferred));
+  preferred_->QueueStored({{"old-3", floor_ms - kMinute}}, "c1:7");
+  restarted->Sync(false, kMe);
+  EXPECT_EQ(taken_,
+            (std::vector<std::string>{At(kPreferred, "new-1"), At(kPreferred, "new-2"), At(kPreferred, "old-3")}));
 }
 
-// With no time for the older app's file there is no floor: every inbox is read again whole, as before.
-TEST_F(RelayInboxCoordinatorTest, AnOlderAppsFileWhoseTimeCannotBeReadIsReadAgainWhole) {
+// An older app run in between writes the file again without the re-read's keys: the next run takes it for an older
+// app's file again — phase 1 from that app's cursor, then phase 2 — and loses nothing.
+TEST_F(RelayInboxCoordinatorTest, AnOlderAppWritingTheFileAgainStartsTheReReadOverSafely) {
   const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
-  RelayInboxCoordinator::Ports ports = Ports();
-  ports.cursors_written_ms = [](const std::string&) { return std::optional<int64_t>(); };
-  RelayInboxCoordinator again(std::move(ports));
-  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
-  preferred_->QueueStored({{"a-day-before", written - 24 * 3600 * 1000}, {"no-store-time", std::nullopt}}, "c1:2");
-
-  again.Sync(false, kMe);
-
-  EXPECT_EQ(preferred_->polled_with.back(), "");
-  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "a-day-before"), At(kPreferred, "no-store-time")}));
-  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).reread_floors_ms.empty());
+  const int64_t floor_ms = written - RelayInboxCoordinator::kRereadFloorSlackMs;
+  {
+    auto app = Started();
+    app->Sync(false, kMe); // drained at once
+    preferred_->QueueStored({{"new-1", written + kMinute}}, "c1:3");
+    app->Sync(false, kMe); // phase 2 under way
+  }
+  { // the older app's write: the cursors only
+    std::ofstream out(dir_ / "relay_inbox_cursor.json", std::ios::trunc);
+    out << R"({"schema_version":1,"account_id":")" << kMe << R"(","cursor":"c1:9","cursor_relay":")"
+        << RelayOriginKey(kPreferred) << R"("})";
+  }
+  auto again = Started();
+  preferred_->QueueStored({{"behind-its-cursor", floor_ms - kMinute}}, "c1:10");
+  again->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:9") << "phase 1 from the older app's cursor";
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "new-1"), At(kPreferred, "behind-its-cursor")}));
+  const auto reread = KeptReread(dir_, kPreferred);
+  ASSERT_TRUE(reread);
+  EXPECT_FALSE(reread->backfill);
 }
 
-// A fresh install (no file) and a file that notes the registrations (this app's) skip nothing, however old.
+// A relay the older app's file holds no cursor for has nothing to read on from: it is read from its start, unfiltered,
+// as on any install, with no re-read state.
+TEST_F(RelayInboxCoordinatorTest, ARelayWithNoCursorInTheOlderAppsFileIsReadAsBefore) {
+  WriteOlderAppsFile(dir_, std::chrono::hours(2), false);
+  auto app = Started();
+  other_->QueueStored({{"ancient", 1}}, "b-1");
+  app->Sync(true, kMe);
+  EXPECT_EQ(other_->polled_with.back(), "");
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:1684");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kOther, "ancient")}));
+  EXPECT_FALSE(KeptReread(dir_, kOther));
+  EXPECT_TRUE(KeptReread(dir_, kPreferred));
+}
+
+// A fresh install (no file) and a file that notes the registrations (this app's) have no re-read, however old a record.
 TEST_F(RelayInboxCoordinatorTest, NoFileOrACurrentFileSkipsNothing) {
   preferred_->QueueStored({{"ancient", 1}}, "c1:1");
   coordinator_->Sync(false, kMe);
-  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).reread_floors_ms.empty());
+  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).rereads.empty());
 
-  RelayInboxCoordinator again(Ports());
-  again.SetInboxes({{kPreferred, preferred_}, {kOther, other_}}, dir_.string());
+  auto app = Started();
   preferred_->QueueStored({{"ancient-2", 1}}, "c1:2");
-  again.Sync(false, kMe);
+  app->Sync(false, kMe);
 
   EXPECT_EQ(preferred_->polled_with.back(), "c1:1") << "its cursor kept";
   EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "ancient"), At(kPreferred, "ancient-2")}));
-  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).reread_floors_ms.empty());
+  EXPECT_TRUE(LoadRelayInboxCursors(dir_.string(), kMe).rereads.empty());
 }
 
 TEST_F(RelayInboxCoordinatorTest, NoInboxesPollsNothing) {

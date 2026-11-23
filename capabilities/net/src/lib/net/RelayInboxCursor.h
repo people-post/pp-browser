@@ -8,6 +8,20 @@
 namespace pbr {
 
 /**
+ * The once-only re-read of one relay inbox after an older app's file (no `registrations`; RelayInboxCoordinator):
+ * phase 1 polls on from the kept cursor as before, until a page comes back empty; phase 2 then reads the inbox from its
+ * start, skipping the records stored before `floor_ms`, until a page comes back empty.
+ */
+struct RelayInboxReread {
+  /** false: phase 1 (`drain`); true: phase 2 (`backfill`). */
+  bool backfill = false;
+  /** Phase 2 skips the records the relay stored before this Unix ms; none: it takes them all. */
+  std::optional<int64_t> floor_ms;
+
+  bool operator==(const RelayInboxReread&) const = default;
+};
+
+/**
  * Where each of our relay inboxes was polled up to (docs/contracts/DATA_LAYOUT.md `relay_inbox_cursor.json`): the
  * preferred relay's cursor, and the other relays' by origin (multi-relay R2). An inbox's ack is soft, so a cursor lost
  * fetches that inbox again from its oldest message, which the receive pipeline drops as already seen.
@@ -26,11 +40,10 @@ struct RelayInboxCursors {
    */
   std::optional<std::map<std::string, std::string>> registrations;
   /**
-   * By relay origin (RelayOriginKey): a re-read from the start of an older app's file (no `registrations`) under way
-   * there — the records the relay stored before this Unix ms are skipped (RelayInboxCoordinator). Written as
-   * `reread_floor_ms` (additive: an older app ignores it); none: no such re-read.
+   * The re-reads under way, by relay origin (RelayOriginKey). Written as `reread_phase` {origin: "drain" | "backfill"}
+   * and `reread_floor_ms` {origin: unix_ms} (additive: an older app ignores both, and drops them when it writes).
    */
-  std::map<std::string, int64_t> reread_floors_ms;
+  std::map<std::string, RelayInboxReread> rereads;
 
   bool operator==(const RelayInboxCursors&) const = default;
 };
@@ -43,7 +56,10 @@ RelayInboxCursors LoadRelayInboxCursors(const std::string& profile_data_dir, con
 /** Replaces the file whole (frequent writes: not synced); a newer app's file is left as it is. */
 void SaveRelayInboxCursors(const std::string& profile_data_dir, const std::string& account_id,
                            const RelayInboxCursors& cursors);
-/** When the file was last written, Unix ms (wall clock); none: no file, or its time cannot be read. */
+/**
+ * When the file was last written, Unix ms (wall clock); none: no file, or a time that cannot be read or converted
+ * (no overflow: an extreme time is none).
+ */
 std::optional<int64_t> RelayInboxCursorFileWrittenMs(const std::string& profile_data_dir);
 
 } // namespace pbr

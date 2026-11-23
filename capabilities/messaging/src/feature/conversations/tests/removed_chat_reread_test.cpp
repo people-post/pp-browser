@@ -14,6 +14,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "common/chat/SystemControl.h"
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/OutboundMessage.h"
@@ -72,8 +73,15 @@ public:
     std::lock_guard lock(mu_);
     RelayPollResult result;
     result.messages.swap(inbox_);
-    result.next_cursor = "c" + std::to_string(++polls_);
+    ++polls_;
+    if (!result.messages.empty()) {
+      result.next_cursor = "c" + std::to_string(polls_); // an empty page carries no cursor, as the relay's
+    }
     return result;
+  }
+  int Polls() {
+    std::lock_guard lock(mu_);
+    return polls_;
   }
   Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override {
     std::lock_guard lock(mu_);
@@ -125,6 +133,17 @@ protected:
     ASSERT_TRUE(keys_.AddAccountCard(carol_.DeviceCard(), util::NowUnixMs(), "test"));
     ASSERT_TRUE(carol_store_.SetDek(TestDek(9)) && carol_psk_.SetDek(TestDek(9)));
     relay_ = std::make_shared<MailboxRelay>();
+    SystemControlFamily family; // a lane family that counts what it applies (the lane applies at most once)
+    family.name = "test";
+    family.owns = [](const ThreadMessage& message) {
+      return message.payload_json.find("\"test_signal\"") != std::string::npos;
+    };
+    family.apply = [this](ThreadMessage&, const SystemControlContext&) -> Roe<void> {
+      ++lane_applied_;
+      return {};
+    };
+    family.on_lane = [](const ThreadMessage&) { return true; };
+    controls_.Bind(std::move(family));
     StartApp();
   }
 
@@ -132,6 +151,8 @@ protected:
   void StartApp() {
     mesh_ =
         std::make_unique<MeshDeliveryOrchestrator>(store_, contacts_, identity_, relay_, inbox_, keys_, psk_, roster_);
+    mesh_->SetSystemControls(&controls_);
+    mesh_->SetControlLaneSeen(&lane_seen_);
     mesh_->SetProfileDataDir(dir_.string());
     mesh_->SetRelayClients(MeshDeliveryOrchestrator::RelayClients{
         .preferred = relay_, .history = relay_, .sender = relay_.get(), .inboxes = {RelayInbox{"https://r", relay_}}});
@@ -234,6 +255,43 @@ protected:
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI()); // what the ingest started on its own worker turn
   }
 
+  /**
+   * One poll that answers an empty page. Nothing is taken in, so nothing is acked: wait for the poll itself. What the
+   * coordinator does with the answer may still be under way on the poll lane; a later poll runs after it there.
+   */
+  void PollEmpty() {
+    const int polls_before = relay_->Polls();
+    mesh_->SyncInboxFromWake(true);
+    for (int i = 0; i < 10000 && relay_->Polls() == polls_before; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_GT(relay_->Polls(), polls_before) << "the mailbox was never polled";
+    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+  }
+
+  /** Carol's control-lane record to this account (its one account copy), of the test family. */
+  RelayEnvelope CarolOnTheLane() {
+    auto opened = AutoKeyEstablishment::EncapsulateForRecipient(Base64Decode(me_.kem_public_key_b64).value());
+    EXPECT_TRUE(opened);
+    ControlLaneSendParams params;
+    params.sender_account_id = carol_.account_id;
+    params.sender_device = carol_.device.peer_id;
+    params.peer_account_id = me_.account_id;
+    params.copies = {
+        ControlLaneCopy{.session_epoch = 1, .master_psk = opened->master_psk, .key_init_b64 = opened->key_init_b64}};
+    params.order_key = NextRelayOrderKey();
+    ThreadMessage signal;
+    signal.id = util::GenerateUuid();
+    signal.content_type = ChatContentType::System;
+    signal.text = "control";
+    signal.payload_json = R"({"control_type":"test_signal","detail":"{}"})";
+    signal.timestamp = util::NowUnixMs();
+    auto envelope = BuildControlLaneEnvelope(
+        params, signal, [this](const std::vector<uint8_t>& bytes) { return carol_.device.Sign(bytes); });
+    EXPECT_TRUE(envelope) << envelope.error().message;
+    return *envelope;
+  }
+
   /** The app stopped, an older app wrote its relay cursor file again (no `registrations`) `age` ago, and it started. */
   void RestartWithAnOlderAppsCursorFile(const std::chrono::minutes age) {
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
@@ -293,6 +351,10 @@ protected:
   test::TestAccount carol_;
   uint64_t group_seq_ = 0;
   std::shared_ptr<MailboxRelay> relay_;
+  /** A lane family that counts what it applies (the control lane: applied at most once). */
+  SystemControlRegistry controls_;
+  InMemoryControlLaneSeenStore lane_seen_;
+  int lane_applied_ = 0;
   std::unique_ptr<MeshDeliveryOrchestrator> mesh_;
   std::vector<std::string> inbound_;
   int notices_ = 0;
@@ -395,9 +457,9 @@ TEST_F(RemovedChatRereadTest, ADeletedPublicChatIsNotMadeAgainAndANewMessageMake
   EXPECT_EQ(inbound_.size(), inbound_before + 1);
 }
 
-// A chat cleared under an older app has no removed ids kept. When that app's cursor file (it noted no registrations)
-// makes the inbox be read again from its start, what the relay stored before the file was last written is skipped: the
-// chat does not fill again, while a message stored since still arrives.
+// A chat cleared under an older app has no removed ids kept. That app's cursor file (it noted no registrations) is read
+// on from its cursor first — a new message arrives — and then once from the start, where what the relay stored before
+// the file was last written is skipped: the chat does not fill again, and the new message seen again changes nothing.
 TEST_F(RemovedChatRereadTest, AChatClearedUnderAnOlderAppDoesNotFillAgainWhenItsCursorFileIsReadAgain) {
   const int64_t stored_long_ago = util::NowUnixMs() - 3 * 3600 * 1000;
   RelayEnvelope m1 = FromCarol("one");
@@ -415,13 +477,36 @@ TEST_F(RemovedChatRereadTest, AChatClearedUnderAnOlderAppDoesNotFillAgainWhenIts
 
   RelayEnvelope m3 = FromCarol("after the update");
   m3.relay_created_at_ms = util::NowUnixMs();
-  Poll({m1, m2, m3}); // the mailbox from its start, and one new
+  Poll({m3}); // phase 1: on from the older app's cursor
+  ASSERT_EQ(Rows(chat->id).size(), 1u);
+  PollEmpty();        // drained
+  Poll({m1, m2, m3}); // phase 2: the mailbox from its start
 
   const std::vector<ThreadMessage> rows = Rows(chat->id);
   ASSERT_EQ(rows.size(), 1u) << "the cleared messages stay gone";
   EXPECT_EQ(rows.front().id, m3.message_id);
-  EXPECT_EQ(inbound_.size(), inbound_before + 1);
+  EXPECT_EQ(inbound_.size(), inbound_before + 1) << "the new message once";
   EXPECT_EQ(Unread(chat->id), 1);
+}
+
+// A control-lane record taken in during phase 1 and handed over again in phase 2 is applied once.
+TEST_F(RemovedChatRereadTest, AControlLaneRecordSeenInBothPhasesIsAppliedOnce) {
+  RelayEnvelope m1 = FromCarol("one");
+  m1.relay_created_at_ms = util::NowUnixMs() - 3 * 3600 * 1000;
+  Poll({m1}); // the pair's session, and a cursor file
+  RestartWithAnOlderAppsCursorFile(std::chrono::hours(1));
+
+  RelayEnvelope signal = CarolOnTheLane();
+  signal.relay_created_at_ms = util::NowUnixMs();
+  Poll({signal}); // phase 1
+  ASSERT_EQ(lane_applied_, 1);
+  PollEmpty();        // drained
+  Poll({m1, signal}); // phase 2
+
+  EXPECT_EQ(lane_applied_, 1) << "seen already: not applied again";
+  const auto chat = ChatWithCarol();
+  ASSERT_TRUE(chat);
+  EXPECT_EQ(Rows(chat->id).size(), 1u);
 }
 
 TEST_F(RemovedChatRereadTest, AClearedGroupChatGetsNothingBackAndANewMessageStillArrives) {
