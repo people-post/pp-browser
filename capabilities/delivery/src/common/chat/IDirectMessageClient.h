@@ -39,6 +39,8 @@ enum class DirectSendErr : int32_t {
   ChannelFailed,
   /** Sent, but the peer did not acknowledge it in time. */
   NotConfirmed,
+  /** The peer answered in another wire version (the link's VersionMismatch): its app or this one needs an update. */
+  VersionMismatch,
   Generic,
 };
 using DirectSendFailure = CodedFailure<DirectSendErr>;

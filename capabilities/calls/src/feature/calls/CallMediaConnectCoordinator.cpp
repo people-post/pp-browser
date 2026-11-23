@@ -314,6 +314,8 @@ CallMediaFailure CallMediaConnectCoordinator::WrapReachFailure(const mesh::PeerR
     case ReachErr::Refused:
     case ReachErr::CircuitFailed:
     case ReachErr::NotConnected:
+    // The peer answered in another version: not reachable for the call; the diag line says why (version_mismatch).
+    case ReachErr::VersionMismatch:
       code = CallMediaErr::Unreachable;
       break;
     case ReachErr::NoAnswer:
