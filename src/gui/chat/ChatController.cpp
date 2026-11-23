@@ -7956,11 +7956,29 @@ void ChatController::KeepClearOfComposer(ui::Element* overlay, const char* mount
   }
   const float ratio =
       context->GetDensityIndependentPixelRatio() > 0.f ? context->GetDensityIndependentPixelRatio() : 1.f;
-  const float bar_dp = mount->GetOffsetHeight() / ratio;
+  float bar_dp = mount->GetOffsetHeight() / ratio;
   if (bar_dp <= 0.f) {
     return;
   }
-  SetDpIfChanged(FirstByClass(overlay, "composer-clear"), "height", bar_dp + kComposerClearGapDp);
+  float clear_dp = bar_dp + kComposerClearGapDp;
+  // The wide layout's composer is a floating panel (its material, inset in the strip): the spacer is measured from the
+  // panel's top edge to where the transcript's visible area ends, not taken from the mount's height, so it holds
+  // whatever the column, the transcript and the strip's margins add up to; the newest message rests above the panel.
+  ui::Element* panel = overlay->QuerySelector(".shell-pane-composer-bar > .bar-material");
+  ui::Element* messages = FirstByClass(overlay, "messages");
+  if (panel && panel->GetOffsetHeight() > 0.f) {
+    const float panel_top = panel->GetAbsoluteOffset(ui::BoxArea::Border).y;
+    bar_dp = (overlay->GetAbsoluteOffset(ui::BoxArea::Border).y + overlay->GetBox().GetSize(ui::BoxArea::Border).y -
+              panel_top) /
+             ratio;
+    if (messages && messages->GetClientHeight() > 0.f) {
+      const float messages_bottom = messages->GetAbsoluteOffset(ui::BoxArea::Padding).y + messages->GetClientHeight();
+      clear_dp = (messages_bottom - panel_top) / ratio + kComposerClearGapDp;
+    } else {
+      clear_dp = bar_dp + kComposerClearGapDp;
+    }
+  }
+  SetDpIfChanged(FirstByClass(overlay, "composer-clear"), "height", clear_dp);
   SetDpIfChanged(FirstByClass(overlay, "chat-composer-fade"), "bottom", bar_dp);
   SetDpIfChanged(FirstByClass(overlay, "chat-jump-latest"), "bottom", bar_dp + kJumpLatestGapDp);
 }

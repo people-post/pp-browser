@@ -684,25 +684,29 @@
   z-index: 2;
 }
 
-/* The composer floats: one rounded panel 16dp in from the column's left, right and bottom edges, the messages scrolling
-   under it and showing round it; the bar behind it is clear. The mount (what ChatController::KeepClearOfComposer
-   measures for the transcript's end spacer) is the panel plus its 16dp margin, so the margin is in the measured height;
-   its padding holds the panel's 12dp inside space. The material is the panel's own surface: inset by the margin, large
-   corners, a hairline, the blur-free stacked shadow (a blurred shadow on a repositioned panel draws displaced). The reply
-   / edit strip, the status row (attachments, stop), the row, the recording pill and the hint all sit inside the mount's
-   padding, so inside the panel. */
+/* The composer floats: one compact rounded panel 12dp in from the column's left, right and bottom edges (about 64dp:
+   the 44dp input pill with 10dp above and below), the messages scrolling under it and showing round it; the bar behind
+   it is clear. The mount (what ChatController::KeepClearOfComposer measures) is the panel plus its 12dp margin; its
+   padding is the panel's 12dp side / 10dp inner space plus that margin. The material is the panel's own surface: inset
+   by the margin, 22dp corners, a hairline, a faint blur-free stacked shadow (a blurred shadow on a repositioned panel
+   draws displaced). The reply / edit strip, the status row (attachments, stop), the row and the recording pill all sit
+   inside the mount's padding, so inside the panel; the "Enter to send" hint is the input's placeholder. */
 .shell-body--wide .shell-pane-composer-bar > .bar-material {
   top: 0;
-  left: 16dp;
-  right: 16dp;
-  bottom: 16dp;
-  border-radius: 24dp;
+  left: 12dp;
+  right: 12dp;
+  bottom: 12dp;
+  border-radius: 22dp;
 }
 
 .shell-body--wide .shell-pane-composer {
   position: relative;
-  padding: 10dp 28dp 28dp 28dp;
+  padding: 10dp 24dp 22dp 24dp;
   box-sizing: border-box;
+}
+
+.shell-body--wide .shell-pane-composer .prompt-composer-pill {
+  min-height: 44dp;
 }
 
 .shell-body--wide .shell-pane-composer .prompt-composer--wide {
@@ -754,14 +758,7 @@
 }
 
 .shell-body--wide .prompt-composer--wide .prompt-composer-row {
-  margin-right: 16dp;
-}
-
-.shell-body--wide .prompt-composer--wide .prompt-composer-hint {
-  margin: 6dp 0 0 0;
-  font-size: 12dp;
-  line-height: 16dp;
-  text-align: center;
+  margin-right: 0;
 }
 
 .shell-body--wide .prompt-composer-input {

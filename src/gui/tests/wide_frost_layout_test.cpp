@@ -3,6 +3,7 @@
 // x-bar-blur colour over a 20px backdrop blur); off, the same bar colour, solid, and no blur anywhere. The shell root
 // is ShellLayoutRml's, the pages the real views, the stylesheets the real ones. The cost limit: at most two blurred
 // regions on a wide page (never more than three), never a whole column.
+#include "gui/chat/ChatController.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellLayoutRml.h"
@@ -135,15 +136,15 @@ protected:
     Fill(root, "pane-body-settings", Asset("views/settings_wide.rml"));
     Fill(root, "pane-body-settings_detail", Asset("views/settings_detail.rml"));
     Fill(root, "settings-section-mount-pane", Asset("views/settings_section_appearance.rml"));
-    const std::string width = wide ? "1280dp" : "390dp";
-    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
-                            Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
-                            Asset("themes/colors-dark.rcss") +
-                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
-                            "<div class=\"shell-body " +
-                            std::string(wide ? "shell-body--wide" : "shell-body--compact") +
-                            "\" style=\"position: absolute; top: 0; left: 0; width: " + width + "; height: 800dp;\">" +
-                            LocalizationService::Instance().LocalizeText(root) + "</div></body></rml>";
+    const std::string width = wide ? std::to_string(window_w_) + "dp" : "390dp";
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") + Asset("themes/colors-dark.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body " +
+        std::string(wide ? "shell-body--wide" : "shell-body--compact") +
+        "\" style=\"position: absolute; top: 0; left: 0; width: " + width + "; height: " + std::to_string(window_h_) +
+        "dp;\">" + LocalizationService::Instance().LocalizeText(root) + "</div></body></rml>";
     context_->ActivateTheme("light", std::string(theme) == "light");
     context_->ActivateTheme("dark", std::string(theme) == "dark");
     document_ = context_->LoadDocumentFromMemory(rml);
@@ -176,6 +177,8 @@ protected:
   float Bottom(ui::Element* e) { return Top(e) + e->GetBox().GetSize(ui::BoxArea::Border).y; }
   float Height(ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border).y; }
 
+  int window_w_ = 1280;
+  int window_h_ = 800;
   static constexpr const char* kContext = "wide-frost-test";
   NullRender render_;
   bool initialized_ = false;
@@ -248,7 +251,7 @@ TEST_F(WideFrostLayoutTest, TheChatPageFrostsTheHeaderAndComposerStripsAndTheTra
   EXPECT_NEAR(Bottom(bar), Bottom(column), 0.5f) << "the composer strip sits on the column's bottom edge";
   EXPECT_GE(Bottom(messages), Bottom(column) - 0.5f) << "and the transcript runs down under it";
   EXPECT_GT(Height(bar), 40.f) << "the composer is mounted in the strip";
-  EXPECT_NEAR(Height(blurred[1]), Height(bar) - 16.f, 0.5f) << "the panel is the strip minus its 16dp bottom margin";
+  EXPECT_NEAR(Height(blurred[1]), Height(bar) - 12.f, 0.5f) << "the panel is the strip minus its 12dp bottom margin";
 
   // The header strip is the phone bar's see-through colour (x-bar-blur, 78%); the floating composer panel is more
   // translucent still (x-composer-float, 62%) so the messages read through it.
@@ -305,18 +308,18 @@ TEST_F(WideFrostLayoutTest, TheComposerIsOneFloatingRoundedPanelInTheColumnsMarg
       const float dp = context_->GetDensityIndependentPixelRatio();
       const auto left = [](ui::Element* e) { return e->GetAbsoluteOffset(ui::BoxArea::Border).x; };
       const auto width = [](ui::Element* e) { return e->GetBox().GetSize(ui::BoxArea::Border).x; };
-      EXPECT_NEAR(left(p.material), left(p.column) + 16.f, 0.5f);
-      EXPECT_NEAR(left(p.material) + width(p.material), left(p.column) + width(p.column) - 16.f, 0.5f);
-      EXPECT_NEAR(Bottom(p.material), Bottom(p.column) - 16.f, 0.5f);
+      EXPECT_NEAR(left(p.material), left(p.column) + 12.f, 0.5f);
+      EXPECT_NEAR(left(p.material) + width(p.material), left(p.column) + width(p.column) - 12.f, 0.5f);
+      EXPECT_NEAR(Bottom(p.material), Bottom(p.column) - 12.f, 0.5f);
       EXPECT_NEAR(Bottom(p.mount), Bottom(p.column), 0.5f);
-      EXPECT_NEAR(Height(p.mount), Height(p.material) + 16.f, 0.5f);
-      EXPECT_GE(p.material->GetComputedValues().border_top_left_radius(), 22.f * dp - 0.5f);
+      EXPECT_NEAR(Height(p.mount), Height(p.material) + 12.f, 0.5f);
+      EXPECT_GE(p.material->GetComputedValues().border_top_left_radius(), 20.f * dp - 0.5f);
       EXPECT_GT(p.material->GetComputedValues().border_top_width(), 0.f) << "a hairline";
       const ui::String shadow = p.material->GetProperty<ui::String>("box-shadow");
       EXPECT_FALSE(shadow.empty() || shadow == "none") << "the stacked shadow lifts it off the messages";
       EXPECT_EQ(p.bar->GetComputedValues().background_color().alpha, 0) << "no band behind the panel";
       // The row, the buttons and the hint are inside the panel.
-      for (const char* inner : {".prompt-composer-row", ".prompt-composer-hint", ".prompt-composer-pill"}) {
+      for (const char* inner : {".prompt-composer-row", ".prompt-composer-pill"}) {
         ui::Element* e = document_->QuerySelector(inner);
         ASSERT_NE(e, nullptr) << inner;
         EXPECT_GE(left(e), left(p.material)) << inner;
@@ -394,7 +397,7 @@ TEST_F(WideFrostLayoutTest, TheComposersStripsAndRecordingStayInsideTheFloatingP
     EXPECT_LE(inner_right, m_right + 0.5f);
     EXPECT_GE(Top(inner), Top(p.material) - 0.5f) << "inside, not above the panel";
     EXPECT_LE(Bottom(inner), Bottom(p.material) + 0.5f);
-    EXPECT_NEAR(Height(p.mount), Height(p.material) + 16.f, 0.5f);
+    EXPECT_NEAR(Height(p.mount), Height(p.material) + 12.f, 0.5f);
     if (std::string(c.inner) != ".prompt-voice-live-pill") {
       EXPECT_GT(Height(p.material), plain_height) << "the panel grows to hold it";
     }
@@ -480,6 +483,154 @@ TEST_F(WideFrostLayoutTest, TheTransparencyRowIsOnTheWideAppearancePageInThePhon
   for (ui::Element* e = row; e; e = e->GetParentNode()) {
     EXPECT_NE(e->GetComputedValues().display(), ui::Style::Display::None);
   }
+}
+
+/** One frame of the real loop for the transcript: the spacer follows the panel (KeepClearOfComposer), the layout runs,
+ *  and a transcript that was at the bottom stays there (what ChatTranscriptScroller does for a pinned one). */
+struct Frames {
+  static void Run(ui::Context* context, ui::ElementDocument* document, const bool pinned) {
+    for (int i = 0; i < 4; ++i) {
+      ChatController::KeepClearOfComposer(document->QuerySelector("#pane-chat"), "pane-composer-chat");
+      context->Update();
+      if (pinned) {
+        ui::Element* messages = document->QuerySelector("#chat-messages");
+        messages->SetScrollTop(messages->GetScrollHeight());
+        context->Update();
+      }
+    }
+  }
+};
+
+// The newest message rests above the floating panel when the conversation is at its bottom: its bottom edge is at least
+// 8dp above the panel's top edge, in a chat, a group (avatar column) and an AI conversation, at both pixel ratios, in
+// every composer state, after the panel grows (a quote strip, a multi-line draft, an edit, a picture chip) and after the
+// window is resized; messages go under the panel only when scrolled up.
+TEST_F(WideFrostLayoutTest, TheNewestMessageRestsAboveTheFloatingPanelInEveryState) {
+  struct Case {
+    const char* name;
+    const char* primary_tab; // "ai" = the AI conversation (Home tab), else Chats
+    bool group;
+    void (*apply)(ChatScreenState&);
+  };
+  const Case cases[] = {
+      {"chat", "chats", false, [](ChatScreenState&) {}},
+      {"group", "chats", true, [](ChatScreenState&) {}},
+      {"ai", "ai", false, [](ChatScreenState&) {}},
+      {"reply strip", "chats", true,
+       [](ChatScreenState& s) {
+         s.quote_reply = true;
+         s.quote_reply_text = "Earlier message";
+       }},
+      {"edit strip", "chats", false,
+       [](ChatScreenState& s) {
+         s.editing_message = true;
+         s.quote_reply_text = "Edit message";
+       }},
+      {"picture chip", "chats", true, [](ChatScreenState& s) { s.image_chip = true; }},
+      {"stop key", "ai", false, [](ChatScreenState& s) { s.loading = true; }},
+      {"multi-line draft", "chats", false, [](ChatScreenState& s) { s.draft = "one\ntwo\nthree\nfour"; }},
+      {"recording", "chats", false,
+       [](ChatScreenState& s) {
+         s.voice_recording = true;
+         s.voice_timer = "0:03";
+       }},
+  };
+  for (const float ratio : {1.f, 2.f}) {
+    for (const Case& c : cases) {
+      SCOPED_TRACE(std::string(c.name) + " ratio " + std::to_string(ratio));
+      context_->SetDensityIndependentPixelRatio(ratio);
+      ChatScreenState fresh = chat_;
+      for (MessageDisplayRow& row : fresh.messages) {
+        row.group_column = c.group;
+      }
+      c.apply(fresh);
+      chat_ = fresh;
+      Load(Wide(std::string(c.primary_tab) == "ai" ? NavTab::Home : NavTab::Sessions, "chat"));
+      Frames::Run(context_, document_, /*pinned=*/true);
+      const ComposerParts p = PartsOf(document_);
+      ASSERT_TRUE(p.material);
+      ui::Element* messages = First("#chat-messages");
+      ui::ElementList rows;
+      messages->GetElementsByClassName(rows, "message-row");
+      ui::Element* last = nullptr;
+      for (ui::Element* row : rows) {
+        if (Height(row) > 0.f) {
+          last = row;
+        }
+      }
+      ASSERT_NE(last, nullptr);
+      const float gap_dp = (Top(p.material) - Bottom(last)) / ratio;
+      EXPECT_GE(gap_dp, 8.f) << "the newest message must not sit under the panel";
+      EXPECT_LE(gap_dp, 40.f) << "and not leave a hole above it";
+    }
+  }
+}
+
+TEST_F(WideFrostLayoutTest, ThePanelGrowingOrTheWindowResizingKeepsTheNewestMessageClear) {
+  Load(Wide(NavTab::Sessions, "chat"));
+  Frames::Run(context_, document_, true);
+  const auto gap = [&]() {
+    ui::Element* messages = First("#chat-messages");
+    ui::ElementList rows;
+    messages->GetElementsByClassName(rows, "message-row");
+    ui::Element* last = nullptr;
+    for (ui::Element* row : rows) {
+      if (Height(row) > 0.f) {
+        last = row;
+      }
+    }
+    return Top(PartsOf(document_).material) - Bottom(last);
+  };
+  EXPECT_GE(gap(), 8.f);
+  const float plain_panel = Height(PartsOf(document_).material);
+  // The panel grows in place: a quote strip, then a long draft.
+  chat_.quote_reply = true;
+  chat_.quote_reply_text = "Earlier message";
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+  chat_.draft = "one\ntwo\nthree\nfour";
+  DataModelHost::Instance().Dirty("chat", "draft");
+  Frames::Run(context_, document_, true);
+  EXPECT_GT(Height(PartsOf(document_).material), plain_panel) << "the panel grew";
+  EXPECT_GE(gap(), 8.f) << "after the panel grew";
+  // And back.
+  chat_.quote_reply = false;
+  chat_.draft = "";
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "draft");
+  Frames::Run(context_, document_, true);
+  EXPECT_NEAR(Height(PartsOf(document_).material), plain_panel, 0.5f);
+  EXPECT_GE(gap(), 8.f);
+  EXPECT_LE(gap(), 40.f);
+  // The window resized (a reload at each size: the column is the window's width and height).
+  for (const std::pair<int, int> size : {std::pair<int, int>{1340, 700}, {900, 560}, {1600, 1000}}) {
+    window_w_ = size.first;
+    window_h_ = size.second;
+    Load(Wide(NavTab::Sessions, "chat"));
+    Frames::Run(context_, document_, true);
+    EXPECT_GE(gap(), 8.f) << size.first << "x" << size.second;
+    EXPECT_LE(gap(), 40.f) << size.first << "x" << size.second;
+  }
+}
+
+// Passing under the panel is for scrolling up: with the transcript scrolled away from the bottom, the rows reach under the
+// panel's top edge (the panel is a floating one, not a bar the list stops at).
+TEST_F(WideFrostLayoutTest, ScrolledUpTheMessagesRunUnderThePanel) {
+  Load(Wide(NavTab::Sessions, "chat"));
+  Frames::Run(context_, document_, true);
+  ui::Element* messages = First("#chat-messages");
+  messages->SetScrollTop(messages->GetScrollTop() - 300.f);
+  context_->Update();
+  const ComposerParts p = PartsOf(document_);
+  ui::ElementList rows;
+  messages->GetElementsByClassName(rows, "message-row");
+  bool under = false;
+  for (ui::Element* row : rows) {
+    if (Height(row) > 0.f && Top(row) < Top(p.material) && Bottom(row) > Top(p.material) + 8.f) {
+      under = true;
+    }
+  }
+  EXPECT_TRUE(under) << "a row passes under the panel's top edge while scrolling up";
 }
 
 } // namespace
