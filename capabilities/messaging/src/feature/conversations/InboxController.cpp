@@ -223,9 +223,9 @@ void InboxController::AfterMessageEdited(const std::string& thread_id, const Thr
   const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation &&
+    if (message.content_type != ChatContentType::Annotation && !IsHiddenNewsMessage(message) &&
         !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
-      newest = &message;
+      newest = &message; // a news read's hidden rows are no preview (they never set it)
     }
   }
   if (!newest || newest->id != before.id) {
@@ -288,9 +288,9 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
   const bool direct_thread = holder && *holder && (*holder)->kind == ThreadKind::Direct;
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
-    if (message.content_type != ChatContentType::Annotation &&
+    if (message.content_type != ChatContentType::Annotation && !IsHiddenNewsMessage(message) &&
         !(direct_thread && GroupMembershipCodec::IsHiddenInDirectThread(message))) {
-      newest = &message;
+      newest = &message; // a news read's hidden rows are no preview (they never set it)
     }
   }
   if (newest && newest->id == message_id) {

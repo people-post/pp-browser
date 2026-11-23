@@ -173,6 +173,10 @@ public:
    * the turn ends; nothing of it streams into the chat, and an error is told by the reader, not by a banner.
    */
   SubmitOutcome StartNewsRead(const std::string& thread_id, const std::string& request_text, const std::string& title);
+  /** A news item tapped in `thread_id` must wait: a turn runs there, or no turn may start now. */
+  bool NewsReadMustWait(const std::string& thread_id) const {
+    return busy_.BusyIn(thread_id) || CanStart(thread_id) != TurnStart::Yes;
+  }
   /** A news read runs in `thread_id`. */
   bool ReadingNews(const std::string& thread_id) const { return news_turns_.count(thread_id) > 0; }
   /**

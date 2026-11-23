@@ -36,10 +36,18 @@ std::string RequestUrl(const std::string& text) {
 } // namespace
 
 std::string NormalizeNewsUrl(std::string_view url) {
-  url = url.substr(0, url.find('#'));
+  // A hash route ("#/a/1", "#!/a/1") names the page; any other fragment is a place on it.
+  std::string fragment;
+  if (const size_t hash = url.find('#'); hash != std::string_view::npos) {
+    const std::string_view after = url.substr(hash + 1);
+    if (!after.empty() && (after.front() == '/' || after.front() == '!')) {
+      fragment = "#" + std::string(after);
+    }
+    url = url.substr(0, hash);
+  }
   const size_t query = url.find('?');
   if (query == std::string_view::npos) {
-    return std::string(url);
+    return std::string(url) + fragment;
   }
   std::string out(url.substr(0, query));
   std::string kept;
@@ -59,7 +67,7 @@ std::string NormalizeNewsUrl(std::string_view url) {
   if (!kept.empty()) {
     out += "?" + kept;
   }
-  return out;
+  return out + fragment;
 }
 
 std::string NewsReadRequestText(const std::string& url, const std::string& ui_language) {
@@ -109,6 +117,12 @@ NewsTap DecideNewsTap(const bool stored, const bool reading_this, const bool bus
     return NewsTap::ShowReading;
   }
   return busy ? NewsTap::Wait : NewsTap::StartRead;
+}
+
+NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
+                         const bool busy) {
+  const bool reading_this = !reading_url.empty() && NormalizeNewsUrl(reading_url) == NormalizeNewsUrl(item_url);
+  return DecideNewsTap(reads.IsRead(item_url), reading_this, busy);
 }
 
 NewsNav NewsNavFor(const size_t index, const size_t count, const bool loading) {

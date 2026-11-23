@@ -25,7 +25,8 @@ struct NewsItem {
 };
 
 /**
- * The URL two news items are compared by: the `#fragment` and every `utm_*` query parameter dropped, nothing else.
+ * The URL two news items are compared by: every `utm_*` query parameter and the `#fragment` dropped, nothing else; a
+ * hash route (`#/…`, `#!…`) is kept, as it names the page.
  */
 std::string NormalizeNewsUrl(std::string_view url);
 
@@ -68,6 +69,9 @@ enum class NewsTap {
 
 /** `stored`: a digest is stored for it; `reading_this`: it is the item being read; `busy`: a turn runs in the chat. */
 NewsTap DecideNewsTap(bool stored, bool reading_this, bool busy);
+/** DecideNewsTap for the item at `item_url`: `reading_url` is the URL the chat's running read reads ("" when none). */
+NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
+                         bool busy);
 
 /** Previous / Next under the reader: only for a list (two or more items), off at the ends and while a read runs. */
 struct NewsNav {

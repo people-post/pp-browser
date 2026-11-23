@@ -76,7 +76,8 @@ struct ChatAnswerRml {
  * https source. Keeping the link in the text itself is what lets it survive a restart (a separate
  * sources list was only held in memory, so its links went dead). Unchanged when there is no https
  * source or the answer already links to it. `news_pick` (done.answer_kind "news_pick"): the link is marked as a
- * news item (title `pp:news`), so a tap opens the reader instead of the browser.
+ * news item (title `pp:news`), so a tap opens the reader instead of the browser; it is added even when the answer
+ * links the source as a plain link (only a news item to it makes it redundant).
  */
 inline std::string WithDetailsLink(std::string_view markdown, const std::vector<BriefAiSource>& sources,
                                    const std::string& label, const bool news_pick = false) {
@@ -112,8 +113,9 @@ inline std::string WithDetailsLink(std::string_view markdown, const std::vector<
         dest += c;
     }
   }
-  const std::vector<MarkdownLink> existing = MarkdownToRml(markdown).links;
-  if (std::any_of(existing.begin(), existing.end(), [&dest](const MarkdownLink& link) { return link.url == dest; })) {
+  const std::vector<MarkdownLink> existing = MarkdownToRml(markdown, MarkdownOptions{.news_links = news_pick}).links;
+  if (std::any_of(existing.begin(), existing.end(),
+                  [&](const MarkdownLink& link) { return link.url == dest && link.news == news_pick; })) {
     return out;
   }
   out += "\n\n[" + label + "](" + dest + (news_pick ? " \"" + std::string(kNewsLinkTitle) + "\"" : "") + ")";

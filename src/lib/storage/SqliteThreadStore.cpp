@@ -969,6 +969,43 @@ Roe<std::optional<ThreadMessage>> SqliteThreadStore::GetMessage(const std::strin
   return std::optional<ThreadMessage>(std::move(*message));
 }
 
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesByGeneration(
+    const std::string& thread_id, const std::vector<std::string>& generations) const {
+  if (generations.empty()) {
+    return std::vector<ThreadMessage>{};
+  }
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  // Selected by the plain `generation` column: only these rows are decrypted.
+  std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns + " FROM messages WHERE generation IN (";
+  for (size_t i = 0; i < generations.size(); ++i) {
+    sql += i == 0 ? "?" : ", ?";
+  }
+  sql += ") ORDER BY display_order ASC;";
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare generation lookup");
+  }
+  for (size_t i = 0; i < generations.size(); ++i) {
+    sqlite3_bind_text(stmt, static_cast<int>(i) + 1, generations[i].c_str(), -1, SQLITE_TRANSIENT);
+  }
+  if (auto dek = db_.RequireDek(); !dek) {
+    sqlite3_finalize(stmt);
+    return dek.error(); // a locked store reads nothing
+  }
+  std::vector<ThreadMessage> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (auto message = ReadMessageRow(thread_id, stmt)) {
+      message->thread_id = thread_id;
+      out.push_back(std::move(*message));
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetAnnotationsForTarget(const std::string& thread_id,
                                                                            const std::string& target_message_id) const {
   auto thread_db = db_.OpenThreadDb(thread_id);

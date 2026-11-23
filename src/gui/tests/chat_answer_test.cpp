@@ -122,6 +122,13 @@ TEST(ChatAnswerTest, DetailsLinkIsANewsItemOnlyForANewsPick) {
   ASSERT_EQ(recovered.size(), 1u);
   EXPECT_TRUE(recovered[0].news);
 
+  // The pick's text already links the source as a plain link: the marked details link is still added, so a tap on it
+  // opens the reader. A news item to the source already there makes it redundant.
+  const std::string linked = "News, see [here](https://example.com/a).";
+  EXPECT_EQ(WithDetailsLink(linked, sources, "View details", /*news_pick=*/true),
+            linked + "\n\n[View details](https://example.com/a \"pp:news\")");
+  EXPECT_EQ(WithDetailsLink(pick, sources, "View details", /*news_pick=*/true), pick);
+
   const std::string plain = WithDetailsLink("News.", sources, "View details");
   EXPECT_EQ(plain, "News.\n\n[View details](https://example.com/a)");
   EXPECT_FALSE(BuildMarkdownAnswer(plain, /*news_links=*/true).links[0].news);

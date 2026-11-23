@@ -55,7 +55,7 @@ TEST(NewsReaderWiringTest, TheEndOfAReadReachesTheReaderAndTheList) {
   EXPECT_NE(Body(kController, "void ChatController::OnAgentTurnEnded(").find("OnNewsReadEnded(thread_id)"),
             std::string::npos);
   EXPECT_NE(Body(kController, "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(")
-                .find("MarkReadNewsItems(rows, thread_id)"),
+                .find("MarkReadNewsItems(rows, thread_id, news_texts)"),
             std::string::npos);
 }
 
@@ -92,10 +92,11 @@ TEST(NewsReaderWiringTest, TheAskAiPanelAndItsQuestionCheckIgnoreTheReader) {
             std::string::npos);
 }
 
-TEST(NewsReaderWiringTest, TheDigestNeverOpensTheReader) {
-  // Its links are a plain table (no news items): at most the browser.
-  EXPECT_NE(Body(kController, "void ChatController::ApplyNewsReader(").find("BuildMarkdownAnswer(digest->text)"),
-            std::string::npos);
+TEST(NewsReaderWiringTest, TheDigestHasNothingToTap) {
+  // The article is untrusted: no link in the digest is tappable ("Open original" is the way out).
+  const std::string apply = Body(kController, "void ChatController::ApplyNewsReader(");
+  EXPECT_NE(apply.find("MarkdownToRml(digest->text, MarkdownOptions{.links = false})"), std::string::npos);
+  EXPECT_EQ(apply.find("chat_links_"), std::string::npos);
   // After a restart a hidden digest's links are rebuilt without news items, and only in an AI chat do they count.
   const std::string links = Body(kController, "const std::vector<MarkdownLink>* ChatController::ChatLinksOf(");
   EXPECT_NE(links.find("ThreadKind::Ai && !IsHiddenNewsMessage(**found)"), std::string::npos);

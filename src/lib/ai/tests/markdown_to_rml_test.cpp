@@ -247,6 +247,18 @@ TEST(MarkdownToRmlTest, TitledLinksAreLinksNotLiteralText) {
   EXPECT_EQ(Rml("[t](https://x.com/a \"x\" y)"), "<p>[t](https://x.com/a &quot;x&quot; y)</p>");
 }
 
+// An article's digest: nothing in it is tappable, a link shows as its text and a bare URL as text.
+TEST(MarkdownToRmlTest, WithLinksOffNothingIsTappable) {
+  const auto r = MarkdownToRml(
+      "See [the source](https://evil.example/x \"pp:news\") and https://evil.example/y or [z](http://plain).",
+      {.news_links = true, .links = false});
+  ExpectSafe(r.rml);
+  EXPECT_TRUE(r.links.empty());
+  EXPECT_EQ(r.rml.find("chat-link"), std::string::npos) << r.rml;
+  EXPECT_EQ(r.rml.find("open_chat_link"), std::string::npos);
+  EXPECT_EQ(r.rml, "<p>See the source and https://evil.example/y or z.</p>");
+}
+
 TEST(MarkdownToRmlTest, AnOrderedListWithoutTheTitleIsNoNews) {
   const auto r = MarkdownToRml("1. [Step one](https://docs.example/1)\n2. [Step two](https://docs.example/2)",
                                {.news_links = true});
