@@ -934,5 +934,194 @@ TEST_F(PinGateControllerTest, AfterAResetInTheRunningAppTheFreshInstallsFirstPag
   }
 }
 
+// --- A profile this build cannot open, whatever the PIN, and "Start over on this device" ---
+
+class PinGateStartOverTest : public PinGateControllerTest {
+protected:
+  void BindStartOver(const bool with_quit) {
+    UnlockGateCompletePorts complete;
+    complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
+      typed_pin_ = pin.Reveal();
+      typed_create_ = create_mode;
+      ++completes_;
+    };
+    complete.start_over = [this]() { ++start_overs_; };
+    if (with_quit) {
+      complete.quit = [this]() { ++quits_; };
+    }
+    controller_.BindGateComplete(std::move(complete));
+  }
+
+  int start_overs_ = 0;
+  int quits_ = 0;
+};
+
+TEST_F(PinGateStartOverTest, TheProblemPageHasNoPinBoxAndSaysWhatToDo) {
+  BindStartOver(/*with_quit=*/false);
+  controller_.ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+  EXPECT_TRUE(shown_.active);
+  EXPECT_TRUE(shown_.profile_problem_mode);
+  EXPECT_FALSE(shown_.profile_problem_newer);
+  EXPECT_FALSE(shown_.unlock_mode) << "not the PIN door";
+  EXPECT_FALSE(shown_.keypad);
+  EXPECT_FALSE(shown_.quit_offered) << "phones have no Quit";
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.profile_old_message"));
+  const std::string all = std::string(shown_.title.c_str()) + shown_.message.c_str() + Tr("pin.profile_old_detail");
+  for (const char* term : {"schema", "identity", "vault", "PIN"}) {
+    EXPECT_EQ(all.find(term), std::string::npos) << "no technical words: " << term;
+  }
+}
+
+TEST_F(PinGateStartOverTest, StartOverAsksOnceThenRunsTheResetOnce) {
+  BindStartOver(/*with_quit=*/false);
+  controller_.ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+  controller_.OnStartOver();
+  ASSERT_TRUE(shown_.start_over_confirm_mode);
+  EXPECT_FALSE(shown_.profile_problem_mode);
+  EXPECT_EQ(std::string(shown_.title.c_str()), Tr("settings.storage.reset_confirm_title")) << "Reset my data's words";
+  EXPECT_EQ(start_overs_, 0) << "asked first";
+
+  controller_.OnCancel();
+  EXPECT_TRUE(shown_.profile_problem_mode) << "Cancel goes back to the page";
+  EXPECT_EQ(start_overs_, 0);
+
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 1);
+}
+
+TEST_F(PinGateStartOverTest, TheConfirmIgnoresTheTapThatBroughtItUp) {
+  BindStartOver(/*with_quit=*/false);
+  controller_.SetClockForTest([this]() { return clock_; });
+  controller_.ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnStartOver();
+  ASSERT_TRUE(shown_.start_over_confirm_mode);
+  clock_ += std::chrono::milliseconds(100);
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 0) << "the same tap again, on the button drawn under it";
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 1);
+}
+
+TEST_F(PinGateStartOverTest, ANewerAppsDataOffersNothingToWipe) {
+  BindStartOver(/*with_quit=*/false);
+  controller_.ShowProfileProblem(ProfileOpenProblem::Newer);
+  EXPECT_TRUE(shown_.profile_problem_newer);
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.profile_newer_message"));
+  controller_.OnStartOver();
+  EXPECT_FALSE(shown_.start_over_confirm_mode);
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 0);
+}
+
+TEST_F(PinGateStartOverTest, QuitIsOfferedWhereTheAppCanQuit) {
+  BindStartOver(/*with_quit=*/true);
+  controller_.ShowProfileProblem(ProfileOpenProblem::Newer);
+  EXPECT_TRUE(shown_.quit_offered);
+  controller_.OnQuit();
+  EXPECT_EQ(quits_, 1);
+}
+
+TEST_F(PinGateStartOverTest, ForgotPinOffersStartOverOnThisDevice) {
+  BindStartOver(/*with_quit=*/false);
+  pin_digits_ = 4;
+  controller_.ShowUnlock();
+  controller_.OnStartOver();
+  EXPECT_FALSE(shown_.start_over_confirm_mode) << "only behind \"Forgot PIN?\"";
+
+  controller_.OnForgotToggle();
+  ASSERT_TRUE(shown_.forgot_open);
+  controller_.OnStartOver();
+  ASSERT_TRUE(shown_.start_over_confirm_mode);
+  controller_.OnCancel();
+  EXPECT_TRUE(shown_.unlock_mode) << "Cancel goes back to the PIN door";
+  EXPECT_FALSE(shown_.start_over_confirm_mode);
+
+  controller_.OnForgotToggle();
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(start_overs_, 1);
+  EXPECT_EQ(completes_, 0) << "no PIN was tried";
+}
+
+TEST_F(PinGateStartOverTest, NotWhileThePinIsChecked) {
+  BindStartOver(/*with_quit=*/false);
+  keypad_available_ = true;
+  pin_digits_ = 4;
+  controller_.ShowUnlock();
+  controller_.OnForgotToggle();
+  for (int digit : {1, 2, 3, 4}) {
+    controller_.OnKey(digit);
+  }
+  ASSERT_TRUE(shown_.keypad_busy);
+  controller_.OnStartOver();
+  EXPECT_FALSE(shown_.start_over_confirm_mode);
+}
+
+// Through the real unlock gate: an account this build cannot open (an October identity, refused after the PIN) shows
+// its page, and Start over → confirm runs the reset once, after which the fresh install's first page comes up.
+TEST_F(PinGateStartOverTest, AnOldAccountStartsOverOntoTheFirstRunPage) {
+  const auto dir =
+      std::filesystem::temp_directory_path() / ("pp_start_over_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  ProfileSecretsEngine engine;
+  ASSERT_TRUE(engine.Initialize(dir.string()));
+  ASSERT_TRUE(engine.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x52)));
+  engine.Vault()->Lock();
+  ProfileUnlockGate gate;
+  gate.BindSecrets(engine);
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.ensure_messaging_ready = []() -> Roe<void> {
+    return AppError::Storage(Err::Storage::Unopenable, "identity.enc schema 3 is from before release 1");
+  };
+  ports.ui.show_identity_fork = [this]() { controller_.ShowIdentityFork(); };
+  ports.ui.show_chooser = [this]() { controller_.ShowChooser(); };
+  ports.ui.show_unlock = [this]() { controller_.ShowUnlock(); };
+  ports.ui.show_error = [this](const std::string& message) { controller_.ShowError(message); };
+  ports.ui.dismiss = [this]() { controller_.Dismiss(); };
+  ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { controller_.ShowProfileProblem(problem); };
+  gate.BindPorts(std::move(ports));
+
+  int resets = 0;
+  UnlockGateCompletePorts complete;
+  complete.complete_with_pin = [&gate](const SecretText& pin, const bool create_mode) {
+    gate.CompleteWithPin(pin, create_mode);
+  };
+  // As Application::StartOverOnThisDevice: the page closes, the reset wipes and asks the gate again.
+  complete.start_over = [&]() {
+    ASSERT_TRUE(gate.ReleaseForStartOver());
+    ++resets;
+    engine.Shutdown();
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ASSERT_TRUE(engine.Initialize(dir.string()));
+    gate.ForgetProfileProblem();
+    gate.EnsureUnlocked(nullptr);
+  };
+  controller_.BindGateComplete(std::move(complete));
+
+  gate.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_TRUE(shown_.unlock_mode);
+  field_pin_ = "4321";
+  controller_.OnSubmit();
+  ASSERT_TRUE(shown_.profile_problem_mode) << "the page, not the PIN door";
+  EXPECT_EQ(std::string(shown_.error.c_str()), "") << "no PIN error";
+
+  controller_.OnStartOver();
+  controller_.OnStartOverConfirm();
+  EXPECT_EQ(resets, 1);
+  EXPECT_TRUE(shown_.identity_fork_mode) << "the fresh install's first page";
+  EXPECT_FALSE(shown_.profile_problem_mode);
+
+  gate.BindPorts({});
+  engine.Shutdown();
+  std::filesystem::remove_all(dir);
+}
+
 } // namespace
 } // namespace pbr

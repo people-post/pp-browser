@@ -126,6 +126,11 @@ enum class Storage : int32_t {
   Generic = 0,
   Unavailable = 1,
   Failed = 2,
+  /**
+   * Profile data this build can never open, whatever the PIN: from before release 1, damaged, or no longer under
+   * the vault's key. Read whole first, so never a passing I/O failure. The unlock says so and offers to start over.
+   */
+  Unopenable = 3,
 };
 
 enum class Internal : int32_t {

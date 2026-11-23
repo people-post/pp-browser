@@ -49,6 +49,29 @@ bool ProfileSecretsEngine::NeedsUnlock() const {
   return initialized_ && HasVault() && !unlocked_;
 }
 
+std::optional<ProfileOpenProblem> ProfileSecretsEngine::ProbeBeforeUnlock() const {
+  if (!initialized_) {
+    return std::nullopt;
+  }
+  switch (DataKeyVault::CheckFile(DataKeyVault::VaultPathForProfile(profile_data_dir_))) {
+    case DataKeyVault::FileCheck::Missing: {
+      // Every setup writes the vault before the account data (create, link, recovery phrase): account data without a
+      // vault is one whose key is gone, never a setup still to come.
+      std::error_code ec;
+      const bool identity = std::filesystem::exists(std::filesystem::path(profile_data_dir_) / "identity.enc", ec);
+      return identity && !ec ? std::optional(ProfileOpenProblem::CannotOpen) : std::nullopt;
+    }
+    case DataKeyVault::FileCheck::Damaged:
+      return ProfileOpenProblem::CannotOpen;
+    case DataKeyVault::FileCheck::Newer:
+      return ProfileOpenProblem::Newer;
+    case DataKeyVault::FileCheck::Ok:
+    case DataKeyVault::FileCheck::NotRead:
+      break;
+  }
+  return std::nullopt;
+}
+
 void ProfileSecretsEngine::SetOnUnlocked(std::function<void()> callback) {
   on_unlocked_ = std::move(callback);
 }

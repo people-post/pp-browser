@@ -34,6 +34,12 @@ struct PinGateActionPorts {
   std::function<void()> on_biometric;
   /** "Enter PIN" on a biometric-first unlock door. */
   std::function<void()> on_use_pin;
+  /** "Start over" (the profile-problem page, or under "Forgot PIN?"): its confirm step. */
+  std::function<void()> on_start_over;
+  /** The confirm step's "Start over": the reset runs. */
+  std::function<void()> on_start_over_confirm;
+  /** "Quit" on the profile-problem page (desktop). */
+  std::function<void()> on_quit;
 };
 
 } // namespace pbr

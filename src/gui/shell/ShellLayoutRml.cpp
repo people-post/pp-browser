@@ -533,7 +533,9 @@ std::string ShellLayoutRml::PinGate() const {
          "!pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
-  if (state_.pin_gate.biometric_first) {
+  if (state_.pin_gate.profile_problem_mode || state_.pin_gate.start_over_confirm_mode) {
+    PinGateProfileProblem(out);
+  } else if (state_.pin_gate.biometric_first) {
     PinGateBiometricFirst(out);
   } else if (state_.pin_gate.keypad) {
     PinGateKeypad(out);
@@ -549,13 +551,49 @@ std::string ShellLayoutRml::PinGate() const {
       << Tr("pin.forgot_link") << "</button>";
   out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open\">"
       << Tr("pin.forgot_explain") << "</p>";
+  // Deleting the app does not remove its data everywhere (desktop, the iPhone app on a Mac): the way out is here.
+  out << "<button class=\"btn btn-secondary shell-pin-gate-start-over\" data-if=\"pin_gate_unlock_mode && "
+         "pin_gate_forgot_open && !pin_gate_waiting_device_unlock\" data-event-click=\"pin_gate_start_over()\">"
+      << Tr("pin.start_over_here") << "</button>";
   out << "</div></div>";
   return out.str();
 }
 
+// A profile this build cannot open, whatever the PIN, and the start-over confirm: no PIN box, the reason (the title and
+// message above), then the way on. Phone and desktop share it; a wide layout mounts the same markup (events
+// pin_gate_start_over, pin_gate_start_over_confirm, pin_gate_quit, pin_gate_cancel).
+void ShellLayoutRml::PinGateProfileProblem(std::ostringstream& out) const {
+  const PinGateState& gate = state_.pin_gate;
+  if (gate.start_over_confirm_mode) {
+    out << "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">";
+    out << "<button class=\"btn btn-danger\" data-event-click=\"pin_gate_start_over_confirm()\">"
+        << Tr("pin.start_over") << "</button>";
+    out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.cancel")
+        << "</button>";
+    out << "</div>";
+    return;
+  }
+  if (!gate.profile_problem_newer) {
+    out << "<p class=\"text muted shell-pin-gate-note\">" << Tr("pin.profile_old_detail") << "</p>";
+  }
+  if (gate.profile_problem_newer && !gate.quit_offered) {
+    return; // a newer app's data on a phone: update from the store; nothing here to tap
+  }
+  out << "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">";
+  if (!gate.profile_problem_newer) {
+    out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">" << Tr("pin.start_over")
+        << "</button>";
+  }
+  if (gate.quit_offered) {
+    out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_quit()\">" << Tr("pin.quit") << "</button>";
+  }
+  out << "</div>";
+}
+
 bool ShellLayoutRml::PinGateFocusesField(const PinGateState& gate) {
   return gate.active && !gate.keypad && !gate.biometric_first && !gate.chooser_mode && !gate.identity_fork_mode &&
-         !gate.link_paste_mode && !gate.waiting_device_unlock;
+         !gate.link_paste_mode && !gate.waiting_device_unlock && !gate.profile_problem_mode &&
+         !gate.start_over_confirm_mode;
 }
 
 // The field mode: the PIN (and a new PIN's confirmation) in password fields with the system keyboard; Continue submits.

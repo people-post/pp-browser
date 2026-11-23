@@ -53,6 +53,11 @@ struct ProfileUnlockUiPorts {
    * takes keys again (the shell's unlock indicator is left as it is).
    */
   std::function<void()> submit_declined;
+  /**
+   * This build cannot open the profile, whatever the PIN (ProfileOpenProblem): a page saying so, in place of the
+   * PIN; for CannotOpen it offers to start over on this device, for Newer to update the app.
+   */
+  std::function<void(ProfileOpenProblem problem)> show_profile_problem;
 };
 
 /**
@@ -140,6 +145,23 @@ public:
 
   /** The vault refused the PIN (its one code covers a wrong PIN and a damaged vault). */
   static bool IsWrongPinError(const Error& error);
+  /**
+   * An unlock failure the PIN cannot fix: account data this build can never open (Err::Storage::Unopenable) or a
+   * newer app's (AppError::IsNewerFormat). nullopt for anything else (a wrong PIN, a passing failure).
+   */
+  static std::optional<ProfileOpenProblem> ProfileProblemOf(const Error& error);
+
+  /** The problem found on this profile (before the PIN, or by the unlock), until the profile is reset. */
+  std::optional<ProfileOpenProblem> ProfileProblem() const { return profile_problem_; }
+  /**
+   * "Start over on this device" was confirmed (on the problem page, or under "Forgot PIN?"): the page closes and the
+   * callers waiting on it are told no, so the reset's own EnsureUnlocked raises the first-run page. The problem is
+   * kept until ForgetProfileProblem: a reset that fails shows the page again. False (nothing done) while an unlock
+   * or a face / fingerprint prompt runs: the reset must not race it.
+   */
+  bool ReleaseForStartOver();
+  /** The profile was reset (Application::ResetActiveProfile): what was found on the old one no longer holds. */
+  void ForgetProfileProblem();
 
   /** If secrets + messaging already ready, runs done(true). Otherwise shows UI / silent unlock. */
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
@@ -212,6 +234,9 @@ private:
   void RequestShowIdentityFork(std::function<void(bool)> done);
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
+  /** profile_problem_ (probed before the PIN when not yet known): its page, in place of any other. True when shown. */
+  bool ShowProfileProblemIfAny(std::function<void(bool)>& done);
+  void RequestShowProfileProblem(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);
   /** A PIN / import submitted while another unlock or a prompt runs: not started, and the door told so. */
   void DeclineSubmit();
@@ -250,6 +275,10 @@ private:
   bool unlocked_beside_prompt_ = false;
   /** Bumped when the door rises and when it closes: a prompt's answer for another door is dropped. */
   uint64_t door_generation_ = 0;
+  /** This build cannot open the profile (ProfileProblemOf / ProbeBeforeUnlock); cleared by ForgetProfileProblem. */
+  std::optional<ProfileOpenProblem> profile_problem_;
+  /** The problem page is the one up (not another page of the gate). */
+  bool problem_page_up_ = false;
 };
 
 /** Shared bootstrap / CLI path: Unlock then ensure_messaging_ready. */

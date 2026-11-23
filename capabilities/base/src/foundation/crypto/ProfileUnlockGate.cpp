@@ -109,6 +109,7 @@ void ProfileUnlockGate::Finish(const bool unlocked) {
   StopGrace();
   // The door closes: a face / fingerprint answer still on its way is for a door that is gone.
   unlock_door_up_ = false;
+  problem_page_up_ = false;
   biometric_prompted_this_door_ = false;
   ++door_generation_;
   const int64_t elapsed_ms =
@@ -140,6 +141,25 @@ void ProfileUnlockGate::ReportError(const std::string& message) {
 }
 
 void ProfileUnlockGate::ReportError(const Error& error) {
+  if (const auto problem = ProfileProblemOf(error)) {
+    // The vault opened (the PIN was right), but this build cannot open what it guards: never a PIN error, never
+    // "try again" — the problem page says what is wrong and what can be done. The key leaves memory: nothing on this
+    // profile can use it.
+    log().warning << "Unlock failed: " << error.message;
+    DiagLine("unlock.failed")
+        .Add("wrong_pin", false)
+        .Add("profile_problem", true)
+        .Add("newer", *problem == ProfileOpenProblem::Newer)
+        .Add("silent", !showing_)
+        .Emit();
+    SetUnlockInProgress(false);
+    if (secrets_ && Secrets().IsUnlocked()) {
+      Secrets().Lock();
+    }
+    profile_problem_ = problem;
+    RequestShowProfileProblem(nullptr);
+    return;
+  }
   // The vault's text ("Incorrect PIN or corrupt vault") is English; the log keeps it, the screen
   // gets our wording. A silent unlock (no PIN typed) opens the unlock screen without that line.
   if (!IsWrongPinError(error)) {
@@ -161,6 +181,69 @@ void ProfileUnlockGate::ReportError(const Error& error) {
 
 bool ProfileUnlockGate::IsWrongPinError(const Error& error) {
   return AppError::CategoryOf(error) == ErrorCategory::Pin && error.code == static_cast<int32_t>(Err::Pin::Generic);
+}
+
+std::optional<ProfileOpenProblem> ProfileUnlockGate::ProfileProblemOf(const Error& error) {
+  if (AppError::IsNewerFormat(error)) {
+    return ProfileOpenProblem::Newer;
+  }
+  if (AppError::CategoryOf(error) == ErrorCategory::Storage &&
+      error.code == static_cast<int32_t>(Err::Storage::Unopenable)) {
+    return ProfileOpenProblem::CannotOpen;
+  }
+  return std::nullopt;
+}
+
+bool ProfileUnlockGate::ShowProfileProblemIfAny(std::function<void(bool)>& done) {
+  if (!profile_problem_ && secrets_) {
+    profile_problem_ = Secrets().ProbeBeforeUnlock();
+    if (profile_problem_) {
+      log().warning << "This build cannot open the profile (found before the PIN)";
+      DiagLine("unlock.profile_problem")
+          .Add("newer", *profile_problem_ == ProfileOpenProblem::Newer)
+          .Add("before_pin", true)
+          .Emit();
+    }
+  }
+  if (!profile_problem_) {
+    return false;
+  }
+  RequestShowProfileProblem(std::move(done));
+  return true;
+}
+
+void ProfileUnlockGate::RequestShowProfileProblem(std::function<void(bool)> done) {
+  if (done) {
+    pending_.push_back(std::move(done));
+  }
+  if (problem_page_up_ || !profile_problem_) {
+    return;
+  }
+  // In place of whatever page is up (the PIN door whose unlock just failed): that door is down, and a face /
+  // fingerprint answer still on its way is for a door that is gone.
+  StopGrace();
+  showing_ = true;
+  problem_page_up_ = true;
+  unlock_door_up_ = false;
+  biometric_prompted_this_door_ = false;
+  ++door_generation_;
+  if (ports_.ui.show_profile_problem) {
+    ports_.ui.show_profile_problem(*profile_problem_);
+  }
+}
+
+bool ProfileUnlockGate::ReleaseForStartOver() {
+  if (unlock_in_progress_ || biometric_in_flight_) {
+    log().info << "Start over not begun: an unlock is running";
+    return false;
+  }
+  Finish(false);
+  return true;
+}
+
+void ProfileUnlockGate::ForgetProfileProblem() {
+  profile_problem_.reset();
+  problem_page_up_ = false;
 }
 
 void ProfileUnlockGate::RequestShowIdentityFork(std::function<void(bool)> done) {
@@ -307,6 +390,10 @@ void ProfileUnlockGate::EnsureUnlocked(std::function<void(bool unlocked)> done) 
     }
     return;
   }
+  // A profile this build cannot open, whatever the PIN: its page, never the PIN door or the first-run page over it.
+  if (ShowProfileProblemIfAny(done)) {
+    return;
+  }
   if (!Secrets().HasVault()) {
     RequestShowIdentityFork(std::move(done));
     return;
@@ -337,6 +424,13 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   if (ports_.messaging_ready && ports_.messaging_ready()) {
     DrainQueue(true);
     return;
+  }
+  if (!Secrets().IsUnlocked()) {
+    // Known from the files alone (a vault that is not one, account data without its vault): no PIN is asked for.
+    std::function<void(bool)> none;
+    if (ShowProfileProblemIfAny(none)) {
+      return;
+    }
   }
   if (!Secrets().NeedsUnlock()) {
     if (Secrets().IsUnlocked()) {
