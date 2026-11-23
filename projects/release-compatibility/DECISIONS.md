@@ -309,7 +309,9 @@ and keep) are ours, as Leo asked for them to be defined.
 
 **Date:** 2026-11-19
 **Status:** Accepted (Hongwei, 2026-11-19); answers Kenneth's review on #634. Its "release owner for 10.0" reads
-"for release 1" since [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version). Amends
+"for release 1" since [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version). Its "dev builds keep prod
+and staging" is amended by [RC022](#rc022--tester-builds-never-touch-production-profiles-hard-guard): a tester (dev)
+build compiles staging and dev and no prod. Amends
 [RC008](#rc008--app-builds-climb-one-ladder-only-release-candidates-are-promoted) and
 [RC009](#rc009--four-environments-todays-qa-becomes-staging-dev-is-new).
 **Decision:**
@@ -536,3 +538,44 @@ tag and a branch cannot be confused, and it does not match prod's trust pattern 
 prod. A deploy is then one deliberate act on one commit, the same for all three environments.
 **Cost:** a merge to `main` no longer reaches any environment until Leo tags it; the relay repos' deploy workflows
 and the deploy roles' trusted refs change to match.
+
+## RC022 — Tester builds never touch production profiles (hard guard)
+
+**Date:** 2026-11-23
+**Status:** Accepted (Hongwei, 2026-11-23). Amends [RC015](#rc015--client-side-answers-after-kenneths-review) (dev
+builds keep prod and staging): a tester build compiles no prod. The rules now in force:
+[BUILD § Backend origin](../../docs/ops/BUILD.md#backend-origin),
+[DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) and
+[§ Shared root files](../../docs/contracts/DATA_LAYOUT.md#shared-root-files),
+[CONFIGURATION § backend.env](../../docs/ops/CONFIGURATION.md).
+**Decision:** A *store build* is a release, a release candidate (`vX.Y.Z-rc.N`, built once and promoted: it is the
+store binary) and anything shipped to users; a *tester build* is an `internal/<n>` TestFlight upload, a tester APK or a
+desktop tester package. TestFlight and the App Store share one app and one data container (Android likewise under one
+package id), so a tester build sees the store build's data. A tester build never opens or modifies a production
+profile:
+1. **A build-kind flag:** CMake `PP_TESTER_BUILD` (default OFF). `ios-testflight.yml` sets it ON exactly when it has no
+   candidate tag; `release.yml` sets it OFF; local builds are OFF.
+2. **No prod in a tester build:** CMake refuses a prod origin or a prod relay id with it and compiles no prod
+   certificate; Production is never available or listed; a backend the build cannot run falls back to staging, then
+   dev, then only a custom backend — never prod (a store build still falls back to prod); a custom backend gets the
+   tester environment's org relay identity, or none, never prod's.
+3. **Profiles apart per build kind:** a tester build's keys are never `prod`; its custom profiles are
+   `test-custom-<hash>` (a store build keeps `custom-<hash>`); it refuses to start on a profile recorded for `prod` or
+   `custom-…`, whichever way it was named.
+4. **The saved choice is kept:** a build that cannot run `backend.env` runs its fallback and writes the file's choice
+   back on save, so a later store build still finds `prod`; only a switch the user makes replaces it.
+5. **Shared root files** (`config.json`, `profiles.json`, `machine.json`) change version only in a release; a tester
+   build may only add optional keys, which older builds ignore or drop.
+**Rationale:**
+- Hard over soft: no path from a tester build to prod data, instead of a warning that can be clicked through. A tester
+  who opened prod data in a pre-release build could migrate the store user's `profile.db` or `identity.enc` to a
+  schema the store build refuses — the store app would stop opening that person's data.
+- Testers who want their prod data reinstall the store app; nothing they do in a tester build reaches it.
+- A shared root file of a newer version is refused by the store build, which then would not start at all, so those
+  versions move only with a release.
+**Alternatives rejected:**
+- A warning before a tester build opens a prod profile (clicked through; the damage is on disk once it opens).
+- Waiting for the separate dev app ([DESIGN § App builds](DESIGN.md#app-builds-internal-external-store), after release 1): until it exists every
+  `internal/<n>` upload is the store app's build and shares its container; the guard costs nothing once it does.
+**Cost:** a tester build offers no Production row; a tester with prod data on the device starts in a new staging (or
+dev) profile and has to reinstall the store app to see that data.

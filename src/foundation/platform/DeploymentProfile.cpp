@@ -13,6 +13,14 @@
 #define PP_API_URL_PROD ""
 #endif
 
+// CMake PP_TESTER_BUILD (release-compatibility RC022): a tester build never compiles a prod origin. CMake refuses one;
+// this is the same rule where the origin is compiled in.
+#ifndef PP_TESTER_BUILD
+#define PP_TESTER_BUILD 0
+#endif
+static_assert(PP_TESTER_BUILD == 0 || sizeof(PP_API_URL_PROD) == 1,
+              "a tester build (PP_TESTER_BUILD) has no prod origin");
+
 // The org relays' ids (CMake PP_RELAY_ID_PROD / _STAGING / _DEV; kPendingRelayId by default) and their certificates
 // at build time (config/relay-certs/<env>.cert, generated: kCompiledRelayCertificateProd / …Staging / …Dev).
 #ifndef PP_RELAY_ID_PROD
@@ -52,6 +60,14 @@ std::string Derive(const std::string& origin, const char* path) {
 
 } // namespace
 
+BuildKind ThisBuildKind() {
+  return PP_TESTER_BUILD != 0 ? BuildKind::Tester : BuildKind::Store;
+}
+
+bool IsTesterBuild() {
+  return ThisBuildKind() == BuildKind::Tester;
+}
+
 const char* CompiledDefaultOrigin() {
   return PP_API_URL_PROD;
 }
@@ -73,19 +89,22 @@ const char* CompiledDefaultRelayId() {
 }
 
 const char* CompiledDefaultRelayCertificate() {
-  return kCompiledRelayCertificateProd;
+  return IsTesterBuild() ? "" : kCompiledRelayCertificateProd;
 }
 
 CompiledOrigins BuildCompiledOrigins() {
+  // In a tester build CMake allows no prod origin and no prod relay id (only `pending` or none) and compiles no prod
+  // certificate; the prod fields are never used there anyway (CompiledOriginFor, ResolveOrgRelayIdentity).
   return {.prod = CompiledDefaultOrigin(),
           .staging = CompiledStagingOrigin(),
           .dev = CompiledDevOrigin(),
           .prod_relay_id = PP_RELAY_ID_PROD,
           .staging_relay_id = PP_RELAY_ID_STAGING,
           .dev_relay_id = PP_RELAY_ID_DEV,
-          .prod_relay_certificate = kCompiledRelayCertificateProd,
+          .prod_relay_certificate = CompiledDefaultRelayCertificate(),
           .staging_relay_certificate = kCompiledRelayCertificateStaging,
-          .dev_relay_certificate = kCompiledRelayCertificateDev};
+          .dev_relay_certificate = kCompiledRelayCertificateDev,
+          .kind = ThisBuildKind()};
 }
 
 const char* CompiledOriginFor(const BackendEnv env, const CompiledOrigins& compiled) {
@@ -95,7 +114,7 @@ const char* CompiledOriginFor(const BackendEnv env, const CompiledOrigins& compi
     case BackendEnv::Dev:
       return compiled.dev;
     case BackendEnv::Prod:
-      return compiled.prod;
+      return compiled.kind == BuildKind::Tester ? "" : compiled.prod;
     case BackendEnv::Custom:
       break;
   }
@@ -103,10 +122,28 @@ const char* CompiledOriginFor(const BackendEnv env, const CompiledOrigins& compi
 }
 
 bool BackendAvailableIn(const BackendEnv env, const CompiledOrigins& compiled) {
-  if (env == BackendEnv::Staging || env == BackendEnv::Dev) {
-    return *CompiledOriginFor(env, compiled) != '\0';
+  switch (env) {
+    case BackendEnv::Staging:
+    case BackendEnv::Dev:
+      return *CompiledOriginFor(env, compiled) != '\0';
+    case BackendEnv::Prod:
+      return compiled.kind == BuildKind::Store;
+    case BackendEnv::Custom:
+      break;
   }
   return true;
+}
+
+BackendEnv FallbackBackendIn(const CompiledOrigins& compiled) {
+  if (compiled.kind == BuildKind::Store) {
+    return BackendEnv::Prod;
+  }
+  for (const BackendEnv env : {BackendEnv::Staging, BackendEnv::Dev}) {
+    if (BackendAvailableIn(env, compiled)) {
+      return env;
+    }
+  }
+  return BackendEnv::Custom;
 }
 
 bool BackendAvailable(const BackendEnv env) {
@@ -141,7 +178,8 @@ const char* BackendEnvName(const BackendEnv env) {
 }
 
 BackendEnv ActiveBackend() {
-  return Latched().value_or(BackendEnv::Prod);
+  // Before any latch (no config file was loaded): what this build falls back to — never Prod in a tester build.
+  return Latched() ? *Latched() : FallbackBackendIn(BuildCompiledOrigins());
 }
 
 void LatchActiveBackend(BackendEnv requested) {
@@ -152,7 +190,7 @@ void LatchActiveBackend(BackendEnv requested) {
 }
 
 BackendEnv ResolveLatchedBackend(const BackendEnv requested, const CompiledOrigins& compiled) {
-  return BackendAvailableIn(requested, compiled) ? requested : BackendEnv::Prod;
+  return BackendAvailableIn(requested, compiled) ? requested : FallbackBackendIn(compiled);
 }
 
 bool ActiveBackendLatched() {
@@ -180,7 +218,8 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   } else if (backend == BackendEnv::Staging || backend == BackendEnv::Dev) {
     origin = CompiledOriginFor(backend, compiled);
   } else {
-    origin = compiled.prod;
+    // Prod and Custom (whose own URLs are in the config file): the fallback's origin — prod's in a store build.
+    origin = CompiledOriginFor(FallbackBackendIn(compiled), compiled);
   }
   while (!origin.empty() && origin.back() == '/') {
     origin.pop_back();
@@ -197,16 +236,24 @@ OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_ori
     // The override's relay: its own relay id, or none; its certificate is fetched (the build's are other relays').
     return {.relay_id = env_relay_id ? std::string(env_relay_id) : std::string()};
   }
-  switch (backend) {
+  // Prod and Custom take the fallback's: prod's in a store build; in a tester build staging's, dev's or none, never
+  // prod's (a custom backend there is no way to the prod relay's identity).
+  const BackendEnv env =
+      (backend == BackendEnv::Staging || backend == BackendEnv::Dev) ? backend : FallbackBackendIn(compiled);
+  switch (env) {
     case BackendEnv::Staging:
       return {.relay_id = compiled.staging_relay_id, .certificate_b64 = compiled.staging_relay_certificate};
     case BackendEnv::Dev:
       return {.relay_id = compiled.dev_relay_id, .certificate_b64 = compiled.dev_relay_certificate};
     case BackendEnv::Prod:
+      if (compiled.kind == BuildKind::Store) {
+        return {.relay_id = compiled.prod_relay_id, .certificate_b64 = compiled.prod_relay_certificate};
+      }
+      break;
     case BackendEnv::Custom:
       break;
   }
-  return {.relay_id = compiled.prod_relay_id, .certificate_b64 = compiled.prod_relay_certificate};
+  return {};
 }
 
 OrgRelayIdentity BriefOrgRelayIdentity() {

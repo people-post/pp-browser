@@ -69,6 +69,9 @@ Commands:
 Optional environment variables:
   PP_BROWSER_VERSION          Numeric version passed to CMake (e.g. 0.1.0)
   PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
+  PP_TESTER_BUILD             ON for a tester APK (release-compatibility RC022; read by Gradle): no prod, never opens
+                              the store app's profiles; OFF (default) for a store build (release.yml) or a developer's.
+                              CMake refuses ON with PP_API_URL_PROD or a PP_RELAY_ID_PROD relay id
   PP_API_URL_PROD             Prod backend origin compiled into the app (read by Gradle; empty = none)
   PP_API_URL_STAGING          Staging backend origin compiled into the app (empty = Staging option hidden)
   PP_API_URL_DEV              Dev backend origin compiled into the app (empty = Dev option hidden)

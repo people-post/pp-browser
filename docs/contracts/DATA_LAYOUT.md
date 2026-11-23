@@ -235,12 +235,14 @@ Flat `threads/index.json` and `{thread_id}.json` from before the SQLite store ar
 
 Each backend (Me → Network → Service, `backend.env`) has its own profile, so identities, contacts, conversations and caches of different backends never mix, and switching back finds everything as it was. A profile's `manifest.json` records its `backend` key:
 
-| Backend | Key (and id of a profile created for it) |
-|---------|------------------------------------------|
-| `prod` | `prod` |
-| `staging` (and a saved `qa`) | `staging` |
-| `dev` | `dev` |
-| `custom`, or any run with `PP_BROWSER_ORIGIN` | `custom-<12 hex>`: FNV-1a 64 of the normalized registration URL (origin for `PP_BROWSER_ORIGIN`) |
+| Backend | Key in a store build | Key in a tester build |
+|---------|----------------------|-----------------------|
+| `prod` | `prod` | — (never: runs as `staging`, else `dev`, else the custom backend) |
+| `staging` (and a saved `qa`) | `staging` | `staging` |
+| `dev` | `dev` | `dev` |
+| `custom`, or any run with `PP_BROWSER_ORIGIN` | `custom-<12 hex>`: FNV-1a 64 of the normalized registration URL (origin for `PP_BROWSER_ORIGIN`) | `test-custom-<12 hex>`: the same hash |
+
+**Per build kind** (release-compatibility [RC022](../../projects/release-compatibility/DECISIONS.md#rc022--tester-builds-never-touch-production-profiles-hard-guard)). A *store build* is a release or release candidate (the store binary); a *tester build* (`PP_TESTER_BUILD`, [BUILD § Backend origin](../ops/BUILD.md#backend-origin)) is an `internal/<n>` TestFlight upload, a tester APK or a desktop tester package. On iOS TestFlight and the App Store share one app and one data container (Android likewise under one package id), so both kinds read the same `{data_dir}`. A tester build never opens or changes a store build's profile: its keys are never `prod` or `custom-…` (a store user's custom profile at the same URL is `custom-<hash>`, the tester's `test-custom-<hash>`), and after selecting it refuses to start on a profile whose `manifest.backend` is `prod` or `custom-…` — whichever way it was named, a `--profile` override included — before anything in it is read or written. A store build opens any profile but selects only its own keys, so it never picks a tester profile up either. Testers who want their prod data reinstall the store app. With neither staging nor dev compiled a tester build runs only the custom backend (the URLs saved in the config file; none: no backend) under `test-custom-<hash>`.
 
 qa is retired (release-compatibility RC021) and staging is a new environment, not qa renamed (RC009 as amended): a saved `backend.env: "qa"` runs on staging with a new `staging` profile, and a profile recorded for `qa` is left as it is, never selected again.
 
@@ -249,6 +251,10 @@ At startup, after the config is loaded, the registry selects the active profile 
 Saving a backend switch also removes the device's push bindings from the running backend ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
 
 There is no account-switcher UI: the profile follows the backend. Use `--profile NAME` for dev isolation. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
+
+### Shared root files
+
+`config.json`, `profiles.json` and `machine.json` sit at the root, outside every profile, and every build on the device reads them — a store build and a tester build alike (RC022), and an older store build after a newer tester build. So their versions (`config_version`; `schema_version` of `profiles.json` and `machine.json`) **change only in a release**: a tester build may only add **optional** keys, which an older build ignores on read and drops the next time it saves the file (so a key a tester build adds must mean nothing harmful when absent). A store build reads a `profiles.json` holding a tester build's entries (`staging`, `dev`, `test-custom-…`) and its `active_profile_id` as any other: it keeps the entries and selects its own profile. The saved `backend.env` is not rewritten by a build that cannot run it (a tester build reading `prod`, a store build reading a staging it has no origin for): that build runs its fallback, and a save writes the file's choice back; only a switch in Me → Network replaces it. `SharedRootFileVersionsTest` pins each file's current version: bumping one is a deliberate change of that test, in a release.
 
 ### relay_pins.json
 

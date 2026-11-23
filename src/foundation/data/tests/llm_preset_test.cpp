@@ -78,7 +78,7 @@ TEST(LlmPresetTest, NormalizeFillsEmptyModel) {
 
 TEST(LlmPresetTest, BriefPresetWithoutOriginHasEmptyBaseUrl) {
   ScopedOrigin origin(nullptr);
-  if (std::string(pbr::CompiledDefaultOrigin()).empty()) {
+  if (pbr::BriefOrigin().empty()) { // this run's backend has no compiled origin (a tester build's staging may)
     pbr::AppConfig config;
     config.llm.preset = "brief";
     pbr::NormalizeLlmConfig(config);

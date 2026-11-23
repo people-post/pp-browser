@@ -5,6 +5,10 @@
 # the certificate files config/relay-certs/prod.cert / staging.cert / dev.cert (PP_RELAY_CERT_FILE_PROD / _STAGING /
 # _DEV override the paths). The environments are dev, staging and prod (release-compatibility RC009, RC021).
 #
+# A tester build (PP_TESTER_BUILD=ON, release-compatibility RC022: an internal TestFlight upload) compiles no prod: prod
+# is not checked, and a set PP_API_URL_PROD, or a PP_RELAY_ID_PROD other than empty or pending, fails in every mode (CMake
+# would refuse that build).
+#
 # An unset or empty PP_RELAY_ID_<ENV> (a CI variable not set reads as empty) is what the build scripts pass as the
 # build's default, "pending": that environment's operator set is not made yet, and the relay is not used (it fails
 # closed). Only a CMake `-DPP_RELAY_ID_<ENV>=` given by hand builds a first-use (dogfood) relay.
@@ -105,7 +109,17 @@ check() {
   while IFS= read -r line; do
     [[ -n "${line}" ]] && problems+=("${line}")
   done < <(
-    check_env PROD "${PP_RELAY_ID_PROD:-pending}" "${PP_RELAY_CERT_FILE_PROD:-${root}/config/relay-certs/prod.cert}"
+    if [[ "$(printf '%s' "${PP_TESTER_BUILD:-OFF}" | tr '[:lower:]' '[:upper:]')" == ON ]]; then
+      # A tester build has no prod (RC022): nothing of prod's to check, and nothing of prod's may be passed.
+      if [[ -n "${PP_API_URL_PROD:-}" ]]; then
+        echo "fatal: PP_TESTER_BUILD is ON but PP_API_URL_PROD is set: a tester build compiles no prod origin"
+      fi
+      if [[ -n "${PP_RELAY_ID_PROD:-}" && "${PP_RELAY_ID_PROD}" != "pending" ]]; then
+        echo "fatal: PP_TESTER_BUILD is ON but PP_RELAY_ID_PROD is set: a tester build compiles no prod relay id"
+      fi
+    else
+      check_env PROD "${PP_RELAY_ID_PROD:-pending}" "${PP_RELAY_CERT_FILE_PROD:-${root}/config/relay-certs/prod.cert}"
+    fi
     # Staging and dev only where the build compiles their origin (a store build ships prod only, RC015).
     if [[ -n "${PP_API_URL_STAGING:-}" ]]; then
       check_env STAGING "${PP_RELAY_ID_STAGING:-pending}" \
@@ -150,7 +164,9 @@ PY_VECTORS
   expect() {
     local want="$1" mode="$2" got=0 args="$*"
     (
-      unset PP_RELAY_ID_PROD PP_RELAY_ID_STAGING PP_RELAY_ID_DEV PP_API_URL_STAGING PP_API_URL_DEV
+      unset PP_RELAY_ID_PROD PP_RELAY_ID_STAGING PP_RELAY_ID_DEV PP_API_URL_PROD PP_API_URL_STAGING PP_API_URL_DEV
+      export PP_TESTER_BUILD="${tester}"
+      [[ -z "${prod_url}" ]] || export PP_API_URL_PROD="${prod_url}"
       [[ "$3" == UNSET ]] || export PP_RELAY_ID_PROD="$3"
       export PP_RELAY_CERT_FILE_PROD="${dir}/$4"
       shift 4
@@ -166,7 +182,7 @@ PY_VECTORS
       failures=$((failures + 1))
     fi
   }
-  local staging="https://staging.example.test" dev="https://dev.example.test"
+  local staging="https://staging.example.test" dev="https://dev.example.test" tester=OFF prod_url=""
   expect 0 release "${good}" good.cert
   expect 1 release UNSET good.cert             # the placeholder fails closed
   expect 1 release pending good.cert
@@ -206,6 +222,22 @@ PY_VECTORS
   expect 1 release UNSET good.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
   expect 0 dogfood UNSET pending.cert STAGING "${staging}" "" pending.cert DEV "${dev}" UNSET missing.cert
   expect 1 dogfood UNSET pending.cert STAGING "${staging}" "" pending.cert DEV "${dev}" "${good}" other.cert
+  # A tester build (RC022): prod is not checked (no id, no certificate needed), and anything of prod's passed fails.
+  tester=ON
+  expect 0 release UNSET missing.cert STAGING "${staging}" "${good}" good.cert DEV "${dev}" "${good}" good.cert
+  expect 0 release pending pending.cert STAGING "${staging}" "${good}" good.cert
+  expect 0 dogfood "" missing.cert STAGING "${staging}" UNSET pending.cert DEV "${dev}" "${good}" good.cert
+  expect 1 release UNSET missing.cert STAGING "${staging}" UNSET good.cert # staging still needs its own
+  expect 1 dogfood "${good}" good.cert STAGING "${staging}" "${good}" good.cert # a prod relay id
+  prod_url="https://prod.example.test"
+  expect 1 dogfood UNSET missing.cert STAGING "${staging}" "${good}" good.cert # a prod origin
+  expect 1 release UNSET missing.cert DEV "${dev}" "${good}" good.cert
+  tester=on
+  expect 1 dogfood UNSET missing.cert DEV "${dev}" "${good}" good.cert # the flag in any case
+  tester=OFF
+  expect 1 release UNSET missing.cert # a store build still needs prod's
+  expect 0 release "${good}" good.cert STAGING "" UNSET pending.cert
+  prod_url=""
   # The files in the tree: each environment's exists and holds a certificate this build reads or the placeholder
   # (dev's is made, 1 of 1; prod's and staging's are pending until Leo makes them).
   local name text

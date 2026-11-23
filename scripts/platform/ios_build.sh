@@ -53,6 +53,9 @@ Environment:
   PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   PP_BROWSER_IOS_CALLKIT      ON (default) or OFF: CallKit + PushKit for default-PIN incoming calls; OFF for the China storefront
+  PP_TESTER_BUILD             ON for a tester build (internal TestFlight; release-compatibility RC022): no prod, never
+                              opens the store app's profiles; OFF (default) for a store build or a developer's.
+                              CMake refuses ON with PP_API_URL_PROD or a PP_RELAY_ID_PROD relay id
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
   PP_API_URL_STAGING          Staging backend origin compiled into the app (empty = Staging option hidden)
   PP_API_URL_DEV              Dev backend origin compiled into the app (empty = Dev option hidden)
@@ -138,8 +141,18 @@ common_cmake_args() {
   if [[ -n "${PP_BROWSER_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_VERSION="${PP_BROWSER_VERSION}")
   fi
+  # Always passed, so a reused build directory never keeps an earlier configure's kind.
+  local tester="${PP_TESTER_BUILD:-OFF}"
+  tester="$(printf '%s' "${tester}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "${tester}" != "ON" && "${tester}" != "OFF" ]]; then
+    echo "error: PP_TESTER_BUILD must be ON or OFF (got '${PP_TESTER_BUILD}')" >&2
+    exit 1
+  fi
+  args+=(-DPP_TESTER_BUILD="${tester}")
   if [[ -n "${PP_API_URL_PROD:-}" ]]; then
     args+=(-DPP_API_URL_PROD="${PP_API_URL_PROD}")
+  elif [[ "${tester}" == "ON" ]]; then
+    args+=(-DPP_API_URL_PROD= -DPP_RELAY_ID_PROD=pending) # clears an earlier configure's prod from the cache
   fi
   if [[ -n "${PP_API_URL_STAGING:-}" ]]; then
     args+=(-DPP_API_URL_STAGING="${PP_API_URL_STAGING}")

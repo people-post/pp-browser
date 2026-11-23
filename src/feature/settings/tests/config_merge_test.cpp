@@ -193,6 +193,26 @@ TEST(ConfigMergeTest, NetworkDraftCarriesBackendChoiceAndKeepsCustomUrlsWhenNotC
   EXPECT_EQ(custom.relay.base_url, "https://typed.example.test/api/relay");
 }
 
+// Release-compatibility RC022: a saved choice this build cannot run (a tester build's `prod`) is kept by every save but
+// a switch the user makes; the switch is the new saved choice.
+TEST(ConfigMergeTest, OnlyAUsersSwitchReplacesASavedChoiceThisBuildCannotRun) {
+  pbr::AppConfig base = pbr::Config::DefaultAppConfig();
+  base.backend.env = "staging";          // what runs
+  base.backend.unavailable_env = "prod"; // what the file says
+  pbr::SettingsUiState state;
+  state.backend_env = "staging"; // the row shows what runs; another network setting changed
+  state.node_enabled = "off";
+  const pbr::AppConfig kept = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(kept.backend.env, "staging");
+  EXPECT_EQ(kept.backend.unavailable_env, "prod") << "not rewritten by a save that switched nothing";
+  EXPECT_FALSE(kept.mesh.node_enabled);
+
+  state.backend_env = "dev";
+  const pbr::AppConfig switched = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(switched.backend.env, "dev");
+  EXPECT_TRUE(switched.backend.unavailable_env.empty()) << "the user's switch is the saved choice";
+}
+
 TEST(ConfigMergeTest, NetworkDraftWritesCustomUrlsToTheSavedCopyWhenAnOriginReplacedThem) {
   pbr::AppConfig base = pbr::Config::DefaultAppConfig();
   base.backend.has_saved_urls = true;

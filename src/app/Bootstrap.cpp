@@ -74,6 +74,13 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   }
 
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
+  // A tester build never opens (and so never changes) a store build's profile, whichever way it was named (a
+  // `--profile` override included): release-compatibility RC022.
+  if (const std::string recorded = ReadProfileBackend(profile_data_dir);
+      !ProfileBackendAllowed(recorded, ThisBuildKind())) {
+    return Error("this tester build does not open profile '" + registry->ActiveProfileId() + "' of backend '" +
+                 recorded + "': it belongs to the store app (install the store app to use it)");
+  }
   AppPaths::EnsureDirs(profile_data_dir);
 
   if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {

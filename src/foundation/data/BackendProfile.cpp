@@ -4,40 +4,52 @@
 
 #include <cctype>
 #include <cstdint>
+#include <string_view>
 
 namespace pbr {
 
 namespace {
 
-std::string CustomKey(const std::string& url) {
+constexpr std::string_view kStoreCustomPrefix = "custom-";
+constexpr std::string_view kTesterCustomPrefix = "test-custom-";
+
+} // namespace
+
+std::string CustomProfileKey(const std::string& url, const BuildKind kind) {
   // FNV-1a 64: stable across platforms and releases, which std::hash is not.
   uint64_t hash = 14695981039346656037ULL;
   for (const unsigned char c : NormalizeBackendUrl(url)) {
     hash = (hash ^ c) * 1099511628211ULL;
   }
   static const char* kHex = "0123456789abcdef";
-  std::string key = "custom-";
+  std::string key(kind == BuildKind::Tester ? kTesterCustomPrefix : kStoreCustomPrefix);
   for (int shift = 44; shift >= 0; shift -= 4) {
     key.push_back(kHex[(hash >> shift) & 0xF]);
   }
   return key;
 }
 
-std::string KeyFor(const BackendEnv env, const std::string& registration_url) {
-  switch (env) {
+std::string BackendProfileKeyFor(const BackendEnv env, const std::string& registration_url,
+                                 const CompiledOrigins& compiled) {
+  switch (ResolveLatchedBackend(env, compiled)) {
     case BackendEnv::Staging:
       return "staging"; // a new environment (release-compatibility RC009 as amended): no profile made for qa is reused
     case BackendEnv::Dev:
       return "dev";
     case BackendEnv::Custom:
-      return CustomKey(registration_url);
+      return CustomProfileKey(registration_url, compiled.kind);
     case BackendEnv::Prod:
       break;
   }
-  return "prod";
+  return "prod"; // a store build's only: a tester build never resolves to Prod
 }
 
-} // namespace
+bool ProfileBackendAllowed(const std::string_view recorded_backend, const BuildKind kind) {
+  if (kind == BuildKind::Store) {
+    return true;
+  }
+  return recorded_backend != "prod" && recorded_backend.substr(0, kStoreCustomPrefix.size()) != kStoreCustomPrefix;
+}
 
 std::string NormalizeBackendUrl(const std::string& url) {
   size_t begin = 0;
@@ -59,19 +71,22 @@ std::string NormalizeBackendUrl(const std::string& url) {
 }
 
 std::string BackendProfileKey(const AppConfig& config) {
+  const CompiledOrigins compiled = BuildCompiledOrigins();
   if (OriginEnvOverrideActive()) {
-    return CustomKey(BriefOrigin());
+    return CustomProfileKey(BriefOrigin(), compiled.kind);
   }
-  return KeyFor(ActiveBackend(), config.registration.base_url);
+  return BackendProfileKeyFor(ActiveBackend(), config.registration.base_url, compiled);
 }
 
 std::string SavedBackendKey(const AppConfig& config) {
+  const CompiledOrigins compiled = BuildCompiledOrigins();
   if (OriginEnvOverrideActive()) {
-    return CustomKey(BriefOrigin());
+    return CustomProfileKey(BriefOrigin(), compiled.kind);
   }
-  const BackendEnv env = ResolveLatchedBackend(ParseBackendEnv(config.backend.env), BuildCompiledOrigins());
-  return KeyFor(
-      env, config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url);
+  return BackendProfileKeyFor(
+      ParseBackendEnv(config.backend.env),
+      config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url,
+      compiled);
 }
 
 } // namespace pbr

@@ -44,6 +44,11 @@ protected:
   std::string data_dir_;
 };
 
+// This build's custom key prefix (release-compatibility RC022): a tester build's never names a store build's profile.
+std::string CustomPrefix() {
+  return pbr::IsTesterBuild() ? "test-custom-" : "custom-";
+}
+
 } // namespace
 
 TEST_F(BackendProfileTest, KeysAreStableAndFilesystemSafe) {
@@ -51,8 +56,8 @@ TEST_F(BackendProfileTest, KeysAreStableAndFilesystemSafe) {
   config.registration.base_url = "https://Custom.Example.test/api/relay/";
   pbr::LatchActiveBackend(pbr::BackendEnv::Custom);
   const std::string key = pbr::BackendProfileKey(config);
-  EXPECT_EQ(key.rfind("custom-", 0), 0u);
-  EXPECT_EQ(key.size(), 19u);
+  EXPECT_EQ(key.rfind(CustomPrefix(), 0), 0u);
+  EXPECT_EQ(key.size(), CustomPrefix().size() + 12);
   EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId(key));
 
   config.registration.base_url = "https://custom.example.test/api/relay";
@@ -63,10 +68,14 @@ TEST_F(BackendProfileTest, KeysAreStableAndFilesystemSafe) {
 
 TEST_F(BackendProfileTest, ProdKeyAndEnvOriginKey) {
   pbr::AppConfig config;
-  EXPECT_EQ(pbr::BackendProfileKey(config), "prod");
+  if (pbr::IsTesterBuild()) {
+    EXPECT_NE(pbr::BackendProfileKey(config), "prod") << "a tester build never opens prod's profile";
+  } else {
+    EXPECT_EQ(pbr::BackendProfileKey(config), "prod");
+  }
   SetOriginEnv("https://backend.example.test");
   const std::string key = pbr::BackendProfileKey(config);
-  EXPECT_EQ(key.rfind("custom-", 0), 0u);
+  EXPECT_EQ(key.rfind(CustomPrefix(), 0), 0u);
   SetOriginEnv(nullptr);
 }
 
@@ -78,7 +87,7 @@ TEST_F(BackendProfileTest, SavedKeyDiffersFromRunningOneOnlyAfterASwitch) {
   config.backend.env = "custom";
   config.registration.base_url = "https://custom.example.test/api/relay";
   const std::string custom = pbr::SavedBackendKey(config);
-  EXPECT_EQ(custom.rfind("custom-", 0), 0u);
+  EXPECT_EQ(custom.rfind(CustomPrefix(), 0), 0u);
   EXPECT_NE(custom, pbr::BackendProfileKey(config));
 
   // Under an origin the loaded URLs are replaced; the saved copies name the custom backend.
@@ -187,4 +196,78 @@ TEST_F(BackendProfileTest, RecordedBackendIsNeverReplaced) {
   ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(dir, "prod")));
   ASSERT_TRUE(static_cast<bool>(pbr::AdoptProfileBackend(dir, "staging")));
   EXPECT_EQ(pbr::ReadProfileBackend(dir), "prod");
+}
+
+// Release-compatibility RC022: the keys as each kind of build makes them, with the compiled origins passed in.
+namespace {
+
+constexpr pbr::CompiledOrigins kStore{.prod = "https://prod.example.test"};
+constexpr pbr::CompiledOrigins kTesterAll{
+    .staging = "https://staging.example.test", .dev = "https://dev.example.test", .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterDevOnly{.dev = "https://dev.example.test", .kind = pbr::BuildKind::Tester};
+constexpr pbr::CompiledOrigins kTesterNone{.kind = pbr::BuildKind::Tester};
+constexpr pbr::BackendEnv kAllEnvs[] = {pbr::BackendEnv::Prod, pbr::BackendEnv::Staging, pbr::BackendEnv::Dev,
+                                        pbr::BackendEnv::Custom};
+
+} // namespace
+
+TEST(BackendProfileKeyTest, ACustomProfileIsSeparatePerBuildKindWithTheSameHash) {
+  const std::string url = "https://Custom.Example.test/api/relay/";
+  const std::string store = pbr::CustomProfileKey(url, pbr::BuildKind::Store);
+  const std::string tester = pbr::CustomProfileKey(url, pbr::BuildKind::Tester);
+  EXPECT_EQ(store.rfind("custom-", 0), 0u);
+  EXPECT_EQ(store.size(), 19u);
+  EXPECT_EQ(tester.rfind("test-custom-", 0), 0u);
+  EXPECT_EQ(tester.size(), 24u);
+  EXPECT_EQ(tester.substr(12), store.substr(7)) << "the same hash";
+  EXPECT_NE(tester, store);
+  EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId(store));
+  EXPECT_TRUE(pbr::ProfileRegistry::IsValidProfileId(tester));
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Custom, url, kStore), store);
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Custom, url, kTesterAll), tester);
+}
+
+TEST(BackendProfileKeyTest, ATesterBuildNeverYieldsProdsKey) {
+  for (const pbr::CompiledOrigins& compiled : {kTesterAll, kTesterDevOnly, kTesterNone}) {
+    for (const pbr::BackendEnv env : kAllEnvs) {
+      const std::string key = pbr::BackendProfileKeyFor(env, "https://custom.example.test/api/relay", compiled);
+      EXPECT_NE(key, "prod");
+      EXPECT_NE(key.rfind("custom-", 0), 0u) << key << ": a store build's custom profile";
+      EXPECT_TRUE(pbr::ProfileBackendAllowed(key, pbr::BuildKind::Tester)) << key;
+    }
+  }
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kTesterAll), "staging");
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kTesterDevOnly), "dev");
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Staging, "", kTesterDevOnly), "dev");
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Dev, "", kTesterAll), "dev");
+  // Neither staging nor dev compiled: a saved prod runs the custom backend (its URLs; none: no backend) under a tester
+  // profile — never prod's.
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kTesterNone),
+            pbr::CustomProfileKey("", pbr::BuildKind::Tester));
+  // A store build, as before.
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kStore), "prod");
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Staging, "", kStore), "prod");
+}
+
+TEST(BackendProfileKeyTest, ATesterBuildOpensNoStoreProfile) {
+  for (const char* store_key : {"prod", "custom-0123456789ab"}) {
+    EXPECT_FALSE(pbr::ProfileBackendAllowed(store_key, pbr::BuildKind::Tester)) << store_key;
+    EXPECT_TRUE(pbr::ProfileBackendAllowed(store_key, pbr::BuildKind::Store)) << store_key;
+  }
+  for (const char* tester_key : {"", "staging", "dev", "qa", "test-custom-0123456789ab"}) {
+    EXPECT_TRUE(pbr::ProfileBackendAllowed(tester_key, pbr::BuildKind::Tester)) << tester_key;
+    EXPECT_TRUE(pbr::ProfileBackendAllowed(tester_key, pbr::BuildKind::Store)) << tester_key;
+  }
+}
+
+// This build's running key against its kind.
+TEST_F(BackendProfileTest, ThisBuildsKeysFollowItsKind) {
+  pbr::AppConfig config;
+  for (const pbr::BackendEnv env : kAllEnvs) {
+    pbr::ResetActiveBackendForTest();
+    pbr::LatchActiveBackend(env);
+    EXPECT_TRUE(pbr::ProfileBackendAllowed(pbr::BackendProfileKey(config), pbr::ThisBuildKind()));
+    config.backend.env = pbr::BackendEnvName(env);
+    EXPECT_TRUE(pbr::ProfileBackendAllowed(pbr::SavedBackendKey(config), pbr::ThisBuildKind()));
+  }
 }

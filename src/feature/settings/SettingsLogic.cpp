@@ -91,7 +91,12 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   AppConfig config = base;
   const AppConfig defaults = Config::DefaultAppConfig();
   if (!state.backend_env.empty()) {
-    config.backend.env = BackendEnvName(ParseBackendEnv(state.backend_env));
+    const std::string picked = BackendEnvName(ParseBackendEnv(state.backend_env));
+    if (picked != config.backend.env) {
+      // A switch the user made is the new saved choice; any other save keeps the one this build cannot run.
+      config.backend.env = picked;
+      config.backend.unavailable_env.clear();
+    }
   }
   // The URL fields are the custom backend's; prod / staging / dev derive theirs from the origin and leave them alone.
   if (state.backend_env.empty() || state.backend_env == "custom") {
