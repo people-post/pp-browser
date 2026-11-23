@@ -1,5 +1,5 @@
 <!-- The composer in the wide layout (mockup 50-desktop-main.html page 2): paperclip and emoji lead the row, then the one-line
-     pill (its placeholder is the "Enter to send" hint), then the microphone (Send once there is text). Same data model and events as composer.rml;
+     pill (a label over it is the "Enter to send" hint), then the microphone (Send once there is text). Same data model and events as composer.rml;
      the microphone is a click-to-record toggle here (no hold-to-talk bar, no voice mode). Mounted instead
      of composer.rml by ViewCatalog::KeyForLayout in the wide pane. Styles: assets/themes/wide.rcss. -->
 <!-- The bar above the box: the message being replied to, or "Edit message" while one of ours is edited (a pencil before
@@ -83,10 +83,12 @@
       <svg src="../icons/v2/emoji.svg" width="20" height="20"></svg>
     </button>
     <div class="prompt-composer-pill" data-if="!voice_recording && !voice_finishing">
-      <textarea id="draft-input" class="prompt-composer-input" placeholder="{{i18n:chat.composer.hint_wide}}" rows="1" max-rows="5"
+      <textarea id="draft-input" class="prompt-composer-input" rows="1" max-rows="5"
                 maxlength="65536"
                 data-value="draft" data-event-change="draft_changed()"
                 data-attrif-disabled="composer_input_disabled"></textarea>
+      <!-- The engine draws no placeholder (phone or desktop), so the "Enter to send" hint is a label over the empty field, as on the phone. -->
+      <p class="prompt-composer-label prompt-composer-label--wide" data-if="draft == ''">{{i18n:chat.composer.hint_wide}}</p>
       <button class="prompt-capture-btn" type="button" data-if="show_capture && !voice_recording"
               data-event-click="attach_capture()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
               title="{{i18n:chat.attach.capture}}">
