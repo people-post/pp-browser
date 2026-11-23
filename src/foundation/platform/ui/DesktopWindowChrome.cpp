@@ -2,6 +2,7 @@
 
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
+#include "foundation/platform/desktop/WindowCorners.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
@@ -40,6 +41,8 @@ struct HitTestLayout {
 
 HitTestLayout g_layout{};
 bool g_event_watch_installed = false;
+/** The system rounds the window's corners (Windows 11, RequestSystemRoundedCorners): our outline follows them. */
+bool g_system_rounds_corners = false;
 
 float DpToWindow(SDL_Window* window, float dp) {
   if (!window || dp <= 0.f) {
@@ -175,7 +178,7 @@ void DesktopWindowChrome::Install() {
 }
 
 void DesktopWindowChrome::RefreshAppearance() {
-#if UI_SDL_VERSION_MAJOR >= 3 && defined(__APPLE__) && !TARGET_OS_IPHONE
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }
@@ -183,8 +186,20 @@ void DesktopWindowChrome::RefreshAppearance() {
   if (!window) {
     return;
   }
+  // Windows 11 rounds the corners itself (square again while maximized); elsewhere this asks nothing.
+  g_system_rounds_corners = desktop::RequestSystemRoundedCorners(window);
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
   const bool square = IsMaximized() || ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
   desktop::ApplyMacWindowRoundedCorners(window, square);
+#endif
+#endif
+}
+
+bool DesktopWindowChrome::SystemRoundsCorners() {
+#if UI_SDL_VERSION_MAJOR >= 3
+  return g_system_rounds_corners;
+#else
+  return false;
 #endif
 }
 

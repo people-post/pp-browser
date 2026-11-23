@@ -126,6 +126,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Win32.cpp
+    desktop/WindowCorners_Win32.cpp
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
     ImageThumbnail_Default.cpp
@@ -161,6 +162,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
+    desktop/WindowCorners_Default.cpp
     NetworkMonitor_Darwin.mm
     ImageThumbnail_Darwin.mm
   )
@@ -189,6 +191,7 @@ else()
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
+    desktop/WindowCorners_Default.cpp
     ImageThumbnail_Default.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
