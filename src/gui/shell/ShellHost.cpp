@@ -333,6 +333,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
+    ctor.Bind("window_corners_small", &host.state_.window_corners_small);
     ctor.Bind("fonts_ready", &host.state_.fonts_ready);
     ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
     ctor.Bind("startup_cover_visible", &host.state_.startup_cover_visible);
@@ -551,6 +552,7 @@ void ShellHost::Initialize(ui::Context* context) {
     DesktopWindowChrome::Install();
     DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp, 5.f,
                                    state_.titlebar_traffic_lights);
+    state_.window_corners_small = DesktopWindowChrome::SystemRoundsCorners(); // Install asked (Windows 11)
   }
 }
 
@@ -3605,6 +3607,7 @@ void ShellHost::Update(ui::Context* context) {
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
       DesktopWindowChrome::RefreshAppearance();
+      state_.window_corners_small = DesktopWindowChrome::SystemRoundsCorners();
       statusbar_.Dirty();
     }
   }

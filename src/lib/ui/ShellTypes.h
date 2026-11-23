@@ -756,6 +756,8 @@ struct ShellState {
   /** macOS: drawn traffic lights on the leading edge. */
   bool titlebar_traffic_lights = false;
   bool window_maximized = false;
+  /** Windows 11: the system rounds the window's corners (small radius); the 1dp outline follows them. */
+  bool window_corners_small = false;
 
   /**
    * CJK/emoji fallback faces ready for chrome text. False until deferred load when the

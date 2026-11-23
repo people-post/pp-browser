@@ -833,6 +833,50 @@ TEST_F(ChatWideLayoutTest, TheMacWindowOutlineFollowsTheRoundedOuterCorner) {
   EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_left_radius(), 0.f);
 }
 
+// Windows 11 rounds our borderless window itself when asked (WindowCorners_Win32.cpp: DWMWA_WINDOW_CORNER_PREFERENCE 33
+// = DWMWCP_ROUND 2, dwmapi loaded at run time; the other desktops answer no). When it did (`window_corners_small`), the
+// 1dp outline follows the system's small radius (8), not the Mac's 18; maximized (no `framed` class) it is square, and
+// Windows 10 (the request refused: no `round-small` class) keeps the square outline.
+TEST_F(ChatWideLayoutTest, TheWindows11OutlineFollowsTheSystemsSmallCorner) {
+  const std::string win32 =
+      ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/desktop/WindowCorners_Win32.cpp");
+  EXPECT_NE(win32.find("kDwmwaWindowCornerPreference = 33"), std::string::npos);
+  EXPECT_NE(win32.find("kDwmwcpRound = 2"), std::string::npos);
+  EXPECT_NE(win32.find("LoadLibraryExW(L\"dwmapi.dll\""), std::string::npos) << "nothing new is linked";
+  const std::string cmake = ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/CMakeLists.txt");
+  size_t defaults = 0;
+  for (size_t at = cmake.find("desktop/WindowCorners_Default.cpp"); at != std::string::npos;
+       at = cmake.find("desktop/WindowCorners_Default.cpp", at + 1)) {
+    ++defaults;
+  }
+  EXPECT_NE(cmake.find("desktop/WindowCorners_Win32.cpp"), std::string::npos);
+  EXPECT_EQ(defaults, 2u) << "the Darwin branch and the Linux / Android one";
+  EXPECT_NE(Asset("samples/window_shell.rml").find("data-class-shell-body--round-small=\"window_corners_small\""),
+            std::string::npos);
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+      "</style></head><body style=\"padding: 0;\">"
+      "<div id=\"win11\" class=\"shell-body shell-body--framed shell-body--round-small\" style=\"width: 400dp; "
+      "height: 300dp;\"></div>"
+      "<div id=\"win10\" class=\"shell-body shell-body--framed\" style=\"width: 400dp; height: 300dp;\"></div>"
+      "<div id=\"max\" class=\"shell-body shell-body--round-small\" style=\"width: 400dp; height: 300dp;\"></div>"
+      "</body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  const auto& win11 = document->GetElementById("win11")->GetComputedValues();
+  EXPECT_FLOAT_EQ(win11.border_top_left_radius(), 8.f);
+  EXPECT_FLOAT_EQ(win11.border_top_right_radius(), 8.f);
+  EXPECT_FLOAT_EQ(win11.border_bottom_left_radius(), 8.f);
+  EXPECT_FLOAT_EQ(win11.border_bottom_right_radius(), 8.f);
+  EXPECT_FLOAT_EQ(win11.border_top_width(), 1.f) << "the outline itself";
+  EXPECT_FLOAT_EQ(document->GetElementById("win10")->GetComputedValues().border_top_left_radius(), 0.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_left_radius(), 0.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_width(), 0.f);
+}
+
 TEST_F(ChatWideLayoutTest, SystemLinesAndDatePillsAreSmallPillsSizedToTheirTextAndCentred) {
   // As on the phone: member joined / left, call records' neighbours and the date strips are grey pills round their text,
   // centred, at most 80% of the column; never a row stretched over the whole conversation.
