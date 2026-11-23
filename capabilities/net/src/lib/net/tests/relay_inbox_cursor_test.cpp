@@ -61,6 +61,7 @@ TEST_F(RelayInboxCursorTest, TheRegistrationEachCursorCountsInComesBackBesideThe
 
   std::ifstream in(dir_ / "relay_inbox_cursor.json");
   const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  in.close(); // Windows: a file still open here cannot be replaced by the saves below
   EXPECT_NE(text.find("\"schema_version\":1"), std::string::npos) << text;
   EXPECT_NE(text.find("\"cursor\":\"c1:7\""), std::string::npos) << "where an older app reads it: " << text;
 
