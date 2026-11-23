@@ -180,6 +180,8 @@ jobs:
         run: ./scripts/check/check_rml_bindings.sh
       - name: Shareable channels (what Send diagnostics reads)
         run: ./scripts/check/check_shareable_channels.sh
+      - name: pp-node dashboard is the generator's output
+        run: python3 packaging/pp-node/monitoring/gen_grafana_dashboard.py | diff -u packaging/pp-node/monitoring/grafana-dashboard.json -
       - name: Release relay id check (SIGNED_FORMATS § 3.5)
         run: ./scripts/check/check_relay_ids.sh --self-test
       - name: No private relay deployment detail (public repository)
