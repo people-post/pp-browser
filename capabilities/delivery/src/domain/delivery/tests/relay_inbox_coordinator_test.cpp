@@ -487,9 +487,8 @@ TEST_F(RelayInboxCoordinatorTest, ABacklogBehindTheOlderAppsCursorIsDelivered) {
   app->Sync(false, kMe);
   EXPECT_EQ(preferred_->polled_with.back(), "");
   EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog"), At(kPreferred, "since"),
-                                              At(kPreferred, "in-the-slack"), At(kPreferred, "since"),
-                                              At(kPreferred, "no-store-time")}))
-      << "phase 2 hands on what is above the floor; what was taken already the receive pipeline drops as seen";
+                                              At(kPreferred, "in-the-slack"), At(kPreferred, "no-store-time")}))
+      << "phase 2 hands on what is above the floor and phase 1 did not take";
   const auto reread = KeptReread(dir_, kPreferred);
   ASSERT_TRUE(reread);
   EXPECT_TRUE(reread->backfill);
@@ -531,6 +530,27 @@ TEST_F(RelayInboxCoordinatorTest, APageOfUnreadableRecordsEndsNeitherPhase) {
   EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "backlog"), At(kPreferred, "missed")}));
   app->Sync(false, kMe);
   EXPECT_FALSE(KeptReread(dir_, kPreferred)) << "read through";
+}
+
+// What phase 1 took is noted (in memory) and not handed in again by phase 2, even above the floor: a late duplicate
+// re-applies some group events. What phase 1 did not take still is. After a restart the note is gone: phase 2 hands it
+// in again, and the receive pipeline drops it as seen.
+TEST_F(RelayInboxCoordinatorTest, WhatPhaseOneTookIsNotHandedInAgainByPhaseTwo) {
+  const int64_t written = WriteOlderAppsFile(dir_, std::chrono::hours(2));
+  auto app = Started();
+  preferred_->QueueStored({{"taken-in-phase-1", written + kMinute}}, "c1:1690");
+  app->Sync(false, kMe);
+  app->Sync(false, kMe); // drained
+  preferred_->QueueStored({{"taken-in-phase-1", written + kMinute}, {"not-taken", written + kMinute}}, "c1:2");
+  app->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "");
+  EXPECT_EQ(taken_, (std::vector<std::string>{At(kPreferred, "taken-in-phase-1"), At(kPreferred, "not-taken")}));
+
+  auto restarted = Started(); // the note is lost
+  preferred_->QueueStored({{"taken-in-phase-1", written + kMinute}}, "c1:3");
+  restarted->Sync(false, kMe);
+  EXPECT_EQ(preferred_->polled_with.back(), "c1:2");
+  EXPECT_EQ(taken_.back(), At(kPreferred, "taken-in-phase-1")) << "handed in again; the pipeline drops it as seen";
 }
 
 // The account was deaf: a fresh registration numbered its mailbox from the start, and the older app's cursor is past

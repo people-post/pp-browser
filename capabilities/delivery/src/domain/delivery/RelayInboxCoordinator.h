@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -52,6 +53,8 @@ public:
    * (clock skew between this device and the relay).
    */
   static constexpr int64_t kRereadFloorSlackMs = 10 * 60 * 1000;
+  /** Phase 2 skips the records phase 1 took, by message id: at most this many noted per relay (in memory only). */
+  static constexpr size_t kRereadTakenMax = 4096;
 
   using Post = std::function<void(std::function<void()>)>;
 
@@ -150,6 +153,8 @@ private:
   std::map<std::string, std::string> mailboxes_;
   /** An older app's file's re-reads under way, by relay (RelayOriginKey). */
   std::map<std::string, RelayInboxReread> rereads_;
+  /** The message ids phase 1 of a re-read took, by relay (RelayOriginKey); lost on a restart (duplicates only). */
+  std::map<std::string, std::unordered_set<std::string>> phase1_taken_;
   uint64_t syncs_ = 0;
 };
 

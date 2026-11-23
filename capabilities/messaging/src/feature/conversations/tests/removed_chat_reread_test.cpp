@@ -292,6 +292,13 @@ protected:
     return *envelope;
   }
 
+  /** The app stopped and started again (what it noted in memory is gone; the stores and the cursor file stay). */
+  void RestartApp() {
+    ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+    mesh_.reset();
+    StartApp();
+  }
+
   /** The app stopped, an older app wrote its relay cursor file again (no `registrations`) `age` ago, and it started. */
   void RestartWithAnOlderAppsCursorFile(const std::chrono::minutes age) {
     ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
@@ -489,7 +496,8 @@ TEST_F(RemovedChatRereadTest, AChatClearedUnderAnOlderAppDoesNotFillAgainWhenIts
   EXPECT_EQ(Unread(chat->id), 1);
 }
 
-// A control-lane record taken in during phase 1 and handed over again in phase 2 is applied once.
+// A control-lane record taken in during phase 1 and handed over again in phase 2 — the app restarted in between, so
+// the coordinator's note of what phase 1 took is gone — is applied once: the lane's seen ids drop it.
 TEST_F(RemovedChatRereadTest, AControlLaneRecordSeenInBothPhasesIsAppliedOnce) {
   RelayEnvelope m1 = FromCarol("one");
   m1.relay_created_at_ms = util::NowUnixMs() - 3 * 3600 * 1000;
@@ -500,7 +508,8 @@ TEST_F(RemovedChatRereadTest, AControlLaneRecordSeenInBothPhasesIsAppliedOnce) {
   signal.relay_created_at_ms = util::NowUnixMs();
   Poll({signal}); // phase 1
   ASSERT_EQ(lane_applied_, 1);
-  PollEmpty();        // drained
+  PollEmpty(); // drained
+  RestartApp();
   Poll({m1, signal}); // phase 2
 
   EXPECT_EQ(lane_applied_, 1) << "seen already: not applied again";
