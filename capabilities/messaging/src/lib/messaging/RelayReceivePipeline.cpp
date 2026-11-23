@@ -639,9 +639,12 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
   }
   // A refusal answers our accept of that invite, so only while it is still waiting or accepted. One that comes again
   // later (a relay mailbox read again, any late copy) finds it refused already — or finds us stated into the group by
-  // its owner at a newer epoch, through a later invite — and changes nothing: no roster change, no line.
+  // its owner at a newer epoch, through a later invite — and changes nothing: no roster change, no line. An invite's
+  // epoch of 1 or less is not known (a link join stores none; an invite naming 0 is kept as 1): there the status alone
+  // decides, as a statement from an earlier membership may still list us.
   bool stale = (*pending)->status != InviteStatus::Pending && (*pending)->status != InviteStatus::Accepted;
-  if (auto metadata = group_roster_.LoadMetadata(refused->group_id); !stale && metadata && *metadata) {
+  if (auto metadata = group_roster_.LoadMetadata(refused->group_id);
+      !stale && (*pending)->roster_epoch > 1 && metadata && *metadata) {
     if (const auto held = group_roster_sync::Held(**metadata); held && held->roster_epoch > (*pending)->roster_epoch) {
       stale =
           std::any_of(held->members.begin(), held->members.end(),
@@ -652,7 +655,8 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     log().info << "group invite refused again or superseded group_id=" << refused->group_id << ": nothing changes";
     return {};
   }
-  (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
+  // The invite is marked refused last, after the roster and the line: a crash in between leaves it accepted, so the
+  // refusal coming again finishes the job (each step repeats harmlessly) instead of being taken for a late copy.
   if (refused->reason == kInviteRefusedGroupDissolved) {
     // G016: the owner ended the group before our accept reached it. If we had already made the group on accept, it
     // ends here too — the chat stays, saying so; the invite's card ends either way.
@@ -666,6 +670,7 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     if (outcome) {
       outcome->voided_invite_cards.emplace_back(actor_identity, refused->invite_nonce);
     }
+    (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
     return {};
   }
   // G014 (or G019: the inviter may no longer add us): we were never added — drop the group we made on accept; its
@@ -694,6 +699,7 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
       }
     }
   }
+  (void)group_roster_.UpdateInviteStatus(refused->invite_nonce, InviteStatus::Expired);
   log().info << "group invite refused group_id=" << refused->group_id << " reason=" << refused->reason;
   return {};
 }
