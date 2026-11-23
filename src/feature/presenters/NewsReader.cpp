@@ -75,6 +75,70 @@ std::string NewsReadRequestText(const std::string& url, const std::string& ui_la
   return url + "\n" + (chinese ? "这篇讲了什么" : "What's in the article");
 }
 
+namespace {
+
+/** One line without its Markdown marks: heading / quote / list markers, emphasis, code ticks; a link keeps its label. */
+std::string StripMarkdownLine(std::string_view line) {
+  while (!line.empty() && (line.front() == ' ' || line.front() == '\t' || line.front() == '#' || line.front() == '>')) {
+    line.remove_prefix(1);
+  }
+  if (line.size() >= 2 && (line.front() == '-' || line.front() == '*' || line.front() == '+') && line[1] == ' ') {
+    line.remove_prefix(2);
+  } else {
+    size_t digits = 0;
+    while (digits < line.size() && line[digits] >= '0' && line[digits] <= '9') {
+      ++digits;
+    }
+    if (digits > 0 && digits + 1 < line.size() && line[digits] == '.' && line[digits + 1] == ' ') {
+      line.remove_prefix(digits + 2);
+    }
+  }
+  std::string out;
+  for (size_t i = 0; i < line.size(); ++i) {
+    const char c = line[i];
+    if (c == '*' || c == '_' || c == '`') {
+      continue;
+    }
+    if (c == '[') {
+      const size_t close = line.find("](", i);
+      const size_t end = close == std::string_view::npos ? close : line.find(')', close);
+      if (end != std::string_view::npos) {
+        out += StripMarkdownLine(line.substr(i + 1, close - i - 1));
+        i = end;
+        continue;
+      }
+    }
+    out += c;
+  }
+  while (!out.empty() && (out.back() == ' ' || out.back() == '\t' || out.back() == '\r')) {
+    out.pop_back();
+  }
+  return out;
+}
+
+} // namespace
+
+std::string NewsPickTitle(const std::string& pick_text, const std::string& url) {
+  std::string_view rest(pick_text);
+  while (!rest.empty()) {
+    const size_t newline = rest.find('\n');
+    const std::string_view line = rest.substr(0, newline);
+    rest = newline == std::string_view::npos ? std::string_view() : rest.substr(newline + 1);
+    // The details link itself is no headline.
+    if (line.find(std::string_view("\"pp:news\"")) != std::string_view::npos) {
+      continue;
+    }
+    if (std::string title = StripMarkdownLine(line); !title.empty()) {
+      return title;
+    }
+  }
+  std::string_view host(url);
+  if (const size_t scheme = host.find("://"); scheme != std::string_view::npos) {
+    host.remove_prefix(scheme + 3);
+  }
+  return std::string(host.substr(0, host.find_first_of("/?#")));
+}
+
 const NewsReads::Digest* NewsReads::Find(const std::string& url) const {
   const auto it = digests.find(NormalizeNewsUrl(url));
   return it == digests.end() ? nullptr : &it->second;

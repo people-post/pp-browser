@@ -54,6 +54,12 @@ TEST(NewsReaderWiringTest, TheSheetClosesOnLockSignOutDeleteAndClear) {
 TEST(NewsReaderWiringTest, TheEndOfAReadReachesTheReaderAndTheList) {
   EXPECT_NE(Body(kController, "void ChatController::OnAgentTurnEnded(").find("OnNewsReadEnded(thread_id)"),
             std::string::npos);
+  // A read that ends with the sheet closed regreys its item at once: the rows are rebuilt and redrawn (e2e 2026-11-23:
+  // the item stayed blue until something else redrew the chat).
+  const std::string ended = Body(kController, "void ChatController::OnNewsReadEnded(");
+  const size_t sync = ended.find("SyncDisplayFromThread();");
+  ASSERT_NE(sync, std::string::npos);
+  EXPECT_NE(ended.find("DirtyChatTurns();", sync), std::string::npos);
   EXPECT_NE(Body(kController, "std::vector<MessageDisplayRow> ChatController::BuildMessageRows(")
                 .find("MarkReadNewsItems(rows, thread_id, news_texts)"),
             std::string::npos);

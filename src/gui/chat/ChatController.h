@@ -605,8 +605,9 @@ private:
   const std::vector<MarkdownLink>* ChatLinksOf(const std::string& thread_id, const std::string& entry_id);
 
   // --- the news reader (DEV/PLAN-news-inline-digest.md; view "news_reader") -----------------------------------
-  /** A tap on news item `tapped` of an answer whose links are `links`, in AI thread `thread_id`. */
-  void OpenNewsReader(const std::string& thread_id, const std::vector<MarkdownLink>& links, const MarkdownLink& tapped);
+  /** A tap on news item `tapped` of answer `entry_id` whose links are `links`, in AI thread `thread_id`. */
+  void OpenNewsReader(const std::string& thread_id, const std::string& entry_id, const std::vector<MarkdownLink>& links,
+                      const MarkdownLink& tapped);
   /** Shows item `index` of the open reader's list: its stored digest, or reads it (NewsReader decides). */
   void ShowNewsItem(size_t index);
   /** Previous / Next under the reader (`step` -1 / +1); ignored while it is off. */

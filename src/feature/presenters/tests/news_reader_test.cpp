@@ -90,6 +90,19 @@ TEST(NewsReaderTest, AHashRouteIsPartOfTheArticle) {
   EXPECT_EQ(NormalizeNewsUrl("https://site.example/p#"), "https://site.example/p");
 }
 
+// A news pick's reader title is its own headline, never the "View details" label.
+TEST(NewsReaderTest, ANewsPicksTitleIsItsHeadline) {
+  EXPECT_EQ(NewsPickTitle("**Oil prices fall** as demand slows\nMore text.\n\n[View details](https://n.example/a "
+                          "\"pp:news\")",
+                          "https://n.example/a"),
+            "Oil prices fall as demand slows");
+  EXPECT_EQ(NewsPickTitle("\n## 油价下跌\n正文", "https://n.example/a"), "油价下跌");
+  EXPECT_EQ(NewsPickTitle("- See [the report](https://x.example) today", "https://n.example/a"),
+            "See the report today");
+  // Nothing but the details link: the site, never the label.
+  EXPECT_EQ(NewsPickTitle("[View details](https://n.example/a \"pp:news\")", "https://n.example/a?x=1"), "n.example");
+}
+
 TEST(NewsReaderTest, TheRequestIsTheUrlAndTheFixedSentence) {
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "zh-Hans"), "https://n.example/a\n这篇讲了什么");
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "en"), "https://n.example/a\nWhat's in the article");

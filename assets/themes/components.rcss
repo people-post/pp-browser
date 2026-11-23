@@ -1142,9 +1142,24 @@ select selectbox option {
 }
 
 /* The news reader sheet (news_reader.rml): the item's title, the digest, then a bar of 50dp buttons ("Open original",
-   and Previous / Next for a list). Colours: colors.rcss.tmpl. */
+   and Previous / Next for a list). Colours: colors.rcss.tmpl. A column of its own, not .ac-page / .ac-scroll: in a
+   sheet those are the Add contact page's (.shell-layer-compact .ac-page .ac-scroll: absolutely positioned over the whole
+   page), which drew the
+   bar at the top, over the title, and let the scroll take its taps. The bar stays in the flow at the bottom (the
+   sheet's own padding keeps it above the home indicator); only the title and the digest scroll. */
+.news-reader {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .news-reader-scroll {
-  padding: 0 20dp 24dp 20dp;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4dp 24dp 4dp;
+  box-sizing: border-box;
 }
 
 .news-reader-title {
@@ -1218,7 +1233,7 @@ select selectbox option {
   flex-direction: row;
   align-items: center;
   gap: 8dp;
-  padding: 8dp 16dp 16dp 16dp;
+  padding: 8dp 0 12dp 0;
 }
 
 .news-reader-open,

@@ -5,11 +5,11 @@
      is bound only while it shows. The desktop's panel is a separate view (desktop branch); state and events:
      news_reader_title, news_reader_loading, news_reader_failed, news_reader_body_rml, news_reader_has_nav,
      news_reader_can_prev, news_reader_can_next; news_reader_prev(), news_reader_next(), news_reader_open_original(). -->
-<div class="ac-page news-reader" data-model="chat">
+<div class="news-reader" data-model="chat">
   <div class="sheet-header">
     <p class="sheet-title"></p>
   </div>
-  <div class="ac-scroll news-reader-scroll">
+  <div class="news-reader-scroll">
     <h2 class="news-reader-title" selectable="text">{{news_reader_title}}</h2>
     <div class="news-reader-loading" data-if="news_reader_loading">
       <div class="news-reader-spin"></div>

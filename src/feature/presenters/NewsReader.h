@@ -36,6 +36,12 @@ std::string NormalizeNewsUrl(std::string_view url);
  */
 std::string NewsReadRequestText(const std::string& url, const std::string& ui_language);
 
+/**
+ * The reader's title for a news pick (one item: its "details" link, whose label is the generic "View details"): the
+ * first line of the pick's text that has words, without Markdown; failing that, the host of `url`. Never the label.
+ */
+std::string NewsPickTitle(const std::string& pick_text, const std::string& url);
+
 /** The news items an AI thread has read, by NormalizeNewsUrl. */
 struct NewsReads {
   struct Digest {

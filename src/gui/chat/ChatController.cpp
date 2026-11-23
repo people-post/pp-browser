@@ -4742,14 +4742,14 @@ void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::str
     return;
   }
   if (link->news && news_reader) {
-    OpenNewsReader(thread_id, *links, *link);
+    OpenNewsReader(thread_id, entry_id, *links, *link);
     return;
   }
   OpenTrustedUrl(link->url); // chat_links_ holds the AI assistant's answers only (articles, sources)
 }
 
-void ChatController::OpenNewsReader(const std::string& thread_id, const std::vector<MarkdownLink>& links,
-                                    const MarkdownLink& tapped) {
+void ChatController::OpenNewsReader(const std::string& thread_id, const std::string& entry_id,
+                                    const std::vector<MarkdownLink>& links, const MarkdownLink& tapped) {
   if (!messaging_ready_ || !facade_ || !shell_navigation_.push_layer) {
     return;
   }
@@ -4763,6 +4763,11 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::vec
   }
   if (reader.items.empty()) {
     return;
+  }
+  if (reader.items.size() == 1) {
+    // A news pick: its link says "View details"; the title is the pick's own headline.
+    auto message = facade_->GetMessage(thread_id, entry_id);
+    reader.items[0].title = NewsPickTitle(message && *message ? (*message)->text : std::string(), reader.items[0].url);
   }
   const size_t index = reader.index;
   news_reader_ = std::move(reader);
@@ -4956,7 +4961,8 @@ void ChatController::OnNewsReadEnded(const std::string& thread_id) {
     ApplyNewsReader(); // the digest, or the fixed "can't be read" line
   }
   if (thread_id == ActiveThreadId()) {
-    SyncDisplayFromThread(); // the item turns grey in its list
+    SyncDisplayFromThread(); // the item turns grey in its list ...
+    DirtyChatTurns();        // ... drawn now, also with the sheet closed (nothing else redraws the rows then)
   }
 }
 
