@@ -105,7 +105,13 @@ std::string ShellLayoutRml::PaneSlot(const std::string& key, const char* extra_c
   out << ">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
   if (with_composer_slot) {
+    // The wide composer strip floats over the transcript's end like the phone's bars: its first child is the bar's
+    // material (the phone's x-bar / x-bar-blur colours and blur), the mount paints above it (wide.rcss).
+    const bool frosted = ShellInterruption::ResolveFrost(state_).bottom == CompactChromeFrostSurface::WideComposer;
+    out << "<div class=\"shell-pane-composer-bar\">";
+    out << BarMaterial(frosted, ChromeFrostEnabled(), state_.reduce_transparency);
     out << "<div class=\"shell-pane-composer\" id=\"pane-composer-" << key << "\"></div>";
+    out << "</div>";
   }
   out << "</div>";
   return out.str();
@@ -115,7 +121,12 @@ std::string ShellLayoutRml::ExpandedBase() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
   // `shell-pane-row--aux`: the auxiliary pane is open; wide.rcss keeps the older column floors for such a row.
-  out << "<div class=\"shell-pane-row" << (state_.auxiliary_open ? " shell-pane-row--aux" : "") << "\">";
+  // `shell-pane-row--frost`: Transparency on and nothing over the base: the conversation's header strip is frosted
+  // (its material child, chat_wide.rml), as the phone chat's header is (ShellInterruption::ResolveFrost).
+  const bool header_frost =
+      ChromeFrostEnabled() && ShellInterruption::ResolveFrost(state_).top == CompactChromeFrostSurface::WidePaneHeader;
+  out << "<div class=\"shell-pane-row" << (state_.auxiliary_open ? " shell-pane-row--aux" : "")
+      << (header_frost ? " shell-pane-row--frost" : "") << "\">";
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
   if (ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
     const char* nav_content = ShellLayout::ExpandedNavContentKey(state_.nav_tab);

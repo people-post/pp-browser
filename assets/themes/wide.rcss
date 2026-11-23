@@ -397,11 +397,35 @@
 }
 
 .shell-body--wide .chat-header {
+  position: relative;
+  z-index: 3;
   height: 64dp;
   margin: 0;
   padding: 0 16dp;
   border-radius: 0;
   border-bottom-width: 0.5dp;
+}
+
+/* The header strip floats over the transcript like the phone chat's bar (the transcript's scroller reaches up under
+   it, see .messages below). The strip itself is clear: the engine draws no backdrop blur on an element with a z-index
+   and children, so its first child (.bar-material, childless) carries the bar colour and, while the shell row is
+   frosted (Transparency on, ShellInterruption::ResolveFrost), the phone bars' blur. Its rows are positioned so they
+   paint above that child. At most two blurs in the wide frame: this strip and the composer strip. */
+.shell-body--wide .chat-header > .chat-search-bar,
+.shell-body--wide .chat-header > .chat-header-main,
+.shell-body--wide .chat-header > .chat-header-actions {
+  position: relative;
+}
+
+.shell-body--wide .shell-pane-row--frost .chat-header > .bar-material {
+  backdrop-filter: blur(20px);
+}
+
+/* A call bar or a banner between the header and the transcript covers what runs under it (colors.rcss.tmpl). */
+.shell-body--wide .chat-call-bar,
+.shell-body--wide .chat-gap-banner {
+  position: relative;
+  z-index: 1;
 }
 
 .shell-body--wide .chat-header-main {
@@ -510,6 +534,19 @@
 .shell-body--wide .messages {
   margin-bottom: 0;
   padding: 16dp 24dp 12dp 24dp;
+}
+
+/* The transcript runs up under the 64dp header strip (its top padding keeps the first bubble clear at rest) and down
+   under the composer strip: the end spacer (.composer-clear) follows the strip's height (ChatController::
+   KeepClearOfComposer), since the engine leaves a scroller's own bottom padding out of its scroll height. */
+.shell-body--wide .chat-messages-wrap .messages {
+  top: -64dp;
+  padding-top: 80dp;
+}
+
+.shell-body--wide .composer-clear {
+  display: block;
+  height: 96dp;
 }
 
 .shell-body--wide .message-row {
@@ -632,6 +669,25 @@
 }
 
 /* ---- Composer ---- */
+/* The composer strip (ShellLayoutRml::PaneSlot) floats over the conversation column's bottom edge, the transcript
+   running under it; its first child is the phone bars' material (.bar-material, frosted with Transparency on), the
+   mount paints above it. */
+.shell-body--wide .shell-pane-chat {
+  position: relative;
+}
+
+.shell-body--wide .shell-pane-composer-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.shell-body--wide .shell-pane-composer {
+  position: relative;
+}
+
 .shell-body--wide .shell-composer-mount {
   padding: 10dp 16dp 12dp 16dp;
   box-sizing: border-box;

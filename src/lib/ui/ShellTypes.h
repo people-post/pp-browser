@@ -40,13 +40,16 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** Which compact chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). */
+/** Which chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). The Wide* surfaces are the wide
+ *  layout's conversation column: its header strip (top) and its composer strip (bottom). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
   TransientHeader,
+  WidePaneHeader,
+  WideComposer,
 };
 
 /**

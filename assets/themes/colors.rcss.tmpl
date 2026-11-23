@@ -4463,6 +4463,22 @@ input.checkbox:checked {
   border-bottom-color: {{separator}};
 }
 
+/* The conversation's header strip is clear; its material child is the phone bar's colour (.bar-material: x-bar, solid
+   with Transparency off), see-through over the blur on a frosted row, as on the phone's chat bar. The composer strip's
+   material is the phone's own (.bar-material / .bar-material--frost). */
+.shell-body--wide .chat-panel .chat-header {
+  background-color: transparent;
+}
+
+.shell-body--wide .shell-pane-row--frost .chat-header > .bar-material {
+  background-color: {{x-bar-blur}};
+}
+
+/* What runs under the header strip stays under a banner. */
+.shell-body--wide .chat-gap-banner {
+  background-color: {{bg-grouped}};
+}
+
 .shell-body--wide .chat-header-call-btn,
 .shell-body--wide .chat-header-more-btn,
 .shell-body--wide .chat-header-search-btn {

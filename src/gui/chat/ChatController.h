@@ -108,9 +108,10 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
-  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
-   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
-  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Keeps `overlay`'s transcript end spacer, fade and "new messages" pill clear of its floating composer bar (the
+   *  element `mount_id` inside it), whatever the bar's height: the phone's #shell-chat-overlay, or the wide layout's
+   *  conversation column (#pane-chat, mount #pane-composer-chat). Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay, const char* mount_id = "shell-composer-mount");
   /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
   static constexpr float kComposerClearGapDp = 12.f;
   static constexpr float kJumpLatestGapDp = 16.f;

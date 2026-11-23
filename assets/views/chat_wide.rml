@@ -9,6 +9,10 @@
      data-class-chat-shell--e2e="thread_is_private"
      data-class-chat-panel--searching="search_open">
   <div class="chat-header">
+    <!-- The header strip's material, as on the phone's chat bar: the bar colour, see-through and blurred while the shell
+         row carries shell-pane-row--frost (Transparency on), solid otherwise. Childless: the engine blurs only such an
+         element; the transcript scrolls up under the strip (wide.rcss). -->
+    <div class="bar-material"></div>
     <!-- Search inside the chat, one row in the title row's place: box, "3 of 12", older (up) / newer (down), Cancel.
          Enter in the box steps to the next older hit. -->
     <div class="chat-search-bar" data-if="search_open" keep-focus="">
