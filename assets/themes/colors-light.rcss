@@ -4410,11 +4410,11 @@ input.checkbox:checked {
 }
 
 /* The floating composer panel (wide.rcss): the phone bar's colour as the panel, see-through at 62% over the blur on a
-   frosted row, solid (x-bar, from .bar-material) with Transparency off; a hairline and the blur-free stacked shadow lift
-   it off the messages in both. */
+   frosted row, solid (x-bar, from .bar-material) with Transparency off; a hairline and a faint, blur-free three-layer shadow
+   (mostly below it) lift it off the messages in both. */
 .shell-body--wide .shell-pane-composer-bar > .bar-material {
   border: 0.5dp #3c3c434a;
-  box-shadow: 0 3.9dp 0 0.85dp #00000005, 0 4.8dp 0 1.7dp #00000005, 0 5.7dp 0 2.55dp #00000005, 0 6.6dp 0 3.4dp #00000005, 0 7.5dp 0 4.25dp #00000005, 0 8.4dp 0 5.1dp #00000005, 0 9.3dp 0 5.95dp #00000005, 0 10.2dp 0 6.8dp #00000005, 0 11.1dp 0 7.65dp #00000005, 0 12dp 0 8.5dp #00000005, 0 12.9dp 0 9.35dp #00000005, 0 13.8dp 0 10.2dp #00000005, 0 14.7dp 0 11.05dp #00000005, 0 15.6dp 0 11.9dp #00000005, 0 16.5dp 0 12.75dp #00000005, 0 17.4dp 0 13.6dp #00000005;
+  box-shadow: 0 2dp 0 0.5dp #00000005, 0 3dp 0 1dp #00000005, 0 4dp 0 1.5dp #00000005;
 }
 
 .shell-body--wide .shell-pane-composer-bar > .bar-material--frost {
@@ -4512,10 +4512,6 @@ input.checkbox:checked {
 
 .shell-body--wide .chat-search-label {
   color: #3c3c434c;
-}
-
-.shell-body--wide .prompt-composer--wide .prompt-composer-hint {
-  color: #8e8e93;
 }
 
 .shell-body--wide .prompt-composer--wide .prompt-voice-live-pill {
