@@ -517,16 +517,18 @@ Stream-shaped relay response:
 
 Chat-shaped response (libp2p / documentation):
 
- "peer_identity_kind": "account",
- "peer_identity_value": "account:peer…",
- "channel": "e2e",
- "session_epoch": 1,
- "messages": [],
- "has_more": false,
- "cursor": {
- "next_min_sender_seq": null,
- "next_max_sender_seq": null
- }
+```json
+{
+  "peer_identity_kind": "account",
+  "peer_identity_value": "account:peer…",
+  "channel": "e2e",
+  "session_epoch": 1,
+  "messages": [],
+  "has_more": false,
+  "cursor": {
+    "next_min_sender_seq": null,
+    "next_max_sender_seq": null
+  }
 }
 ```
 
