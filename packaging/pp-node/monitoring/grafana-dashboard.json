@@ -8,6 +8,7 @@
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
+  "editable": true,
   "refresh": "1m",
   "time": {
     "from": "now-6h",
@@ -68,7 +69,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Overview",
+      "title": "Fleet",
       "id": 1,
       "collapsed": false,
       "gridPos": {
@@ -81,13 +82,13 @@
     },
     {
       "type": "stat",
-      "title": "Version",
+      "title": "Nodes up",
       "id": 2,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "pp_build_info: one per node, labelled with its version.",
+      "description": "Nodes whose /metrics reached the store in the last few minutes (pp_build_info present).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -97,21 +98,39 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "mappings": []
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       },
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
-          "fields": "",
+          "fields": "/^Value$/",
           "values": false
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
@@ -119,8 +138,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (host_name, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"})",
-          "legendFormat": "{{host_name}} {{version}}",
+          "expr": "count(max by (host_name, deployment_environment) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"})) or vector(0)",
+          "legendFormat": "",
           "refId": "A",
           "instant": true
         }
@@ -128,13 +147,13 @@
     },
     {
       "type": "stat",
-      "title": "Uptime",
+      "title": "Nodes down",
       "id": 3,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "",
+      "description": "Nodes seen in the last 24 h whose /metrics no longer arrive: stopped, or their collector is.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -143,22 +162,44 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "mappings": []
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
-          "fields": "",
+          "fields": "/^Value$/",
           "values": false
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
@@ -166,8 +207,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "pp_process_uptime_seconds{deployment_environment=~\"$env\",host_name=~\"$host\"}",
-          "legendFormat": "{{host_name}}",
+          "expr": "count(max by (host_name, deployment_environment) (max_over_time(pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}[1d])) unless max by (host_name, deployment_environment) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"})) or vector(0)",
+          "legendFormat": "",
           "refId": "A",
           "instant": true
         }
@@ -175,13 +216,13 @@
     },
     {
       "type": "stat",
-      "title": "Reachability",
+      "title": "Directory heartbeat failing",
       "id": 4,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "The node's current reachability verdict (pp_reachability_status == 1).",
+      "description": "Nodes with the heartbeat on (opt-in, org seeds) whose last success is over 10 min old. A node with the heartbeat off is not counted; liveness is Nodes up / down.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -191,21 +232,43 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "mappings": []
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
-          "fields": "",
+          "fields": "/^Value$/",
           "values": false
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
@@ -213,8 +276,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (host_name, status) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\"} == 1)",
-          "legendFormat": "{{host_name}} {{status}}",
+          "expr": "count(time() - pp_node_heartbeat_last_success_timestamp_seconds{deployment_environment=~\"$env\",host_name=~\"$host\"} > 600) or vector(0)",
+          "legendFormat": "",
           "refId": "A",
           "instant": true
         }
@@ -222,13 +285,13 @@
     },
     {
       "type": "stat",
-      "title": "Serving",
+      "title": "Not reachable",
       "id": 5,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Capabilities the node is serving (circuit_relay, media_relay, dht).",
+      "description": "Nodes whose reachability verdict is blocked or outbound only: others cannot dial them.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -238,21 +301,43 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "mappings": []
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
+      "transformations": [
+        {
+          "id": "seriesToRows",
+          "options": {}
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
-            "lastNotNull"
+            "sum"
           ],
-          "fields": "",
+          "fields": "/^Value$/",
           "values": false
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value_and_name"
+        "textMode": "value"
       },
       "targets": [
         {
@@ -260,30 +345,456 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (host_name, service) (pp_node_capability{deployment_environment=~\"$env\",host_name=~\"$host\"} == 1)",
-          "legendFormat": "{{host_name}} {{service}}",
+          "expr": "count(pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=~\"blocked|outbound_only\"} == 1) or vector(0)",
+          "legendFormat": "",
           "refId": "A",
           "instant": true
         }
       ]
     },
     {
-      "type": "row",
-      "title": "Process",
+      "type": "table",
+      "title": "Node versions",
       "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "How many nodes run each version, per environment.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "deployment_environment": "Environment",
+              "version": "Version",
+              "Value": "Nodes"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count by (version, deployment_environment) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Machine CPU",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Whole machine (hostmetrics): the share of CPU time not idle.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - avg by (host_name) (rate(system_cpu_time_seconds_total{deployment_environment=~\"$env\",host_name=~\"$host\",state=\"idle\"}[$__rate_interval])) / avg by (host_name) (system_cpu_logical_count{deployment_environment=~\"$env\",host_name=~\"$host\"})",
+          "legendFormat": "{{host_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Nodes",
+      "id": 8,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 13
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Nodes",
+      "id": 9,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "One row per node: its environment and version (pp_build_info), uptime, reachability verdict (pp_reachability_status) and the services it is serving (pp_node_capability). Sort or filter by any column.",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uptime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Reachability"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "unknown",
+                        "color": "text",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "checking",
+                        "color": "blue",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "reachable",
+                        "color": "green",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "outbound only",
+                        "color": "yellow",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "blocked",
+                        "color": "red",
+                        "index": 4
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Circuit relay"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "\u2713",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "\u2013",
+                        "color": "text",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Media relay"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "\u2713",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "\u2013",
+                        "color": "text",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DHT"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "\u2713",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "0": {
+                        "text": "\u2013",
+                        "color": "text",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Node",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "joinByLabels",
+          "options": {
+            "value": "col",
+            "join": [
+              "host_name",
+              "deployment_environment",
+              "version"
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "host_name": "Node",
+              "deployment_environment": "Environment",
+              "version": "Version",
+              "uptime": "Uptime",
+              "reach": "Reachability",
+              "circuit_relay": "Circuit relay",
+              "media_relay": "Media relay",
+              "dht": "DHT"
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "uptime",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "",
+          "expr": "label_replace((max by (host_name) (pp_process_uptime_seconds{deployment_environment=~\"$env\",host_name=~\"$host\"})) * on (host_name) group_left (deployment_environment, version) max by (host_name, deployment_environment, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}), \"col\", \"uptime\", \"\", \"\")"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "reach",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "",
+          "expr": "label_replace(((max by (host_name) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=\"unknown\"} == 1) * 0 + 0) or (max by (host_name) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=\"checking\"} == 1) * 0 + 1) or (max by (host_name) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=\"reachable\"} == 1) * 0 + 2) or (max by (host_name) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=\"outbound_only\"} == 1) * 0 + 3) or (max by (host_name) (pp_reachability_status{deployment_environment=~\"$env\",host_name=~\"$host\",status=\"blocked\"} == 1) * 0 + 4)) * on (host_name) group_left (deployment_environment, version) max by (host_name, deployment_environment, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}), \"col\", \"reach\", \"\", \"\")"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "circuit_relay",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "",
+          "expr": "label_replace((max by (host_name) (pp_node_capability{deployment_environment=~\"$env\",host_name=~\"$host\",service=\"circuit_relay\"})) * on (host_name) group_left (deployment_environment, version) max by (host_name, deployment_environment, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}), \"col\", \"circuit_relay\", \"\", \"\")"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "media_relay",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "",
+          "expr": "label_replace((max by (host_name) (pp_node_capability{deployment_environment=~\"$env\",host_name=~\"$host\",service=\"media_relay\"})) * on (host_name) group_left (deployment_environment, version) max by (host_name, deployment_environment, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}), \"col\", \"media_relay\", \"\", \"\")"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "dht",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "legendFormat": "",
+          "expr": "label_replace((max by (host_name) (pp_node_capability{deployment_environment=~\"$env\",host_name=~\"$host\",service=\"dht\"})) * on (host_name) group_left (deployment_environment, version) max by (host_name, deployment_environment, version) (pp_build_info{deployment_environment=~\"$env\",host_name=~\"$host\"}), \"col\", \"dht\", \"\", \"\")"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Process",
+      "id": 10,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "pp-node memory (RSS)",
-      "id": 7,
+      "id": 11,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -293,7 +804,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 6
+        "y": 25
       },
       "fieldConfig": {
         "defaults": {
@@ -333,7 +844,7 @@
     {
       "type": "timeseries",
       "title": "pp-node CPU",
-      "id": 8,
+      "id": 12,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -343,7 +854,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 6
+        "y": 25
       },
       "fieldConfig": {
         "defaults": {
@@ -383,7 +894,7 @@
     {
       "type": "timeseries",
       "title": "Threads / open fds",
-      "id": 9,
+      "id": 13,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -393,7 +904,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 6
+        "y": 25
       },
       "fieldConfig": {
         "defaults": {
@@ -442,7 +953,7 @@
     {
       "type": "timeseries",
       "title": "Machine memory used",
-      "id": 10,
+      "id": 14,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -452,7 +963,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -501,7 +1012,7 @@
     {
       "type": "timeseries",
       "title": "Container memory",
-      "id": 11,
+      "id": 15,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -511,7 +1022,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -549,22 +1060,122 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "Machine memory used (share)",
+      "id": 16,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Whole machine (hostmetrics): used memory as a share of installed RAM.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "system_memory_utilization_ratio{deployment_environment=~\"$env\",host_name=~\"$host\",state=\"used\"}",
+          "legendFormat": "{{host_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU (cores)",
+      "id": 17,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "docker_stats: CPU per container on the node, in cores.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: cores",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (host_name, container_name) (rate(container_cpu_usage_nanoseconds_total{deployment_environment=~\"$env\",host_name=~\"$host\"}[$__rate_interval])) / 1e9",
+          "legendFormat": "{{host_name}} {{container_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Mesh",
-      "id": 12,
+      "id": 18,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 49
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Links",
-      "id": 13,
+      "id": 19,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -574,7 +1185,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 23
+        "y": 50
       },
       "fieldConfig": {
         "defaults": {
@@ -614,7 +1225,7 @@
     {
       "type": "timeseries",
       "title": "Open channels by protocol",
-      "id": 14,
+      "id": 20,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -624,7 +1235,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 23
+        "y": 50
       },
       "fieldConfig": {
         "defaults": {
@@ -664,7 +1275,7 @@
     {
       "type": "timeseries",
       "title": "Link connects / drops",
-      "id": 15,
+      "id": 21,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -674,7 +1285,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 23
+        "y": 50
       },
       "fieldConfig": {
         "defaults": {
@@ -723,20 +1334,20 @@
     {
       "type": "row",
       "title": "Traffic",
-      "id": 16,
+      "id": 22,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 58
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Amp bytes",
-      "id": 17,
+      "id": 23,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -746,7 +1357,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 32
+        "y": 59
       },
       "fieldConfig": {
         "defaults": {
@@ -786,7 +1397,7 @@
     {
       "type": "timeseries",
       "title": "Reliable packets: retransmitted / lost",
-      "id": 18,
+      "id": 24,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -796,7 +1407,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 32
+        "y": 59
       },
       "fieldConfig": {
         "defaults": {
@@ -845,7 +1456,7 @@
     {
       "type": "timeseries",
       "title": "RTT p50 / p95",
-      "id": 19,
+      "id": 25,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -855,7 +1466,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 32
+        "y": 59
       },
       "fieldConfig": {
         "defaults": {
@@ -904,20 +1515,20 @@
     {
       "type": "row",
       "title": "Relays",
-      "id": 20,
+      "id": 26,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 67
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Media relay",
-      "id": 21,
+      "id": 27,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -927,7 +1538,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 41
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -976,7 +1587,7 @@
     {
       "type": "timeseries",
       "title": "Media relay frames",
-      "id": 22,
+      "id": 28,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -986,7 +1597,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 41
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1035,7 +1646,7 @@
     {
       "type": "timeseries",
       "title": "Circuit relay",
-      "id": 23,
+      "id": 29,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1045,7 +1656,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 41
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -1094,7 +1705,7 @@
     {
       "type": "timeseries",
       "title": "Relay bytes",
-      "id": 24,
+      "id": 30,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1104,7 +1715,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 49
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
@@ -1153,7 +1764,7 @@
     {
       "type": "timeseries",
       "title": "Relay requests",
-      "id": 25,
+      "id": 31,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1163,7 +1774,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 49
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
@@ -1212,20 +1823,20 @@
     {
       "type": "row",
       "title": "Runtime",
-      "id": 26,
+      "id": 32,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 84
       },
       "panels": []
     },
     {
       "type": "timeseries",
       "title": "Owner-thread queue depth",
-      "id": 27,
+      "id": 33,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1235,7 +1846,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 58
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -1275,7 +1886,7 @@
     {
       "type": "timeseries",
       "title": "Task wait p95",
-      "id": 28,
+      "id": 34,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1285,7 +1896,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 58
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -1325,7 +1936,7 @@
     {
       "type": "timeseries",
       "title": "DHT",
-      "id": 29,
+      "id": 35,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1335,7 +1946,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 58
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
