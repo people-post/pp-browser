@@ -11,6 +11,7 @@ label-2	#3c3c4399	#ebebf599	§2.2
 label-3	#3c3c434c	#ebebf54c	§2.2
 label-on-accent	#ffffff	#ffffff	§2.2
 link	#007aff	#0a84ff	§2.2 = accent
+x-link-out-pressed	#ffffffb3	#ffffffb3	extra: a link / @mention in our own (blue) bubble while pressed or hovered (white 70%)
 accent	#007aff	#0a84ff	§2.3
 accent-tint	#007aff1f	#0a84ff2e	§2.3
 secure	#30b0c7	#40c8e0	§2.3

@@ -29,6 +29,8 @@ PAIRS = (
     # group sender names on a received bubble (light variants are darkened avatar colours; dark is the avatar colour)
     + [(f"x-name-{n}", "bubble-in", 3.0) for n in (0, 1, 2, 3, 4, 5, 7)]
     + [("x-vbar-ink-armed", "x-vbar-armed", 4.5), ("x-vbar-ink-armed", "bg-card", 4.5)]
+    # links in a bubble: ours are white on the own bubble (underlined), a received one's is the link blue on bubble-in
+    + [("label-on-accent", "bubble-out", 3.0), ("link", "bubble-in", 3.0)]
     + [("x-name-indigo", "bubble-in", 3.0)]  # dark only; light indigo is avatar-6 (5.65:1, not a token pair)
 )
 

@@ -405,6 +405,16 @@ select selectbox option:hover {
   color: #007aff;
 }
 
+/* In our own (blue) bubble the link is blue on blue: it takes the bubble's white and keeps its underline; pressed / hovered
+   it dims (colour alpha: the engine has no :not() or variables, so each state is spelled out). */
+.bubble-user .chat-link {
+  color: #ffffff;
+}
+
+.bubble-user .chat-link:hover, .bubble-user .chat-link:active {
+  color: #ffffffb3;
+}
+
 .chat-mention {
   color: #5856d6;
   background-color: #007aff1f;
@@ -414,6 +424,10 @@ select selectbox option:hover {
 .bubble-user .chat-mention {
   color: #ffffff;
   background-color: #ffffff33;
+}
+
+.bubble-user .chat-mention:hover, .bubble-user .chat-mention:active {
+  color: #ffffffb3;
 }
 
 /* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
