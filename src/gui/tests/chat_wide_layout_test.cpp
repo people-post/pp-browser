@@ -1082,10 +1082,12 @@ TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheDeviceRemovedNoticeAboveTheOthe
 }
 
 // The news reader on the wide window (news_reader_wide.rml): a panel centred over the conversation in the shell's
-// frame, 720dp at most, title on top, a scrolling body, then one bar with "Open original" and Previous / Next. The
-// phone's sheet view is untouched, and a news link hovers on the wide layout only.
+// frame, 720dp at most, title on top (a translated digest's "AI translation of the original" line under it), a
+// scrolling body, then one bar with "Open original" and Previous / Next. The phone's sheet view is untouched, and a news
+// link hovers on the wide layout only.
 TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
   state.news_reader_title = "Chip makers brace for new export rules";
+  state.news_reader_translated = true;
   state.news_reader_body_rml = "<p>The digest.</p>";
   state.news_reader_has_nav = true;
   state.news_reader_can_prev = false;
@@ -1095,9 +1097,10 @@ TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
   const std::string phone = ViewCatalog::LoadBody("news_reader");
   EXPECT_NE(phone.find("sheet-header"), std::string::npos) << "the phone's sheet view as it was";
   const std::string wide = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("news_reader", true));
-  for (const char* binding : {"news_reader_prev()", "news_reader_next()", "news_reader_open_original()",
-                              "news_reader_loading", "news_reader_failed", "news_reader_body_rml",
-                              "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
+  for (const char* binding :
+       {"news_reader_prev()", "news_reader_next()", "news_reader_open_original()", "news_reader_translated",
+        "news_reader_loading", "news_reader_failed", "news_reader_body_rml", "news_reader_has_nav",
+        "news_reader_can_prev", "news_reader_can_next"}) {
     EXPECT_NE(wide.find(binding), std::string::npos) << binding;
   }
   for (const int window : {768, 1280}) {
@@ -1129,6 +1132,12 @@ TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
     ASSERT_NE(scroll, nullptr);
     EXPECT_GE(BoxOf(title).top, frame.top);
     EXPECT_LE(BoxOf(title).right, frame.right - 36.f + 0.5f) << "clear of the close button";
+    ui::Element* translated = First("news-reader-translated");
+    ASSERT_NE(translated, nullptr);
+    EXPECT_TRUE(translated->IsVisible()) << "a translated digest says so";
+    EXPECT_GT(BoxOf(translated).H(), 10.f);
+    EXPECT_GE(BoxOf(translated).top, BoxOf(title).bottom - 6.5f) << "under the title";
+    EXPECT_LE(BoxOf(translated).bottom, BoxOf(First("news-reader-body")).top + 0.5f) << "above the digest";
     ui::Element* bar = First("news-reader-bar--wide");
     ASSERT_NE(bar, nullptr);
     EXPECT_GE(BoxOf(bar).top, BoxOf(scroll).bottom - 0.5f) << "the bar under the scrolling body";
@@ -1163,6 +1172,20 @@ TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
   document->Show();
   context->Update();
   EXPECT_GT(BoxOf(First("news-reader-spin")).H(), 0.f);
+  // The digest grows as it is written (ChatController redraws the same binding): the panel shows each longer text.
+  state.news_reader_loading = false;
+  DataModelHost::Instance().Dirty("chat", "news_reader_loading");
+  for (const char* so_far : {"The first", "The first words, then more of them."}) {
+    state.news_reader_body_rml = std::string("<p>") + so_far + "</p>";
+    DataModelHost::Instance().Dirty("chat", "news_reader_body_rml");
+    context->Update();
+    context->Update();
+    EXPECT_NE(std::string(First("news-reader-body")->GetInnerRML().c_str()).find(so_far), std::string::npos) << so_far;
+  }
+  state.news_reader_translated = false;
+  DataModelHost::Instance().Dirty("chat", "news_reader_translated");
+  context->Update();
+  EXPECT_FALSE(First("news-reader-translated")->IsVisible()) << "an untranslated digest: no line";
   document->Close();
 }
 
