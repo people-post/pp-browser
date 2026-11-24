@@ -175,20 +175,20 @@ jobs:
         run: |
           set +e
           docker start pp-app-lab-gw-a-1 pp-app-lab-user-a-1 >/dev/null 2>&1; sleep 3
-          G="docker exec pp-app-lab-gw-a-1 sh -c"
           U="docker exec pp-app-lab-user-a-1 sh -c"
-          echo "== host iptables-save (docker rules)"; iptables-save 2>&1 | grep -v "^#" | head -90
-          echo "== host nft"; (nft list ruleset 2>&1 | head -80) || true
-          echo "== gw sysctl/route"; $G 'sysctl net.ipv4.conf.all.rp_filter net.ipv4.conf.eth0.rp_filter net.ipv4.conf.eth1.rp_filter net.ipv4.ip_forward; ip route get 198.51.100.20 from 10.119.1.10 iif eth1; ip neigh'
-          echo "== user view"; $U 'ip neigh; ip addr show eth0'
-          echo "== install tcpdump in gw"; $G 'apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq tcpdump >/dev/null 2>&1; which tcpdump'
-          docker exec -d pp-app-lab-gw-a-1 sh -c 'timeout 8 tcpdump -ni any -c 40 icmp > /tmp/dump.txt 2>&1'
-          sleep 2
-          echo "== user ping gw-side addr"; $U 'ping -c1 -W2 198.51.100.11' | tail -2
-          echo "== user ping relay"; $U 'ping -c3 -W1 198.51.100.20' | tail -3
-          sleep 6
-          echo "== tcpdump on gw"; $G 'cat /tmp/dump.txt'
-          echo "== gw counters"; $G 'iptables -L FORWARD -v -n; iptables -t nat -L POSTROUTING -v -n; ip -s link show eth1 | head -6'
+          P='ping -c2 -W1 198.51.100.20 | tail -2'
+          echo "== kernel"; uname -r; ls /proc/sys/net/bridge 2>&1; lsmod 2>/dev/null | grep -i br_netfilter
+          echo "== bridge-nf-call-iptables"; cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>&1
+          echo "== DOCKER-INTERNAL before"; iptables -L DOCKER-INTERNAL -v -n 2>&1
+          echo "== ping 1 (as is)"; $U "$P"
+          echo "== DOCKER-INTERNAL after"; iptables -L DOCKER-INTERNAL -v -n 2>&1
+          echo "== fix A: bridge-nf-call-iptables=0"; echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>&1
+          $U "$P"
+          echo "== restore =1, fix B: DOCKER-USER accept"; echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>&1
+          iptables -I DOCKER-USER -j ACCEPT 2>&1
+          $U "$P"
+          echo "== DOCKER-INTERNAL final"; iptables -L DOCKER-INTERNAL -v -n 2>&1 | head -8
+          iptables -D DOCKER-USER -j ACCEPT 2>&1
 
       - uses: actions/upload-artifact@v7
         if: always()
