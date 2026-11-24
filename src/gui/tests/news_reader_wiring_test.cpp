@@ -51,6 +51,28 @@ TEST(NewsReaderWiringTest, TheSheetClosesOnLockSignOutDeleteAndClear) {
   }
 }
 
+// The desktop reader is modal (PaneSpec::modal): it registers as THE modal flow (Escape / Back), is refused while another
+// modal flow holds the slot, takes the keyboard (Tab stays in its panel) and reaches its scrim over the whole window.
+TEST(NewsReaderWiringTest, TheReaderIsAModalPanelThatIsRefusedWhileAnotherModalFlowIsUp) {
+  const std::string open = Body(kController, "void ChatController::OpenNewsReader(");
+  EXPECT_NE(open.find("spec.modal = true;"), std::string::npos);
+  const size_t refused = open.find("flow_coordinator_.is_modal_active()");
+  ASSERT_NE(refused, std::string::npos) << "a second modal panel would take Escape from the first";
+  EXPECT_LT(refused, open.find("ShowNewsItem(index);")) << "refused before a read starts";
+  EXPECT_NE(open.find("flow_coordinator_.begin_modal(news_reader_layer_"), std::string::npos);
+  EXPECT_NE(Body(kController, "void ChatController::RegisterNewsReaderKeys(").find("KI_TAB"), std::string::npos);
+  const std::string setup = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  EXPECT_NE(setup.find("RegisterMentionPickerKeys();\n  RegisterNewsReaderKeys();"), std::string::npos);
+  const std::string app = ReadFile(std::string(PP_SOURCE_DIR) + "/src/app/Application.cpp");
+  EXPECT_NE(app.find("flow_ports.is_modal_active = [this]() { return flow_->IsActive(); };"), std::string::npos);
+  // The scrim and the stage reach out of #shell-root over the title bar strip and the status bar.
+  const std::string host = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/shell/ShellHost.cpp");
+  EXPECT_NE(host.find("\"shell-modal-scrim-\", \"shell-modal-stage-\""), std::string::npos);
+  EXPECT_NE(host.find("set_dp(element, \"top\", -layout.content_top_dp);"), std::string::npos);
+  EXPECT_NE(host.find("set_dp(element, \"bottom\", -root_bottom_dp);"), std::string::npos);
+  EXPECT_NE(host.find("if (spec.modal && context_)"), std::string::npos) << "the focus leaves the composer";
+}
+
 TEST(NewsReaderWiringTest, TheEndOfAReadReachesTheReaderAndTheList) {
   EXPECT_NE(Body(kController, "void ChatController::OnAgentTurnEnded(").find("OnNewsReadEnded(thread_id)"),
             std::string::npos);

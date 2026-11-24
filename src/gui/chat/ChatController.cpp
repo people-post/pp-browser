@@ -5229,6 +5229,9 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::str
   if (!messaging_ready_ || !facade_ || !shell_navigation_.push_layer) {
     return;
   }
+  if (news_reader_layer_ < 0 && flow_coordinator_.is_modal_active && flow_coordinator_.is_modal_active()) {
+    return; // another modal panel holds the modal slot (Escape / Back): the reader waits for it to close
+  }
   NewsReaderOpen reader;
   reader.thread_id = thread_id;
   for (const MarkdownLink& item : NewsItemsOf(links)) {
@@ -5255,6 +5258,7 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::str
   spec.key = "news_reader";
   spec.rml_path = "news_reader"; // a key, so the wide window mounts news_reader_wide
   spec.page_sheet = true;
+  spec.modal = true; // the desktop panel blocks the whole window (phones: the page sheet above)
   news_reader_layer_ = shell_navigation_.push_layer(spec);
   if (news_reader_layer_ < 0) {
     news_reader_.reset(); // no sheet: a read that started goes on and is stored, the reader state goes
@@ -5764,6 +5768,56 @@ void ChatController::SendWithMentions(const std::string& thread_id, const std::s
   }
   DirtyChatChrome();
   SyncDisplayFromThread();
+}
+
+void ChatController::RegisterNewsReaderKeys() {
+  if (!input_) {
+    return;
+  }
+  // The desktop reader is modal: Tab and Shift+Tab cycle through its buttons, never out to the page behind it.
+  for (const bool backwards : {false, true}) {
+    input_->Register(KeyBinding{
+        .key = ui::Input::KI_TAB,
+        .required_modifiers = backwards ? ui::Input::KM_SHIFT : 0,
+        .forbidden_modifiers = backwards ? 0 : ui::Input::KM_SHIFT,
+        .when = [this](ui::Context*) { return news_reader_layer_ >= 0; },
+        .action = [this, backwards]() { return !CycleNewsReaderFocus(backwards); },
+        .priority = 80, // before the mention picker's Tab and the page's own tabbing
+    });
+  }
+}
+
+bool ChatController::CycleNewsReaderFocus(const bool backwards) {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return false;
+  }
+  ui::ElementList found;
+  context_->GetDocument(0)->QuerySelectorAll(found, ".shell-frame--news_reader button");
+  std::vector<ui::Element*> buttons;
+  for (ui::Element* button : found) {
+    if (button->IsVisible(true)) {
+      buttons.push_back(button);
+    }
+  }
+  if (buttons.empty()) {
+    return false; // the phone's sheet: its page tabs as before
+  }
+  size_t at = buttons.size(); // none of the panel's buttons has the focus
+  for (ui::Element* focus = context_->GetFocusElement(); focus && at == buttons.size();
+       focus = focus->GetParentNode()) {
+    const auto it = std::find(buttons.begin(), buttons.end(), focus);
+    if (it != buttons.end()) {
+      at = static_cast<size_t>(it - buttons.begin());
+    }
+  }
+  size_t next = 0;
+  if (at == buttons.size()) {
+    next = backwards ? buttons.size() - 1 : 0;
+  } else {
+    next = backwards ? (at + buttons.size() - 1) % buttons.size() : (at + 1) % buttons.size();
+  }
+  buttons[next]->Focus();
+  return true;
 }
 
 void ChatController::RegisterMentionPickerKeys() {
@@ -7107,6 +7161,7 @@ bool ChatController::Setup(ui::Context* context) {
     });
   }
   RegisterMentionPickerKeys();
+  RegisterNewsReaderKeys();
   // Enter in the chat's search box: the next older hit (the query just typed is searched first).
   for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
     if (!input_) {

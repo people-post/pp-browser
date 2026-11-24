@@ -2236,6 +2236,7 @@ void Application::WireUnlockPinAndFlow() {
     };
     flow_ports.end_modal = [this]() { flow_->EndModal(); };
     flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
+    flow_ports.is_modal_active = [this]() { return flow_->IsActive(); };
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);

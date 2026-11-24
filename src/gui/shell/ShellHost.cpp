@@ -1030,6 +1030,7 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.page_sheet = spec.page_sheet;
   entry.full_screen = spec.full_screen;
   entry.sheet_detent = spec.sheet_detent;
+  entry.modal = spec.modal;
   if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
     sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
   }
@@ -1038,6 +1039,13 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
     saved_focus_id_ = spec.return_focus_id.c_str();
   } else {
     SaveFocus();
+  }
+  if (spec.modal && context_) {
+    // A modal panel takes the keyboard: whatever was typing behind it (the composer) stops receiving keys. The focus
+    // saved above comes back when the layer closes.
+    if (ui::Element* focus = context_->GetFocusElement()) {
+      focus->Blur();
+    }
   }
   RequestSyncLayout();
   return state_.overlay_stack.back().id;
@@ -2301,10 +2309,15 @@ void ShellHost::ApplySafeAreaLayout() {
   // The AI Home does not follow the keyboard / emoji sheet (TODO #204): it stays where it is and they just cover its
   // lower part (the chips); see HomeDockLift. Every other page keeps the full lift.
   const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
-  set_dp(doc->GetElementById("shell-root"), "bottom",
-         statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
+  const float root_bottom_dp =
+      statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp);
+  set_dp(doc->GetElementById("shell-root"), "bottom", root_bottom_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
+  // A modal desktop panel is up: the status bar drops under its window-wide scrim (wide.rcss, .shell-body--modal).
+  doc->SetClass("shell-body--modal", state_.layout_mode == LayoutMode::Expanded &&
+                                         std::any_of(state_.overlay_stack.begin(), state_.overlay_stack.end(),
+                                                     [](const OverlayEntry& overlay) { return overlay.modal; }));
   if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
     // The strip takes the colour of the page under it, so the inset does not end in a line: the Home root's dock, the
     // grouped Me page, New chat's grouped page, Add contact's bar (one rule each, colors.rcss.tmpl). Anything else (the
@@ -2409,6 +2422,16 @@ void ShellHost::ApplySafeAreaLayout() {
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
   const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.modal && state_.layout_mode == LayoutMode::Expanded) {
+      // A modal desktop panel covers the whole window: its scrim and the stage that centres the frame reach out of
+      // #shell-root (the engine's `fixed` is relative to the nearest positioned ancestor) over the title bar's strip and
+      // the status bar. The window buttons of the title bar sit above them (z-index).
+      for (const char* part : {"shell-modal-scrim-", "shell-modal-stage-"}) {
+        ui::Element* element = doc->GetElementById((part + std::to_string(overlay.id)).c_str());
+        set_dp(element, "top", -layout.content_top_dp);
+        set_dp(element, "bottom", -root_bottom_dp);
+      }
+    }
     if (overlay.full_screen) {
       // Edge to edge: the layer reaches up under the status bar (#shell-root starts below it; a narrow desktop
       // window's own title bar stays uncovered) and down to the screen bottom; its body keeps the view's controls

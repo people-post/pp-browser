@@ -162,6 +162,12 @@ struct PaneSpec {
   bool full_screen = false;
   /** A phone page sheet's first stop (the reaction emoji picker opens at Small, about a third of the screen). */
   SheetDetent sheet_detent = SheetDetent::Large;
+  /**
+   * PushLayer on the desktop: a modal panel. The dimmed scrim covers the whole window (the status bar too, not just the
+   * shell's content area), the panel is centred in the window, and the focus leaves what was under it. Phones and
+   * layers that are page sheets are unchanged.
+   */
+  bool modal = false;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
@@ -191,6 +197,8 @@ struct OverlayEntry {
   SheetDetent sheet_detent = SheetDetent::Large;
   /** PaneSpec::full_screen: edge to edge on phones. */
   bool full_screen = false;
+  /** PaneSpec::modal: the desktop panel that blocks the whole window. */
+  bool modal = false;
 };
 
 struct ToastEntry {

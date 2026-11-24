@@ -1081,8 +1081,8 @@ TEST_F(ChatWideLayoutTest, TheChatsColumnShowsTheDeviceRemovedNoticeAboveTheOthe
   EXPECT_EQ(cards[0]->GetComputedValues().background_color(), cards[1]->GetComputedValues().background_color());
 }
 
-// The news reader on the wide window (news_reader_wide.rml): a panel centred over the conversation in the shell's
-// frame, 720dp at most, title on top (a translated digest's "AI translation of the original" line under it), a
+// The news reader on the wide window (news_reader_wide.rml): a modal panel centred in the window in the shell's
+// frame (the stage of ShellLayoutRml::Overlays; NewsReaderModalTest covers the scrim and the hits), 720dp at most, title on top (a translated digest's "AI translation of the original" line under it), a
 // scrolling body, then one bar with "Open original" and Previous / Next. The phone's sheet view is untouched, and a news
 // link hovers on the wide layout only.
 TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
@@ -1111,10 +1111,11 @@ TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
         "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
         "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
         std::to_string(window) +
-        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-overlay\" style=\"position: absolute; top: 0; left: "
-        "0; right: 0; bottom: 0;\"><div class=\"shell-scrim\"></div>"
+        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-overlay shell-layer-modal\" style=\"position: "
+        "absolute; "
+        "top: 0; left: 0; right: 0; bottom: 0;\"><div class=\"shell-scrim\"></div><div class=\"shell-modal-stage\">"
         "<div id=\"frame\" class=\"shell-frame shell-frame--news_reader\"><div class=\"shell-overlay-body\">" +
-        wide + "</div></div></div></div></body></rml>";
+        wide + "</div></div></div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr);
     document->Show();

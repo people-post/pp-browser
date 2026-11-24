@@ -802,6 +802,10 @@ private:
                         std::vector<TextSpan> spans);
   /** Enter / Tab choose the `@` picker's first line while it is open over the composer. */
   void RegisterMentionPickerKeys();
+  /** Tab / Shift+Tab stay inside the modal desktop news reader. */
+  void RegisterNewsReaderKeys();
+  /** Moves the focus to the next (previous) button of the reader panel; false when there is no such panel. */
+  bool CycleNewsReaderFocus(bool backwards);
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();

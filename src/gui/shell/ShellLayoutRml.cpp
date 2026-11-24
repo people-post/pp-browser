@@ -391,14 +391,27 @@ std::string ShellLayoutRml::Overlays() const {
       out << "</div></div>";
       continue;
     }
-    out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
-    out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
+    // A modal desktop panel (PaneSpec::modal): the scrim covers the whole window (over the rail, the lists, the status
+    // bar; ShellHost::ApplySafeAreaLayout reaches both it and the stage out of #shell-root), and the frame sits in a
+    // stage that centres it in the window; clicks pass the stage to the scrim.
+    const bool modal = overlay.modal && state_.layout_mode == LayoutMode::Expanded;
+    out << "<div class=\"shell-layer shell-layer-overlay" << (modal ? " shell-layer-modal" : "")
+        << "\" data-model=\"window\">";
+    out << "<div class=\"shell-scrim\"" << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
+        << " data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
+    if (modal) {
+      out << "<div class=\"shell-modal-stage\" id=\"shell-modal-stage-" << overlay.id << "\">";
+    }
     out << "<div class=\"shell-frame shell-frame--" << overlay.key << "\">";
     out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";
     out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
     out << "</button>";
     out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
-    out << "</div></div>";
+    out << "</div>";
+    if (modal) {
+      out << "</div>";
+    }
+    out << "</div>";
   }
   return out.str();
 }

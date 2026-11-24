@@ -2918,40 +2918,93 @@
   border-radius: 22dp;
 }
 
-/* ---- The news reader (news_reader_wide.rml): a panel centred over the conversation, 720dp wide at most (the wide
-   window is 768dp or more), in the shell's frame. The title and digest scroll; the bar stays at the bottom. ---- */
-.shell-body--wide .shell-frame--news_reader {
-  top: 6%;
-  bottom: 6%;
-  left: 50%;
-  right: auto;
-  width: 720dp;
-  margin-left: -360dp;
-  padding: 0;
-  border-radius: 16dp;
+/* ---- Modal panels on the desktop (PaneSpec::modal; ShellLayoutRml::Overlays): the scrim is fixed to the whole window,
+   over the rail, the lists, the transcript and the status bar (which drops under it, .shell-body--modal), and swallows
+   clicks, the wheel and hover; the stage centres the frame in the window, 48dp clear of every edge (the frame takes the
+   stage's full height: the engine does not shrink nested flex boxes under a content-sized parent, so a definite height
+   keeps the header and the bar fixed and the body scrolling). The engine's
+   `fixed` is relative to the nearest positioned ancestor (#shell-root, inset by the title bar and the status bar), so
+   ShellHost sets the scrim's and the stage's top / bottom to minus those insets. The frame is the
+   shell's own (radius 16, the stacked shadow, the close button at the top right), as the send-preview page's. ---- */
+.shell-body--wide .shell-layer-modal .shell-scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
+.shell-body--wide.shell-body--modal .shell-statusbar {
+  z-index: 40;
+}
+
+.shell-body--wide .shell-modal-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding: 48dp;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-modal-stage .shell-frame {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  flex: 0 1 720dp;
+  min-width: 0;
+  max-width: 720dp;
+  height: 100%;
+  padding: 0;
+  border-radius: 16dp;
+  pointer-events: auto;
+}
+
+/* ---- The news reader (news_reader_wide.rml): the modal frame above, 720dp wide at most and the window less 96dp (the
+   wide window is 768dp or more). The header (the title, three lines at most) and the bar stay; the digest scrolls. ---- */
 .shell-body--wide .news-reader--wide {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   box-sizing: border-box;
+}
+
+/* The title keeps clear of the frame's close button. */
+.shell-body--wide .news-reader-head--wide {
+  flex-shrink: 0;
+  padding: 24dp 64dp 4dp 32dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .news-reader--wide .news-reader-title {
+  max-height: 78dp;
+  margin: 0 0 12dp 0;
+  overflow: hidden;
+}
+
+.shell-body--wide .news-reader--wide .news-reader-translated {
+  margin: -4dp 0 8dp 0;
 }
 
 .shell-body--wide .news-reader-scroll--wide {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 28dp 32dp 16dp 32dp;
+  padding: 4dp 32dp 16dp 32dp;
   box-sizing: border-box;
 }
 
-/* The title keeps clear of the frame's close button. */
-.shell-body--wide .news-reader--wide .news-reader-title {
-  margin: 0 36dp 14dp 0;
-}
-
 .shell-body--wide .news-reader-bar--wide {
+  flex-shrink: 0;
   padding: 12dp 32dp 24dp 32dp;
 }
 
