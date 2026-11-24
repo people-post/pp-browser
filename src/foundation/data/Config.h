@@ -99,6 +99,12 @@ struct AppConfig {
   int64_t initiation_floor = 0;
 };
 
+/**
+ * `mcp` is a bare derived address, not something the user set: an address only (no id, command or args; enabled), equal to
+ * a built-in backend's promoted-MCP seed. A user's entry (an id, a command, switched off, or any other address) is not.
+ */
+bool IsPromotedMcpSeedEntry(const McpConfig& mcp, const CompiledOrigins& compiled);
+
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults);
 
 class Config : public Module {

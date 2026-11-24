@@ -47,6 +47,8 @@ struct SettingsUiState {
   std::string registration_base_url;
   /** The backend's relay names no relay ID, so a release build does not use it (MissingRelayIdSetting; MR008). */
   bool relay_id_missing = false;
+  /** The last save was refused: a custom backend needs an account server URL (an empty one would name another account). */
+  bool registration_required = false;
   /** UI: "on" or "off" — desktop Node participation (N001). */
   std::string node_enabled = "on";
   /** True on desktop so Me → Network shows the help-the-network toggle. */

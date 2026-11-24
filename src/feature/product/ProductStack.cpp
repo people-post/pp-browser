@@ -1,7 +1,6 @@
 #include "feature/product/ProductStack.h"
 
 #include "feature/conversations/ConversationsFacade.h"
-#include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/ImageThumbnail.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/Platform.h"
@@ -31,9 +30,7 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
   SetPlatformOpenFileSoundHooks([] { AudioSession::ActivateForVoicePlayback(); }, [] { AudioSession::ReleaseVoice(); });
   hub_->SetMeshOwner(&mesh_);
   hub_->SetHost({.mobile = Platform::IsMobile(), .desktop = Platform::IsDesktop()});
-  // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).
-  const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
-  hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
+  // The hub's backend defaults are set by Bootstrap::Run, after the backend is latched (a constructor runs before it).
   hub_->SetStorage(&OpenSqliteProfileStores);
   hub_->SetContentStorage(&OpenSqliteObjectIndex);
   // G022: a group invite made during a call reaches us from someone we are in that call with (calls' to say).

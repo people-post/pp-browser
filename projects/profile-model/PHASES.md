@@ -33,7 +33,7 @@ Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 - [ ] `profiles/{id}/services.json`: directory providers, mesh node list source, promoted MCP, seeded from the
       backend when the profile is made; `directory.providers` and `promoted_mcp` leave `config.json`.
 - [x] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL. (P2a.)
-- [x] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list). (P2a, the operator services; the directory providers', mesh node list's and extra relays' consumers still read `config.json` and move with P2b / P5.)
+- [ ] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list). P2a did the operator services' callers (`DeploymentProfile`, `Config`, `PlatformDefaults`, the hub's clients, token renew, the LLM mint / renew, the crash upload). Not yet: the `/api/relay` mount in `HttpBlobClient` / `RelayFileUrl` / `RelayOrigins` and `HttpClient` `kUiBlockRoutes` (neither picks a backend's address), `CrashReportEnvelope` (takes its caller's URL); `mesh_nodes` and `seed_relays` are in the table but have no consumer until P2b / P5.
 - [ ] The Network page edits a custom backend's whole table.
 
 ## P3 — Per-backend state (PM004)

@@ -117,12 +117,29 @@ std::string NormalizeBackendUrl(const std::string& url) {
   return out;
 }
 
+namespace {
+
+/**
+ * The registration URL a custom backend's key is made of. A file with none used to be filled in from the defaults — the
+ * fallback environment's relay (prod's in a store build) — before the key was made, so such an install's profile folder is
+ * `custom-<hash of that URL>`; the tables no longer fill it in, and the key must not move with them. Kept for the KEY ONLY,
+ * until profile-model P1a replaces the key (this PR must not change which folder any install opens).
+ */
+std::string KeyRegistrationUrl(const std::string& registration_url, const CompiledOrigins& compiled) {
+  if (!registration_url.empty()) {
+    return registration_url;
+  }
+  return BriefRelayBaseUrlFor(CompiledOriginFor(FallbackBackendIn(compiled), compiled));
+}
+
+} // namespace
+
 std::string BackendProfileKey(const AppConfig& config) {
   const CompiledOrigins compiled = BuildCompiledOrigins();
   if (OriginEnvOverrideActive()) {
     return CustomProfileKey(BriefOrigin(), compiled.kind);
   }
-  return BackendProfileKeyFor(ActiveBackend(), config.registration.base_url, compiled);
+  return BackendProfileKeyFor(ActiveBackend(), KeyRegistrationUrl(config.registration.base_url, compiled), compiled);
 }
 
 std::string SavedBackendKey(const AppConfig& config) {
@@ -132,7 +149,9 @@ std::string SavedBackendKey(const AppConfig& config) {
   }
   return BackendProfileKeyFor(
       ParseBackendEnv(config.backend.env),
-      config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url,
+      KeyRegistrationUrl(
+          config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url,
+          compiled),
       compiled);
 }
 

@@ -15,7 +15,7 @@ For each of `relay`, `directory`, and `registration`:
 
 With `backend.env` `prod`, `staging` or `dev` the three come from that backend's service table, which the build compiles from its origin, and the saved values are ignored (`directory.providers[]` too); `custom` uses the saved ones, and the services it names in `backend.services`; a service its table does not name is **absent** — its clients are not made and no other backend's address stands in for it ([§ Backend tables](#backend-tables-profile-model-p2), [CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
 
-Platform defaults (`PlatformDefaults`) set all three to the table's address — `<origin>/api/relay` for a built-in backend (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied; a custom backend's defaults are empty. Empty values in settings/config coalesce back to those defaults on a built-in backend only. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
+Platform defaults (`PlatformDefaults`) set all three to the table's address — `<origin>/api/relay` for a built-in backend (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied; a custom backend's defaults are empty. Empty values in settings/config coalesce back to those defaults on a built-in backend only. The hub's own endpoint defaults (`ConversationsHub::SetBackendDefaults`) are set by `Bootstrap::Run` after `Config::Load` latched the backend — before it the backend is the build's fallback, and a custom backend must never be handed that. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
 ## Config shape
 
@@ -367,7 +367,7 @@ filled in, not a rule any caller relies on. A **custom** table is the user's (`r
 
 **An empty address is an absent service:** its client is not made (`BackendClientSet`: client compat, lockers; the LLM
 token renew sends nothing; no crash report is sent; the directory is not asked), the Brief LLM and the promoted MCP have
-no address, and Settings lists the feature with a reason. No caller falls back to a built-in backend's address.
+no address, and the settings model lists the feature with a reason (shown on a page from profile-model P2b). No caller falls back to a built-in backend's address.
 Callers read the table: `ActiveBackendTable()` (the backend this run latched), `BriefLlmBaseUrl()`, `BriefMcpUrl()`,
 `BriefRelayBaseUrl()`, `BriefOrgRelayIdentity()`, `HubSettings` (`account_locker_url`, `client_compat_url`,
 `llm_token_url`).

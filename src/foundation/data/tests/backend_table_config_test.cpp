@@ -386,3 +386,109 @@ TEST_F(BackendTableConfigTest, TheProfileSelectionKeyIsStillTheRegistrationUrlHa
   const pbr::AppConfig prod = Load("selection_prod", R"({ "config_version": 1, "backend": { "env": "prod" } })");
   EXPECT_EQ(pbr::BackendProfileKey(prod), "prod");
 }
+
+// ---- The promoted MCP in files the old app wrote (#741 MCP half, #744) -------------------------------------------------
+// The old app wrote the running backend's derived `/mcp` into every config.json it saved. That address was never the
+// user's: any built-in backend's is a seed, replaced by the active backend's own (none on a custom backend naming none).
+
+// A store build's custom backend, its file still holding prod's seed: no MCP, certainly not prod's.
+TEST_F(BackendTableConfigTest, AStoreCustomFileHoldingProdsMcpSeedCallsNoMcpAtAll) {
+  const pbr::AppConfig config = Load("mcp_old_custom_none", R"({ "config_version": 1, "backend": { "env": "custom" },
+      "relay": { "base_url": "https://custom.example.test/api/relay" },
+      "promoted_mcp": { "url": "https://prod.example.test/mcp" } })");
+  EXPECT_FALSE(config.promoted_mcp.IsConfigured());
+  EXPECT_FALSE(pbr::ResolvePromotedMcp(config, pbr::Config::DefaultAppConfig(false)).IsConfigured());
+  EXPECT_TRUE(pbr::BriefMcpUrl().empty());
+  EXPECT_EQ(pbr::ConfigToObject(config, 1).getObject("promoted_mcp"), nullptr) << "and nothing is written back";
+  // The same file, the custom table naming its own feed: that one.
+  pbr::ResetActiveBackendForTest();
+  const pbr::AppConfig named = Load("mcp_old_custom_named", R"({ "config_version": 1, "backend": { "env": "custom",
+      "services": { "promoted_mcp": "https://custom.example.test/mcp" } },
+      "promoted_mcp": { "url": "https://PROD.example.test/mcp/" } })");
+  EXPECT_EQ(named.promoted_mcp.url, "https://custom.example.test/mcp") << "compared normalized";
+}
+
+// A file saved by a store prod build, read by a tester build that runs staging: staging's seed, not prod's.
+TEST(BackendTableMcpSeedTest, ATesterBuildReadingAStoreProdFileGetsItsOwnEnvironmentsSeed) {
+  const ScopedEnv no_origin("PP_BROWSER_ORIGIN", nullptr);
+  constexpr pbr::CompiledOrigins tester{.prod = "https://prod.example.test", // named only so the leftover is recognised
+                                        .staging = "https://staging.example.test",
+                                        .dev = "https://dev.example.test",
+                                        .prod_relay_id = "relay:prod",
+                                        .staging_relay_id = "relay:staging",
+                                        .dev_relay_id = "relay:dev",
+                                        .kind = pbr::BuildKind::Tester};
+  const pbr::ScopedCompiledOriginsForTest compiled(tester);
+  const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_table_tester_mcp.json").string();
+  {
+    std::ofstream out(path);
+    out << R"({ "config_version": 1, "backend": { "env": "prod" }, "promoted_mcp": { "url": "https://prod.example.test/mcp" } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(path, false);
+  std::filesystem::remove(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(loaded->backend.env, "staging") << "a tester build never runs prod";
+  EXPECT_EQ(loaded->promoted_mcp.url, "https://staging.example.test/mcp");
+}
+
+// The backend was switched in Settings (saved) before the upgrade: the file says staging and holds prod's old seed.
+TEST_F(BackendTableConfigTest, ASwitchSavedWithoutARestartThenAnUpgradeGetsTheNewBackendsSeed) {
+  const pbr::AppConfig config = Load("mcp_switched", R"({ "config_version": 1, "backend": { "env": "staging" },
+      "promoted_mcp": { "url": "https://prod.example.test/mcp" } })");
+  EXPECT_EQ(config.promoted_mcp.url, "https://staging.example.test/mcp");
+}
+
+// A genuine user address is kept on prod / staging / dev; a user's entry (id, switched off) is never taken for a seed, and
+// keeps its fields through a save even when its address is a built-in's.
+TEST_F(BackendTableConfigTest, AUsersOwnPromotedMcpEntryIsKeptAndSavedWhole) {
+  for (const char* env : {"prod", "staging", "dev"}) {
+    SCOPED_TRACE(env);
+    pbr::ResetActiveBackendForTest();
+    const pbr::AppConfig mine = Load(std::string("mcp_mine_") + env,
+                                     std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
+                                         "\" }, \"promoted_mcp\": { \"url\": \"https://mine.example.test/mcp\" } }");
+    EXPECT_EQ(mine.promoted_mcp.url, "https://mine.example.test/mcp");
+    pbr::ResetActiveBackendForTest();
+    const pbr::AppConfig off =
+        Load(std::string("mcp_off_") + env, std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
+                                                "\" }, \"promoted_mcp\": { \"id\": \"feeds\", \"enabled\": false, "
+                                                "\"url\": \"https://prod.example.test/mcp\" } }");
+    EXPECT_EQ(off.promoted_mcp.id, "feeds");
+    EXPECT_FALSE(off.promoted_mcp.enabled);
+    const Object saved = pbr::ConfigToObject(off, 1);
+    const Object* mcp = saved.getObject("promoted_mcp");
+    ASSERT_NE(mcp, nullptr) << "a user's entry is saved, not dropped as a seed";
+    EXPECT_EQ(mcp->getString("id").value_or(""), "feeds");
+    EXPECT_FALSE(mcp->getIf<bool>("enabled").value_or(true));
+  }
+}
+
+// ---- Profile folders do not move (this PR must not change which profile any install opens) ----------------------------
+// A custom backend whose file names no registration URL used to get the fallback environment's relay filled in before the
+// key was made: `custom-<hash of prod's /api/relay>` in a store build. The recorded value of the old behaviour.
+TEST_F(BackendTableConfigTest, ACustomInstallWithNoRegistrationUrlKeepsTheProfileFolderItOpenedBefore) {
+  const pbr::AppConfig config =
+      Load("key_no_registration", R"({ "config_version": 1, "backend": { "env": "custom" } })");
+  EXPECT_TRUE(config.registration.base_url.empty());
+  const std::string before = pbr::CustomProfileKey("https://prod.example.test/api/relay", pbr::BuildKind::Store);
+  EXPECT_EQ(pbr::BackendProfileKey(config), before);
+  EXPECT_EQ(pbr::SavedBackendKey(config), before);
+  EXPECT_NE(before, pbr::CustomProfileKey("", pbr::BuildKind::Store)) << "not the empty URL's hash";
+}
+
+TEST(BackendProfileKeyTest, ATesterBuildsCustomInstallWithNoRegistrationUrlUsesTheTesterEnvironmentsRelay) {
+  const ScopedEnv no_origin("PP_BROWSER_ORIGIN", nullptr);
+  constexpr pbr::CompiledOrigins tester{
+      .staging = "https://staging.example.test", .staging_relay_id = "relay:staging", .kind = pbr::BuildKind::Tester};
+  const pbr::ScopedCompiledOriginsForTest compiled(tester);
+  const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_table_tester_key.json").string();
+  {
+    std::ofstream out(path);
+    out << R"({ "config_version": 1, "backend": { "env": "custom" } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(path, false);
+  std::filesystem::remove(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(pbr::BackendProfileKey(*loaded),
+            pbr::CustomProfileKey("https://staging.example.test/api/relay", pbr::BuildKind::Tester));
+}

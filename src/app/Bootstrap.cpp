@@ -6,6 +6,7 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
+#include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/CallKitDiagnostics.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "lib/media/AudioSession.h"
@@ -45,6 +46,13 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   auto config = Config::Load(options.argc, options.argv);
   if (!config) {
     return config.error();
+  }
+  // An empty endpoint in the profile's config falls back to the platform's defaults — taken here, after Config::Load
+  // latched the backend (the hub is built before it): a built-in backend's table, and nothing at all for a custom
+  // backend, which must never be handed another backend's address (profile-model PM002).
+  {
+    const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
+    messaging.SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
   }
   SetSendContentSha256(config->relay_content_sha256);
   // Every relay call names this build (O1; SERVICE_ENDPOINTS § Version header): product, version, OS.

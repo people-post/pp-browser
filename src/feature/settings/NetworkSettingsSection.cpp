@@ -42,6 +42,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.relay_id_missing = !MissingRelayIdSetting(bootstrap.config, kDeveloperRelaysAllowed,
                                                   !OriginEnvOverrideActive() && ActiveBackend() != BackendEnv::Custom)
                                 .empty();
+  state.registration_required = false;
   state.node_enabled = bootstrap.config.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = bootstrap.config.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";
@@ -76,6 +77,14 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
 }
 
 Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
+  // A custom backend's account server URL names its account (profile folder, registration): an empty one would not
+  // mean "none" but a different backend's profile, so it is refused, not saved (the page shows why).
+  if ((state.backend_env.empty() || state.backend_env == "custom") && !store.Snapshot().config.backend.env.empty() &&
+      ParseBackendEnv(store.Snapshot().config.backend.env) == BackendEnv::Custom &&
+      state.registration_base_url.find_first_not_of(" \t") == std::string::npos) {
+    state.registration_required = true;
+    return Error(Tr("settings.network.registration_required"));
+  }
   AppConfig config = ApplyNetworkSettingsDraft(store.Snapshot().config, state);
   if (auto saved = store.SaveConfig(config); !saved) {
     return saved.error();

@@ -771,8 +771,11 @@ Object AppConfigToObject(const AppConfig& config) {
   }
   // The active backend's own seed is derived, not the user's: it is never written back (#744), so a later switch
   // to another backend does not carry it along as if the user had typed it.
-  const bool is_seed = config.promoted_mcp.command.empty() && !config.promoted_mcp.url.empty() &&
-                       config.promoted_mcp.url == ActiveBackendTable().promoted_mcp_url;
+  const bool is_seed =
+      IsPromotedMcpSeedEntry(config.promoted_mcp, BuildCompiledOrigins()) ||
+      (config.promoted_mcp.id.empty() && config.promoted_mcp.command.empty() && config.promoted_mcp.args.empty() &&
+       config.promoted_mcp.enabled && !config.promoted_mcp.url.empty() &&
+       config.promoted_mcp.url == ActiveBackendTable().promoted_mcp_url);
   if (config.promoted_mcp.IsConfigured() && !is_seed) {
     object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
   }
