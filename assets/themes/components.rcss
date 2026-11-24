@@ -7769,6 +7769,11 @@ input.checkbox {
   text-align: center;
 }
 
+/* Account setup's button stacks (account, friends): a label stays on one line, whatever the language. */
+.shell-onboarding-actions .btn {
+  white-space: nowrap;
+}
+
 .shell-pin-gate-input {
   width: 100%;
   margin-bottom: 10dp;
