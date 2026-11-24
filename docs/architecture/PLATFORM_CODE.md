@@ -79,6 +79,8 @@ New product tips use keys. `InitFailureHint()` remains a rare English string_vie
 | Facade | `DesktopPathProvider.cpp` delegates to `desktop::*Impl()` |
 | Domain backend | `VideoCodec_Win32.cpp`, `LanMdnsSocket_Posix.cpp`, `AudioSession_Android.cpp` |
 
+A capability's backend reaches the OS, never the app's own code: what only the app's platform side can do (Android: the activity's AudioManager work, its device vitals) is a port the app fills — media's `MediaHost` (`lib/media/MediaHost.h`, filled by `src/app/MediaHost_Android.cpp`; capability-repos CR023 step 5).
+
 CMake **source-selects** the matching backend (do not compile MediaCodec TUs on Linux). File-level `#if defined(...)` guards may remain as belt-and-suspenders.
 
 ## Allowlisted `#ifdef` locations

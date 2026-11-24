@@ -17,6 +17,12 @@ set(PP_BROWSER_APP_SOURCES
   PeoplePickerShellBridge.cpp
   StorageManagerBridge.cpp
 )
+# Media's host ports (lib/media/MediaHost.h): the activity's audio and device work on Android, nothing elsewhere.
+if(PP_BROWSER_IS_ANDROID)
+  list(APPEND PP_BROWSER_APP_SOURCES MediaHost_Android.cpp)
+else()
+  list(APPEND PP_BROWSER_APP_SOURCES MediaHost_Default.cpp)
+endif()
 
 include(PpBrowserWarnings)
 

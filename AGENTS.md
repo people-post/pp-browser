@@ -31,7 +31,7 @@ See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for t
 
 ## UI engine is maintained in pp-cpp-ui
 
-We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`include/ui/`, `src/`). Consume via FetchContent / `../pp-cpp-ui`.
+We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`include/ui/`, `src/`). Consume it at its pin (`cmake/PpPins.cmake`), or a local checkout when asked (`-DPP_SIBLINGS_DIR=..`, `-DPP_CPP_UI_SOURCE_DIR=…`; [BUILD § Pins and sibling builds](docs/ops/BUILD.md#pins-and-sibling-builds)).
 
 - Edit the engine in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
 - Document integration notes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).

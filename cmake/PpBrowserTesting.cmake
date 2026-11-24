@@ -1,4 +1,5 @@
 include(GoogleTest)
+include(PpBrowserCapability) # PP_BROWSER_ROOT
 
 function(pp_browser_enable_googletest)
   if(TARGET GTest::gtest)
@@ -13,7 +14,7 @@ function(pp_browser_enable_googletest)
   set(gtest_build_samples OFF CACHE BOOL "" FORCE)
 
   add_subdirectory(
-    "${CMAKE_SOURCE_DIR}/third_party/googletest"
+    "${PP_BROWSER_ROOT}/third_party/googletest"
     "${CMAKE_BINARY_DIR}/third_party/googletest"
     EXCLUDE_FROM_ALL)
 endfunction()
@@ -40,15 +41,17 @@ function(pp_browser_add_gtest executable_target)
   cmake_parse_arguments(PP_GTEST "" "${one_value_args}" "" ${ARGN})
 
   # A capability folder (capabilities/<name>/, CR022) labels its tests: CI skips them when nothing they use changed.
+  # Its test executables are listed too, for a standalone build that builds one capability's tests (capabilities/).
   set(_pp_labels "")
   if(PP_BROWSER_CAPABILITY)
     set(_pp_labels PROPERTIES LABELS "capability:${PP_BROWSER_CAPABILITY}")
+    set_property(GLOBAL APPEND PROPERTY PP_BROWSER_CAPABILITY_TESTS_${PP_BROWSER_CAPABILITY} ${executable_target})
   endif()
   # Each test process gets a private TMPDIR; gtest_discover_tests prefixes
   # CROSSCOMPILING_EMULATOR to both discovery and every test command.
   if(NOT WIN32 AND NOT CMAKE_CROSSCOMPILING)
     set_property(TARGET ${executable_target} PROPERTY CROSSCOMPILING_EMULATOR
-      "${CMAKE_SOURCE_DIR}/scripts/test/private_tmp.sh")
+      "${PP_BROWSER_ROOT}/scripts/test/private_tmp.sh")
   endif()
   if(PP_GTEST_WORKING_DIRECTORY)
     gtest_discover_tests(

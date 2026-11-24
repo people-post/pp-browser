@@ -138,6 +138,12 @@ media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus its
 - Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
   anything below it changed (CI's changes filter: one filter per folder, the one below it plus the folder); pushes
   to main run all.
+- `capabilities/CMakeLists.txt` configures chosen folders on their own, without the app (`cmake -S capabilities
+  -DPP_CAPABILITIES=calls`: calls and everything below it, with the pin list's libraries and `third_party/`; CR023
+  step 4); a link to a target it does not define — one above — fails that configure. Its table of what each
+  capability builds on is the gate's order (the gate checks it). CI's **capabilities** job builds and tests calls so.
+  A capability reaches its host only through values and ports: calls' host contract is in
+  [capabilities/calls/README.md](../../capabilities/calls/README.md).
 - A later split into the capabilities repo is a `git subtree split` of the folder.
 - A capability ships ideas, not a database ([CR024](../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)):
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's

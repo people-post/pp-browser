@@ -29,7 +29,7 @@ See `../pp-cpp-ui/docs/PROVENANCE.md` and [ADR 001](https://github.com/people-po
 
 ## Build flags / product profile
 
-Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake). Prefer a sibling `../pp-cpp-ui` checkout when integrating unreleased `main`; FetchContent falls back to `PP_CPP_UI_GIT_TAG` (release tags on `main`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) always takes the tag.
+Supported knobs are `PP_BROWSER_*` plus the pp-cpp-ui pin in [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) (options in [`cmake/PpCppUi.cmake`](../../cmake/PpCppUi.cmake)). To integrate unreleased `main`, build a checkout: `-DPP_CPP_UI_SOURCE_DIR=../pp-cpp-ui`, or `-DPP_SIBLINGS_DIR=..` for every library ([BUILD § Pins and sibling builds](../ops/BUILD.md#pins-and-sibling-builds)); otherwise FetchContent takes `PP_CPP_UI_GIT_TAG` (release tags on `main`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) always takes the tag.
 
 | Option | Effect |
 |--------|--------|
@@ -84,4 +84,4 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 
 ## Release pin
 
-FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.5.1`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.
+`cmake/PpPins.cmake` pins `PP_CPP_UI_GIT_TAG`. A local checkout overrides it for develop work only when asked (`PP_CPP_UI_SOURCE_DIR`, `PP_SIBLINGS_DIR`).
