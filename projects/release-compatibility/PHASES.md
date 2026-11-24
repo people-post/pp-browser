@@ -66,18 +66,26 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
 - [ ] Backups ([DESIGN § Backups and restore](DESIGN.md#backups-and-restore), Leo's infrastructure): point-in-time
   recovery on every state table; backups before each prod release and rollback in the workflows; the locked vault
   copy in another account; the identity key and Support seed replicated and escrowed; the removal log; the restore
-  runbook and a first restore rehearsal on staging.
+  runbook and a first restore rehearsal on staging. So far (PRs open 2026-11-23, Hongwei merges): point-in-time
+  recovery on every relay table but `limits` (short-lived counters), in the relay's infrastructure repository; a
+  backup of every table before each staging and prod deploy (also before a rollback, which redeploys an earlier tag)
+  in pp-relay-apis' deploy job; second-region replicas of the seeds, off until a region is chosen; the escrow
+  procedure and the restore runbook with its rehearsal checklist. Left: the replica region, the escrow copies made,
+  the first restore rehearsal (both need AWS access), and, after release 1, the locked vault copy in another
+  account and the removal log.
 - [x] Release and incident records ([DESIGN § Release checklist](DESIGN.md#release-checklist), [§ Runbooks](DESIGN.md#runbooks)):
   the `release` and `incident` issue templates; the workflow that opens a release issue when a product's release branch is cut.
   Done 2026-11-20 in pp-browser and pp-relay-apis.
 - [ ] The runbooks needed before release 1, each a page in `docs/ops/runbooks/` with its steps as workflow runs:
-  release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo). So far:
-  pp-browser's three (2026-11-20); the relay's are Leo's.
+  release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis). So far:
+  pp-browser's three (2026-11-20); the relay's three drafted in pp-relay-apis (PR open 2026-11-23). Left: their
+  rehearsals on staging (need AWS access); their steps are still commands, not workflow runs.
 - [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab machine set up (its repo
   variables and AWS role) so the nightly runs; scenarios tagged by capability, `--tags` and `--changed`; the lab-smoke
   set on every merge to main; the after-deploy smoke run in the relay's deploys. So far: tags, `--tags`,
-  `--changed` and lab-smoke on main (2026-11-20; idle until the lab machine is set up); the lab machine and the
-  relay's after-deploy smoke are left.
+  `--changed` and lab-smoke on main (2026-11-20; idle until the lab machine is set up); the relay's after-deploy
+  smoke drafted in its deploy job (PR open 2026-11-23; skipped until its origin and relay-id variables are set);
+  the lab machine is left.
 - [x] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 
