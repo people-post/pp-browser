@@ -291,8 +291,9 @@ std::string ShellLayoutRml::TransientLayer() const {
   // New chat and Add contact (TODO #176 / #177) are titled the same way: their title row is the page's, the list scrolls
   // under the frosted bar. The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
   // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
-  const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" ||
-                                             top.spec.key == "new_chat" || top.spec.key == "add_contact");
+  const bool titled = compact[0] != '\0' &&
+                      (top.spec.key == "contact_detail" || top.spec.key == "blocked_people" ||
+                       top.spec.key == "group_list" || top.spec.key == "new_chat" || top.spec.key == "add_contact");
   out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
@@ -493,10 +494,20 @@ std::string ShellLayoutRml::PinGate() const {
       << "</button>";
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back") << "</button>";
   out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow "
-         "&& !pin_gate_payload_hidden\" "
-         "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
-      << Tr("pin.link_paste_placeholder") << "\"></textarea>";
+  // The link page (M027): this device's one-time offer as a QR code for the main device to scan, its 4 digits to
+  // compare, and the same offer as text; then the main device's reply, scanned or pasted (no field: it is over a
+  // kilobyte, B166/B167, and nobody types it).
+  out << "<div class=\"shell-pin-gate-link stack\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
+         "pin_gate_link_offer_qr_rml != ''\">";
+  out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+  out << "<p class=\"text shell-pin-gate-code\">" << Tr("pin.link_offer_code") << " {{pin_gate_link_offer_code}}</p>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_copy_offer()\">" << Tr("pin.link_copy_offer")
+      << "</button>";
+  out << "</div>";
+  out << "<button class=\"btn btn-secondary shell-pin-gate-scan\" data-if=\"pin_gate_link_paste_mode && "
+         "!pin_gate_phrase_flow && pin_gate_link_can_scan && !pin_gate_payload_hidden\" "
+         "data-event-click=\"pin_gate_scan_reply()\">"
+      << Tr("pin.link_scan_reply") << "</button>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""

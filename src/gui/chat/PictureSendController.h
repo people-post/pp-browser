@@ -68,6 +68,8 @@ struct PictureSendHost {
   std::function<void()> left;
   /** The first preview picture is visible (the time from the picker finishing to here is a metric). */
   std::function<void()> first_preview_shown;
+  /** Send may go now; false: it does not, the page stays open (the host says why). None: always. */
+  std::function<bool()> may_send;
   /** The words: the number of pictures that will be sent, and the size of the whole choice. */
   std::function<std::string(size_t sendable)> send_label;
   std::function<std::string(uint64_t bytes)> size_label;

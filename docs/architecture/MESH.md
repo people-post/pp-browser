@@ -1,7 +1,7 @@
 # Mesh layer
 
 **Code:** [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh) — namespace `pp::mesh`, `#include "mesh/…"`
-(pinned in [`cmake/PpCppMesh.cmake`](../../cmake/PpCppMesh.cmake); `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout)  
+(pinned in [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake); `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout, [BUILD § Pins](../ops/BUILD.md#pins-and-sibling-builds))  
 **CMake:** `pp_mesh` (feature / app), `pp_mesh_types` (the vocabulary, through `pp_pbr_common`), `pp_mesh_testing` (tests)
 
 The mesh layer is the peer-network runtime: Amp composition, reachability, and L4 protocol hosting. It

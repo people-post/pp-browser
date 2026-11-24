@@ -1925,7 +1925,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
                  const BriefAiRequest& req, const std::function<void(const BriefAiEvent&)>& on_event,
                  const std::atomic<bool>& cancelled) -> Roe<BriefAiOutcome> {
       Roe<BriefAiOutcome> outcome = inner(req, on_event, cancelled);
-      if (outcome || cancelled.load() || !IsBriefKeyRejected(outcome.error())) {
+      // No gateway address (a custom backend that names none): nothing to renew against, and never another backend's.
+      if (outcome || cancelled.load() || !IsBriefKeyRejected(outcome.error()) || base_url.empty()) {
         return outcome;
       }
       std::string key;

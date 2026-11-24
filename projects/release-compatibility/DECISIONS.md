@@ -547,7 +547,10 @@ builds keep prod and staging): a tester build compiles no prod. The rules now in
 [BUILD § Backend origin](../../docs/ops/BUILD.md#backend-origin),
 [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) and
 [§ Shared root files](../../docs/contracts/DATA_LAYOUT.md#shared-root-files),
-[CONFIGURATION § backend.env](../../docs/ops/CONFIGURATION.md).
+[CONFIGURATION § backend.env](../../docs/ops/CONFIGURATION.md). Amended by
+[profile-model PM001](../profile-model/DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)
+(accepted 2026-11-23, not built): the guard reads the profile's network (a tester build never opens `main`), not its
+backend key.
 **Decision:** A *store build* is a release, a release candidate (`vX.Y.Z-rc.N`, built once and promoted: it is the
 store binary) and anything shipped to users; a *tester build* is an `internal/<n>` TestFlight upload, a tester APK or a
 desktop tester package. TestFlight and the App Store share one app and one data container (Android likewise under one
@@ -563,7 +566,9 @@ profile:
    staging whose relay is still a placeholder, starts on dev instead of an account setup that cannot finish.
 3. **Profiles apart per build kind:** a tester build's keys are never `prod`; its custom profiles are
    `test-custom-<hash>` (a store build keeps `custom-<hash>`); it refuses to start on a profile recorded for `prod` or
-   `custom-…`, whichever way it was named.
+   `custom-…`, whichever way it was named. *As built since profile-model P1 (PM001):* the profile's manifest records
+   its network, and a tester build refuses a `main` one — prod's and the store build's custom backends' — checked on the
+   running backend's network and again on the opened manifest, a `--profile` label included.
 4. **The saved choice is kept:** a build that cannot run `backend.env` runs its fallback and writes the file's choice
    back on save, so a later store build still finds `prod`; only a switch the user makes replaces it.
 5. **Shared root files** (`config.json`, `profiles.json`, `machine.json`) change version only in a release; a tester

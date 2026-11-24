@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "domain/attachments/SentRelayFile.h"
 
 #include "foundation/tls/RelayClientHeader.h"
 
@@ -14,7 +15,6 @@
 #include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
-#include "lib/people/RecoveryBundle.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -36,6 +36,7 @@
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "feature/conversations/ContactProfileRefresh.h"
+#include "feature/conversations/OwnProfileIconSync.h"
 #include "feature/conversations/ContactRefreshWorkflow.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
@@ -268,6 +269,9 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   clients_.Apply({.relay = settings.relay,
                   .directory = settings.directory,
                   .registration = settings.registration,
+                  .account_locker = settings.account_locker_url,
+                  .client_compat = settings.client_compat_url,
+                  .llm_token = settings.llm_token_url,
                   .our_relays = our_relays_ ? our_relays_->List().Origins() : std::vector<std::string>{},
                   .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
@@ -298,10 +302,14 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
       (void)pins->Expect(origin, relay_id); // a full store is logged and leaves that relay unused
     }
   };
+  // The locker service's own address names its relay id only where it is the registration URL's or the org relay's;
+  // anywhere else its id is unknown and the relay cannot be signed for (fails closed, profile-model PM002).
   const std::string home_relay_id =
-      settings.registration.relay_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
-          ? settings.relay.relay_id
-          : settings.registration.relay_id;
+      SameRelay(clients_.LockerHome(), settings.registration.base_url)
+          ? (settings.registration.relay_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
+                 ? settings.relay.relay_id
+                 : settings.registration.relay_id)
+          : (SameRelay(clients_.LockerHome(), clients_.OrgRelay()) ? settings.relay.relay_id : std::string());
   const RelayId org_id = RelayId::Parse(settings.relay.relay_id).value_or(RelayId{});
   const RelayId home_id = RelayId::Parse(home_relay_id).value_or(RelayId{});
   expect(clients_.OrgRelay(), org_id);
@@ -1363,6 +1371,24 @@ void ConversationsHub::OpenContactCards() {
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
   contact_cards_->SetLocalRelaysAllowed(config_.developer_relays); // a QR code's relay not on a public host: the lab's
   contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
+  own_icon_sync_ = std::make_unique<OwnProfileIconSync>(
+      data_dir_, directory_,
+      [this]() -> std::string {
+        auto identity = Identity().Get();
+        return identity && identity->registered ? identity->account_id : std::string();
+      },
+      [this]() -> size_t {
+        // As NudgeSiblings counts them: the devices our own account card lists (none known: 0).
+        if (!mesh_messaging_) {
+          return 0;
+        }
+        auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
+        return card ? card->devices.size() : 0;
+      },
+      [](const std::string& profile_dir, const std::string& key, const mesh::ProfileIconRef& icon) {
+        return FetchProfileIcon(profile_dir, key, icon);
+      },
+      []() { return util::NowUnixMs(); });
   contact_refresh_ = std::make_unique<ContactRefreshWorkflow>(*contacts_, *account_keys_, *contact_cards_);
   contact_refresh_->SetOurRelays(CardDirectories());
   // The page's *identity doesn't match* (MR007, MR008): our pins disagree with the card's relay id, or a send found
@@ -1449,6 +1475,12 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
+  backend_data_dir_ = settings.backend_id.empty()
+                          ? data_dir_
+                          : (std::filesystem::path(data_dir_) / "backends" / settings.backend_id).string();
+  if (!settings.backend_id.empty()) {
+    identity_->SetBackend(backend_data_dir_, settings.backend_id);
+  }
   OpenOurRelays(settings);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
@@ -1514,7 +1546,11 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (directory_.Configured() && mesh_owner_) {
     // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
     // the hub's work is ours — hop to UI.
-    mesh_owner_->StartDirectoryCache(directory_, data_dir_, [this]() {
+    // Its source is the primary directory's address: a list another directory gave is not loaded for this one.
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(settings.directory);
+    const std::string source =
+        providers.empty() ? std::string() : NormalizeRegistrationBackend(providers.front().base_url);
+    mesh_owner_->StartDirectoryCache(directory_, data_dir_, source, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;
@@ -1659,6 +1695,34 @@ AccountLockerWorkflow::Sources ConversationsHub::LockerSources() {
               }
             }
           },
+      .take_groups =
+          [this](const std::vector<AccountStateGroup>& groups) {
+            if (!group_membership_) {
+              return;
+            }
+            std::vector<std::string> restored;
+            for (const AccountStateGroup& group : groups) {
+              if (auto recreated = group_membership_->RestoreGroup(group); recreated) {
+                restored.push_back(group.group_id);
+              } else {
+                log().warning << "Group not taken from the locker group=" << group.group_id << ": "
+                              << recreated.error().message;
+              }
+            }
+            // Their chats are new rows with no message yet: the Chats list (and Contacts → Groups) is drawn again
+            // now, not at the next message or relaunch.
+            if (!restored.empty() && mesh_messaging_) {
+              mesh_messaging_->NotifyMessagesChanged();
+            }
+            // Their members are checked (the roster statement is verified) and their message flow starts from now.
+            AppRuntime::PostWorkerNormal([this, restored]() {
+              for (const std::string& group_id : restored) {
+                if (group_membership_ && !shutdown_requested_.load(std::memory_order_acquire)) {
+                  (void)group_membership_->StartRosterCheck(group_id);
+                }
+              }
+            });
+          },
       .grants = [this]() -> Roe<std::vector<AccountStateGrant>> {
         if (!mesh_messaging_) {
           return std::vector<AccountStateGrant>{};
@@ -1720,6 +1784,20 @@ void ConversationsHub::BuildMessagingObjects() {
     const auto registrations = OtherRelayRegistrations();
     return registrations && registrations->Registered(origin);
   });
+  // The mailbox each inbox's cursor counts in: the registration we hold there (a fresh one is a new mailbox) — the
+  // identity's at the preferred relay, the one each other relay answered there.
+  mesh_messaging_->SetInboxMailbox([this](const std::string& origin, const bool preferred) -> std::string {
+    if (!preferred) {
+      const auto registrations = OtherRelayRegistrations();
+      return registrations ? registrations->RegistrationId(origin) : std::string();
+    }
+    auto identity = Identity().Get();
+    if (!identity ||
+        (!identity->registered_backend_url.empty() && !SameRelay(identity->registered_backend_url, origin))) {
+      return {}; // made at another relay (the preferred one is changing): unknown, the cursor kept stays
+    }
+    return identity->registration_id;
+  });
   mesh_messaging_->SetSystemControls(&system_controls_);
   // The relay's poll results feed the status line (#175); a fresh orchestrator starts with no result.
   mesh_messaging_->SetOnBriefRelayHealthChanged(
@@ -1779,7 +1857,7 @@ void ConversationsHub::BuildMessagingObjects() {
   BindGroupLinkJoinFamily();
   account_locker_ = std::make_unique<AccountLockerWorkflow>(*identity_, *contacts_, LockerSources());
   account_locker_->SetClient(clients_.Locker());
-  account_locker_->SetDataDir(data_dir_);
+  account_locker_->SetDataDir(backend_data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
   account_locker_->SetOnWritten([this]() {
     if (mesh_messaging_) {
@@ -1977,6 +2055,8 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   mesh_messaging_->OwnAccountCards().Reconcile(util::NowUnixMs());
   // Before the first poll: a restored device refuses cards older than the ones it knew.
   ApplyRestoredCardFloors();
+  // What was still queued when the app stopped shows queued from the first frame; it goes at the first sync (B236).
+  mesh_messaging_->PrimeQueuedResume();
   messaging_ready_ = true;
   mesh_ready_ = false;
   StartCoordinatorTimers();
@@ -2598,12 +2678,9 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
     return Error("No account was found for this recovery phrase");
   }
   AccountLockerState& state = (*fetched)->state;
-  const int64_t now_ms = util::NowUnixMs();
-  auto bundle = BuildRecoveryBundleJson(*seed, state.nickname, now_ms);
-  if (!bundle) {
-    return Error("Account restore failed: " + bundle.error().message);
-  }
-  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), Secrets(), *bundle, pin, now_ms);
+  // The account from its seed, as a link brings it, on a fresh list of this device's (M021 §8, M023 §8).
+  if (auto imported = LinkDeviceCoordinator::ImportAccount(Identity(), *Secrets()->Vault(), Secrets(), *seed,
+                                                           kCardIntentFresh, state.nickname, pin);
       !imported) {
     return Error("Account restore failed: " + imported.error().message);
   }
@@ -2723,16 +2800,35 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
         return;
       }
+      const auto report = [this](const AccountSyncResult result) {
+        std::function<void(AccountSyncResult)> on_result;
+        {
+          std::lock_guard lock(account_sync_result_mu_);
+          on_result = on_account_sync_result_;
+        }
+        if (on_result) {
+          on_result(result);
+        }
+      };
       auto seed = Identity().RecoverySeed();
       auto identity = Identity().Get();
-      if (!seed || !*seed || !identity || !identity->registered) {
-        return; // an account from before M023, or not registered yet: nothing to publish
+      if (!seed || !identity) {
+        return; // could not be read now: the next attempt tries again
       }
-      if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
-        return; // M021 d4: a signed-out device no longer speaks for the account
+      // An account from before M023 (no seed), not registered, or (M021 d4) a signed-out device that no longer speaks
+      // for the account: nothing to publish, now or later — the indicator must not wait for it.
+      const bool signed_out = mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut();
+      if (LockerSyncImpossible(seed->has_value(), identity->registered, signed_out)) {
+        report(AccountSyncResult::CannotSync);
+        return;
       }
-      if (auto published = account_locker_->Publish(); !published) {
+      auto published = account_locker_->Publish();
+      if (!published) {
         log().info << "Account locker not published: " << published.error().message;
+      }
+      report(published ? AccountSyncResult::Synced : AccountSyncResult::Failed);
+      if (published) {
+        RefreshOwnProfileIconSoon(); // a photo set on another device of the account: ours has none yet
       }
     });
   });
@@ -2828,6 +2924,9 @@ Roe<void> ConversationsHub::UploadProfileIcon(const PreparedProfileIcon& prepare
   if (!uploaded) {
     return uploaded.error();
   }
+  if (mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings(); // our other devices look our photo up again (only with more than one device)
+  }
   return {};
 }
 
@@ -2842,7 +2941,11 @@ Roe<void> ConversationsHub::ClearProfileIcon() {
   if (!blob) {
     return Error("Blob client not configured");
   }
-  return ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  auto cleared = ClearHostedProfileIcon(*blob, Identity(), data_dir_);
+  if (cleared && mesh_messaging_) {
+    mesh_messaging_->NudgeSiblings();
+  }
+  return cleared;
 }
 
 namespace {
@@ -2958,6 +3061,69 @@ Roe<ThreadMessage> ConversationsHub::EditMessage(const std::string& thread_id, c
   }
   Inbox().AfterMessageEdited(thread_id, target, edited->row);
   return edited->row;
+}
+
+void ConversationsHub::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                          std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<StoredResendAnswer> answer) {
+    if (on_done) {
+      on_done(std::move(answer));
+    }
+  };
+  if (!IsInitialized() || !mesh_messaging_) {
+    finish(Error("Messaging hub not initialized"));
+    return;
+  }
+  {
+    std::lock_guard lock(tap_resends_mu_);
+    if (!tap_resends_.insert(message_id).second) {
+      finish(StoredResendAnswer::StillTrying);
+      return;
+    }
+  }
+  // Off the UI thread: our files may be listed on the relay, and the copies are sealed again.
+  auto body = [this, thread_id, message_id, finish = std::move(finish)]() {
+    Roe<StoredResendAnswer> answer = [&]() -> Roe<StoredResendAnswer> {
+      auto row = Store().GetMessage(thread_id, message_id);
+      if (!row) {
+        return row.error();
+      }
+      if (!*row) {
+        return Error("Message not found");
+      }
+      if ((*row)->content_type == ChatContentType::Attachment && !MeshMessaging().SendStartedMs(message_id)) {
+        std::optional<RelayFileListResult> ours;
+        const std::shared_ptr<IBlobClient> blob = BlobClient();
+        auto identity = Identity().Get();
+        if (blob && identity && identity->registered && !identity->account_id.empty()) {
+          if (auto listed = blob->FileList(identity->account_id, "complete")) {
+            ours = std::move(*listed);
+          } else {
+            log().info << "own relay files not listed before a resend: " << listed.error().message;
+          }
+        }
+        if (SentRelayFileGone((*row)->payload_json, (*row)->timestamp, util::NowUnixMs(), ours ? &*ours : nullptr)) {
+          log().info << "not sent again: its file is no longer on the server message_id=" << message_id;
+          return StoredResendAnswer::AttachmentGone;
+        }
+      }
+      auto sent = MeshMessaging().ResendStoredMessage(thread_id, message_id);
+      if (!sent) {
+        return sent.error();
+      }
+      return *sent ? StoredResendAnswer::Sent : StoredResendAnswer::StillTrying;
+    }();
+    {
+      std::lock_guard lock(tap_resends_mu_);
+      tap_resends_.erase(message_id);
+    }
+    finish(std::move(answer));
+  };
+  if (AppRuntime::IsRunning()) {
+    AppRuntime::PostWorkerNormal(std::move(body));
+  } else {
+    body();
+  }
 }
 
 Roe<ThreadMessage> ConversationsHub::ResendEdit(const std::string& thread_id, const std::string& message_id) {
@@ -4297,6 +4463,7 @@ void ConversationsHub::Shutdown() {
   contact_refresh_.reset();
   contact_cards_.reset();
   contact_profile_refresh_.reset();
+  own_icon_sync_.reset();
   UnwireCardReaders();
   account_keys_.reset();
   peer_cards_.reset();
@@ -4464,19 +4631,49 @@ void ConversationsHub::SetOnOwnDevicesChanged(std::function<void()> callback) {
   on_own_devices_changed_ = std::move(callback);
 }
 
+void ConversationsHub::SetDeviceRemovedWatch(std::function<void()> callback) {
+  std::lock_guard lock(own_devices_changed_mu_);
+  device_removed_watch_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnContactsChanged(std::function<void()> callback) {
   std::lock_guard lock(contacts_changed_mu_);
   on_contacts_changed_ = std::move(callback);
 }
 
+void ConversationsHub::RefreshOwnProfileIconSoon() {
+  if (!own_icon_sync_ || !HasDirectory() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  AppRuntime::PostWorkerBackground([this]() {
+    if (!own_icon_sync_ || shutdown_requested_.load(std::memory_order_acquire)) {
+      return;
+    }
+    const auto outcome = own_icon_sync_->Refresh();
+    if (outcome == OwnProfileIconSync::Outcome::Fetched || outcome == OwnProfileIconSync::Outcome::Cleared) {
+      AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); }); // the Me page, Contacts and chats redraw our avatar
+    }
+  });
+}
+
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(AccountSyncResult)> callback) {
+  std::lock_guard lock(account_sync_result_mu_);
+  on_account_sync_result_ = std::move(callback);
+}
+
 void ConversationsHub::NotifyOwnDevicesChanged() {
   std::function<void()> callback;
+  std::function<void()> removed_watch;
   {
     std::lock_guard lock(own_devices_changed_mu_);
     callback = on_own_devices_changed_;
+    removed_watch = device_removed_watch_;
   }
   if (callback) {
     callback();
+  }
+  if (removed_watch) {
+    removed_watch();
   }
 }
 
@@ -4532,6 +4729,10 @@ Roe<void> ConversationsHub::MakeMainDevice(const std::string& peer_id) {
   log().info << "Main device handed to " << peer_id;
   AppRuntime::PostWorkerNormal([this]() { SyncLockerThenAnnounceOwnDevices(); });
   return {};
+}
+
+bool ConversationsHub::OnlyDeviceOnAccount() {
+  return mesh_messaging_ && mesh_messaging_->OwnAccountCards().OnlyDevice();
 }
 
 bool ConversationsHub::IsMainDevice() {
@@ -4794,38 +4995,143 @@ void ConversationsHub::ExpectDeviceJoin(const int64_t until_ms) {
   }
 }
 
-std::optional<std::string> ConversationsHub::OwnAccountCardJson() {
-  if (!mesh_messaging_) {
-    return std::nullopt;
-  }
-  auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
-  if (!card) {
-    log().warning << "own account card unavailable: " << card.error().message;
-    return std::nullopt;
-  }
-  return DumpJson(AccountCardToJson(*card));
+Roe<LinkOffer::Shown> ConversationsHub::BeginLinkOffer() {
+  return link_offer_.Begin(util::NowUnixMs());
 }
 
-Roe<void> ConversationsHub::LearnLinkedAccountCard(const std::string& card_json) {
-  auto learned = KeepLinkedAccountCard(card_json);
-  if (!learned) {
-    log().warning << "link import: account card not kept: " << learned.error().message;
-  }
-  return learned;
+void ConversationsHub::ForgetLinkOffer() {
+  link_offer_.Forget();
 }
 
-Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) {
-  auto json = TryParseObject(card_json);
-  if (!json) {
-    return Error("link bundle: account card is not JSON");
+Roe<void> ConversationsHub::CheckCanLinkDevice() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
   }
-  auto card = AccountCardFromJson(*json);
-  if (!card) {
-    return card.error();
+  // M021 d4: only the main device adds a device to the list; the new device appends itself to its card.
+  auto devices = OwnDevices();
+  if (!devices) {
+    return devices.error();
+  }
+  if (devices->signed_out) {
+    return Error(kSignedOutMessage);
+  }
+  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
+    return Error("Only your main device can add a device");
+  }
+  // The new device fetches the card from our relays (M027): this device must have one, registered with them.
+  if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
+    return Error("This device has no account card yet: " + card.error().message);
+  }
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered) {
+    return Error("Local account not registered on the relay");
+  }
+  return {};
+}
+
+Roe<std::string> ConversationsHub::LinkOfferCode(const std::string& scanned_or_pasted) {
+  if (auto can = CheckCanLinkDevice(); !can) {
+    return can.error();
+  }
+  std::optional<ByteVector> offer = FindLinkPayload(kLinkOfferTextPrefix, scanned_or_pasted);
+  if (!offer) {
+    return MakeLinkError(LinkError::Unreadable, "link: no new device's code in what was given");
+  }
+  if (auto read = ReadLinkOffer(*offer); !read) {
+    return read.error();
+  }
+  return LinkConfirmationCode(*offer);
+}
+
+Roe<ByteVector> ConversationsHub::SealLinkReply(const std::string& scanned_or_pasted) {
+  if (auto can = CheckCanLinkDevice(); !can) {
+    return can.error();
+  }
+  std::optional<ByteVector> offer = FindLinkPayload(kLinkOfferTextPrefix, scanned_or_pasted);
+  if (!offer) {
+    return MakeLinkError(LinkError::Unreadable, "link: no new device's code in what was given");
+  }
+  const int64_t now = util::NowUnixMs();
+  auto reply = LinkDeviceCoordinator::SealReply(Identity(), *offer, LinkRelayHint(), now);
+  if (!reply) {
+    return reply.error();
+  }
+  ExpectDeviceJoin(now + kLinkWindowMs);
+  log().info << "Link: sealed a reply for a new device (code " << LinkConfirmationCode(*offer) << ")";
+  return reply;
+}
+
+std::optional<RelayAddress> ConversationsHub::LinkRelayHint() const {
+  if (!our_relays_) {
+    return std::nullopt;
+  }
+  const OurRelaysList list = our_relays_->List();
+  if (list.relays.empty()) {
+    return std::nullopt;
+  }
+  const OurRelayEntry& preferred = list.relays.front();
+  if (preferred.relay_id.empty() || SameRelay(preferred.origin, clients_.OrgRelay()) ||
+      !IsCardRelayOrigin(preferred.origin)) {
+    return std::nullopt; // the deployment's relay (the new device has it), or one a card could not carry either
+  }
+  return RelayAddress{.origin = preferred.origin, .relay_id = preferred.relay_id};
+}
+
+Roe<void> ConversationsHub::ImportLinkReply(const std::string& scanned_or_pasted, const SecretText& pin) {
+  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  std::optional<ByteVector> reply = FindLinkPayload(kLinkReplyTextPrefix, scanned_or_pasted);
+  if (!reply) {
+    return MakeLinkError(LinkError::Unreadable, "link: no main device's reply in what was given");
+  }
+  auto bundle = link_offer_.Open(*reply, util::NowUnixMs());
+  if (!bundle) {
+    return bundle.error();
+  }
+  auto imported = LinkDeviceCoordinator::ImportAccount(Identity(), *Secrets()->Vault(), Secrets(), bundle->seed,
+                                                       kCardIntentJoin, "", pin);
+  if (!imported) {
+    return imported.error();
+  }
+  link_offer_.Forget(); // the account is here: the one-time key has done its job
+  if (bundle->relay && IsCardRelayOrigin(bundle->relay->origin)) {
+    if (const auto workflow = MyRelays()) {
+      workflow->Restore({*bundle->relay}); // the account's preferred relay: asked first for our card, registered on
+    }
+  }
+  // Our card, as our relays keep it: it lists the main device, and this device appends itself on its first card. Not
+  // reached now, OwnCards asks again once messaging is up (a device without its card waits for it).
+  const int64_t now = util::NowUnixMs();
+  if (std::optional<AccountCard> card = OwnCardAmong(*imported, AskOurRelaysForOwnCard(imported->account_id), now,
+                                                     [this](const std::string& why) { log().warning << why; })) {
+    if (auto kept = KeepLinkedAccountCard(*card); !kept) {
+      log().warning << "link: our card not kept now (asked again later): " << kept.error().message;
+    }
+  } else {
+    log().info << "link: our card not got from our relays yet: asked again once messaging is up";
+  }
+  log().info << "Link: this device joined its account from the main device's reply";
+  return {};
+}
+
+Roe<void> ConversationsHub::KeepLinkedAccountCard(const AccountCard& card) {
+  // The account's nickname and floor are the card's (the link carries neither): this device's from now on.
+  if (auto named = Identity().Modify([&card](LocalIdentity& identity) {
+        const bool changed = identity.nickname != card.nickname || identity.initiation_floor != card.initiation_floor;
+        identity.nickname = card.nickname;
+        identity.initiation_floor = card.initiation_floor;
+        return changed;
+      });
+      !named) {
+    return named.error();
   }
   const int64_t now = util::NowUnixMs();
   if (mesh_messaging_) {
-    auto learned = mesh_messaging_->OwnAccountCards().Learn(*card, now);
+    auto learned = mesh_messaging_->OwnAccountCards().Learn(card, now);
     if (!learned) {
       return learned.error();
     }
@@ -4834,8 +5140,8 @@ Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) 
   if (!account_keys_) {
     return Error("Messaging is not ready");
   }
-  // Kept now; this device signs itself into it once its own card is first asked for (OwnCards::Card).
-  auto kept = account_keys_->AddAccountCard(*card, now, "sibling");
+  // Kept now (as OwnCards takes a card our relays keep); this device signs itself into it on its first card.
+  auto kept = account_keys_->AddAccountCard(card, std::max(now, card.issued_at), kOwnCardRecoveredSource);
   if (!kept) {
     return kept.error();
   }

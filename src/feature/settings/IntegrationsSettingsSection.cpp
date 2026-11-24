@@ -2,6 +2,7 @@
 
 #include "common/ArgsText.h"
 #include "foundation/data/Config.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/settings/SettingsLogic.h"
@@ -56,6 +57,7 @@ SettingsFlushMode IntegrationsSettingsSection::FlushMode() const {
 void IntegrationsSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   const AppConfig& config = bootstrap.config;
   state.promoted_mcp_url = config.promoted_mcp.url;
+  state.backend_services = BackendServiceEntries(ActiveBackendTable(), config.promoted_mcp.IsConfigured());
   state.search_provider = config.search.provider;
   state.mcp_servers.clear();
   for (const McpConfig& entry : config.mcp_servers) {

@@ -1,5 +1,5 @@
-// #210: the mark beside a message we sent — a clock while it is being sent (at most a minute), a red mark when it did
-// not go out, nothing once it is out (DEV/PLAN-message-send-status.md).
+// #210 / B236: the mark beside a message we sent — a clock while a send of it is still being tried (however long the
+// outbox keeps trying), a red mark when it did not go out, nothing once it is out (DEV/PLAN-message-send-status.md).
 #include "feature/presenters/SendMark.h"
 
 #include <gtest/gtest.h>
@@ -54,14 +54,11 @@ TEST(SendMarkTest, EachStateGetsItsMark) {
       {"pending past the grace with nothing under way (a restart)", Ours(MessageDelivery::Pending), std::nullopt,
        kSentAt + 5'001, SendMark::Failed},
       {"pending, under way", Ours(MessageDelivery::Pending), started, started + 30'000, SendMark::Queued},
-      {"failed, a retry under way, 59 999 ms", Ours(MessageDelivery::Failed), started, started + 59'999,
+      {"failed, sent again and under way", Ours(MessageDelivery::Failed), started, started + 59'999, SendMark::Queued},
+      {"pending, under way past the minute (a retry waits)", Ours(MessageDelivery::Pending), started, started + 60'001,
        SendMark::Queued},
-      {"failed, a retry under way, 60 000 ms", Ours(MessageDelivery::Failed), started, started + 60'000,
-       SendMark::Queued},
-      {"failed, a retry under way, 60 001 ms", Ours(MessageDelivery::Failed), started, started + 60'001,
-       SendMark::Failed},
-      {"pending, under way past the minute", Ours(MessageDelivery::Pending), started, started + 60'001,
-       SendMark::Failed},
+      {"pending, a stranger quota's retry two hours on", Ours(MessageDelivery::Pending), started,
+       started + 2 * 60 * 60 * 1000, SendMark::Queued},
       {"failed with nothing under way (failed before it was sent, retries used up)", Ours(MessageDelivery::Failed),
        std::nullopt, kSentAt + 1'000, SendMark::Failed},
       {"failed gets no grace", Ours(MessageDelivery::Failed), std::nullopt, kSentAt, SendMark::Failed},
@@ -98,19 +95,14 @@ TEST(SendMarkTest, TheSoonestClockToTurnRedIsNoted) {
   NoteMarkChange(earliest, Ours(MessageDelivery::Relayed), std::nullopt, kSentAt);
   NoteMarkChange(earliest, Ours(MessageDelivery::Failed), std::nullopt, kSentAt);
   EXPECT_FALSE(earliest);
-  // A send under way since kSentAt + 20: red at +60 001.
-  NoteMarkChange(earliest, Ours(MessageDelivery::Failed), kSentAt + 20, kSentAt + 30);
-  EXPECT_EQ(earliest, kSentAt + 20 + kQueuedMarkLimitMs + 1);
-  // A new row without its send yet: red at its time + 5 001, sooner.
+  // A send under way changes only when the outbox reports (which redraws): no clock time.
+  NoteMarkChange(earliest, Ours(MessageDelivery::Pending), kSentAt + 20, kSentAt + 30);
+  EXPECT_FALSE(earliest);
+  // A new row without its send yet: red at its time + 5 001.
   NoteMarkChange(earliest, Ours(MessageDelivery::Pending), std::nullopt, kSentAt + 30);
-  EXPECT_EQ(earliest, kSentAt + kQueuedMarkGraceMs + 1);
-  // A later one does not move it.
-  NoteMarkChange(earliest, Ours(MessageDelivery::Pending), kSentAt + 40, kSentAt + 50);
   EXPECT_EQ(earliest, kSentAt + kQueuedMarkGraceMs + 1);
   // At the noted time the clock is red.
   EXPECT_EQ(MarkOf(Ours(MessageDelivery::Pending), std::nullopt, *earliest), SendMark::Failed);
-  EXPECT_EQ(MarkOf(Ours(MessageDelivery::Failed), kSentAt + 20, kSentAt + 20 + kQueuedMarkLimitMs + 1),
-            SendMark::Failed);
 }
 
 // A group message that had nobody to go to (we were alone: just created, invitees not joined yet) makes no outbox send

@@ -99,6 +99,8 @@ public:
   bool Registered(const std::string& origin) const;
   /** Our relays (other than the preferred) that hold our registration. */
   std::vector<std::string> RegisteredOrigins() const;
+  /** The registration id that relay last answered (kept across restarts); empty: none known. */
+  std::string RegistrationId(const std::string& origin) const;
   /** Removes our registration from each relay (profile reset, #328); best effort, as on the preferred. As Revoke. */
   void RevokeAll();
   /**

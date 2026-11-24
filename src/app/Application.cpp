@@ -37,7 +37,7 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/ProfileManifest.h"
+#include "foundation/data/ProfileRegistry.h"
 #include "foundation/platform/OsSecureBlobStore.h"
 #include "foundation/platform/os/OsProtectedData.h"
 #include "foundation/platform/os/OsDebugFlag.h"
@@ -127,6 +127,8 @@
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/UnlockGateCompletePorts.h"
+#include "gui/LinkDeviceText.h"
+#include "lib/ui/QrSvg.h"
 #include "gui/contacts/PeoplePickerController.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerController.h"
@@ -323,6 +325,9 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (key == "blocked_people") {
       contacts.OnBlockedPeopleDismissed();
       settings.RefreshBlockedCount();
+    }
+    if (key == "group_list") {
+      contacts.OnGroupListDismissed();
     }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
@@ -554,10 +559,11 @@ Roe<void> Application::ResetActiveProfile() {
   log().info << "Resetting profile data at " << profile_dir;
 
   // #328: take the registration off the directory before the local wipe, so the name does not
-  // linger in search until it expires. Best effort — a reset must still work offline.
+  // linger in search until it expires — only on the account's last device; a linked one drops its push bindings only
+  // (LeaveRelaysOnReset). Best effort — a reset must still work offline.
   if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
-    if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
-      log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
+    if (auto left = messaging_facade_->LeaveRelaysOnReset(); !left) {
+      log().warning << "Leaving the relays failed, continuing with the local reset: " << left.error().message;
     }
   }
 
@@ -579,19 +585,28 @@ Roe<void> Application::ResetActiveProfile() {
     return AppError::Storage(Err::Storage::Failed, "Failed to delete profile data: " + ec.message());
   }
 
-  AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = EnsureProfileManifest(profile_dir); !manifest) {
-    return manifest.error();
+  // A new profile (a new id) takes the old one's place for this backend (profile-model PM003): nothing rewrites a
+  // manifest, and nothing is left for another build to claim. Stopping between the removal above and this leaves the
+  // backend's pointer at a folder that is gone: the next start makes the new profile then.
+  ProfileRegistry& registry = store_.Mutable().profile_registry;
+  if (auto replaced = registry.ReplaceActiveProfile(); !replaced) {
+    return AppError::Storage(Err::Storage::Failed, "Failed to make a new profile: " + replaced.error().message);
   }
+  const std::string new_profile_dir = registry.ActiveProfileDataDir();
+  store_.Mutable().profile_data_dir = new_profile_dir;
+  store_.Mutable().backend_data_dir =
+      (std::filesystem::path(new_profile_dir) / "backends" / registry.ActiveBackendId()).string();
+  log().info << "New profile " << registry.ActiveProfileId() << " for backend " << registry.ActiveBackendId();
+  AppPaths::EnsureDirs(new_profile_dir);
 
-  if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
+  if (auto secrets = secrets_->Initialize(new_profile_dir); !secrets) {
     return secrets.error();
   }
   AttachGrace();
   AttachBiometric();
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
-  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, new_profile_dir), new_profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -599,9 +614,27 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
   }
+  // The old profile's own service choices (services.json) went with it: the config runs on the backend's again.
+  if (auto reloaded = store_.ReloadConfig(); !reloaded) {
+    return reloaded.error();
+  }
 
+  // The old account's pending first sync is gone with its preferences: a new account starts with none.
+  // Timers armed for the old account (the 60-second "still syncing", a retry) are stale from here on.
+  account_sync_.ResetForNewProfile();
+  account_sync_retries_ = 0;
+  ApplyAccountSyncView();
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
+  // over it, and nothing of the old account on the Me card (the lists read the empty stores above).
+  shell_->SelectNavTab(NavTab::Home);
+  shell_->ClearTabContext();
+  settings_->OnProfileReset();
+  // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
+  // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
+  // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
+  unlock_gate_->EnsureUnlocked(nullptr);
   return {};
 }
 
@@ -1195,7 +1228,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return {};
   };
   settings_commands.on_pin_mode_changed = [this](const bool is_default) { OnPinModeChanged(is_default); };
-  settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  // Linking a device (multi-device M027): the new device's code read here, its digits checked, the reply sealed.
+  settings_commands.link_offer_code = [&facade](const std::string& offer) { return facade.LinkOfferCode(offer); };
+  settings_commands.seal_link_reply = [&facade](const std::string& offer) -> Roe<std::vector<uint8_t>> {
+    return facade.SealLinkReply(offer);
+  };
+  settings_commands.scan_link_offer = [this](std::function<void(std::string)> done) {
+    qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md): binary, as the code shows it
+  };
   // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
   settings_commands.set_grace_minutes = [this](const int minutes) {
@@ -1632,6 +1672,21 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .open_url = [](const std::string& url) { PlatformOpenUrl(url); },
   });
   client_compat_->BindSoftUpdateChanged([this]() { chat_->RefreshUpdateCard(); });
+  // The Chats page's "this device is no longer on your account" notice: the device list says, Me → Storage resets.
+  chat_->BindDeviceRemovedNotice(DeviceRemovedNoticePorts{
+      .signed_out =
+          [&facade]() {
+            if (!facade.IsInitialized() || !facade.IsMessagingReady()) {
+              return false;
+            }
+            auto list = facade.OwnDevices();
+            return list && list->signed_out;
+          },
+      .watch = [&facade](std::function<void()> changed) { facade.SetDeviceRemovedWatch(std::move(changed)); },
+      .relink = [this]() { settings_->StartResetProfile(); },
+      .post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); },
+      .post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); },
+  });
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {
@@ -1759,9 +1814,25 @@ void Application::WireUnlockPinAndFlow() {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
-    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle_json,
+    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& reply,
                                                 const bool set_default_pin) {
-      unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
+      unlock_gate_->CompleteLinkDevice(pin, reply, set_default_pin);
+    };
+    // The new device's link page (M027): its one-time offer as a QR code, the reply read by the camera.
+    gate_complete.begin_link_offer = [&facade]() -> Roe<LinkOfferDisplay> {
+      auto shown = facade.BeginLinkOffer();
+      if (!shown) {
+        return shown.error();
+      }
+      auto qr = QrSvgContentBinary(shown->offer);
+      if (!qr) {
+        return qr.error();
+      }
+      return LinkOfferDisplay{.qr_svg = std::move(*qr), .text = std::move(shown->text), .code = std::move(shown->code)};
+    };
+    gate_complete.forget_link_offer = [&facade]() { facade.ForgetLinkOffer(); };
+    gate_complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
+      qr_scan_->Open(std::move(done), std::move(closed));
     };
     gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
@@ -1859,6 +1930,13 @@ void Application::WireUnlockPinAndFlow() {
     if (secrets_ && secrets_->IsUnlocked() && settings_) {
       settings_->OnProfileUnlocked();
     }
+    // A relaunch before an imported account's first sync finished shows its indicator again (a new account: none).
+    if (secrets_ && secrets_->IsUnlocked() && store_.IsInitialized()) {
+      if (account_sync_.OnProfileOpened(store_.Snapshot().profile_prefs.account_sync_pending)) {
+        ArmAccountSyncTimeout();
+      }
+      ApplyAccountSyncView();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();
@@ -1874,10 +1952,18 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() { UserFeedback::Ok(Tr("pin.default_provisioned_toast")); };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).
-  unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
-                                                    const std::string& bundle_json) -> Roe<void> {
-    auto imported = facade.ImportLinkDevice(bundle_json, pin);
-    if (imported && secrets_) {
+  unlock_ports.import_link_device = [this, &facade](const SecretText& pin, const std::string& reply) -> Roe<void> {
+    auto imported = facade.ImportLinkDevice(reply, pin);
+    if (!imported) {
+      // The gate shows the message: the link's own words for what went wrong with the reply (M027).
+      if (const std::string words = LinkErrorText(imported.error(), /*on_new_device=*/true); !words.empty()) {
+        Error shown = imported.error();
+        shown.message = words;
+        return shown;
+      }
+      return imported;
+    }
+    if (secrets_) {
       secrets_->DisableBiometric();
     }
     return imported;
@@ -1894,6 +1980,11 @@ void Application::WireUnlockPinAndFlow() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
     }
+    // Its contacts come over with the first account sync, a few seconds from now: the empty pages say so.
+    if (account_sync_.OnImported()) {
+      ArmAccountSyncTimeout();
+    }
+    ApplyAccountSyncView();
     // Import runs before EnsureMessagingReady; push attach after the vault is open. Off the UI thread, in the same
     // one-at-a-time run as the messaging-ready binding (ChatController / MessagingReadyTasks).
     if (chat_) {
@@ -2049,7 +2140,7 @@ void Application::WireUnlockPinAndFlow() {
     unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
     chat_->BindUnlockEnsure(unlock_ensure);
     settings_->BindUnlockEnsure(unlock_ensure);
-    // B2: the transfer code, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
+    // B2: linking a device, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
     PinPromptPorts pin_prompt;
     pin_prompt.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
       pin_gate_->ShowVerify(purpose, std::move(check), std::move(on_ok));
@@ -2337,6 +2428,7 @@ bool Application::MountPresenters(ui::Context* context) {
 
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
+  contacts_notify.threads_changed = [this]() { contacts_->OnThreadsChanged(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
   contacts_notify.select_contact_sheet = [this](const std::string& id) { contacts_->OnSelectContactSheet(id); };
   contacts_notify.show_member_sheet = [this](const std::string& account_id, const std::string& name,
@@ -2579,6 +2671,77 @@ void Application::SeedAndRefreshUiDemo() {
   }
 }
 
+void Application::PersistAccountSyncPending(const bool pending) {
+  if (!store_.IsInitialized()) {
+    return;
+  }
+  ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+  if (prefs.account_sync_pending == pending) {
+    return;
+  }
+  prefs.account_sync_pending = pending;
+  if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Account sync flag not saved: " << saved.error().message;
+  }
+}
+
+void Application::ApplyAccountSyncView() {
+  const AccountSyncView view = account_sync_.View();
+  const bool syncing = view == AccountSyncView::Syncing;
+  const bool delayed = view == AccountSyncView::Delayed;
+  if (contacts_) {
+    contacts_->SetAccountSync(syncing, delayed);
+  }
+  if (chat_) {
+    chat_->SetAccountSync(syncing, delayed);
+  }
+}
+
+void Application::ArmAccountSyncTimeout() {
+  // The spinner never runs forever: after this the page says the sync is late (the next success still clears it).
+  constexpr auto kSpinnerTimeout = std::chrono::seconds(60);
+  AppRuntime::ScheduleCoordinatorOneShot(kSpinnerTimeout, [this, token = account_sync_.TimerToken()]() {
+    AppRuntime::PostUI([this, token]() {
+      account_sync_.OnTimeout(token);
+      ApplyAccountSyncView();
+    });
+  });
+}
+
+void Application::OnAccountSyncResult(const AccountSyncResult result) {
+  if (result == AccountSyncResult::CannotSync) {
+    // Nothing is coming in this state (no recovery seed, not registered, signed out): the normal empty pages, not a
+    // "Still syncing" line forever. A device taken off its account says so in its own notice.
+    account_sync_retries_ = 0;
+    account_sync_.OnSyncImpossible();
+    PersistAccountSyncPending(false);
+    ApplyAccountSyncView();
+    return;
+  }
+  if (result == AccountSyncResult::Synced) {
+    account_sync_retries_ = 0;
+    account_sync_.OnSyncSucceeded();
+    PersistAccountSyncPending(false); // also when the relaunch's opening has not marked it yet
+    ApplyAccountSyncView();
+    return;
+  }
+  account_sync_.OnSyncFailed();
+  ApplyAccountSyncView();
+  // "It will try again on its own": the 10-minute round is far off, so a pending account asks again sooner (three
+  // times, 30 s apart) before leaving it to that round.
+  constexpr int kMaxRetries = 3;
+  if (account_sync_.Pending() && account_sync_retries_ < kMaxRetries) {
+    ++account_sync_retries_;
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(30), [this, token = account_sync_.TimerToken()]() {
+      AppRuntime::PostUI([this, token]() {
+        if (messaging_ && account_sync_.Pending() && token == account_sync_.TimerToken()) {
+          messaging_->PublishAccountLockerSoon();
+        }
+      });
+    });
+  }
+}
+
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   const auto on_ready = [this]() {
@@ -2679,6 +2842,9 @@ void Application::WireHubCallbacks() {
     }
     AppRuntime::PostUI([this]() {
       peer_icons_refresh_posted_ = false;
+      if (settings_) {
+        settings_->OnOwnIconChanged(); // our own photo, when another device of the account set it
+      }
       if (contacts_) {
         contacts_->Refresh();
         contacts_->RefreshMemberIcon(
@@ -2691,6 +2857,9 @@ void Application::WireHubCallbacks() {
         call_->RefreshPendingRing();
       }
     });
+  });
+  messaging.SetOnAccountSyncResult([this](const AccountSyncResult result) {
+    AppRuntime::PostUI([this, result]() { OnAccountSyncResult(result); }); // a worker thread → the UI thread
   });
   messaging.SetOnContactsChanged([this]() {
     // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the
@@ -3170,6 +3339,7 @@ void Application::Shutdown() {
     messaging_->SetOnLinkStateChanged(nullptr);
     messaging_->SetOnPeerIconsChanged(nullptr);
     messaging_->SetOnContactsChanged(nullptr);
+    messaging_->SetOnAccountSyncResult(nullptr);
     messaging_->SetOnCallWake(nullptr);
   }
 

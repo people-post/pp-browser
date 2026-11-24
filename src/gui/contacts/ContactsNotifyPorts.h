@@ -35,6 +35,11 @@ struct GroupAdminCard {
  */
 struct ContactsNotifyPorts {
   std::function<void()> refresh;
+  /**
+   * The chats changed (ChatController::RefreshFromMessaging: a message, a chat deleted or a group left): Contacts'
+   * Groups page, when open, reads its rows again. Cheap when it is closed.
+   */
+  std::function<void()> threads_changed;
   std::function<void(const std::string& contact_id)> select_contact;
   /**
    * From a group (a sender, the group info sheet, the member list): the contact's page as a page sheet on phones

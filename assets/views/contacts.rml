@@ -37,6 +37,14 @@
     </div>
 
     <div class="contacts-list">
+      <!-- The groups this account is in (view group_list): a linked device finds its groups here too. -->
+      <div class="nc-action contacts-groups-row" data-if="search_query == ''" data-event-click="open_group_list()">
+        <div class="nc-action-icon nc-action-icon--groups">
+          <svg src="../icons/v2/group.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:groups.title}}</p>
+        <p class="nc-action-count text muted">{{group_list_count}}</p>
+      </div>
       <div data-for="section : contact_sections" class="contacts-section">
         <p class="nc-section-header contacts-section-header">{{section.letter}}</p>
         <div data-for="contact : section.rows"
@@ -72,7 +80,12 @@
         </div>
       </div>
 
-      <div class="contacts-empty stack" data-if="contacts.size == 0 && search_query == ''">
+      <div class="sync-pending" data-if="contacts.size == 0 && search_query == '' && (account_sync_syncing || account_sync_delayed)">
+        <div class="sync-pending-spinner" data-if="account_sync_syncing"></div>
+        <p class="text muted" data-if="account_sync_syncing">{{i18n:account_sync.pending}}</p>
+        <p class="text muted" data-if="!account_sync_syncing && account_sync_delayed">{{i18n:account_sync.delayed}}</p>
+      </div>
+      <div class="contacts-empty stack" data-if="contacts.size == 0 && search_query == '' && !account_sync_syncing && !account_sync_delayed">
         <p class="text muted">{{i18n:contacts.empty_hint}}</p>
         <button class="chat-suggestion btn-icon" type="button" data-event-click="find_someone()">
           <svg src="../icons/sparkle.svg" width="14" height="14" crop-to-content="true"></svg>

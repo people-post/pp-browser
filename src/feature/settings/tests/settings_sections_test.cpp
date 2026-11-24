@@ -115,11 +115,11 @@ TEST(SettingsSectionsTest, TesterSwitchIsItsOwnPreferenceAndOffByDefault) {
   pbr::AboutSettingsSection about;
   about.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.show_tester_options, "off");
-  EXPECT_FALSE(pbr::ProfilePreferences{}.show_tester_options);
+  EXPECT_FALSE(pbr::MachinePreferences{}.show_tester_options);
   state.show_tester_options = "on";
   EXPECT_FALSE(about.IsPersisted(state, bootstrap));
   EXPECT_EQ(state.show_advanced_settings, "off") << "the advanced switch does not follow";
-  bootstrap.profile_prefs.show_tester_options = true;
+  bootstrap.machine_prefs.show_tester_options = true; // the device's (profile-model PM006)
   EXPECT_TRUE(about.IsPersisted(state, bootstrap));
   pbr::SettingsUiState other;
   about.SyncFromSession(bootstrap, other);

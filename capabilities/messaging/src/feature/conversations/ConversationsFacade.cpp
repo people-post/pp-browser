@@ -1,4 +1,7 @@
 #include "feature/conversations/ConversationsFacade.h"
+
+#include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/GroupMentions.h"
 #include "domain/attachments/AttachmentMetrics.h"
 #include "common/chat/MessagingLimits.h"
@@ -15,7 +18,6 @@
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
-#include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -127,48 +129,24 @@ bool ConversationsFacade::HasRecoveryPhrase() {
   return seed && seed->has_value();
 }
 
-Roe<std::string> ConversationsFacade::ExportLinkDevice() {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  // M021 d4: the master's transfer code is its consent — the new device appends itself to the master's list.
-  auto devices = hub_.OwnDevices();
-  if (!devices) {
-    return devices.error();
-  }
-  if (devices->signed_out) {
-    return Error(kSignedOutMessage);
-  }
-  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
-    return Error("Only your main device can add a device");
-  }
-  std::optional<std::string> card = hub_.OwnAccountCardJson();
-  if (!card) {
-    return Error("This device has no account card yet");
-  }
-  const int64_t now = util::NowUnixMs();
-  auto bundle = LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card), now);
-  if (bundle) {
-    hub_.ExpectDeviceJoin(now + kLinkDeviceDefaultTtlMs);
-  }
-  return bundle;
+Roe<LinkOffer::Shown> ConversationsFacade::BeginLinkOffer() {
+  return hub_.BeginLinkOffer();
 }
 
-Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const SecretText& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), hub_.Secrets(), bundle_json,
-                                                pin, util::NowUnixMs());
-  if (!imported) {
-    return imported.error();
-  }
-  if (imported->account_card_json) {
-    // The account's device list as the linking device knows it; a failure (logged) leaves this device to
-    // start a list of its own (its siblings learn it from its card later), not a failed link.
-    (void)hub_.LearnLinkedAccountCard(*imported->account_card_json);
-  }
-  return {};
+void ConversationsFacade::ForgetLinkOffer() {
+  hub_.ForgetLinkOffer();
+}
+
+Roe<std::string> ConversationsFacade::LinkOfferCode(const std::string& scanned_or_pasted) {
+  return hub_.LinkOfferCode(scanned_or_pasted);
+}
+
+Roe<ByteVector> ConversationsFacade::SealLinkReply(const std::string& scanned_or_pasted) {
+  return hub_.SealLinkReply(scanned_or_pasted);
+}
+
+Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& reply_scanned_or_pasted, const SecretText& pin) {
+  return hub_.ImportLinkReply(reply_scanned_or_pasted, pin);
 }
 
 Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
@@ -202,6 +180,10 @@ Roe<void> ConversationsFacade::StartNewDeviceList() {
 
 void ConversationsFacade::SetOnOwnDevicesChanged(std::function<void()> callback) {
   hub_.SetOnOwnDevicesChanged(std::move(callback));
+}
+
+void ConversationsFacade::SetDeviceRemovedWatch(std::function<void()> callback) {
+  hub_.SetDeviceRemovedWatch(std::move(callback));
 }
 
 Roe<OurRelaysStatus> ConversationsFacade::OurRelays() {
@@ -321,11 +303,6 @@ Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, 
   return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
 }
 
-Roe<bool> ConversationsFacade::RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) {
-  hub_.MeshMessaging().CancelPendingSend(message_id);
-  return hub_.Store().RemoveUnsentMessage(thread_id, message_id);
-}
-
 Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
                                                                   const std::string& message_id) {
   return hub_.Store().GetMessage(thread_id, message_id);
@@ -347,6 +324,15 @@ Roe<ThreadMessage> ConversationsFacade::EditMessage(const std::string& thread_id
 
 Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id, const std::string& message_id) {
   return hub_.ResendEdit(thread_id, message_id);
+}
+
+bool ConversationsFacade::ChatSendHeld(const std::string& thread_id) {
+  return hub_.IsMessagingReady() && hub_.MeshMessaging().ChatSendHeld(thread_id);
+}
+
+void ConversationsFacade::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                             std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  hub_.ResendMessageAsync(thread_id, message_id, std::move(on_done));
 }
 
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
@@ -1512,7 +1498,12 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
   return pbr::UpdateRegisteredNickname(*hub_.Registration(), hub_.Identity(), nickname);
 }
 
-Roe<void> ConversationsFacade::RevokeRegistration() {
+Roe<void> ConversationsFacade::LeaveRelaysOnReset() {
+  if (!hub_.OnlyDeviceOnAccount()) {
+    // A revoke would remove the account's registration for every device: the relay gives the next registration a new,
+    // empty mailbox, and what was sent before it is lost.
+    return PushDeviceCoordinator::UnregisterEverywhere(hub_);
+  }
   // Our other relays first (best effort, multi-relay R2), while the identity still says it is registered.
   if (const auto others = hub_.OtherRelayRegistrations()) {
     others->RevokeAll();

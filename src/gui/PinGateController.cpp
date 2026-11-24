@@ -39,7 +39,8 @@ void PinGateController::PullBoundPinFields() {
 
 void PinGateController::ApplyPinGate() {
   if (shell_pin_gate_.apply_pin_gate) {
-    shell_pin_gate_.apply_pin_gate(pin_state_);
+    // While the camera reads the reply, the shell has no gate: the scan page (and back / Escape) are the camera's.
+    shell_pin_gate_.apply_pin_gate(scanning_ ? PinGateState{} : pin_state_);
   }
 }
 
@@ -274,6 +275,8 @@ void PinGateController::OnUsePinInstead() {
 }
 
 void PinGateController::Dismiss() {
+  ForgetLinkOffer();
+  scanning_ = false;
   ResetSettingsFlows();
   pin_state_ = {};
   link_flow_ = false;
@@ -290,6 +293,8 @@ void PinGateController::ShowIdentityFork() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
+  ForgetLinkOffer();
+  scanning_ = false;
   link_flow_ = false;
   phrase_flow_ = false;
   pending_link_default_pin_ = false;
@@ -300,6 +305,7 @@ void PinGateController::ShowIdentityFork() {
   pin_state_.identity_fork_mode = true;
   pin_state_.title = Tr("pin.identity_fork_title").c_str();
   pin_state_.message = Tr("pin.identity_fork_message").c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -318,6 +324,7 @@ void PinGateController::ShowChooser() {
   pin_state_.chooser_mode = true;
   pin_state_.title = Tr("pin.chooser_title").c_str();
   pin_state_.message = Tr("pin.chooser_message").c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -335,6 +342,7 @@ void PinGateController::ShowLinkChooser() {
   pin_state_.chooser_mode = true;
   pin_state_.title = Tr("pin.link_chooser_title").c_str();
   pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_chooser_message") : Tr("pin.link_chooser_message")).c_str();
+  NoteChoiceShown();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -407,10 +415,73 @@ void PinGateController::ShowLinkPaste() {
   saved_copy_.clear();
   pin_state_.title = (phrase_flow_ ? Tr("pin.phrase_paste_title") : Tr("pin.link_paste_title")).c_str();
   pin_state_.message = (phrase_flow_ ? Tr("pin.phrase_paste_message") : Tr("pin.link_paste_message")).c_str();
+  if (!phrase_flow_) {
+    ShowLinkOffer();
+  }
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
   }
+}
+
+void PinGateController::ShowLinkOffer() {
+  pin_state_.link_offer_qr = "";
+  pin_state_.link_offer_code = "";
+  pin_state_.link_offer_text = "";
+  pin_state_.link_can_scan = static_cast<bool>(gate_complete_.scan_link_reply);
+  if (!gate_complete_.begin_link_offer) {
+    return;
+  }
+  auto offer = gate_complete_.begin_link_offer();
+  if (!offer) {
+    pin_state_.error = Tr("pin.link_offer_failed").c_str();
+    return;
+  }
+  pin_state_.link_offer_qr = offer->qr_svg.c_str();
+  pin_state_.link_offer_code = offer->code.c_str();
+  pin_state_.link_offer_text = offer->text.c_str();
+}
+
+void PinGateController::ForgetLinkOffer() {
+  if (link_flow_ && !phrase_flow_ && gate_complete_.forget_link_offer) {
+    gate_complete_.forget_link_offer();
+  }
+}
+
+void PinGateController::OnScanReply() {
+  if (!pin_state_.active || !pin_state_.link_paste_mode || phrase_flow_ || scanning_ ||
+      !gate_complete_.scan_link_reply) {
+    return;
+  }
+  PullBoundPinFields();
+  scanning_ = true;
+  pin_state_.error = "";
+  ApplyPinGate();
+  Remount();
+  gate_complete_.scan_link_reply(
+      [this](std::string text) {
+        if (!scanning_) {
+          return; // the gate moved on meanwhile (dismissed, back to the start)
+        }
+        scanning_ = false;
+        // As a paste of it (kept out of the rendered fields, B166), then Continue.
+        pin_state_.link_payload = "";
+        pin_state_.link_payload_full = text.c_str();
+        pin_state_.payload_hidden = true;
+        ApplyPinGate();
+        Remount();
+        if (gate_complete_.complete_link_device) {
+          gate_complete_.complete_link_device(pending_link_pin_, text, pending_link_default_pin_);
+        }
+      },
+      [this]() {
+        if (!scanning_) {
+          return;
+        }
+        scanning_ = false;
+        ApplyPinGate();
+        Remount();
+      });
 }
 
 void PinGateController::ShowVerify(const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
@@ -428,7 +499,7 @@ void PinGateController::ShowVerify(const PinVerifyPurpose purpose, PinGateCheck 
   pin_state_.verify_mode = true;
   pin_state_.title = Tr("pin.verify_title").c_str();
   switch (purpose) {
-    case PinVerifyPurpose::ExportTransferCode:
+    case PinVerifyPurpose::LinkDevice:
       pin_state_.message = Tr("pin.verify_export_message").c_str();
       break;
     case PinVerifyPurpose::ShowRecoveryPhrase:
@@ -476,22 +547,26 @@ void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change,
   Remount();
 }
 
+bool PinGateController::ChoiceTooSoon() const {
+  return Now() - choice_shown_at_ < kChoiceTapGuard;
+}
+
 void PinGateController::OnIdentityNew() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   ShowChooser();
 }
 
 void PinGateController::OnIdentityLink() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   ShowLinkChooser();
 }
 
 void PinGateController::OnIdentityPhrase() {
-  if (!pin_state_.active || !pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || !pin_state_.identity_fork_mode || ChoiceTooSoon()) {
     return;
   }
   phrase_flow_ = true;
@@ -555,7 +630,7 @@ void PinGateController::OnSetPin() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
-  if (!pin_state_.active || !pin_state_.chooser_mode) {
+  if (!pin_state_.active || !pin_state_.chooser_mode || ChoiceTooSoon()) {
     return;
   }
   ShowCreate();
@@ -565,7 +640,7 @@ void PinGateController::OnUseDefaultPin() {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
-  if (!pin_state_.active || !pin_state_.chooser_mode) {
+  if (!pin_state_.active || !pin_state_.chooser_mode || ChoiceTooSoon()) {
     return;
   }
   if (link_flow_) {

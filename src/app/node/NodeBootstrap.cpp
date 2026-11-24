@@ -23,11 +23,18 @@
 #include "common/Logger.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <utility>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
+
+namespace {
+
+constexpr char kNodeDataDirName[] = "pp-node";
+
+} // namespace
 
 Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto log = logging::getLogger("pp-node");
@@ -48,25 +55,34 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   config->mesh.node_enabled = true;
   NormalizeMeshConfig(config->mesh);
 
-  AppPaths::DataDir(config->data_dir);
+  // A data root of its own by default, never the desktop app's (profile-model PM007); a deployment names its volume.
+  AppPaths::DataDir(config->data_dir.empty()
+                        ? (std::filesystem::path(AppPaths::DataDir()).parent_path() / kNodeDataDirName).string()
+                        : config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());
   if (!registry) {
     return registry.error();
   }
-  if (!options.profile_override.empty()) {
-    registry->SetSessionProfileOverride(options.profile_override);
+  // A node's profile from before the network layout keeps its identity (its PeerId): converted in place, once.
+  if (auto converted = registry->ConvertOldFormatProfilesToNode(); !converted) {
+    return converted.error();
   }
-  if (auto ensured = registry->EnsureActiveProfile(); !ensured) {
-    return ensured.error();
+  const std::string backend_id(profile_network::kNode);
+  if (auto selected =
+          options.profile_override.empty()
+              ? registry->SelectProfileForBackend(backend_id, profile_network::kNode)
+              : registry->SelectProfileByLabel(options.profile_override, backend_id, profile_network::kNode);
+      !selected) {
+    return selected.error();
   }
 
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
-  AppPaths::EnsureDirs(profile_data_dir);
-
-  if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {
-    return manifest.error();
+  if (const ProfileManifestRead manifest = ReadProfileManifest(profile_data_dir);
+      manifest.state != ProfileManifestState::kCurrent || manifest.network != profile_network::kNode) {
+    return Error("pp-node does not open profile '" + registry->ActiveProfileId() + "': not a node profile");
   }
+  AppPaths::EnsureDirs(profile_data_dir);
 
   auto pin = PinResolver::Require(options.pin.Reveal());
   if (!pin) {
@@ -79,6 +95,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   auto identity = std::make_unique<IdentityStore>(profile_data_dir, registry->ActiveProfileId());
+  // Its registration slot is its backend's (profile-model PM004): moved out of identity.enc at the next save.
+  identity->SetBackend((std::filesystem::path(profile_data_dir) / "backends" / backend_id).string(), backend_id);
   secrets->RegisterDekConsumer(identity.get());
 
   if (auto unlocked = secrets->Unlock(*pin); !unlocked) {

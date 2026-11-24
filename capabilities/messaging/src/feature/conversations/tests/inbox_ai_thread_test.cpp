@@ -209,7 +209,7 @@ TEST(InboxAiThreadTest, AShortSentenceIsShownAsIs) {
 TEST(InboxAiThreadTest, ADeviceLinkCodeIsNeverTheTitleOrPreview) {
   AiInboxEnv env;
   env.AddAiThread("ai-1", kDefaultAiThreadTitle);
-  const std::string code = "pp-browser-link-device-v1:AbCdEf0123456789secret";
+  const std::string code = "pp-browser-link-reply:AbCdEf0123456789secret";
   ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", code));
   ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", code));
   EXPECT_EQ(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle);

@@ -21,6 +21,20 @@
 
 namespace pbr {
 
+/** How one account-locker sync attempt ended (the "Syncing…" indicator after linking or a phrase restore). */
+enum class AccountSyncResult {
+  Synced,    // the locker was read and written, with changes or without
+  Failed,    // it ran and failed (offline, the provider refused): a later attempt may succeed
+  CannotSync // it can never run on this device as it is now: no recovery seed, not registered, or signed out
+};
+
+/**
+ * True when a locker sync can never run in this state, whatever is retried: the account has no recovery seed (from
+ * before M023), this device is not registered, or it was signed out (taken off the account). Not for "not yet" states
+ * (messaging still starting, offline): those stay pending.
+ */
+bool LockerSyncImpossible(bool has_recovery_seed, bool registered, bool signed_out);
+
 /**
  * The account locker as a product step (multi-device M023 s3): publish this account's state to the locker
  * provider (the relay) sealed under keys from the recovery seed, and fetch / open a locker from a seed (restore).
@@ -37,6 +51,12 @@ public:
      * a device that missed the dissolve (it was off) ends the group too. Null: not taken.
      */
     std::function<void(const std::vector<AccountStateGroup>&)> take_dissolved;
+    /**
+     * Live groups the locker holds that this device knows nothing of (neither as a member nor as a left / dissolved
+     * tombstone), taken here at a sync: a linked device's first sync brings the account's groups (rosters and the
+     * owner-signed statements, no messages), as a phrase restore does. Null: not taken.
+     */
+    std::function<void(const std::vector<AccountStateGroup>&)> take_groups;
     /** The grants given to us that this device holds (multi-relay MR005), for the locker. Null: none published. */
     std::function<Roe<std::vector<AccountStateGrant>>()> grants;
     /**

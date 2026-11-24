@@ -124,9 +124,10 @@ Moved in pp-cpp-common **v1.3.0** (`common/runtime/`, namespace `pp`, with its t
 ## Before anything moves (CR012)
 
 - **Pins:** one pin list per app and a local mode that builds sibling checkouts together
-  (pp-ledger-apps' `PpFetchPin.cmake` as the start), so a capability + UI change stays one local build.
+  (pp-ledger-apps' `PpFetchPin.cmake` as the start), so a capability + UI change stays one local build. Done in
+  pp-browser: `cmake/PpPins.cmake` and `-DPP_SIBLINGS_DIR=..` ([BUILD § Pins and sibling builds](../../docs/ops/BUILD.md#pins-and-sibling-builds)).
 - **Vendored third-party code** (curl, BoringSSL, SQLite, …) stays committed, in one shared home rather than a
-  copy per repo.
+  copy per repo. In pp-browser that is `third_party/` with its manifest; the home across repos is open (below).
 - **Visibility:** public under people-post, like the pp-cpp-* repos.
 
 ## Costs

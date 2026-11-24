@@ -154,11 +154,30 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
   return UnregisterWith(*client, reg, IPushDeviceRegistrar::Instance().VoipPushToken());
 }
 
+Roe<void> PushDeviceCoordinator::UnregisterEverywhere(ConversationsHub& hub) {
+  if (hub.IsMessagingReady() && IPushDeviceRegistrar::Instance().IsSupported()) {
+    auto token = IPushDeviceRegistrar::Instance().GetPushToken();
+    const PushDeviceRegistration reg = token ? MakeRegistration(hub, *token) : PushDeviceRegistration{};
+    if (!reg.account_id.empty()) {
+      const std::string voip_token = IPushDeviceRegistrar::Instance().VoipPushToken();
+      for (const auto& [origin, other] : hub.OtherRelayPushDevices()) {
+        if (auto unbound = UnregisterWith(*other, reg, voip_token); !unbound) {
+          PushLog().warning << "Push unbind on another relay failed: " << AppError::Log(unbound.error());
+        }
+      }
+    }
+  }
+  return Unregister(hub);
+}
+
 void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const bool pending) {
   switch (hub.PushGate().OnSwitchPending(pending)) {
     case PushBindingGate::Action::Unbind:
       AppRuntime::PostWorkerNormal([&hub]() {
-        auto unbound = Unregister(hub);
+        // Every relay that holds a binding of ours, not the preferred one alone (profile-model P4, #746): after the
+        // restart this account is not on this device any more. A binding id not known (a restart since it was made)
+        // is learned from the relay and removed (HttpPushDeviceClient::UnregisterDevice).
+        auto unbound = UnregisterEverywhere(hub);
         if (!unbound) {
           PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
         }

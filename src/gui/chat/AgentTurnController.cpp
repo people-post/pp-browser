@@ -1532,6 +1532,9 @@ void AgentTurnController::EnsureBriefGuestLlmKey() {
   if (ResolvePreset(host_.Store().Snapshot().config) != "brief" || base_url.empty()) {
     base_url = BriefLlmBaseUrl();
   }
+  if (base_url.empty()) {
+    return; // the backend names no LLM gateway: nothing to mint at, and never at another backend's (profile-model PM002)
+  }
   // The HTTP goes off the UI thread; the key is stored back on it, and OnBriefKeyMintEnded says how it went.
   host_.MintBriefGuestKey(base_url);
 }

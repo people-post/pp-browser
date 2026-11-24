@@ -1,6 +1,6 @@
-// The "Link a new device" page, layout and wording only (Kenneth 2026-11-14): the copy button, the "copied" state and
-// the steps. The export itself (PIN gate, confirm, copy, toast) is unchanged; here the view flag its success path sets is
-// pinned (set by success only, cleared when the page is left).
+// The "Link a new device" page (Kenneth 2026-11-14; the sealed QR handshake, multi-device M027): the scan and paste
+// buttons, the digits check, the reply's QR code and the steps. The reply shows only after the person confirmed the
+// digits (the seed is sealed then), and goes when the page is left.
 #include "gui/SettingsHost.h"
 #include "gui/SettingsSecurityActions.h"
 #include "gui/UserFeedback.h"
@@ -8,6 +8,9 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/LinkHandshake.h"
+#include "foundation/error/AppError.h"
+#include "gui/LinkDeviceText.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -41,7 +44,10 @@ std::string Asset(const char* relative) {
 TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOnes) {
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = Asset(locale);
-    for (const char* key : {"settings.security.link_device.copy_button", "settings.security.link_device.copy_again",
+    for (const char* key : {"settings.security.link_device.scan_button", "settings.security.link_device.paste_button",
+                            "settings.security.link_device.check_title", "settings.security.link_device.check_message",
+                            "settings.security.link_device.check_ok", "settings.security.link_device.reply_title",
+                            "settings.security.link_device.copy_reply", "settings.security.link_device.reply_copied",
                             "settings.security.link_device.lead", "settings.security.link_device.copied_valid",
                             "settings.security.link_device.steps_head", "settings.security.link_device.step1",
                             "settings.security.link_device.step2", "settings.security.link_device.step3",
@@ -57,22 +63,27 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   EXPECT_NE(en.find("“I already have an account on another device”\""), std::string::npos);
   // Three short steps, then one grey line; the old long paragraphs are gone.
   EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN 码\""), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"粘贴关联码\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"核对数字后，扫描这台设备显示的码\""),
+            std::string::npos);
   EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
                     "be reset first.\""),
             std::string::npos);
-  for (const char* gone : {"link_device.precondition", "link_device.change_phone"}) {
+  for (const char* gone : {"link_device.precondition", "link_device.change_phone", "link_device.copy_button",
+                           "link_device.export_confirm_message"}) {
     EXPECT_EQ(zh.find(gone), std::string::npos) << gone;
     EXPECT_EQ(en.find(gone), std::string::npos) << gone;
   }
 }
 
-TEST(TransferPageMarkupTest, TheCopyButtonAndTheCopiedBoxFireTheOldEventAndTheOldTextIsGoneOnPhones) {
+TEST(TransferPageMarkupTest, TheScanAndPasteButtonsAndTheReplyBoxAreOnThePage) {
   const std::string rml = Asset("views/settings_security_transfer.rml");
-  EXPECT_NE(rml.find("class=\"btn btn-primary settings-transfer-btn\""), std::string::npos);
-  EXPECT_NE(rml.find("{{i18n:settings.security.link_device.copy_button}}"), std::string::npos);
-  EXPECT_NE(rml.find("data-if=\"transfer_code_copied\""), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"link_scan_offer()\""), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"link_paste_offer()\""), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"link_reply_shown\""), std::string::npos);
+  EXPECT_NE(rml.find("data-rml=\"link_reply_qr_rml\""), std::string::npos) << "the reply as a QR code";
+  EXPECT_NE(rml.find("data-event-click=\"copy_link_reply()\""), std::string::npos) << "and as text to copy";
+  EXPECT_EQ(rml.find("{{link_reply_text"), std::string::npos) << "the text is never bound (B166)";
   // The three old captions stay for the desktop only; nothing displays the code.
   for (const char* key : {"link_device.help", "link_device.reset_hint"}) {
     const size_t at = rml.find(std::string("{{i18n:settings.security.") + key);
@@ -118,7 +129,7 @@ private:
   SettingsUiState state_;
 };
 
-class TransferCopiedFlagTest : public testing::Test {
+class LinkReplyTest : public testing::Test {
 protected:
   void SetUp() override {
     AppRuntime::Initialize();
@@ -134,26 +145,34 @@ protected:
     bootstrap.data_dir = root.string();
     bootstrap.profile_data_dir = (root / "profile").string();
     bootstrap.profile_prefs = UserPreferences::DefaultProfile();
-    bootstrap.profile_prefs.pin_is_default = true; // the app's public PIN: the export only confirms
+    bootstrap.profile_prefs.pin_is_default = true; // the app's public PIN: no PIN step
     store.SetUiDemo(false);
     store.Initialize(std::move(bootstrap));
 
-    commands.export_link_device = [this]() -> Roe<std::string> {
-      ++exports;
-      return export_result;
+    commands.scan_link_offer = [this](std::function<void(std::string)> done) {
+      ++scans;
+      done("pp-browser-link-offer:AQ");
+    };
+    commands.link_offer_code = [this](const std::string&) { return code_result; };
+    commands.seal_link_reply = [this](const std::string& offer) -> Roe<std::vector<uint8_t>> {
+      ++seals;
+      sealed_offer = offer;
+      return seal_result;
     };
     commands.load_pin_protection = []() { return PinProtectionView{.ready = true, .unlocked = true}; };
     commands.verify_pin = [](const SecretText&) -> Roe<void> { return {}; };
-    feedback.show_confirm = [this](const std::string&, const std::string&, std::function<void(bool)> on_result,
+    feedback.show_confirm = [this](const std::string&, const std::string& message, std::function<void(bool)> on_result,
                                    const std::string&) {
       ++confirms;
+      confirm_message = message;
       on_confirm = std::move(on_result);
     };
-    feedback.show_confirm_with_note = [this](const std::string&, const std::string&, const std::string& note_line,
-                                             const std::string& note_text, std::function<void(bool)> on_result,
-                                             const std::string&) {
+    feedback.show_confirm_with_note = [this](const std::string&, const std::string& message,
+                                             const std::string& note_line, const std::string& note_text,
+                                             std::function<void(bool)> on_result, const std::string&) {
       ++confirms;
       ++noted_confirms;
+      confirm_message = message;
       confirm_note_line = note_line;
       confirm_note_text = note_text;
       on_confirm = std::move(on_result);
@@ -183,6 +202,11 @@ protected:
     AppRuntime::DrainWorkersThenUI();
     AppRuntime::RunUITasks();
   }
+  /** Scan, the digits read: the check is up. */
+  void ScanToTheCheck() {
+    actions->LinkDevice(/*scan=*/true);
+    Settle();
+  }
 
   SessionStore store;
   SettingsCommands commands;
@@ -192,94 +216,104 @@ protected:
   std::filesystem::path root;
   std::unique_ptr<FakeHost> host;
   std::unique_ptr<SettingsSecurityActions> actions;
-  Roe<std::string> export_result = std::string("code");
+  Roe<std::string> code_result = std::string("0427");
+  Roe<std::vector<uint8_t>> seal_result = std::vector<uint8_t>{1, 2, 3, 4};
+  std::string sealed_offer;
   std::function<void(bool)> on_confirm;
   std::function<void()> on_pin_ok;
   std::vector<std::string> toasts;
-  int exports = 0;
+  int scans = 0;
+  int seals = 0;
   int confirms = 0;
   int noted_confirms = 0;
+  std::string confirm_message;
   std::string confirm_note_line;
   std::string confirm_note_text;
   int pin_prompts = 0;
 };
 
-// Default PIN: the copy-code confirm carries the line and a "?" that tells the PIN; an own PIN has neither.
-TEST_F(TransferCopiedFlagTest, TheConfirmOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
-  actions->ExportLinkDevice();
+// Default PIN: the digits check carries the line and a "?" that tells the PIN; an own PIN has neither.
+TEST_F(LinkReplyTest, TheCheckOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
+  ScanToTheCheck();
   ASSERT_EQ(noted_confirms, 1);
+  EXPECT_NE(confirm_message.find("0427"), std::string::npos) << "the digits to compare";
   EXPECT_EQ(confirm_note_line, Tr("settings.security.default_hint"));
   EXPECT_NE(confirm_note_text.find(kDefaultProfilePin), std::string::npos);
   EXPECT_EQ(confirm_note_text.find("{pin}"), std::string::npos) << "the digits were filled in";
 }
 
-TEST_F(TransferCopiedFlagTest, TheConfirmOnAnOwnPinHasNoNote) {
+TEST_F(LinkReplyTest, AnOwnPinIsAskedBeforeTheCameraAndTheCheckHasNoNote) {
   SetOwnPin();
-  actions->ExportLinkDevice();
+  actions->LinkDevice(/*scan=*/true);
   ASSERT_EQ(pin_prompts, 1);
+  EXPECT_EQ(scans, 0) << "the PIN first";
   on_pin_ok();
+  Settle();
+  EXPECT_EQ(scans, 1);
   ASSERT_EQ(confirms, 1);
   EXPECT_EQ(noted_confirms, 0);
 }
 
-TEST_F(TransferCopiedFlagTest, SuccessSetsTheFlagAndLeavingThePageClearsIt) {
-  EXPECT_FALSE(actions->TransferCodeCopied());
-  actions->ExportLinkDevice();
+// M027: the seed is sealed only once the person said the new device shows the same digits.
+TEST_F(LinkReplyTest, TheReplyIsSealedAndShownOnlyAfterTheDigitsMatch) {
+  ScanToTheCheck();
   ASSERT_EQ(confirms, 1);
-  EXPECT_FALSE(actions->TransferCodeCopied()) << "not before the confirm";
+  EXPECT_EQ(seals, 0) << "nothing sealed before the check";
+  EXPECT_FALSE(actions->LinkReplyShown());
   on_confirm(true);
   Settle();
-  EXPECT_EQ(exports, 1);
-  EXPECT_TRUE(actions->TransferCodeCopied());
-  EXPECT_EQ(toasts.size(), 1u) << "the toast is still shown";
-  actions->ClearTransferCopied();
-  EXPECT_FALSE(actions->TransferCodeCopied());
+  EXPECT_EQ(seals, 1);
+  EXPECT_EQ(sealed_offer, "pp-browser-link-offer:AQ") << "the code that was checked";
+  EXPECT_TRUE(actions->LinkReplyShown());
+  EXPECT_NE(actions->LinkReplyQrForTest().find("h1v1h-1z"), std::string::npos) << "a QR code";
+  actions->ClearLinkReply();
+  EXPECT_FALSE(actions->LinkReplyShown());
+  EXPECT_TRUE(actions->LinkReplyQrForTest().empty());
 }
 
-TEST_F(TransferCopiedFlagTest, ACancelledConfirmDoesNotSetTheFlag) {
-  actions->ExportLinkDevice();
+TEST_F(LinkReplyTest, DigitsThatDoNotMatchSealNothing) {
+  ScanToTheCheck();
   ASSERT_EQ(confirms, 1);
   on_confirm(false);
   Settle();
-  EXPECT_EQ(exports, 0);
-  EXPECT_FALSE(actions->TransferCodeCopied());
+  EXPECT_EQ(seals, 0);
+  EXPECT_FALSE(actions->LinkReplyShown());
 }
 
-TEST_F(TransferCopiedFlagTest, ACancelledPinDoesNotSetTheFlag) {
-  SetOwnPin();
-  actions->ExportLinkDevice();
-  ASSERT_EQ(pin_prompts, 1) << "an own PIN is asked first";
+TEST_F(LinkReplyTest, ACheckAnsweredAfterThePageWasLeftSealsNothing) {
+  ScanToTheCheck();
+  actions->ClearLinkReply(); // the person left the page with the dialog still up
+  on_confirm(true);
+  Settle();
+  EXPECT_EQ(seals, 0);
+  EXPECT_FALSE(actions->LinkReplyShown());
+}
+
+TEST_F(LinkReplyTest, ACodeThatIsNotANewDevicesIsSaidSo) {
+  code_result = MakeLinkError(LinkError::Unreadable, "no offer");
+  ScanToTheCheck();
   EXPECT_EQ(confirms, 0);
-  Settle();
-  EXPECT_FALSE(actions->TransferCodeCopied()) << "the gate was dismissed: nothing else happens";
-  // The PIN accepted, the confirm cancelled: still no flag; accepted and confirmed: the flag.
-  on_pin_ok();
-  ASSERT_EQ(confirms, 1);
-  on_confirm(false);
-  Settle();
-  EXPECT_FALSE(actions->TransferCodeCopied());
-  on_pin_ok();
-  on_confirm(true);
-  Settle();
-  EXPECT_TRUE(actions->TransferCodeCopied());
+  EXPECT_EQ(host->failures, 1);
+  EXPECT_EQ(LinkErrorText(MakeLinkError(LinkError::Unreadable, "x"), false),
+            Tr("settings.security.link_device.err_unreadable"));
+  EXPECT_EQ(LinkErrorText(AppError::NewerFormat("x"), false), Tr("settings.security.link_device.err_newer"));
+  EXPECT_EQ(LinkErrorText(Error("Only your main device can add a device"), false), "") << "the error's own words";
 }
 
-TEST_F(TransferCopiedFlagTest, AFailedExportDoesNotSetTheFlag) {
-  export_result = Error("Only your main device can add a device");
-  actions->ExportLinkDevice();
+TEST_F(LinkReplyTest, AFailedSealShowsNoReply) {
+  seal_result = Error("Only your main device can add a device");
+  ScanToTheCheck();
   on_confirm(true);
   Settle();
-  EXPECT_EQ(exports, 1);
-  EXPECT_FALSE(actions->TransferCodeCopied());
+  EXPECT_EQ(seals, 1);
+  EXPECT_FALSE(actions->LinkReplyShown());
   EXPECT_EQ(host->failures, 1);
 }
 
-TEST_F(TransferCopiedFlagTest, TheValidityLinesCarryTheNumberOfMinutesOfTheCodesOwnLifetime) {
-  ASSERT_EQ(kLinkDeviceDefaultTtlMs, 15 * 60 * 1000) << "the strings below are derived from this constant";
-  // Not bound yet, so read the strings the way the page does: the helper formats {minutes}.
-  const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
+TEST_F(LinkReplyTest, TheValidityLineCarriesTheLinksMinutes) {
+  ASSERT_EQ(kLinkWindowMs, 15 * 60 * 1000) << "the string below is derived from this constant";
+  const std::string minutes = std::to_string(kLinkWindowMs / 60000);
   EXPECT_EQ(Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}), "Valid for 15 minutes");
-  EXPECT_EQ(Tr("settings.security.link_device.lead", {{"minutes", minutes}}), "The link code is valid for 15 minutes.");
 }
 
 } // namespace

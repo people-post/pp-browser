@@ -30,7 +30,6 @@ struct MachinePreferences {
   static constexpr int kSchemaVersion = 1;
 
   int schema_version = kSchemaVersion;
-  std::string active_profile_id = "default";
   WindowPrefs window;
   SafeAreaInsets safe_area;
   DisplayPrefs display;
@@ -40,6 +39,12 @@ struct MachinePreferences {
    * hence here and not in a profile's preferences. Optional on disk (absent = off); the schema version stays.
    */
   bool collect_run_logs = false;
+  /**
+   * Me → Help, five taps on the version: the internal test options (and the Staging / Dev services in the service
+   * list). Off by default. The device's, not a profile's (profile-model PM006): it decides which backends are offered
+   * before a profile is open. Optional key; an older build ignores it.
+   */
+  bool show_tester_options = false;
   /**
    * Settings → Advanced → "Collect crash logs": when on, Send run logs also carries the crash records. Device-wide,
    * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
@@ -79,6 +84,13 @@ struct ProfilePreferences {
   /** Phone chat composer: the last input mode was voice (true) rather than keyboard (false). Optional on disk; device-only, never synced. */
   bool composer_voice_mode_last = false;
   /**
+   * An account was brought over (linking code or recovery phrase) and its first account-data sync has not finished:
+   * the Contacts and Chats pages show "Syncing…" instead of the empty state. Set when the import ends, cleared when
+   * the first locker sync succeeds. Optional on disk (absent = false = not pending; no schema bump); device-only,
+   * never synced.
+   */
+  bool account_sync_pending = false;
+  /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
    * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.
    */
@@ -112,8 +124,6 @@ struct ProfilePreferences {
   bool attachment_auto_on_cellular = false;
   /** Me → About: show the technical options (ids, endpoints, MCP, paths). Off for everyone by default. */
   bool show_advanced_settings = false;
-  /** Me → Help, five taps on the version: the internal test options (and the Staging / Dev services in the service list). Off by default. */
-  bool show_tester_options = false;
   /** First-run wizard finished or skipped (or an account was brought over). */
   bool onboarding_completed = false;
   /** The ask-AI panel's one-time privacy card was dismissed ("Got it"; DEV/PLAN-ui-batch5-ask-ai.md 5a). */

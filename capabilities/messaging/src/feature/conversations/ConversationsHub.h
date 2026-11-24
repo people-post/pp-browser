@@ -13,6 +13,8 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "lib/people/AccountCard.h"
+#include "lib/people/LinkOffer.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
@@ -50,6 +52,7 @@
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+#include "feature/conversations/QueuedResend.h"
 #include "feature/conversations/RelayRegistrationSignal.h"
 #include "lib/net/BlobClient.h"
 #include "lib/net/BlobQuota.h"
@@ -87,6 +90,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -97,6 +101,7 @@ namespace pbr {
 class IPeerSessionStore;
 class ProfileSecretsEngine;
 class ContactProfileRefresh;
+class OwnProfileIconSync;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -211,10 +216,33 @@ public:
   /** Unread mentions of this account per thread (G015); null until the stores open. */
   IThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
-  /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
-  std::optional<std::string> OwnAccountCardJson();
-  /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
-  Roe<void> LearnLinkedAccountCard(const std::string& card_json);
+  /**
+   * Linking a device by the sealed QR handshake (multi-device M027; docs/contracts/LINK_DEVICE.md). New device: a fresh
+   * one-time key and the offer it shows (LinkOffer::Begin; the one before is wiped). Held in memory only.
+   */
+  Roe<LinkOffer::Shown> BeginLinkOffer();
+  /** New device: the person left the link page — the one-time key is wiped. */
+  void ForgetLinkOffer();
+  /**
+   * Main device: whether it may link a device now (M021 d4: the main device, not signed out, with a card our relays
+   * keep for the new device to fetch). Messaging up.
+   */
+  Roe<void> CheckCanLinkDevice();
+  /** Main device: the 4 digits of the offer scanned or pasted (FindLinkPayload, ReadLinkOffer), once it may link. */
+  Roe<std::string> LinkOfferCode(const std::string& scanned_or_pasted);
+  /**
+   * Main device, once the person saw the same digits on both: the reply sealing the account's seed to the offer, with
+   * our preferred relay when it is not the deployment's. A device joining is expected for the link's window (OwnCards).
+   */
+  Roe<ByteVector> SealLinkReply(const std::string& scanned_or_pasted);
+  /**
+   * New device, before unlocking: the reply scanned or pasted, opened with the kept key; the account comes here from
+   * its seed with a DEK of this device's (LinkDeviceCoordinator::ImportAccount, intent join), the bundle's relay becomes
+   * ours, and our card is asked of our relays (it lists the main device: this device appends itself on its first card;
+   * the nickname is the card's). A relay that does not answer now leaves the card to OwnCards' own asking. The key is
+   * wiped once the account is here.
+   */
+  Roe<void> ImportLinkReply(const std::string& scanned_or_pasted, const SecretText& pin);
   GroupMembershipWorkflow& Groups();
   /** G021: invite links (making, answering joins, joining); null until messaging is up. */
   GroupInviteLinkWorkflow* GroupLinksOrNull() { return group_links_.get(); }
@@ -313,6 +341,8 @@ public:
   std::shared_ptr<IClientCompatClient> ClientCompat() const;
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
+  /** `backends/{backend id}/` in the profile (profile-model PM004): what this device keeps of its backend's services. */
+  const std::string& BackendDataDir() const { return backend_data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
   const std::string& LastMeshError() const { return mesh_last_error_; }
 
@@ -324,8 +354,8 @@ public:
   Roe<void> SaveProfileNickname(const std::string& nickname);
   /**
    * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
-   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
-   * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
+   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), the account imported from the
+   * seed as a link does (a fresh DEK under `pin`, a fresh device list), the contacts put back; groups, card floors and the announce
    * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
    * newest valid copy among them and the provider's is used (M023 §6 amendment).
    */
@@ -344,6 +374,8 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** This device is the account's only one (OwnCards::OnlyDevice); false before messaging is up. */
+  bool OnlyDeviceOnAccount();
   /**
    * The person chose a new device list (no card of ours was found on our relays, OwnCards::StartFreshList): this
    * device's card holds only itself, as the master, and goes to our contacts and relays — the account's other devices
@@ -353,10 +385,22 @@ public:
   /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
   /**
+   * A second listener to the same change, for the Chats page's notice that this device was taken off its account
+   * (Me → My devices keeps the first while it is open). Runs on any thread; null clears it.
+   */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
+  /**
    * The address book changed (a contact added, renamed, removed, blocked, or refreshed from its card or the
    * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
    */
   void SetOnContactsChanged(std::function<void()> callback);
+  /**
+   * An account-locker sync (the account's contacts and groups across its devices) ended: Synced when it completed
+   * (with changes or without), Failed when the locker could not be read or written, CannotSync when it can never run
+   * in this state (no recovery seed, not registered, signed out). Not called when it did not run for now (messaging
+   * not up yet). Runs on a worker thread.
+   */
+  void SetOnAccountSyncResult(std::function<void(AccountSyncResult)> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
@@ -441,6 +485,14 @@ public:
    * as a new edit with the same words and the same send time, and the unsent one goes. Returns the new edit's row.
    */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * The red mark of our message `message_id` tapped (B236): it is sent again as itself
+   * (MeshDeliveryOrchestrator::ResendStoredMessage), unless what it carries is known to be gone from the server (its
+   * share link past the relay's file lifetime, or missing from our files there). Off the caller's thread; `on_done`
+   * on a worker. An error: not sent (not one that can be, or its send failed).
+   */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   /**
    * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
    * and the send pace (AttachmentLimits::send_max_per_minute).
@@ -702,6 +754,8 @@ private:
   void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
+  /** After a locker sync: fetch our own photo when another device of the account set a new one (off the UI thread). */
+  void RefreshOwnProfileIconSoon();
   /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
   bool RefreshContactProfileNow(const std::string& contact_id, bool force = false);
   void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
@@ -718,6 +772,7 @@ private:
   void StopCoordinatorTimers();
 
   std::string data_dir_;
+  std::string backend_data_dir_;
   std::string profile_id_;
   HubSettings config_; // UI (the hub's thread)
   /** The policies in force (from the settings, then Apply). */
@@ -856,8 +911,11 @@ private:
   void NotifyOwnDevicesChanged();
   std::mutex own_devices_changed_mu_;
   std::function<void()> on_own_devices_changed_;
+  std::function<void()> device_removed_watch_;
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
+  std::mutex account_sync_result_mu_;
+  std::function<void(AccountSyncResult)> on_account_sync_result_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */
@@ -918,10 +976,17 @@ private:
   std::shared_ptr<CasStore> content_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
-  Roe<void> KeepLinkedAccountCard(const std::string& card_json);
+  /** Our card as our relays keep it, for a device just linked: kept, its nickname and floor this device's (M027). */
+  Roe<void> KeepLinkedAccountCard(const AccountCard& card);
+  /** Our preferred relay, for a link reply: none when it is the deployment's (the new device knows that one). */
+  std::optional<RelayAddress> LinkRelayHint() const;
+  /** The new device's one-time link key while it waits for the reply (M027). */
+  LinkOffer link_offer_;
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
+  /** Our own photo when it was set on another device of the account (after a locker sync). */
+  std::unique_ptr<OwnProfileIconSync> own_icon_sync_;
   std::unique_ptr<ContactRefreshWorkflow> contact_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
@@ -992,6 +1057,9 @@ private:
    * Registration, PushDevices, ClientCompat and BlobClient (copies, under clients_mu_).
    */
   mutable std::mutex clients_mu_;
+  /** Messages whose tap-resend (ResendMessageAsync) is being started: a second tap meanwhile sends nothing. */
+  std::mutex tap_resends_mu_;
+  std::set<std::string> tap_resends_;
   std::shared_ptr<IRegistrationClient> registration_;
   std::shared_ptr<IPushDeviceClient> push_devices_;
   std::shared_ptr<IClientCompatClient> client_compat_;

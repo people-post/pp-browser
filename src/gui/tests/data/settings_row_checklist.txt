@@ -159,7 +159,7 @@ data-value="server.url"	1	integrations	advanced_integrations	advanced;;advanced	
 {{i18n:settings.integrations.search}}	1	-	advanced_integrations	advanced;;advanced	integrations	
 {{i18n:settings.integrations.server_id}}	1	-	advanced_integrations	advanced;;advanced	integrations	
 {{i18n:settings.integrations.server_url}}	1	-	advanced_integrations	advanced;;advanced	integrations	
-data-event-change="on_network_field_changed()"	3	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-event-change="on_network_field_changed()"	10	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-event-click="reset_section('network')"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-value="directory_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-value="registration_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
@@ -169,7 +169,23 @@ data-value="relay_base_url"	1	network	advanced_backend	advanced;;advanced;;backe
 {{i18n:settings.network.directory}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.network.registration}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.network.relay}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.registration_required}}	1	network	advanced_backend	advanced;;advanced;;backend_is_custom;;registration_required	network	
 {{i18n:settings.network.relay_id_missing}}	1	network	advanced_backend	advanced;;advanced;;backend_is_custom;;relay_id_missing	network	
+data-value="service_account_locker"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_client_compat"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_llm_gateway"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_llm_token"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_crash_intake"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_mesh_nodes"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_promoted_mcp"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.account_locker}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.client_compat}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.llm_gateway}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.llm_token}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.crash_intake}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.mesh_nodes}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.promoted_mcp}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{backend_services_missing}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom;;backend_services_missing != ''	network	
 data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	2	profile	profile	advanced	profile	10
@@ -246,11 +262,20 @@ data-event-click="ask_setting_help('settings.help.topic.account_copy')"	2	-	devi
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	!own_devices_not_main && !own_list_getting && !own_list_missing	devices	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	-	devices	
 data-event-click="ask_setting_help('settings.security.transfer_row')"	1	-	devices	own_devices_not_main && !own_devices_signed_out;;!device.is_this_device && device.is_main	devices	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-data-event-click="export_link_device()"	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 data-event-click="make_main_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="open_own_device_actions(device_index)"	1	-	devices	own_devices_shown && !own_devices_not_main;;!device.is_this_device && device.can_manage	devices	
+data-event-click="link_scan_offer()"	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan	devices	
+data-event-click="link_paste_offer()"	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+data-event-click="copy_link_reply()"	1	-	devices	link_reply_shown	devices	
+data-event-click="clear_link_reply()"	1	-	devices	link_reply_shown	devices	
+{{i18n:settings.security.link_device.scan_button}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan	devices	
+{{i18n:settings.security.link_device.paste_button}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+{{i18n:settings.security.link_device.reply_title}}	1	-	devices	link_reply_shown	devices	
+{{i18n:settings.security.link_device.copy_reply}}	1	-	devices	link_reply_shown	devices	
+{{i18n:common.ok}}	1	-	devices	link_reply_shown	devices	
+{{i18n:settings.security.link_device.handover_after}}	1	-	devices	link_reply_shown	devices	
+{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+{{move_valid_label}}	1	-	devices	link_reply_shown	devices	
 data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main && !own_list_getting && !own_list_missing	devices	
 data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	
 data-event-click="rename_own_device(device_index)"	1	-	devices	own_devices_not_main && !own_devices_signed_out;;device.is_this_device	devices	
@@ -290,11 +315,6 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.devices.view_head}}	1	-	devices	own_devices_not_main && !own_devices_signed_out	devices	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown	security	
 {{i18n:settings.security.devices}}	1	-	devices	own_devices_shown && !own_devices_not_main	security	
-{{i18n:settings.security.link_device.copy_again}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-{{i18n:settings.security.link_device.copy_button}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-{{i18n:settings.security.link_device.export_done}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
-{{i18n:settings.security.link_device.export}}	1	-	devices	security_can_export_link && !own_devices_not_main	devices	
-{{i18n:settings.security.link_device.handover_after}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{i18n:settings.security.link_device.help}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.phone_note}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device.reset_hint}}	1	-	devices	-	devices	
@@ -305,8 +325,6 @@ data-event-click="save_account_copy()"	2	-	devices	security_has_recovery_phrase	
 {{i18n:settings.security.link_device.steps_head}}	1	-	devices	-	devices	
 {{i18n:settings.security.link_device}}	1	-	devices	-	devices	
 {{i18n:settings.security.transfer_row}}	1	-	devices	!own_devices_not_main && !own_list_getting && !own_list_missing	devices	
-{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;!transfer_code_copied	devices	
-{{move_valid_label}}	1	-	devices	security_can_export_link && !own_devices_not_main;;transfer_code_copied	devices	
 {{own_main_note}}	1	-	devices	own_devices_not_main && !own_devices_signed_out;;own_main_note != ''	devices	
 data-event-click="start_new_device_list()"	1	-	devices	own_list_missing	devices	
 {{i18n:settings.security.devices.getting_list}}	1	-	devices	own_list_getting	devices	

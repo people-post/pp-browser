@@ -13,6 +13,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <gtest/gtest.h>
 #include <sodium.h>
 #include "common/PbrCompat.h"
@@ -509,3 +510,108 @@ TEST_F(IdentityStoreTest, ANewDekForALinkOrRestoreDropsTheOldAccountsCard) {
 }
 
 } // namespace
+
+// ---- profile-model P3: the registration slot and the Brief LLM token are the backend's ----------------------------
+
+namespace {
+
+std::string DecryptedIdentityJson(const std::filesystem::path& dir) {
+  std::ifstream in(dir / "identity.enc", std::ios::binary);
+  const ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  auto plaintext = FileCipher::Decrypt(MakeTestDek(), blob, FileCipher::BuildAad("identity", "test-profile"));
+  return plaintext ? std::string(plaintext->begin(), plaintext->end()) : std::string();
+}
+
+LocalIdentity Registered(LocalIdentity identity) {
+  identity.registered = true;
+  identity.registration_id = "reg-1";
+  identity.registered_backend_url = "https://relay.example.test/api/relay";
+  identity.brief_llm_api_key = "token-1";
+  identity.registered_card_issued_at = 7;
+  return identity;
+}
+
+} // namespace
+
+TEST_F(IdentityStoreTest, TheRegistrationIsKeptInItsBackendsFileNotInIdentityEnc) {
+  const std::filesystem::path backend = data_dir_ / "backends" / "prod";
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    store.SetBackend(backend.string(), "prod");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    ASSERT_TRUE(static_cast<bool>(store.Update(Registered(*identity))));
+  }
+  EXPECT_TRUE(std::filesystem::exists(backend / "registration.enc"));
+  const std::string json = DecryptedIdentityJson(data_dir_);
+  ASSERT_FALSE(json.empty());
+  for (const char* key :
+       {"\"registered\"", "\"registration_id\"", "\"brief_llm_api_key\"", "\"registered_backend_url\""}) {
+    EXPECT_EQ(json.find(key), std::string::npos) << key << " stays out of identity.enc";
+  }
+  EXPECT_NE(json.find("\"account_id\""), std::string::npos);
+
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  reloaded.SetBackend(backend.string(), "prod");
+  ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+  auto back = reloaded.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(back)) << back.error().message;
+  EXPECT_TRUE(back->registered);
+  EXPECT_EQ(back->registration_id, "reg-1");
+  EXPECT_EQ(back->brief_llm_api_key.Reveal(), "token-1");
+  EXPECT_EQ(back->registered_card_issued_at, 7);
+}
+
+// An identity.enc written before the move still holds them: they are read, and moved out at the next save.
+TEST_F(IdentityStoreTest, AnIdentityThatStillHoldsTheRegistrationGivesItUpAtTheNextSave) {
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity));
+    ASSERT_TRUE(static_cast<bool>(store.Update(Registered(*identity))));
+  }
+  ASSERT_NE(DecryptedIdentityJson(data_dir_).find("\"registration_id\""), std::string::npos);
+
+  const std::filesystem::path backend = data_dir_ / "backends" / "staging";
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    store.SetBackend(backend.string(), "staging");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity)) << identity.error().message;
+    EXPECT_EQ(identity->registration_id, "reg-1") << "read from identity.enc";
+    store.Flush();
+  }
+  EXPECT_TRUE(std::filesystem::exists(backend / "registration.enc"));
+  EXPECT_EQ(DecryptedIdentityJson(data_dir_).find("\"registration_id\""), std::string::npos);
+
+  IdentityStore reloaded(data_dir_.string(), "test-profile");
+  reloaded.SetBackend(backend.string(), "staging");
+  ASSERT_TRUE(reloaded.SetDek(MakeTestDek()));
+  auto back = reloaded.LoadOrCreate();
+  ASSERT_TRUE(static_cast<bool>(back));
+  EXPECT_EQ(back->registration_id, "reg-1");
+  EXPECT_EQ(back->brief_llm_api_key.Reveal(), "token-1");
+}
+
+// The file is sealed for its profile and backend: put under another backend, it does not open.
+TEST_F(IdentityStoreTest, ARegistrationFileOpensOnlyForItsOwnBackend) {
+  const std::filesystem::path prod = data_dir_ / "backends" / "prod";
+  {
+    IdentityStore store(data_dir_.string(), "test-profile");
+    store.SetBackend(prod.string(), "prod");
+    ASSERT_TRUE(store.SetDek(MakeTestDek()));
+    auto identity = store.LoadOrCreate();
+    ASSERT_TRUE(static_cast<bool>(identity));
+    ASSERT_TRUE(static_cast<bool>(store.Update(Registered(*identity))));
+  }
+  const std::filesystem::path dev = data_dir_ / "backends" / "dev";
+  std::filesystem::create_directories(dev);
+  std::filesystem::copy_file(prod / "registration.enc", dev / "registration.enc");
+  IdentityStore moved(data_dir_.string(), "test-profile");
+  moved.SetBackend(dev.string(), "dev");
+  ASSERT_TRUE(moved.SetDek(MakeTestDek()));
+  EXPECT_FALSE(static_cast<bool>(moved.LoadOrCreate()));
+}

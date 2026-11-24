@@ -7768,6 +7768,32 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* The link page (M027): the new device's offer, a dense QR code (version 29) the main device's camera reads from this
+   screen, so as large as the card allows; dark on white whatever the theme. */
+.shell-pin-gate-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6dp;
+  margin-bottom: 10dp;
+}
+
+.shell-pin-gate-qr {
+  width: 260dp;
+  height: 260dp;
+  /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
+  image-color: #ffffff;
+}
+
+.shell-pin-gate-code {
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-pin-gate-scan {
+  margin-bottom: 8dp;
+}
+
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
 .shell-note-line {
   display: flex;
@@ -8266,6 +8292,34 @@ input.checkbox {
 .sidebar-empty {
   padding: 24dp 16dp;
   text-align: center;
+}
+
+/* An imported account's contacts have not come over yet (AccountSyncState): a spinner and one line, centred in the
+   empty list. Shared by the Contacts page and the Chats list; the arc's colours are in the colour template. */
+@keyframes sync-pending-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320dp;
+  padding: 24dp 16dp;
+  gap: 14dp;
+  text-align: center;
+}
+
+.sync-pending-spinner {
+  flex-shrink: 0;
+  width: 28dp;
+  height: 28dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 17dp;
+  animation: 0.9s linear infinite sync-pending-spin;
 }
 
 .sidebar-empty .btn {
@@ -11816,6 +11870,26 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* Groups page (view group_list, Contacts / New chat → Groups): the Blocked list's card of 60dp rows (avatar, name), each
+   row's member count on its right; a tap opens the chat, a long press the Chats list's menu. */
+.group-list-members {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 15dp;
+  line-height: 60dp;
+  white-space: nowrap;
+}
+
+/* The Groups row on Contacts and New chat (a 56dp nc-action): how many groups, on its right. */
+.nc-action-count {
+  flex: 1;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: right;
+}
+
 .blocked-unblock {
   flex-shrink: 0;
   height: 44dp;
@@ -14115,8 +14189,8 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
-/* Me > Devices & transfer > Move to a new device (phones): lead line, the 50dp copy button (the grouped-page .btn), the
-   framed "copied" box with its small "again" button, then the numbered steps and the reset note. */
+/* Me > Devices & transfer > Link a new device (phones): lead line, the 50dp scan and paste buttons (the grouped-page
+   .btn), the framed reply box with its QR code and small "copy" button, then the numbered steps and the reset note. */
 .shell-layer-compact .settings-transfer-lead {
   margin: 20dp 32dp 0 32dp;
   font-size: 15dp;
@@ -14149,6 +14223,27 @@ textarea:composing ~ .prompt-composer-label,
   display: block;
   margin: 4dp -8dp 0 -8dp;
   text-align: left;
+}
+
+/* The link reply (M027): a dense QR code (version 29 or 30) for the new device's camera, as large as the box allows;
+   dark on white whatever the theme. */
+.settings-link-reply {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6dp;
+}
+
+.settings-link-qr {
+  width: 280dp;
+  height: 280dp;
+  margin: 8dp 0;
+  /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
+  image-color: #ffffff;
+}
+
+.shell-layer-compact .settings-link-reply {
+  align-items: center;
 }
 
 .shell-layer-compact .settings-steps-card {

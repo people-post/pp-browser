@@ -11,6 +11,10 @@ keeps it as its relay until their card arrives, so a first message can reach the
 relay's certificate names.
 Me → My relays → **Add relay…** also scans: a relay's link (`https://host#relay:…`) shown as a QR code goes into its
 field and is checked as a pasted link ([UI_DESIGN_SYSTEM § My relays](UI_DESIGN_SYSTEM.md#my-relays)).
+Linking a device ([LINK_DEVICE.md](../contracts/LINK_DEVICE.md)) scans too, each side its own payload, read as binary
+bytes: Me → Security → Link a new device reads the new device's code, and the new device's link page (under the PIN
+gate, which steps aside while the camera is open and comes back when nothing was read: `Open`'s `on_closed`) reads the
+main device's reply. Neither goes through the contact / join routing below.
 A group's **invite link** (`pp://join/…`, [group-chat G021](../../projects/group-chat/DECISIONS.md#g021--invite-links))
 is the other kind it reads: the chats' join prompt asks the link's maker, then shows the group's name and
 member count with Join / Cancel; only Join joins. Other QR contents, including ordinary URLs, produce an

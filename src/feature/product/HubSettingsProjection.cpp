@@ -1,7 +1,9 @@
 #include "feature/product/HubSettingsProjection.h"
 
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/platform/os/OsDeviceName.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
@@ -18,11 +20,23 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   HubSettings settings;
   settings.mesh = config.mesh;
   settings.relay = config.relay;
-  settings.relay_extra_base_urls = config.relay_extra_base_urls;
+
   settings.directory = config.directory;
   settings.registration = config.registration;
+  const BackendTable table = ActiveBackendTable();
+  // The other relays a new profile's list starts with are the backend's seeds (profile-model PM006, PM011): a custom
+  // backend's `relay.extra_base_urls`, none for a built-in one. Under PP_BROWSER_ORIGIN (a developer's own backend) the
+  // file's still seed it.
+  settings.relay_extra_base_urls = table.seed_relays;
+  if (settings.relay_extra_base_urls.empty() && OriginEnvOverrideActive()) {
+    settings.relay_extra_base_urls = config.relay_extra_base_urls;
+  }
+  settings.account_locker_url = table.account_locker_url;
+  settings.client_compat_url = table.client_compat_url;
+  settings.llm_token_url = table.llm_token_url;
   settings.initiation_floor = config.initiation_floor;
   settings.app_data_dir = AppPaths::DataDir(config.data_dir);
+  settings.backend_id = kUiDemoBuild ? std::string("prod") : BackendProfileKey(config); // as Bootstrap selects it
   settings.policy = ProjectPolicy(prefs);
   settings.system_device_name = StartupSystemDeviceName();
   settings.developer_relays = kDeveloperRelaysAllowed;
@@ -42,7 +56,23 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
 
 HubSettings HubSettingsFor(const AppConfig& config, const std::string& profile_data_dir) {
   auto prefs = UserPreferences::LoadProfile(profile_data_dir);
-  return HubSettingsFrom(config, prefs ? *prefs : ProfilePreferences{});
+  HubSettings settings = HubSettingsFrom(config, prefs ? *prefs : ProfilePreferences{});
+  ApplyProfileServices(settings, LoadProfileServices(profile_data_dir));
+  return settings;
+}
+
+void ApplyProfileServices(HubSettings& settings, const ProfileServices& services) {
+  if (!services.directory_providers || services.directory_providers->empty()) {
+    return;
+  }
+  settings.directory.providers.clear();
+  for (const std::string& url : *services.directory_providers) {
+    ServiceEndpointConfig provider;
+    provider.base_url = url;
+    provider.transport = "http";
+    settings.directory.providers.push_back(std::move(provider));
+  }
+  settings.directory.base_url = services.directory_providers->front();
 }
 
 ConversationsHub::NetworkConfig ProjectNetwork(const AppConfig& config) {

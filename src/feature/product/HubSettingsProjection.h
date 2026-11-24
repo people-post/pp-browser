@@ -2,6 +2,7 @@
 
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/data/Config.h"
+#include "foundation/data/ProfileServices.h"
 #include "foundation/data/UserPreferences.h"
 #include "foundation/platform/ILocalNotifier.h"
 
@@ -21,8 +22,13 @@ const std::string& StartupSystemDeviceName();
 
 /** The hub's settings from the app's config and the profile's preferences. */
 HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& prefs);
-/** The same, the profile's preferences read from `profile_data_dir` (defaults when unreadable). */
+/**
+ * The same, the profile's preferences and its own service choices (services.json, ApplyProfileServices) read from
+ * `profile_data_dir` (defaults when unreadable).
+ */
 HubSettings HubSettingsFor(const AppConfig& config, const std::string& profile_data_dir);
+/** The profile's own directory providers (profile-model PM011) over the backend's; absent: the backend's stay. */
+void ApplyProfileServices(HubSettings& settings, const ProfileServices& services);
 
 /** The hot-reloadable network / mesh slice of the app's config. */
 ConversationsHub::NetworkConfig ProjectNetwork(const AppConfig& config);

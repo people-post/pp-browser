@@ -246,6 +246,30 @@ void SettingsController::OnMessagingTornDown() {
   profile_actions_.OnMessagingTornDown();
 }
 
+void SettingsController::OnProfileReset() {
+  const SettingsUiState fresh;
+  ui_state_.profile_nickname = fresh.profile_nickname;
+  ui_state_.profile_peer_id = fresh.profile_peer_id;
+  ui_state_.profile_account_id = fresh.profile_account_id;
+  ui_state_.profile_registered = fresh.profile_registered;
+  ui_state_.profile_registration_status = fresh.profile_registration_status;
+  ui_state_.profile_registration_expires = fresh.profile_registration_expires;
+  ui_state_.profile_register_label = fresh.profile_register_label;
+  ui_state_.profile_show_register = fresh.profile_show_register;
+  ui_state_.profile_register_primary = fresh.profile_register_primary;
+  ui_state_.profile_show_rotate = fresh.profile_show_rotate;
+  ui_state_.profile_icon_src = fresh.profile_icon_src;
+  ui_state_.profile_has_icon = fresh.profile_has_icon;
+  ui_state_.profile_icon_uploading = fresh.profile_icon_uploading;
+  ui_state_.profile_show_clear_icon = fresh.profile_show_clear_icon;
+  ui_state_.profile_avatar_letter = fresh.profile_avatar_letter;
+  ui_state_.profile_avatar_tone = fresh.profile_avatar_tone;
+  // The name field's baseline too, so the next load (the new account's) is not taken for an edit of the old name.
+  UiEditSession::Instance().OnLoaded(kUiFieldProfileNickname, "");
+  PushUiStateToBindings();
+  DirtyAll(/*include_profile_nickname=*/true);
+}
+
 void SettingsController::BindShowMyQr(std::function<void()> show) {
   profile_actions_.BindShowMyQr(std::move(show));
 }
@@ -328,6 +352,13 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.relay_base_url = bindings_.relay_base_url.c_str();
   ui_state_.directory_base_url = bindings_.directory_base_url.c_str();
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
+  ui_state_.service_account_locker = bindings_.service_account_locker.c_str();
+  ui_state_.service_client_compat = bindings_.service_client_compat.c_str();
+  ui_state_.service_llm_gateway = bindings_.service_llm_gateway.c_str();
+  ui_state_.service_llm_token = bindings_.service_llm_token.c_str();
+  ui_state_.service_crash_intake = bindings_.service_crash_intake.c_str();
+  ui_state_.service_mesh_nodes = bindings_.service_mesh_nodes.c_str();
+  ui_state_.service_promoted_mcp = bindings_.service_promoted_mcp.c_str();
   ui_state_.node_enabled = bindings_.node_enabled.c_str();
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.amp_listen_multiaddr = bindings_.amp_listen_multiaddr.c_str();
@@ -427,6 +458,14 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.relay_base_url = ui_state_.relay_base_url.c_str();
   bindings_.directory_base_url = ui_state_.directory_base_url.c_str();
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
+  bindings_.service_account_locker = ui_state_.service_account_locker.c_str();
+  bindings_.service_client_compat = ui_state_.service_client_compat.c_str();
+  bindings_.service_llm_gateway = ui_state_.service_llm_gateway.c_str();
+  bindings_.service_llm_token = ui_state_.service_llm_token.c_str();
+  bindings_.service_crash_intake = ui_state_.service_crash_intake.c_str();
+  bindings_.service_mesh_nodes = ui_state_.service_mesh_nodes.c_str();
+  bindings_.service_promoted_mcp = ui_state_.service_promoted_mcp.c_str();
+  bindings_.backend_services_missing = ui_state_.backend_services_missing.c_str();
   bindings_.node_enabled = ui_state_.node_enabled.c_str();
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.amp_listen_multiaddr = ui_state_.amp_listen_multiaddr.c_str();
@@ -448,6 +487,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.backend_restart_pending = ui_state_.backend_restart_pending;
   bindings_.backend_is_custom = ui_state_.backend_env == "custom";
   bindings_.relay_id_missing = ui_state_.relay_id_missing;
+  bindings_.registration_required = ui_state_.registration_required;
   bindings_.direct_connections = ui_state_.direct_connections.c_str();
   bindings_.trusted_relays_only = ui_state_.trusted_relays_only.c_str();
   bindings_.reachable_without_relay = ui_state_.reachable_without_relay.c_str();
@@ -661,6 +701,14 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
+    ctor.Bind("service_account_locker", &controller.bindings_.service_account_locker);
+    ctor.Bind("service_client_compat", &controller.bindings_.service_client_compat);
+    ctor.Bind("service_llm_gateway", &controller.bindings_.service_llm_gateway);
+    ctor.Bind("service_llm_token", &controller.bindings_.service_llm_token);
+    ctor.Bind("service_crash_intake", &controller.bindings_.service_crash_intake);
+    ctor.Bind("service_mesh_nodes", &controller.bindings_.service_mesh_nodes);
+    ctor.Bind("service_promoted_mcp", &controller.bindings_.service_promoted_mcp);
+    ctor.Bind("backend_services_missing", &controller.bindings_.backend_services_missing);
     ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
     ctor.Bind("amp_listen_multiaddr", &controller.bindings_.amp_listen_multiaddr);
@@ -683,6 +731,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("backend_restart_pending", &controller.bindings_.backend_restart_pending);
     ctor.Bind("backend_is_custom", &controller.bindings_.backend_is_custom);
     ctor.Bind("relay_id_missing", &controller.bindings_.relay_id_missing);
+    ctor.Bind("registration_required", &controller.bindings_.registration_required);
     ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("trusted_relays_only", &controller.bindings_.trusted_relays_only);
     ctor.Bind("reachable_without_relay", &controller.bindings_.reachable_without_relay);
@@ -933,6 +982,14 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
+  host.Dirty("settings", "service_account_locker");
+  host.Dirty("settings", "service_client_compat");
+  host.Dirty("settings", "service_llm_gateway");
+  host.Dirty("settings", "service_llm_token");
+  host.Dirty("settings", "service_crash_intake");
+  host.Dirty("settings", "service_mesh_nodes");
+  host.Dirty("settings", "service_promoted_mcp");
+  host.Dirty("settings", "backend_services_missing");
   host.Dirty("settings", "node_enabled");
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "amp_listen_multiaddr");
@@ -953,6 +1010,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "backend_restart_pending");
   host.Dirty("settings", "backend_is_custom");
   host.Dirty("settings", "relay_id_missing");
+  host.Dirty("settings", "registration_required");
   host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "trusted_relays_only");
   host.Dirty("settings", "reachable_without_relay");
@@ -1325,6 +1383,9 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   if (auto flushed = handler->Flush(ui_state_, Store()); !flushed) {
     log().warning << "FlushSection(" << section_id << ") failed: " << AppError::Log(flushed.error());
     ReportFailure(flushed.error());
+    if (ui_state_.registration_required) {
+      PushToView(false); // the page says why (Network: an account server URL is required)
+    }
     return false;
   }
 
@@ -1334,7 +1395,10 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
   if (section_id == "network" && commands_.set_backend_switch_pending) {
     const BootstrapResult& saved = Store().Snapshot();
-    commands_.set_backend_switch_pending(SavedBackendKey(saved.config) != saved.backend_key);
+    const bool pending = BackendSwitchPending(saved.config, saved.backend_key);
+    commands_.set_backend_switch_pending(pending);
+    // A custom backend's registration URL or org relay edited is a switch too (PM010, #745): the same banner.
+    ShowRestartBanner(pending);
   }
 
   status_ = "";
@@ -1668,7 +1732,7 @@ void SettingsController::OpenSecurityPage(const std::string& page) {
     return;
   }
   log().info << "OpenSecurityPage " << page;
-  security_actions_.ClearTransferCopied(); // a fresh visit starts on the button, not on an old "copied" box
+  security_actions_.ClearLinkReply(); // a fresh visit starts on the buttons, not on an old reply
   security_page_ = page.c_str();
   status_ = "";
   DirtyAll();
@@ -1697,7 +1761,7 @@ void SettingsController::ApplyCloseSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
-  security_actions_.ClearTransferCopied();
+  security_actions_.ClearLinkReply();
   const bool was_recovery = security_page_ == "recovery";
   security_page_ = "";
   security_page_title_ = "";
@@ -1726,8 +1790,8 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.set_secret_page_open) {
     shell_navigation_.set_secret_page_open(false);
   }
-  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
-  security_actions_.ClearTransferCopied(); // nor does the "copied" box
+  security_actions_.HideRecoveryPhrase(); // the phrase does not follow the user off the page
+  security_actions_.ClearLinkReply();     // nor does a link reply
   if (security_page_.empty()) {
     return;
   }
@@ -1978,8 +2042,11 @@ void SettingsController::SaveBackendChoice(const std::string& env) {
     return;
   }
   // No quit here: pin a banner while the saved service differs from the one this run started on.
-  const bool pending = ParseBackendEnv(Store().Snapshot().config.backend.env) != ActiveBackend();
-  if (pending && shell_feedback_.show_banner) {
+  ShowRestartBanner(BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key));
+}
+
+void SettingsController::ShowRestartBanner(const bool pending) {
+  if (pending && !restart_banner_shown_ && shell_feedback_.show_banner) {
     shell_feedback_.show_banner(Tr("settings.network.backend.restart_banner"), true);
     restart_banner_shown_ = true;
   } else if (!pending && restart_banner_shown_ && shell_feedback_.dismiss_banner) {
@@ -2017,7 +2084,8 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
         }
         if (CanQuit()) {
           QuitApp();
-        } else if (ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+        } else if (BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key) &&
+                   shell_feedback_.show_alert) {
           // Only a switch away from the running service needs a reopen; back to it, the banner is gone and that is all.
           shell_feedback_.show_alert(Tr("settings.network.backend.switch_title"),
                                      Tr("settings.network.backend.switched_reopen", {{"destEnv", dest_label}}), {},
@@ -2661,6 +2729,10 @@ void SettingsController::ShowStatus(const std::string& status) {
 
 void SettingsController::OnProfileUnlocked() {
   Resync(/*include_profile_nickname=*/true);
+}
+
+void SettingsController::OnOwnIconChanged() {
+  Resync(/*include_profile_nickname=*/false); // an edit of the name in progress is left alone
 }
 
 void SettingsController::Resync(const bool include_profile_nickname) {

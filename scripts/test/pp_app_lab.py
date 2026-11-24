@@ -57,6 +57,13 @@ MAX_ANSWER_TO_AUDIO_S = 8.0
 REGISTRATION_LIMITS = "/_local/limits/clear?scope=register:"
 
 
+def lab_relay_services(relay, registration):
+    """A lab user's `backend.services` (docs/ops/CONFIGURATION.md): the relay services the local stack's relay serves
+    under its base URL — the account lockers at the registration URL (multi-relay MR006), client compatibility and the
+    crash intake at the org relay. The LLM gateway and token service are left out (absent: the lab has none)."""
+    return {"account_locker": registration, "client_compat": relay, "crash_intake": relay}
+
+
 class ProbeError(Exception):
     pass
 
@@ -461,8 +468,10 @@ class Lab:
         return {
             "config_version": 1,
             "data_dir": data_dir,
-            # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
-            "backend": {"env": "custom"},
+            # The lab relay is a backend of its own: say so (a config without `backend` is on the default one). Its
+            # table names the relay services the local stack serves (profile-model PM002: a service a custom table
+            # does not name is absent): no LLM gateway or token service in the lab.
+            "backend": {"env": "custom", "services": lab_relay_services(self.user_relay, self.user_relay)},
             # As deployed builds set it (PP_RELAY_CONTENT_SHA256): the relay's CDN refuses a POST without it.
             # Its address carries its relay id (MR008: a custom backend names it, as a release build ships the org's).
             "relay": {"base_url": self.user_relay, "content_sha256": True, "relay_id": self.relay_id("a")},
@@ -489,6 +498,7 @@ class Lab:
         config["relay"] = {"base_url": origins[0], "relay_id": first, "content_sha256": True,
                            "extra_base_urls": [self.relay_link(r) for r in relays[1:]]}  # relay links (MR008)
         config["registration"] = {"base_url": origins[0], "relay_id": first}
+        config["backend"]["services"] = lab_relay_services(origins[0], origins[0])
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
                                "providers": [{"base_url": o, "transport": "http"} for o in found]}
@@ -609,17 +619,23 @@ class Lab:
                      "%s: registered on each of its relays" % u.name)
         return u
 
-    def linked_device(self, of, name, bundle=None):
-        """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
-        Security → Copy link payload), then starts on it — the same account, a device of its own. `bundle`: one
-        exported earlier (`of` may be gone by now)."""
-        if bundle is None:
-            bundle = of.cmd("link_export")["bundle"]
+    def linked_device(self, of, name, then=None):
+        """Another device of `of`'s account (M021, M027): a fresh install shows its one-time link offer, `of` (the
+        main device) reads it, the two show the same 4 digits, and `of` seals its reply; the new device opens it and
+        starts on it — the same account, a device of its own. `then(u)`: runs after `of` sealed the reply and before
+        the new device takes it (`of` may be stopped there)."""
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
         self.users.append(u)
         u.start()
         u.wait_ready()
-        u.cmd("link_import", bundle=bundle, pin=PIN, timeout=60)
+        offer = u.cmd("link_offer")
+        sealed = of.cmd("link_reply", offer=offer["offer"])
+        if sealed["code"] != offer["code"]:
+            raise ProbeError("%s: the main device shows %s, the new device %s" % (u.name, sealed["code"],
+                                                                                   offer["code"]))
+        if then is not None:
+            then(u)
+        u.cmd("link_import", reply=sealed["reply"], pin=PIN, timeout=60)
         u.restart()
         u.account = u.cmd("whoami")["account"]
         if u.account != of.account:
@@ -2760,7 +2776,7 @@ def assert_signed_out(u, thread):
 
 def scenario_main_device_signs_a_device_out(lab):
     """Alice's phone is her main device (M021 d4); her laptop, linked to it, joins at the end of the list and
-    cannot give out a transfer code. The phone hands the main role to the laptop, which then takes the phone off
+    cannot seal a link reply. The phone hands the main role to the laptop, which then takes the phone off
     the account: the phone is signed out and can no longer send; Bob learns the shorter list, and he and the
     laptop keep talking."""
     a, a_thread, b, b_thread = open_pair(lab)
@@ -2772,8 +2788,9 @@ def scenario_main_device_signs_a_device_out(lab):
              "phone: the laptop at the end of the list")
     if laptop.cmd("devices")["main"] != phone_id:
         raise ProbeError("laptop: main device %s, not the phone" % laptop.cmd("devices"))
-    if laptop.cmd("link_export", check=False).get("ok"):
-        raise ProbeError("laptop: gave out a transfer code though it is not the main device")
+    offer = a.cmd("link_offer")["offer"]  # any offer: the laptop must refuse to answer one
+    if laptop.cmd("link_reply", offer=offer, check=False).get("ok"):
+        raise ProbeError("laptop: sealed a link reply though it is not the main device")
     a.cmd("make_main", peer_id=laptop_id)
     wait_for(lambda: laptop.cmd("devices")["main"] == laptop_id or None, 40, "laptop: the main device")
     laptop.cmd("remove_device", peer_id=phone_id)
@@ -3470,7 +3487,7 @@ def scenario_group_call_guest(lab):
 
 
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
-    """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
+    """A copy missing for a device is asked for (M021 §9): Alice's phone seals a link reply and goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
     only. The laptop sees it in her mailbox, asks Bob's device for its own (its card going with the ask), and
     Bob's device seals it one: the message shows on the laptop."""
@@ -3479,9 +3496,7 @@ def scenario_a_device_asks_for_a_copy_it_missed(lab):
     wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's hello")
     if len(b.cmd("kept_card", account=a.account)["devices"]) != 1:
         raise ProbeError("bob: alice's card does not list her phone alone")
-    bundle = a.cmd("link_export")["bundle"]
-    a.quit()
-    laptop = lab.linked_device(a, "alice-laptop", bundle=bundle)
+    laptop = lab.linked_device(a, "alice-laptop", then=lambda _: a.quit())
     laptop.wait_mesh()
     m = b.cmd("send", thread=b_thread, text="for every one of alice's devices")["message_id"]
     l_thread = wait_for(lambda: thread_with(laptop, b.account), 90, "laptop: a chat with bob")

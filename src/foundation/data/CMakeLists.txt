@@ -10,6 +10,7 @@ pp_browser_add_foundation_library(pp_foundation_data
     PlatformDefaults.cpp
     ProfileRegistry.cpp
     ProfileManifest.cpp
+    ProfileServices.cpp
     SessionStore.cpp
     UiDemoConfig.cpp
     UserPreferences.cpp

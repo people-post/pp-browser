@@ -1,6 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
 #include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/platform/ILocalNotifier.h"
 
 #include "common/runtime/AppRuntime.h"
@@ -47,7 +48,14 @@ void ConfigApplyBridge::OnConfig(const AppConfig& config) {
   if (!messaging_) {
     return;
   }
-  const ConversationsHub::NetworkConfig network = ProjectNetwork(config);
+  ConversationsHub::NetworkConfig network = ProjectNetwork(config);
+  // A switch awaits a restart (another backend, or a custom backend's registration URL or org relay edited: PM010,
+  // #745): its addresses are the next run's profile's, never applied to this one. The rest of the slice applies.
+  if (last_network_ && BackendSwitchPending(config, store_->Snapshot().backend_key)) {
+    network.relay = last_network_->relay;
+    network.directory = last_network_->directory;
+    network.registration = last_network_->registration;
+  }
   if (!last_network_ || network != *last_network_) {
     last_network_ = network;
     messaging_->Apply(network);

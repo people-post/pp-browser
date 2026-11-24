@@ -317,7 +317,7 @@ std::shared_ptr<MeshNodeReputation> ProductMesh::NodeReputation() const {
 }
 
 void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
-                                      std::function<void()> on_updated) {
+                                      const std::string& source, std::function<void()> on_updated) {
   StopDirectoryCache();
   {
     auto reputation = std::make_shared<MeshNodeReputation>();
@@ -339,6 +339,7 @@ void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const s
       },
       AppRuntimeMeshExecutors().blocking);
   directory_cache_->SetPersistPath(MeshDirectoryNodesPath(profile_data_dir));
+  directory_cache_->SetSource(source); // a list saved from another directory is not loaded (pp-cpp-mesh 10.2.0)
   directory_cache_->LoadPersisted();
   // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
   directory_cache_->SetAsyncFetcher(

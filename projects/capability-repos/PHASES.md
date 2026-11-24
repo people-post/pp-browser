@@ -72,8 +72,9 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       pricing, messaging, calls, broadcast, node. Each: `git mv` into `capabilities/<name>/src/`,
       its `CMakeLists.txt` with the CTest label, a changes-filter output and its `-LE` skip in `build.yml`.
 
-- [ ] Calls repo-ready (CR023): [x] owns its tests, [x] `media` split, [x] base folder, [ ] standalone build + CI,
-      [ ] host contract + README / docs.
+- [x] Calls repo-ready (CR023): [x] owns its tests, [x] `media` split, [x] base folder, [x] standalone build + CI
+      (`capabilities/CMakeLists.txt`, the `capabilities` job), [x] host contract + README (`capabilities/calls/README.md`,
+      media's `MediaHost`).
 - [x] Ideas in capabilities, the database in the app (CR024): [x] delivery's ports and in-memory stores,
       [x] messaging's store ports and in-memory stores (contract-tested against SQLite),
       [x] `src/lib/storage` with the SQLite stores and the profile database, [x] calls' stores,
@@ -91,7 +92,12 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 
 ## P4 — The capabilities repo (when a second app needs it, CR005 / CR006)
 
-Not scheduled. Before it: one pin list per app and a sibling-build mode; one home for vendored deps (CR012).
+Not scheduled. Before it (CR012):
+
+- [x] One pin list per app (`cmake/PpPins.cmake`) and a sibling-build mode (`-DPP_SIBLINGS_DIR=..`, HEAD checked against
+      the pin).
+- [x] One home for vendored deps in pp-browser: `third_party/` with its manifest (`UPSTREAM.json`).
+- [ ] The shared home across repos, when a second repo builds the same vendored code.
 
 - [ ] Create the capabilities repo (people-post, public) with the target sets that app needs, the gate, and
       their contracts and tests; release; pin in every app; pp-browser drops its copy.

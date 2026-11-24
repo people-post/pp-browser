@@ -13,7 +13,8 @@ namespace pbr {
  */
 
 inline constexpr size_t kAiThreadTitleMaxChars = 24;
-inline constexpr std::string_view kDeviceLinkPrefix = "pp-browser-link-device-v1";
+/** The link handshake's text forms (`pp-browser-link-offer:` / `-reply:`, LINK_DEVICE.md): never a title. */
+inline constexpr std::string_view kDeviceLinkPrefix = "pp-browser-link-";
 
 namespace ai_title_detail {
 

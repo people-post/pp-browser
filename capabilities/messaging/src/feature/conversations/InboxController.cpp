@@ -1,4 +1,6 @@
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/StrangerHold.h"
+#include "lib/delivery/DeliveryNotice.h"
 #include "lib/people/ProfileIconCache.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "common/runtime/AppRuntime.h"
@@ -720,7 +722,14 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(const std::string& t
   const bool direct_thread = kind == ThreadKind::Direct;
   // A news item read in an AI chat (its request and digest) is never drawn: the digest shows in the reader sheet.
   const auto drop_hidden_news = [](std::vector<ThreadMessage>& page) { std::erase_if(page, IsHiddenNewsMessage); };
+  // A "held" line (B236) shows only while it holds its chat (its probe still queued); afterwards it is gone.
+  const auto drop_spent_holds = [this](std::vector<ThreadMessage>& page) {
+    std::erase_if(page, [this](const ThreadMessage& message) {
+      return StrangerHeldRowProbe(message) && !StrangerHeldLineShown(store_, message);
+    });
+  };
   drop_hidden_news(messages);
+  drop_spent_holds(messages);
   std::vector<TranscriptRow> rows = AssembleTranscript(messages, controls_, kind);
   // A run of a group's events on top of a direct chat's history would leave the page blank: go back for older
   // pages until something shows or the history ends (bounded). A caller that asked for a window gets exactly it.
@@ -734,6 +743,7 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(const std::string& t
     }
     messages.insert(messages.begin(), older->begin(), older->end());
     drop_hidden_news(messages);
+    drop_spent_holds(messages);
     rows = AssembleTranscript(messages, controls_, kind);
   }
   return rows;

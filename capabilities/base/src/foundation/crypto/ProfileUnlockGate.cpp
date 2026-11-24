@@ -412,14 +412,14 @@ void ProfileUnlockGate::CompleteWithDefaultPin() {
                          /*clear_default_pin=*/false, /*remember_grace=*/false);
 }
 
-void ProfileUnlockGate::CompleteLinkDevice(const SecretText& pin, const std::string& bundle_json,
+void ProfileUnlockGate::CompleteLinkDevice(const SecretText& pin, const std::string& reply,
                                            const bool set_default_pin) {
   if (!ports_.import_link_device) {
     ReportError("Link import is not available");
     return;
   }
   CompleteAccountImport(
-      pin, set_default_pin, [this, pin, bundle_json]() { return ports_.import_link_device(pin, bundle_json); },
+      pin, set_default_pin, [this, pin, reply]() { return ports_.import_link_device(pin, reply); },
       "link_device_import");
 }
 

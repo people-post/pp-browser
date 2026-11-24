@@ -6,6 +6,7 @@
 #include "common/Module.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "common/MeshConfig.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/product/DevTools.h"
 #include "common/ServiceEndpoints.h"
 
@@ -23,8 +24,16 @@ struct McpConfig {
   std::vector<std::string> args;
   std::string url;
   bool enabled = true;
+  /**
+   * `set_by_user` (optional key): the promoted MCP's address is the user's own, typed in Integrations. Only an entry that
+   * carries it, or one with a `command` (a stdio server the user configured), is the user's: any other `promoted_mcp` in
+   * a file is a leftover of the old app, which wrote the running backend's derived address into every save, and is replaced
+   * by the active backend's seed on load (profile-model P2a, #741, #744). Read for `promoted_mcp` only.
+   */
+  bool user_set = false;
 
   bool IsConfigured() const { return !command.empty() || !url.empty(); }
+  bool operator==(const McpConfig&) const = default;
 };
 
 struct SearchConfig {
@@ -54,6 +63,14 @@ struct BackendConfig {
   ServiceEndpointConfig saved_relay;
   DirectoryConfig saved_directory;
   ServiceEndpointConfig saved_registration;
+  /**
+   * `backend.services` (optional keys, `config_version` unchanged): the other services a **custom** backend names
+   * (LLM gateway, LLM token, account locker, client-compat, crash intake, promoted MCP seed, mesh nodes); the org relay,
+   * registration and directory are the `relay`, `registration` and `directory` keys. A service not named is absent: what
+   * needs it is off, with no fallback to a built-in backend's address (profile-model PM002). Read for a custom backend
+   * only; prod / staging / dev take their table from the build and leave these as the file has them.
+   */
+  CustomServices services;
 };
 
 struct AppConfig {

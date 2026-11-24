@@ -51,6 +51,8 @@ const char* SendKey(const SendFailure failure, const SendAdvice advice) {
       return "chat.notice.send.payment_required";
     case SendFailure::VersionMismatch:
       return "chat.notice.send.version_mismatch";
+    case SendFailure::NotAddedYet:
+      return "chat.notice.send.not_added_yet";
     case SendFailure::Unknown:
       break;
   }
@@ -85,8 +87,6 @@ std::string SendFailureReasonText(const std::optional<SendFailure>& reason, cons
   switch (refusal) {
     case SendMarkTap::Refusal::None:
       break;
-    case SendMarkTap::Refusal::NotText:
-      return reason ? SendFailureText(*reason, advice) : Tr("chat.send.not_sent_other");
     case SendMarkTap::Refusal::ThisKind:
       return reason ? Tr("chat.send.reason_then",
                          {{"reason", SendFailureText(*reason, advice)}, {"then", Tr("chat.send.not_resendable")}})

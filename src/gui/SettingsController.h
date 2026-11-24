@@ -158,6 +158,8 @@ public:
   /** The vault has opened: the profile (name, picture) is readable now. The Chats bar and the AI drawer read it from
    *  this model, which was filled while it was still locked. */
   void OnProfileUnlocked();
+  /** Our own photo changed (fetched from another device of the account): the Me page and the Chats bar redraw it. */
+  void OnOwnIconChanged();
   /** The unlock gate found face / fingerprint unlock gone (its pieces deleted): Security's switch reads off. */
   void OnBiometricLost();
   /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
@@ -166,6 +168,11 @@ public:
   void OpenNetworkSettings();
   /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
   void OpenSection(const std::string& section_id);
+  /**
+   * Me → Storage → Reset my profile from elsewhere (the Chats page's "this device is no longer on your account"
+   * notice): the same confirm, then the same reset.
+   */
+  void StartResetProfile() { security_actions_.ResetProfile(); }
   /**
    * The chats list's "reconnect" row or alert (B216): register again, as Me → Profile's button does, without its
    * "renewed" line ("Reconnected" comes when a poll gets through). `done(registered)` when it ends
@@ -176,6 +183,11 @@ public:
   void BindRunWhenRegistrationIdle(std::function<void(SettingsProfileActions::RegistrationSlotRun)> run);
   /** Messaging was torn down (profile reset): the update button and the callers waiting for a registration let go. */
   void OnMessagingTornDown();
+  /**
+   * Reset my profile succeeded: nothing of the old account stays on the Me card (name, ids, picture, registration) —
+   * the fields go back to a fresh install's, before the first-run page shows over them.
+   */
+  void OnProfileReset();
   /** The Me card's "QR code" button opens the full-page My QR code. */
   void BindShowMyQr(std::function<void()> show);
   /** The rows "Service" offers now (prod, custom, and staging / dev only with that address in the build and the tester options on); `OnChooseBackend` shows exactly these. */
@@ -211,6 +223,14 @@ private:
     ui::String relay_base_url;
     ui::String directory_base_url;
     ui::String registration_base_url;
+    ui::String service_account_locker;
+    ui::String service_client_compat;
+    ui::String service_llm_gateway;
+    ui::String service_llm_token;
+    ui::String service_crash_intake;
+    ui::String service_mesh_nodes;
+    ui::String service_promoted_mcp;
+    ui::String backend_services_missing;
     ui::String node_enabled = "on";
     bool show_node_toggle = true;
     ui::String amp_listen_multiaddr;
@@ -233,6 +253,7 @@ private:
     bool backend_is_custom = false;
     /** The backend's relay names no relay ID: not used in this build (MR008). */
     bool relay_id_missing = false;
+    bool registration_required = false;
     /** Hidden in the UI demo app (BackendSwitchVisible). */
     bool show_backend_switch = true;
     ui::String direct_connections = "contacts";
@@ -527,6 +548,8 @@ private:
   /** Mobile has no sanctioned programmatic quit: a confirmed environment switch asks the user to reopen the app. */
   bool CanQuit() const;
   void QuitApp();
+  /** The restart banner while a backend switch awaits a restart (BackendSwitchPending); dismissed once it does not. */
+  void ShowRestartBanner(bool pending);
   bool restart_banner_shown_ = false;
   std::function<void()> open_ui_perf_test_;
   std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"

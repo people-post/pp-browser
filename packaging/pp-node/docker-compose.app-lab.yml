@@ -128,7 +128,7 @@ services:
 
   # TLS in front of the first relay: https://127.0.0.1:${PP_APP_LAB_TLS_A_PORT:-18743}/api/relay.
   tls-a:
-    image: node:lts-alpine
+    image: public.ecr.aws/docker/library/node:lts-alpine
     command: ["node", "/proxy/proxy.js", "443", "relay", "9097"]
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro
@@ -173,7 +173,7 @@ services:
 
   # TLS in front of the second relay: https://127.0.0.1:${PP_APP_LAB_TLS_B_PORT:-18744}/api/relay.
   tls-b:
-    image: node:lts-alpine
+    image: public.ecr.aws/docker/library/node:lts-alpine
     command: ["node", "/proxy/proxy.js", "443", "relay2", "9097"]
     volumes:
       - ./app-lab-tls/proxy.js:/proxy/proxy.js:ro

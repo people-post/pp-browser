@@ -86,11 +86,11 @@ already appears). `0` is invalid in every kind. Names are the strings below wher
 | Kind | Id | Name | Used for |
 |------|----|------|----------|
 | signature | 1 | `ml-dsa-65` | account, device, locker, relay transport and signing, operator keys; every signature |
-| KEM | 1 | `ml-kem-768` | account and device KEM keys; `key_init` |
-| AEAD | 1 | `xchacha20-poly1305` | the payload blob, `FileCipher` output, the join ticket's wrapped key, attachments |
+| KEM | 1 | `ml-kem-768` | account and device KEM keys; `key_init`; the link offer's one-time key and the reply's ciphertext |
+| AEAD | 1 | `xchacha20-poly1305` | the payload blob, `FileCipher` output, the join ticket's wrapped key, attachments, the link reply's bundle |
 | hash | 1 | `blake2b-256` | Account ID, locker id, relay id, copy hash, change id |
 | hash | 2 | `sha2-256` | the PeerId multihash (`12 20`) |
-| KDF | 1 | `hkdf-sha256` | session keys, the recovery seed's keys |
+| KDF | 1 | `hkdf-sha256` | session keys, the recovery seed's keys, the link reply's key |
 
 Ids are frozen: a new algorithm takes the next id of its kind. Hash and KDF ids are never written into blobs (an
 object's version fixes them); they are here so docs and later fields share one vocabulary. No `*_alg` field
@@ -166,6 +166,7 @@ are, and each committed signed fixture must verify.
 | per object (`relay_sign_vectors.json`, `relay_certificate_vectors.json`, …) | pp-browser, beside the object's test | the relay, pp-node |
 | `relay_grant_vectors.json` (grant v2), `account_locker_vectors.json` (locker record v2) | pp-browser `lib/delivery/tests/data/`, `lib/people/tests/data/` | the relay (its grant check, its locker store) |
 | `group_roster_vectors.json` (statement and dissolved v4, owner transfer v2, roster change v2) | pp-browser `lib/messaging/tests/data/` | — (app only) |
+| `link_handshake_vectors.json` (link offer and reply v1, [LINK_DEVICE.md](LINK_DEVICE.md)) | pp-browser `foundation/crypto/tests/data/` | — (app only) |
 
 - A copy is the pinned tag's bytes exactly (`library_vector_copies_test`); pp-browser's helpers read every case of
   it. After a library bump, `PP_WRITE_EXT_AREA_VECTORS=<path>` / `PP_WRITE_ALG_ID_VECTORS=<path>` write the pinned

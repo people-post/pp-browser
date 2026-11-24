@@ -122,8 +122,8 @@ protected:
         "<button id=\"sel_dev\" data-event-click=\"select_section('devices')\">x</button>"
         "<div id=\"xrow\" data-event-click=\"open_security_page('transfer')\">"
         "<button id=\"xq\" data-event-click=\"ask_setting_help('settings.security.transfer_row')\">x</button></div>"
-        "<button id=\"copy_code\" data-event-click=\"export_link_device()\">x</button>"
-        "<p id=\"copied\">{{transfer_code_copied}}</p>"
+        "<button id=\"copy_code\" data-event-click=\"link_scan_offer()\">x</button>"
+        "<p id=\"copied\">{{link_reply_shown}}</p>"
         "<button id=\"edit_llm\" data-event-click=\"on_llm_field_changed()\">x</button>"
         "<button id=\"edit_net\" data-event-click=\"on_network_field_changed()\">x</button>"
         "<button id=\"edit_int\" data-event-click=\"on_integrations_field_changed()\">x</button>"
@@ -181,7 +181,7 @@ TEST_F(SettingsAdvancedTesterTest, TheHelpSwitchShowsAdvancedAndLeavesTheTesterO
   EXPECT_EQ(Text("adv"), "1");
   EXPECT_EQ(Text("tst"), "0");
   EXPECT_TRUE(store.Snapshot().profile_prefs.show_advanced_settings) << "saved at once";
-  EXPECT_FALSE(store.Snapshot().profile_prefs.show_tester_options);
+  EXPECT_FALSE(store.Snapshot().machine_prefs.show_tester_options);
   Click("toggle_adv");
   EXPECT_EQ(Text("adv"), "0");
   EXPECT_FALSE(store.Snapshot().profile_prefs.show_advanced_settings);
@@ -194,8 +194,16 @@ TEST_F(SettingsAdvancedTesterTest, FiveTapsOnTheVersionSwitchOnlyTheTesterOption
   }
   EXPECT_EQ(Text("tst"), "1");
   EXPECT_EQ(Text("adv"), "1") << "the advanced switch keeps its value";
-  EXPECT_TRUE(store.Snapshot().profile_prefs.show_tester_options);
+  EXPECT_TRUE(store.Snapshot().machine_prefs.show_tester_options);
   EXPECT_TRUE(store.Snapshot().profile_prefs.show_advanced_settings);
+  {
+    // The device's: in machine.json, not the profile's preferences (profile-model PM006).
+    auto machine = UserPreferences::LoadMachine(root.string());
+    ASSERT_TRUE(static_cast<bool>(machine));
+    EXPECT_TRUE(machine->show_tester_options);
+    auto profile = UserPreferences::LoadProfile((root / "profile").string());
+    ASSERT_TRUE(static_cast<bool>(profile));
+  }
   EXPECT_EQ(toasts.back(), Tr("settings.help.tester_on"));
   for (int i = 0; i < 5; ++i) {
     Click("version");
@@ -569,9 +577,19 @@ TEST_F(SettingsAdvancedSubpageTest, ATapOnTheHelpMarkInTheTransferRowDoesNotOpen
   EXPECT_EQ(Text("sp"), "transfer") << "a tap on the row itself still opens the page";
 }
 
-TEST_F(SettingsAdvancedSubpageTest, TheCopiedFlagIsSetByTheExportAndClearedWhenThePageIsLeftOrReopened) {
+// M027: the reply shows only once the person said the new device shows the same digits, and goes when the page is left.
+TEST_F(SettingsAdvancedSubpageTest, TheLinkReplyShowsAfterTheDigitsMatchAndGoesWhenThePageIsLeft) {
   AppRuntime::Initialize();
-  commands.export_link_device = []() -> Roe<std::string> { return std::string("code"); };
+  int sealed = 0;
+  commands.scan_link_offer = [](std::function<void(std::string)> done) { done("offer"); };
+  commands.link_offer_code = [](const std::string& offer) -> Roe<std::string> {
+    EXPECT_EQ(offer, "offer");
+    return std::string("1234");
+  };
+  commands.seal_link_reply = [&sealed](const std::string&) -> Roe<std::vector<uint8_t>> {
+    ++sealed;
+    return std::vector<uint8_t>{1, 2, 3};
+  };
   commands.load_pin_protection = []() { return PinProtectionView{.ready = true, .unlocked = true}; };
   int confirms = 0;
   bool accept = true;
@@ -583,7 +601,7 @@ TEST_F(SettingsAdvancedSubpageTest, TheCopiedFlagIsSetByTheExportAndClearedWhenT
   settings.BindShellFeedback(ports);
   settings.BindCommands(commands);
   ProfilePreferences prefs = store.Snapshot().profile_prefs;
-  prefs.pin_is_default = true; // the app's public PIN: the export only confirms (the PIN gate has its own tests)
+  prefs.pin_is_default = true; // the app's public PIN: no PIN step (the PIN gate has its own tests)
   ASSERT_TRUE(static_cast<bool>(store.SaveProfilePrefs(prefs)));
   Click("sel_dev");
   Click("xrow");
@@ -596,13 +614,15 @@ TEST_F(SettingsAdvancedSubpageTest, TheCopiedFlagIsSetByTheExportAndClearedWhenT
   AppRuntime::RunUITasks();
   context->Update();
   EXPECT_EQ(confirms, 1);
-  EXPECT_EQ(Text("copied"), "0") << "a cancelled confirm leaves the button";
+  EXPECT_EQ(sealed, 0) << "digits not confirmed: nothing sealed";
+  EXPECT_EQ(Text("copied"), "0") << "a cancelled check leaves the buttons";
 
   accept = true;
   Click("copy_code");
   AppRuntime::DrainWorkersThenUI();
   AppRuntime::RunUITasks();
   context->Update();
+  EXPECT_EQ(sealed, 1);
   EXPECT_EQ(Text("copied"), "1");
 
   Click("close_sub");
@@ -680,8 +700,11 @@ protected:
   void UseCustomService() {
     AppConfig config = store.Snapshot().config;
     config.backend.env = "custom";
+    // A custom service has an account server URL (an empty one is not saved: profile-model P2a).
+    config.registration.base_url = "https://custom.example.test/api/relay";
     ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
     host().UiState().backend_env = "custom";
+    host().UiState().registration_base_url = config.registration.base_url;
     host().PushToView(false);
   }
   ui::ElementDocument* real = nullptr;

@@ -12,7 +12,7 @@ Today the product collapses **person**, **device**, and **Brief route** into one
 1. One **Account ID** for the person across devices and relays.
 2. Many **device identities** (Peer ID / Ed25519) under that account.
 3. **`relay:`** as a **route** (inbox / API auth), not the person key for chat state.
-4. Shared **DEK**, **account KEM**, and **account-scope** public/group conversation PSKs across linked devices; private `e2e` PSKs and device-scoped public PSKs stay install-local (**M005** / **M015** / **M020**).
+4. **Account KEM** and **account-scope** public/group conversation PSKs across linked devices (a shared **DEK** until M027: each device now has its own); private `e2e` PSKs and device-scoped public PSKs stay install-local (**M005** / **M015** / **M020**).
 5. Pre-release **hard-cut** to Account ID on wire and catalog (**M007**) — no dual-id soft migration.
 
 ## Non-goals (this project)
@@ -28,7 +28,7 @@ Today the product collapses **person**, **device**, and **Brief route** into one
 |---------|-----------------|------|
 | **Account ID** | `account:` + base64url-unpadded(BLAKE2b-256(ML-DSA-65 pk)) | Communicating identity: contacts primary, threads, envelopes, AAD, signing-key cache |
 | **Account signing key** | ML-DSA-65 | Register, Brief API auth, signs the device list (account card). Envelopes are signed by the **device** key from M021 d2 (M003 superseded); from M023 s1 it derives from the recovery phrase |
-| **Account KEM** | ML-KEM-768 | Public/group auto-key encapsulate-to; copied on link (**M015**) |
+| **Account KEM** | ML-KEM-768 | Public/group auto-key encapsulate-to; derived from the recovery seed on a linked device (**M015**, **M027**) |
 | **Device Peer ID** | libp2p / Ed25519 | Direct streams, dial, call media attach |
 | **Relay user id** | `relay:` + … | Inbox, send route, device↔Brief binding (**M006**) |
 
@@ -69,7 +69,7 @@ Linked devices may all **receive**. **Send from one device at a time.** Seq clas
 
 - Account ML-DSA compromise = full account forge → recovery/revoke later (new Account ID).
 - Stolen linked device holds **account KEM** + public/group conversation PSKs; unlink does not drop account KEM (**M015** / **M019**). Private `e2e` PSKs stay off the bundle.
-- Link-device is a high-value ceremony (**M012**): confirm on old device; fingerprint Account ID on new; never seal private `e2e` PSKs.
+- Link-device is a high-value ceremony (**M012**, **M027**): the main device checks 4 digits with the person before it seals the seed to the new device's one-time key; never private `e2e` PSKs.
 - Brief sees Account ID ↔ `relay:` binding, pubkeys, and device Peer IDs; not DEK or message plaintext.
 
 ## Open after freeze
@@ -78,30 +78,22 @@ Linked devices may all **receive**. **Send from one device at a time.** Seq clas
 - Multi-relay beyond one Brief (M017 is same-server device endpoints, not extra relays).
 - Account KEM rotation **implementation** (specified as M019 phase 2; after m3 local-forget).
 - Private Secure “add this device” transfer UX (**M014** policy; ritual later).
-- ~~Live sibling public-PSK + chat-index refresh (**M015**)~~ — sessions per device pair (M021); account state by the M023 change log. QR primary (**M012**).
+- ~~Live sibling public-PSK + chat-index refresh (**M015**)~~ — sessions per device pair (M021); account state by the M023 change log. QR primary (**M012**) — done by M027 (sealed QR handshake).
 - Account recovery: **M023** — recovery phrase + encrypted account locker (decided, not built).
 
-## Link-device bundle (m4b; m4c superseded by M023)
+## Link-device bundle (m4b; m4c superseded by M023; the transfer code superseded by M027)
 
-> **Superseded in part.** From M021 d2 the bundle carries no sessions (`public_psks[]` gone) and, from d4, no account signing key; `contacts[]` / `public_threads[]` (m4c) were never built and are replaced by the M023 locker. The table below is the m4b design as it was.
-
-Transport this pass: **paste** (QR primary still later) (**M012**). JSON format **`pp-browser-link-device-v1`**.
-
-**Sealed to new device (never private `e2e` PSKs — M005 / M014):**
+> **Superseded.** Since [M027](DECISIONS.md#m027--a-device-links-by-a-sealed-qr-handshake-the-seed-rides-sealed-each-device-its-own-dek) (2026-11-24) a device links by a **sealed QR handshake**, shipped in [docs/contracts/LINK_DEVICE.md](../../docs/contracts/LINK_DEVICE.md), which wins: the new device shows a one-time ML-KEM-768 key (QR code or text), the main device checks 4 digits with the person and seals the account's **recovery seed** (with intent join, an expiry and, when not the deployment's, the preferred relay) to it; the new device derives the account from the seed, makes its **own DEK**, gets the account card from our relays and appends itself. No key pairs, no DEK, no card, no nickname, no sessions ride. The table below is the m4b paste design as it was (`pp-browser-link-device-v1`, removed).
 
 | Field | Notes |
 |-------|--------|
 | `account_id` | Full `account:…` (must match hash of `account_ml_dsa_pk_b64`) |
 | `account_ml_dsa_pk_b64` / `account_ml_dsa_sk_b64` | Account ML-DSA-65 |
 | `account_kem_pk_b64` / `account_kem_sk_b64` | Account ML-KEM-768 (public/group auto-key) |
-| `dek_b64` | Shared DEK — new device wraps into its own `vault.bin` (`CreateWithDek`) |
-| `public_psks[]` | Optional; **`e2e_public` only** |
-| `contacts[]` | **m4c (M018)** — address-book snapshot (`ContactToJson`) |
-| `public_threads[]` | **m4c (M018)** — public catalog rows only (no messages) |
-| `relay_user_id` | Existing Brief binding |
+| `dek_b64` | Shared DEK (M004, superseded by M027: each device its own) |
+| `public_psks[]` | Optional; **`e2e_public` only** (gone from M021 d2) |
+| `contacts[]` / `public_threads[]` | m4c (M018), never built (M023) |
 | `created_at` / `expires_at` | Default TTL 15 minutes |
-
-**New device after import:** keep local device ML-DSA-65 / Peer ID; replace account ML-DSA + **account KEM** + `relay:`; wrap the shared DEK with this device's PIN (`CreateWithDek` on an empty vault). Public PSKs in the snapshot are applied. First secrets use: **I'm new** vs **I already have an account**; paste is on the link path, not Me → Security. Show Account ID before import. Push re-attach follows after messaging is ready. Sibling public-PSK *refresh* is later (**M015**).
 
 **Private Secure (M014):** one session per pair; transfer copies PSK+seq, not a device-keyed thread.
 

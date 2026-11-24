@@ -19,9 +19,53 @@
               <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
             </span>
           </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.account_locker}}</span>
+              <input class="field" type="text" data-value="service_account_locker" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.client_compat}}</span>
+              <input class="field" type="text" data-value="service_client_compat" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.llm_gateway}}</span>
+              <input class="field" type="text" data-value="service_llm_gateway" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.llm_token}}</span>
+              <input class="field" type="text" data-value="service_llm_token" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.crash_intake}}</span>
+              <input class="field" type="text" data-value="service_crash_intake" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.mesh_nodes}}</span>
+              <input class="field" type="text" data-value="service_mesh_nodes" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.service.promoted_mcp}}</span>
+              <input class="field" type="text" data-value="service_promoted_mcp" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
           <button class="btn btn-secondary settings-action-bar settings-action-row" type="button"
                   data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
         </div>
+        <p class="text error settings-help group-foot" data-if="registration_required">{{i18n:settings.network.registration_required}}</p>
         <p class="text error settings-help group-foot" data-if="relay_id_missing">{{i18n:settings.network.relay_id_missing}}</p>
+        <p class="text muted settings-help group-foot" data-if="backend_services_missing != ''">{{backend_services_missing}}</p>
         <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.network.backend.custom_caption}}</p>
         </div>

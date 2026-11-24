@@ -55,6 +55,9 @@ void RelayInboxCoordinator::SetInboxes(std::vector<RelayInbox> inboxes, std::str
       profile_data_dir_ = std::move(profile_data_dir);
       cursors_account_.clear(); // read again for the next sync
       cursors_.clear();
+      mailboxes_.clear();
+      rereads_.clear();
+      phase1_taken_.clear();
     }
   }
   if (save) {
@@ -143,7 +146,8 @@ void RelayInboxCoordinator::Poll(const std::shared_ptr<Inbox>& inbox, const std:
 }
 
 bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const std::string& account_id) {
-  auto poll = inbox->relay.client->PollInbox(account_id, CursorOf(*inbox, account_id));
+  const std::string mailbox = ports_.mailbox ? ports_.mailbox(inbox->relay.origin, inbox->preferred) : std::string();
+  auto poll = inbox->relay.client->PollInbox(account_id, CursorOf(*inbox, account_id, mailbox));
   NoteRefusal(*inbox, !poll && IsPermanentRelayRefusal(poll.error()));
   if (!poll) {
     log().warning << "PollInbox failed relay=" << RelayOriginKey(inbox->relay.origin) << ": " << poll.error().message;
@@ -161,8 +165,9 @@ bool RelayInboxCoordinator::PollOnce(const std::shared_ptr<Inbox>& inbox, const 
     DiagLine("relay.poll_too_large").Add("n", poll->messages.size()).Emit();
     return true;
   }
+  const bool from_start = ApplyReread(*inbox, poll->messages, poll->next_cursor);
   // The cursor moves on before the next poll: a follow-up must not fetch the same batch while it waits for ingest.
-  const std::string next_cursor = poll->next_cursor;
+  const std::string next_cursor = from_start ? std::string() : poll->next_cursor;
   if (!next_cursor.empty()) {
     KeepCursor(*inbox, account_id, next_cursor);
   }
@@ -199,11 +204,16 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
   }
   cursors_account_ = account_id;
   cursors_.clear();
+  mailboxes_.clear();
+  rereads_.clear();
+  phase1_taken_.clear();
   if (profile_data_dir_.empty()) {
     return;
   }
   const RelayInboxCursors kept = LoadRelayInboxCursors(profile_data_dir_, account_id);
   cursors_ = kept.others;
+  mailboxes_ = kept.registrations.value_or(std::map<std::string, std::string>{});
+  rereads_ = kept.rereads; // a re-read under way when the app stopped goes on where it was
   if (!kept.preferred.empty()) {
     // A file from before My relays names no relay for it: the preferred one's.
     std::string relay = kept.preferred_relay;
@@ -214,6 +224,42 @@ void RelayInboxCoordinator::LoadCursorsLocked(const std::string& account_id) {
       cursors_[relay] = kept.preferred;
     }
   }
+  if (!kept.registrations && !cursors_.empty()) {
+    // Kept by an app that did not note their mailbox: one may be gone (a revoke or a lapse, then a fresh registration:
+    // a new mailbox numbered from the start, which the old cursor skips until its numbers pass it). Each relay with a
+    // cursor is read again once, in two phases, and never gets less than the older app would have given it:
+    // - phase 1 is exactly what the older app does: on from its cursor, unfiltered, until a page comes back empty. That
+    //   takes in a backlog the older app left behind its cursor (it kept the cursor before the batch was taken in) and
+    //   everything new, whatever the clocks say;
+    // - phase 2 is the healing: the inbox from its start, until a page comes back empty, skipping the records the relay
+    //   stored before the file's last write (less kRereadFloorSlackMs). Up to the old cursor the device took those in
+    //   already, or the person cleared or deleted them before removed ids were kept (they would come back); what lay
+    //   beyond it phase 1 took. A deaf device's missed messages came after that write, as its cursor stood still. A
+    //   record with no store time is taken in. With a file time that cannot be trusted (unreadable, in the future,
+    //   extreme) phase 2 takes everything: old chats may come back once, nothing is lost. Clock skew can only narrow
+    //   what phase 2 heals, never what phase 1 delivers.
+    // What was taken already is dropped as seen (message ids, removed ids, the control lane's seen ids).
+    const std::optional<int64_t> floor =
+        RereadFloor(ports_.cursors_written_ms ? ports_.cursors_written_ms(profile_data_dir_)
+                                              : RelayInboxCursorFileWrittenMs(profile_data_dir_));
+    log().warning << "relay inbox cursors kept without their mailbox: each inbox is read on, then once from its start"
+                  << (floor ? "" : " (the file's time not trusted: everything in it)");
+    DiagLine("relay.inbox_restart").Add("reason", "file").Emit();
+    for (const auto& [relay, cursor] : cursors_) {
+      rereads_[relay] = RelayInboxReread{.backfill = false, .floor_ms = floor};
+    }
+    SaveCursorsLocked();
+  }
+}
+
+std::optional<int64_t> RelayInboxCoordinator::RereadFloor(const std::optional<int64_t> written_ms) {
+  const int64_t now_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+          .count();
+  if (!written_ms || *written_ms > now_ms || *written_ms <= kRereadFloorSlackMs) {
+    return std::nullopt; // unreadable, in the future (a clock set back since, a copied profile), or extreme
+  }
+  return *written_ms - kRereadFloorSlackMs;
 }
 
 void RelayInboxCoordinator::SaveCursorsSoon() {
@@ -230,31 +276,117 @@ void RelayInboxCoordinator::SaveCursorsSoon() {
 }
 
 void RelayInboxCoordinator::SaveCursorsLocked() {
-  std::erase_if(cursors_, [this](const auto& entry) {
+  const auto not_ours = [this](const auto& entry) {
     return std::none_of(inboxes_.begin(), inboxes_.end(), [&entry](const std::shared_ptr<Inbox>& known) {
       return RelayOriginKey(known->relay.origin) == entry.first;
     });
-  });
+  };
+  std::erase_if(cursors_, not_ours);
+  std::erase_if(mailboxes_, not_ours);
+  std::erase_if(rereads_, not_ours);
+  std::erase_if(phase1_taken_, not_ours);
   if (profile_data_dir_.empty() || cursors_account_.empty()) {
     return;
   }
   RelayInboxCursors file;
-  for (const auto& [relay, cursor] : cursors_) {
-    if (!inboxes_.empty() && relay == RelayOriginKey(inboxes_.front()->relay.origin)) {
-      file.preferred = cursor;
-      file.preferred_relay = relay;
-    } else {
-      file.others[relay] = cursor;
-    }
-  }
+  file.registrations = mailboxes_;
+  file.rereads = rereads_;
+  // Every relay's cursor by its origin, the preferred one's too (profile-model P3: no slot names a "preferred" relay).
+  file.others = cursors_;
   SaveRelayInboxCursors(profile_data_dir_, cursors_account_, file);
 }
 
-std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::string& account_id) {
+std::string RelayInboxCoordinator::CursorOf(const Inbox& inbox, const std::string& account_id,
+                                            const std::string& mailbox) {
   std::lock_guard lock(mutex_);
   LoadCursorsLocked(account_id);
-  const auto it = cursors_.find(RelayOriginKey(inbox.relay.origin));
+  const std::string relay = RelayOriginKey(inbox.relay.origin);
+  if (!mailbox.empty()) {
+    std::string& kept_for = mailboxes_[relay];
+    const auto reread = rereads_.find(relay);
+    if (kept_for.empty() && reread != rereads_.end() && !reread->second.backfill) {
+      kept_for = mailbox; // an older app's cursor in phase 1: kept, as that app keeps it; its mailbox noted from now on
+      SaveCursorsLocked();
+    } else if (kept_for != mailbox) {
+      // A fresh registration there (a new mailbox, numbered from the start: a cursor from the old one skips it until
+      // its numbers pass it), or a cursor kept while the registration there was not known. Read it from its start.
+      if (!kept_for.empty()) {
+        rereads_.erase(relay); // a new mailbox, read whole: nothing older in it to heal
+        phase1_taken_.erase(relay);
+      }
+      if (cursors_.erase(relay) > 0) {
+        log().warning << "relay inbox " << relay << ": its cursor was kept for "
+                      << (kept_for.empty() ? "a registration not known then" : "another registration")
+                      << "; reading the inbox from its start";
+        DiagLine restart("relay.inbox_restart");
+        if (kept_for.empty()) {
+          restart.Add("reason", "unknown");
+        } else {
+          restart.Add("reason", "changed");
+        }
+        restart.Add("preferred", inbox.preferred).Emit();
+      }
+      kept_for = mailbox;
+      SaveCursorsLocked();
+    }
+  }
+  const auto it = cursors_.find(relay);
   return it == cursors_.end() ? std::string() : it->second;
+}
+
+bool RelayInboxCoordinator::ApplyReread(const Inbox& inbox, std::vector<RelayEnvelope>& messages,
+                                        const std::string& next_cursor) {
+  std::lock_guard lock(mutex_);
+  const std::string relay = RelayOriginKey(inbox.relay.origin);
+  const auto reread = rereads_.find(relay);
+  if (reread == rereads_.end()) {
+    return false;
+  }
+  // The relay has nothing further only when a page is empty and names no cursor: a page whose records were all
+  // unreadable (skipped as it was read) comes back empty with a cursor, and the inbox goes on past it.
+  const bool read_through = messages.empty() && next_cursor.empty();
+  if (!reread->second.backfill) {
+    if (!read_through) {
+      // Phase 1: as the older app, everything. What it takes is noted, so phase 2 does not hand it in again (a late
+      // duplicate re-applies some group events); at most kRereadTakenMax per relay, in memory only — beyond it, or
+      // after a restart, phase 2 hands it in again and the receive pipeline drops it as seen.
+      std::unordered_set<std::string>& taken = phase1_taken_[relay];
+      for (const RelayEnvelope& envelope : messages) {
+        if (!envelope.message_id.empty() && taken.size() < kRereadTakenMax) {
+          taken.insert(envelope.message_id);
+        }
+      }
+      return false;
+    }
+    reread->second.backfill = true; // drained: phase 2 reads the inbox from its start
+    cursors_.erase(relay);
+    log().info << "relay inbox " << relay << ": read on to its end; now once from its start";
+    SaveCursorsLocked();
+    return true;
+  }
+  if (read_through) {
+    rereads_.erase(reread); // read through: from now on as any inbox
+    phase1_taken_.erase(relay);
+    log().info << "relay inbox " << relay << ": the re-read of an older app's file is done";
+    SaveCursorsLocked();
+    return false;
+  }
+  const std::optional<int64_t> floor_ms = reread->second.floor_ms;
+  const auto taken = phase1_taken_.find(relay);
+  const size_t before = messages.size();
+  // The cursor still moves past what is skipped (the page's next_cursor).
+  std::erase_if(messages, [&](const RelayEnvelope& envelope) {
+    if (floor_ms && envelope.relay_created_at_ms && *envelope.relay_created_at_ms > 0 &&
+        *envelope.relay_created_at_ms < *floor_ms) {
+      return true;
+    }
+    return taken != phase1_taken_.end() && taken->second.contains(envelope.message_id);
+  });
+  if (messages.size() < before) {
+    log().info << "relay inbox " << relay << ": re-read from its start skipped " << (before - messages.size())
+               << " record(s): stored before an older app last wrote its file, or taken in already";
+  }
+  return false;
 }
 
 void RelayInboxCoordinator::KeepCursor(const Inbox& inbox, const std::string& account_id, const std::string& cursor) {

@@ -144,6 +144,52 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   EXPECT_GT(second->remote.fetched_at, 0);
 }
 
+TEST_F(ContactsStoreTest, AddingABlockedPersonAgainEndsTheBlockAndKeepsTheRest) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.hit_id = "account:bob";
+  hit.nickname = "bob";
+  hit.account_id = "account:bob";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
+  auto first = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(first));
+  Contact blocked = *first;
+  blocked.local.display_name = "Bobby";
+  blocked.local.trust = TrustLevel::Blocked;
+  SyncContactMirrors(blocked);
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(blocked)));
+  auto is_blocked = store.IsAccountBlocked("account:bob");
+  ASSERT_TRUE(static_cast<bool>(is_blocked));
+  EXPECT_TRUE(*is_blocked);
+
+  auto again = store.AddFromDirectoryHit(hit); // the user adds them again (search, QR, card, stranger banner)
+  ASSERT_TRUE(static_cast<bool>(again)) << again.error().message;
+  EXPECT_EQ(again->id, first->id);
+  EXPECT_EQ(again->local.trust, TrustLevel::Unknown);
+  EXPECT_EQ(again->local.display_name, "Bobby") << "the name the user gave stays";
+  is_blocked = store.IsAccountBlocked("account:bob");
+  ASSERT_TRUE(static_cast<bool>(is_blocked));
+  EXPECT_FALSE(*is_blocked) << "stored, not just returned";
+}
+
+TEST_F(ContactsStoreTest, ClearBlockOnAddLeavesAnUnblockedContactAlone) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.hit_id = "account:bob";
+  hit.nickname = "bob";
+  hit.account_id = "account:bob";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
+  auto first = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(first));
+  Contact friendly = *first;
+  friendly.local.trust = TrustLevel::Friendly;
+  SyncContactMirrors(friendly);
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(friendly)));
+  auto kept = store.ClearBlockOnAdd(friendly);
+  ASSERT_TRUE(static_cast<bool>(kept));
+  EXPECT_EQ(kept->local.trust, TrustLevel::Friendly);
+}
+
 TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit hit;

@@ -1,6 +1,7 @@
 #include "foundation/data/ConfigJson.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
@@ -632,6 +633,9 @@ Object McpConfigToObject(const McpConfig& config) {
   if (!config.enabled) {
     object.set("enabled", false);
   }
+  if (config.user_set) {
+    object.set("set_by_user", true);
+  }
   return object;
 }
 
@@ -656,6 +660,82 @@ void McpConfigFromObject(const Object& object, McpConfig& config) {
   if (auto enabled = object.getIf<bool>("enabled")) {
     config.enabled = *enabled;
   }
+  if (auto user_set = object.getIf<bool>("set_by_user")) {
+    config.user_set = *user_set;
+  }
+}
+
+namespace {
+
+/** `backend.services`: only the services this file names, so a config that names none writes no key. */
+void ServicesFromObject(const Object& object, CustomServices& services) {
+  const auto read = [&object](const char* key, std::string& out) {
+    if (auto value = object.getString(key)) {
+      out = *value;
+    }
+  };
+  read("account_locker", services.account_locker_url);
+  read("client_compat", services.client_compat_url);
+  read("llm_gateway", services.llm_gateway_url);
+  read("llm_token", services.llm_token_url);
+  read("promoted_mcp", services.promoted_mcp_url);
+  read("crash_intake", services.crash_intake_url);
+  read("mesh_nodes", services.mesh_nodes_url);
+}
+
+Object ServicesToObject(const CustomServices& services) {
+  Object object;
+  const auto write = [&object](const char* key, const std::string& value) {
+    if (!value.empty()) {
+      object.set(key, value);
+    }
+  };
+  write("account_locker", services.account_locker_url);
+  write("client_compat", services.client_compat_url);
+  write("llm_gateway", services.llm_gateway_url);
+  write("llm_token", services.llm_token_url);
+  write("promoted_mcp", services.promoted_mcp_url);
+  write("crash_intake", services.crash_intake_url);
+  write("mesh_nodes", services.mesh_nodes_url);
+  return object;
+}
+
+} // namespace
+
+CustomServices CustomServicesFromObject(const Object& root) {
+  CustomServices services;
+  if (const Object* backend = root.getObject("backend")) {
+    if (const Object* extra = backend->getObject("services")) {
+      ServicesFromObject(*extra, services);
+    }
+  }
+  if (const Object* relay_object = root.getObject("relay")) {
+    ServiceEndpointConfig relay;
+    ServiceEndpointFromObject(*relay_object, relay);
+    services.org_relay_url = relay.base_url;
+    services.org_relay_id = relay.relay_id;
+    if (const Array* extras = relay_object->getArray("extra_base_urls")) {
+      for (const Value& item : extras->elements) {
+        if (auto url = asString(item); url && !url->empty()) {
+          services.seed_relays.push_back(*url);
+        }
+      }
+    }
+  }
+  if (const Object* registration_object = root.getObject("registration")) {
+    ServiceEndpointConfig registration;
+    ServiceEndpointFromObject(*registration_object, registration);
+    services.registration_url = registration.base_url;
+    services.registration_relay_id = registration.relay_id;
+  }
+  if (const Object* directory_object = root.getObject("directory")) {
+    DirectoryConfig directory;
+    DirectoryConfigFromObject(*directory_object, directory);
+    for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(directory)) {
+      services.directory_providers.push_back(provider.base_url);
+    }
+  }
+  return services;
 }
 
 Object AppConfigToObject(const AppConfig& config) {
@@ -671,6 +751,9 @@ Object AppConfigToObject(const AppConfig& config) {
   Object backend;
   // The saved choice as the file had it when this build runs another (BackendConfig::unavailable_env).
   backend.set("env", config.backend.unavailable_env.empty() ? config.backend.env : config.backend.unavailable_env);
+  if (Object services = ServicesToObject(config.backend.services); !services.empty()) {
+    backend.set("services", services);
+  }
   object.set("backend", backend);
   const bool saved = config.backend.has_saved_urls;
   Object relay = ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay);
@@ -692,9 +775,8 @@ Object AppConfigToObject(const AppConfig& config) {
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
   }
-  if (config.promoted_mcp.IsConfigured()) {
-    object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
-  }
+  // `promoted_mcp` is not written: the user's own is the profile's (services.json, profile-model PM011; SessionStore
+  // keeps it there), and the backend's seed is never written back (#744). One a file still holds is read (and moved).
   if (!config.mcp_servers.empty()) {
     std::vector<Value> servers;
     servers.reserve(config.mcp_servers.size());
@@ -747,6 +829,9 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
     if (auto env = backend->getString("env")) {
       config.backend.env = BackendEnvName(ParseBackendEnv(*env));
     }
+    if (const Object* services = backend->getObject("services")) {
+      ServicesFromObject(*services, config.backend.services);
+    }
   }
   if (const Object* relay = object.getObject("relay")) {
     ServiceEndpointFromObject(*relay, config.relay);
@@ -779,12 +864,14 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
 Object MachinePrefsToObject(const MachinePreferences& prefs) {
   Object object;
   object.set("schema_version", static_cast<int64_t>(prefs.schema_version));
-  object.set("active_profile_id", prefs.active_profile_id);
   object.set("window", WindowPrefsToObject(prefs.window));
   object.set("safe_area", SafeAreaToObject(prefs.safe_area));
   object.set("display", DisplayPrefsToObject(prefs.display));
   object.set("collect_run_logs", prefs.collect_run_logs);
   object.set("collect_crash_logs", prefs.collect_crash_logs);
+  if (prefs.show_tester_options) {
+    object.set("show_tester_options", true);
+  }
   if (prefs.update_card_dismissals > 0 && !prefs.update_card_version.empty()) {
     object.set("update_card_version", prefs.update_card_version);
     object.set("update_card_dismissals", static_cast<int64_t>(prefs.update_card_dismissals));
@@ -797,9 +884,6 @@ void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   if (auto schema_version = ReadI64(object, "schema_version")) {
     prefs.schema_version = static_cast<int>(*schema_version);
   }
-  if (auto active_profile_id = object.getString("active_profile_id")) {
-    prefs.active_profile_id = *active_profile_id;
-  }
   if (const Object* window = object.getObject("window")) {
     WindowPrefsFromObject(*window, prefs.window);
   }
@@ -809,6 +893,7 @@ void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   if (const Object* display = object.getObject("display")) {
     DisplayPrefsFromObject(*display, prefs.display);
   }
+  prefs.show_tester_options = object.getIf<bool>("show_tester_options").value_or(false);
   if (auto collect = object.getIf<bool>("collect_run_logs")) {
     prefs.collect_run_logs = *collect;
   }
@@ -846,6 +931,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("recovery_reminder_dismissals", static_cast<int64_t>(prefs.recovery_reminder_dismissals));
   object.set("recovery_reminder_dismissed_ms", prefs.recovery_reminder_dismissed_ms);
   object.set("composer_voice_mode_last", prefs.composer_voice_mode_last);
+  object.set("account_sync_pending", prefs.account_sync_pending);
   object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
@@ -859,7 +945,6 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_wifi", prefs.attachment_auto_on_wifi);
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
-  object.set("show_tester_options", prefs.show_tester_options);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
   object.set("ai_dot_shown", prefs.ai_dot_shown);
@@ -925,6 +1010,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   prefs.recovery_reminder_dismissed_ms =
       std::max<int64_t>(0, ReadI64(object, "recovery_reminder_dismissed_ms").value_or(0));
   prefs.composer_voice_mode_last = object.getIf<bool>("composer_voice_mode_last").value_or(false);
+  prefs.account_sync_pending = object.getIf<bool>("account_sync_pending").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes = (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 ||
                                 grace_minutes == 60 || grace_minutes == kUnlockGraceAlways)
@@ -967,7 +1053,6 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.attachment_download_policy = "smart";
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
-  prefs.show_tester_options = object.getIf<bool>("show_tester_options").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
   prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
   prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);

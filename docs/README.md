@@ -104,6 +104,7 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/WIRE_SCHEMAS.md](contracts/WIRE_SCHEMAS.md) | Relay envelope, ChatPayload, history wire | `envelope_version`, `payload_version`, protocol ids |
 | [contracts/MESSAGE_ENCRYPTION.md](contracts/MESSAGE_ENCRYPTION.md) | E2E AEAD, AAD, signing | `aad_version`, crypto blob version |
 | [contracts/ACCOUNT_CARD.md](contracts/ACCOUNT_CARD.md) | Account cards: keys and devices that prove themselves; locator; card exchange over Amp | `card_version`, `pp-browser-contact-v1:`, `/pp/account-card/1.0.0` |
+| [contracts/LINK_DEVICE.md](contracts/LINK_DEVICE.md) | Linking a device: the sealed QR handshake (the new device's one-time key, the main device's sealed seed, the 4 digits) | link offer v1, link reply v1 (`pp-browser-link-offer:` / `pp-browser-link-reply:`) |
 | [contracts/ACCOUNT_LOCKER.md](contracts/ACCOUNT_LOCKER.md) | Account locker: recovery-seed keys, sealed snapshot, state JSON, sync between devices, restore | `pp-browser:account-locker` (record v2), `account_locker.json` |
 | [contracts/AT_REST_ENCRYPTION.md](contracts/AT_REST_ENCRYPTION.md) | PIN vault, DEK, `identity.enc` | vault file version |
 | [contracts/DATA_LAYOUT.md](contracts/DATA_LAYOUT.md) | Paths, profile tree, JSON schema versions | on-disk layout |

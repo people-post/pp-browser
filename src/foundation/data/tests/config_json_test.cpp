@@ -46,9 +46,10 @@ TEST(ConfigJsonTest, ParsesTheCurrentKeysOnly) {
 TEST(ConfigJsonTest, EmitsModernConfigKeys) {
   pbr::AppConfig config;
   config.promoted_mcp.url = "https://promoted.example/mcp";
+  config.promoted_mcp.user_set = true;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
-  EXPECT_TRUE(out.contains("promoted_mcp"));
+  EXPECT_FALSE(out.contains("promoted_mcp")) << "the user's is the profile's (services.json, profile-model PM011)";
   EXPECT_FALSE(out.contains("mcp"));
 }
 
@@ -361,6 +362,24 @@ TEST(ConfigJsonTest, ProfilePrefsComposerVoiceModeLastRoundTripsAndDefaultsOff) 
   loaded.composer_voice_mode_last = true;
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_FALSE(loaded.composer_voice_mode_last);
+}
+
+TEST(ConfigJsonTest, ProfilePrefsAccountSyncPendingRoundTripsAndAbsentMeansNotPending) {
+  pbr::ProfilePreferences fresh;
+  EXPECT_FALSE(fresh.account_sync_pending);
+
+  pbr::ProfilePreferences edited;
+  edited.account_sync_pending = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.account_sync_pending);
+
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 16 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.account_sync_pending = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.account_sync_pending);
 }
 
 TEST(ConfigJsonTest, ProfilePrefsOldFileWithoutComposerVoiceModeReadsUnchanged) {

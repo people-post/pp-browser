@@ -2,142 +2,140 @@
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/crypto/HybridKem.h"
+#include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoverySeed.h"
+
+#include <sodium.h>
 
 #include <optional>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-Roe<LinkDeviceBundleV1> LinkDeviceExchange::Capture(const LocalIdentity& identity, const ByteVector& dek,
-                                                    const int64_t now_ms, const int64_t ttl_ms) {
-  if (identity.account_id.empty() || identity.account_signing_private_key_b64.empty() ||
-      identity.account_signing_public_key_b64.empty()) {
+namespace {
+
+/** The account keys a seed derives, as the identity keeps them (base64). */
+struct SeedAccount {
+  std::string account_id;
+  std::string signing_public_b64;
+  SecretText signing_secret_b64;
+  std::string kem_public_b64;
+  SecretText kem_secret_b64;
+};
+
+Roe<SeedAccount> AccountFromSeed(const ByteVector& seed) {
+  auto keys = DeriveRecoveryKeys(seed);
+  if (!keys) {
+    return keys.error();
+  }
+  auto signing = MlDsa::GenerateKeyPairFromSeed(keys->account_ml_dsa_seed);
+  if (!signing) {
+    return signing.error();
+  }
+  auto kem = HybridKem::GenerateKeyPairFromSeed(keys->account_ml_kem_coins);
+  if (!kem) {
+    return kem.error();
+  }
+  auto account_id = AccountIdFromMlDsaPublicKey(signing->public_key);
+  if (!account_id) {
+    return account_id.error();
+  }
+  SeedAccount account{.account_id = std::move(*account_id),
+                      .signing_public_b64 = Base64Encode(signing->public_key),
+                      .signing_secret_b64 = Base64Encode(signing->secret_key),
+                      .kem_public_b64 = Base64Encode(kem->public_key),
+                      .kem_secret_b64 = Base64Encode(kem->private_key)};
+  sodium_memzero(signing->secret_key.data(), signing->secret_key.size());
+  sodium_memzero(kem->private_key.data(), kem->private_key.size());
+  return account;
+}
+
+/** The identity to bring the account onto: the one loaded under the vault there is, or a new one under a fresh DEK. */
+Roe<LocalIdentity> IdentityUnderOwnDek(IdentityStore& identity, DataKeyVault& vault, const SecretText& pin) {
+  if (vault.Exists()) {
+    if (!vault.IsUnlocked()) {
+      return Error("Unlock this profile first");
+    }
+    return identity.Get(); // its DEK stays: nothing another device sealed comes here
+  }
+  EnsureSodiumInit();
+  ByteVector dek(kDataEncryptionKeySize);
+  randombytes_buf(dek.data(), dek.size());
+  auto created = vault.CreateWithDek(pin.Reveal(), dek);
+  auto set = created ? identity.SetDek(dek) : Roe<void>(created.error());
+  sodium_memzero(dek.data(), dek.size());
+  if (!set) {
+    return set.error();
+  }
+  return identity.LoadOrCreate();
+}
+
+} // namespace
+
+Roe<ByteVector> LinkDeviceExchange::SealReply(const LocalIdentity& identity, const std::span<const uint8_t> offer,
+                                              std::optional<RelayAddress> relay, const int64_t now_ms,
+                                              const int64_t ttl_ms) {
+  if (identity.account_id.empty() || identity.account_signing_public_key_b64.empty()) {
     return Error("Local account identity unavailable");
   }
   if (!identity.registered) {
     return Error("Local account not registered on the relay");
   }
-  if (dek.size() != kDataEncryptionKeySize) {
-    return Error("Invalid DEK size");
+  if (identity.recovery_seed_b64.empty()) {
+    return Error("This account has no recovery phrase, so it cannot link a device");
   }
   if (now_ms <= 0 || ttl_ms <= 0) {
-    return Error("Invalid link-device lifetime");
+    return Error("Invalid link lifetime");
   }
-  if (identity.kem_public_key_b64.empty() || identity.kem_private_key_b64.empty()) {
-    return Error("Local account KEM unavailable");
+  LinkBundle bundle;
+  auto seed = Base64Decode(identity.recovery_seed_b64.Reveal());
+  if (!seed) {
+    return seed.error();
   }
-
-  LinkDeviceBundleV1 bundle;
-  bundle.account_id = identity.account_id;
-  bundle.account_ml_dsa_pk_b64 = identity.account_signing_public_key_b64;
-  bundle.account_ml_dsa_sk_b64 = identity.account_signing_private_key_b64.Reveal();
-  bundle.account_kem_pk_b64 = identity.kem_public_key_b64;
-  bundle.account_kem_sk_b64 = identity.kem_private_key_b64.Reveal();
-  bundle.dek_b64 = Base64Encode(dek);
-  bundle.nickname = identity.nickname;
-  if (!identity.recovery_seed_b64.empty()) {
-    bundle.recovery_seed_b64 = identity.recovery_seed_b64.Reveal(); // M023: the new device shows the same phrase
+  bundle.seed = std::move(*seed);
+  // The seed must be this account's: a seed that derives other keys would link the new device to another account.
+  auto derived = AccountFromSeed(bundle.seed);
+  if (!derived) {
+    return derived.error();
   }
-  bundle.created_at_ms = now_ms;
+  if (derived->account_id != identity.account_id) {
+    return Error("This account's recovery seed does not derive its keys");
+  }
+  bundle.intent = LinkIntent::Join;
   bundle.expires_at_ms = now_ms + ttl_ms;
-  if (auto valid = LinkDeviceCodec::Validate(bundle, now_ms); !valid) {
-    return valid.error();
-  }
-  return bundle;
+  bundle.relay = std::move(relay);
+  return SealLinkReply(offer, bundle);
 }
 
-Roe<std::string> LinkDeviceExchange::ExportJson(const LocalIdentity& identity, const ByteVector& dek,
-                                                std::string account_card_json, const int64_t now_ms,
-                                                const int64_t ttl_ms) {
-  if (account_card_json.empty()) {
-    return Error("No account card to link a device with");
+Roe<LocalIdentity> LinkDeviceExchange::ImportAccount(IdentityStore& identity, DataKeyVault& vault,
+                                                     const ByteVector& seed, const std::string_view card_intent,
+                                                     const std::string& nickname, const SecretText& pin) {
+  if (card_intent != kCardIntentJoin && card_intent != kCardIntentFresh) {
+    return Error("Unknown card intent");
   }
-  auto bundle = Capture(identity, dek, now_ms, ttl_ms);
-  if (!bundle) {
-    return bundle.error();
+  auto account = AccountFromSeed(seed);
+  if (!account) {
+    return account.error();
   }
-  bundle->account_card_json = std::move(account_card_json);
-  return LinkDeviceCodec::Serialize(*bundle);
-}
-
-Roe<LinkDeviceImportResult> LinkDeviceExchange::Import(IdentityStore& identity, DataKeyVault& vault,
-                                                       const std::string& bundle_json, const SecretText& pin,
-                                                       const int64_t now_ms) {
-  auto parsed = LinkDeviceCodec::Parse(bundle_json);
-  if (!parsed) {
-    return parsed.error();
+  auto loaded = IdentityUnderOwnDek(identity, vault, pin);
+  if (!loaded) {
+    return loaded.error();
   }
-  if (auto valid = LinkDeviceCodec::Validate(*parsed, now_ms); !valid) {
-    return valid.error();
-  }
-
-  auto dek = Base64Decode(parsed->dek_b64.Reveal());
-  if (!dek) {
-    return dek.error();
-  }
-
-  const bool had_vault = vault.Exists();
-  std::optional<LocalIdentity> loaded;
-  if (had_vault) {
-    auto existing = identity.Get();
-    if (!existing) {
-      return existing.error();
-    }
-    loaded = *existing;
-    if (auto wrapped = vault.ReplaceWithDek(pin.Reveal(), *dek); !wrapped) {
-      return wrapped.error();
-    }
-  } else if (auto wrapped = vault.CreateWithDek(pin.Reveal(), *dek); !wrapped) {
-    return wrapped.error();
-  }
-  if (had_vault) {
-    if (auto keep = identity.ReplaceDekKeepLoaded(*dek); !keep) {
-      return keep.error();
-    }
-  } else {
-    if (auto set = identity.SetDek(*dek); !set) {
-      return set.error();
-    }
-    auto created = identity.LoadOrCreate();
-    if (!created) {
-      return created.error();
-    }
-    loaded = *created;
-  }
-
+  // This device's own keys stay (its PeerId and device KEM, M021 §1); the account is the seed's.
   LocalIdentity next = *loaded;
-  const std::string device_peer = next.peer_id;
-  const std::string device_pk = next.public_key_b64;
-  const std::string device_sk = next.private_key_b64.Reveal();
-
-  next.account_id = parsed->account_id;
-  next.account_signing_public_key_b64 = parsed->account_ml_dsa_pk_b64;
-  next.account_signing_private_key_b64 = parsed->account_ml_dsa_sk_b64;
-  // The account's recovery seed when it has one (checked against these keys on Validate); none otherwise — the
-  // seed this install minted for itself names another account.
-  next.recovery_seed_b64 = parsed->recovery_seed_b64.value_or(std::string());
-  next.kem_public_key_b64 = parsed->account_kem_pk_b64;
-  next.kem_private_key_b64 = parsed->account_kem_sk_b64;
-  if (!parsed->nickname.empty()) {
-    next.nickname = parsed->nickname;
+  next.account_id = account->account_id;
+  next.account_signing_public_key_b64 = account->signing_public_b64;
+  next.account_signing_private_key_b64 = account->signing_secret_b64;
+  next.kem_public_key_b64 = account->kem_public_b64;
+  next.kem_private_key_b64 = account->kem_secret_b64;
+  next.recovery_seed_b64 = Base64Encode(seed);
+  if (!nickname.empty()) {
+    next.nickname = nickname;
   }
   next.registered = true;
-  // M021 d4: a link bundle carries the master's card — this device joins that list; a bundle without one is a
-  // restore from the recovery phrase — this device starts a fresh list as the master.
-  next.card_intent = parsed->account_card_json.value_or("").empty() ? kCardIntentFresh : kCardIntentJoin;
-  next.peer_id = device_peer;
-  next.public_key_b64 = device_pk;
-  next.private_key_b64 = device_sk;
-
-  auto saved = identity.Update(next);
-  if (!saved) {
-    return saved.error();
-  }
-
-  LinkDeviceImportResult result;
-  result.identity = *saved;
-  result.account_card_json = std::move(parsed->account_card_json);
-  return result;
+  next.card_intent = std::string(card_intent);
+  return identity.Update(next);
 }
 
 } // namespace pbr

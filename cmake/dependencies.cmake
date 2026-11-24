@@ -1,6 +1,7 @@
 include(Progress)
+include(PpBrowserCapability) # PP_BROWSER_ROOT
 
-set(PP_THIRD_PARTY_DIR "${CMAKE_SOURCE_DIR}/third_party")
+set(PP_THIRD_PARTY_DIR "${PP_BROWSER_ROOT}/third_party")
 
 function(pp_require_vendored name)
   if(NOT EXISTS "${PP_THIRD_PARTY_DIR}/${name}/CMakeLists.txt")

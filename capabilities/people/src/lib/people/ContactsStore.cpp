@@ -284,7 +284,11 @@ Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const mesh::DirectoryH
     return existing.error();
   }
   if (existing->has_value()) {
-    return ApplyRemoteSnapshot((*existing)->id, hit, util::NowUnixMs());
+    auto applied = ApplyRemoteSnapshot((*existing)->id, hit, util::NowUnixMs());
+    if (!applied) {
+      return applied;
+    }
+    return ClearBlockOnAdd(std::move(*applied)); // adding someone is the user's own act: it ends a block
   }
 
   Contact contact;
@@ -427,6 +431,20 @@ Roe<Contact> ContactsStore::AddEmptyUnnotified() {
   contact.local.trust = TrustLevel::Unknown;
   SyncContactMirrors(contact);
   return UpsertUnnotified(contact);
+}
+
+Roe<Contact> ContactsStore::ClearBlockOnAdd(Contact contact) {
+  if (contact.local.trust != TrustLevel::Blocked && contact.trust != TrustLevel::Blocked) {
+    return contact;
+  }
+  contact.local.trust = TrustLevel::Unknown;
+  contact.trust = TrustLevel::Unknown;
+  SyncContactMirrors(contact);
+  auto upserted = Upsert(contact);
+  if (!upserted) {
+    return upserted;
+  }
+  return upserted;
 }
 
 Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {

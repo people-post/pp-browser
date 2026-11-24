@@ -170,6 +170,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
     ctor.Bind("pin_gate_phrase_flow", &host.state_.pin_gate.phrase_flow);
     ctor.Bind("pin_gate_payload_hidden", &host.state_.pin_gate.payload_hidden);
+    ctor.Bind("pin_gate_link_offer_qr_rml", &host.state_.pin_gate.link_offer_qr);
+    ctor.Bind("pin_gate_link_offer_code", &host.state_.pin_gate.link_offer_code);
+    ctor.Bind("pin_gate_link_can_scan", &host.state_.pin_gate.link_can_scan);
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -390,6 +393,12 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
     ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
     ctor.BindEventCallback("pin_gate_clear_payload", DataEvent<>([this]() { PinGateClearPayload(); }));
+    ctor.BindEventCallback("pin_gate_copy_offer", DataEvent<>([this]() { PinGateCopyOffer(); }));
+    ctor.BindEventCallback("pin_gate_scan_reply", DataEvent<>([this]() {
+                             if (pin_gate_actions_.on_scan_reply) {
+                               pin_gate_actions_.on_scan_reply();
+                             }
+                           }));
     ctor.BindEventCallback("pin_gate_cancel", DataEvent<>([this]() { PinGateCancel(); }));
     ctor.BindEventCallback("pin_gate_set_pin", DataEvent<>([this]() { PinGateSetPin(); }));
     ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
@@ -1392,6 +1401,9 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_phrase_flow");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_qr_rml");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_code");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_can_scan");
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
@@ -3720,6 +3732,17 @@ void ShellHost::PinGatePaste() {
   state_.pin_gate.link_payload = too_big ? ui::String() : text;
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");
+}
+
+void ShellHost::PinGateCopyOffer() {
+  // The offer is a public key (M027): safe on the clipboard, in a chat, anywhere.
+  ui::SystemInterface* system = ui::GetSystemInterface();
+  if (!system || state_.pin_gate.link_offer_text.empty()) {
+    return;
+  }
+  system->SetClipboardText(state_.pin_gate.link_offer_text);
+  ShellFeedback::ShowToast(state_, Tr("pin.link_offer_copied"));
+  DirtyFeedback();
 }
 
 void ShellHost::PinGateClearPayload() {

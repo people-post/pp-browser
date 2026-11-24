@@ -31,6 +31,7 @@ public:
   /** After unlock: overlay the stored keys onto the live config and tell listeners when that changed it. */
   Roe<void> ApplyConfigSecrets();
 
+  /** Writes config.json, and the user's promoted MCP to the profile's services.json (profile-model PM011). */
   Roe<void> SaveConfig(const AppConfig& config);
   Roe<void> SaveProfilePrefs(const ProfilePreferences& prefs);
   Roe<void> ReloadConfig();
@@ -61,6 +62,8 @@ private:
   bool initialized_ = false;
   bool ui_demo_ = kUiDemoBuild;
   IConfigSecrets* config_secrets_ = nullptr;
+  /** The user's own promoted MCP of `config` (or none) into the profile's services.json. */
+  Roe<void> KeepProfileServices(const AppConfig& config) const;
   BootstrapResult bootstrap_;
   std::vector<std::function<void(const AppConfig&)>> config_listeners_;
   std::vector<std::function<void(const ProfilePreferences&)>> profile_prefs_listeners_;

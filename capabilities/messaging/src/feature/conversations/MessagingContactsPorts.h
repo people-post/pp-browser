@@ -19,6 +19,16 @@
 
 namespace pbr {
 
+/** One row of the Groups page (Contacts → Groups, New chat → Groups): a group this account is in, with its chat. */
+struct GroupListEntry {
+  std::string thread_id;
+  /** The name the chat list shows for it (InboxController::ResolveThreadLabel). */
+  std::string title;
+  /** The letter avatar's colour seed, as on the chat list. */
+  std::string stable_id;
+  size_t member_count = 0;
+};
+
 /**
  * Contacts / directory / thread ports for UI presenters.
  * Application fills from ConversationsHub. Clear via BindContactsPorts({}).
@@ -64,6 +74,8 @@ struct MessagingContactsPorts {
       add_from_locator;
   /** Share a contact into a chat as a contact card. */
   std::function<Roe<void>(const std::string& thread_id, const std::string& contact_id)> share_contact;
+  /** B236: the chat sends nothing for now (the recipient has not added us; ConversationsFacade::ChatSendHeld). */
+  std::function<bool(const std::string& thread_id)> send_held;
   /** The keys a directory entry carries for its account (each kept only when it proves to be the account's). */
   std::function<void(const mesh::DirectoryHit& hit)> register_peer_keys_from_directory;
 
@@ -83,6 +95,8 @@ struct MessagingContactsPorts {
       refresh_contact;
   /** The contact page's relay line: its preferred relay and what it answered at the last refresh (multi-relay R3). */
   std::function<ContactRelayView(const Contact& contact)> contact_relay;
+  /** The groups this account is in now, each with its chat (ListLiveGroups): the Groups page. Unordered. */
+  std::function<Roe<std::vector<GroupListEntry>>()> list_groups;
 };
 
 class ConversationsHub;

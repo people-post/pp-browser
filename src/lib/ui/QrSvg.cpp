@@ -28,6 +28,12 @@ constexpr qrcodegen::QrCode::Ecc kScreenEcc = qrcodegen::QrCode::Ecc::LOW;
  */
 constexpr qrcodegen::QrCode::Ecc kImageEcc = qrcodegen::QrCode::Ecc::MEDIUM;
 
+/**
+ * A binary payload (the link handshake's offer and reply, over a kilobyte each): MEDIUM too. The code is dense
+ * (versions 28 to 30), and a phone reading another phone's screen meets glare and moiré that cost modules.
+ */
+constexpr qrcodegen::QrCode::Ecc kBinaryEcc = qrcodegen::QrCode::Ecc::MEDIUM;
+
 } // namespace
 
 int QrPhoneDisplayDp(const float page_width_dp, const float page_height_dp) {
@@ -36,29 +42,51 @@ int QrPhoneDisplayDp(const float page_width_dp, const float page_height_dp) {
   return std::min(by_width, by_height);
 }
 
+namespace {
+
+/** The code's dark modules in the view box, a white square behind them. */
+std::string SvgOf(const qrcodegen::QrCode& code) {
+  const int size = code.getSize();
+  const int span = size + 2 * kQuietZone;
+  std::ostringstream svg;
+  svg << "<rect width=\"" << kQrSvgViewBox << "\" height=\"" << kQrSvgViewBox << "\" fill=\"#ffffff\"/>";
+  svg << "<g transform=\"scale(" << static_cast<double>(kQrSvgViewBox) / span << ")\">";
+  svg << "<path fill=\"#000000\" shape-rendering=\"crispEdges\" d=\"";
+  for (int y = 0; y < size; ++y) {
+    for (int x = 0; x < size; ++x) {
+      if (code.getModule(x, y)) {
+        svg << 'M' << x + kQuietZone << ' ' << y + kQuietZone << "h1v1h-1z";
+      }
+    }
+  }
+  svg << "\"/></g>";
+  return svg.str();
+}
+
+} // namespace
+
 Roe<std::string> QrSvgContent(const std::string& text, QrShape* shape) {
   try {
     const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(text.c_str(), kScreenEcc);
-    const int size = code.getSize();
     if (shape != nullptr) {
-      *shape = QrShape{code.getVersion(), size, static_cast<int>(text.size())};
+      *shape = QrShape{code.getVersion(), code.getSize(), static_cast<int>(text.size())};
     }
-    const int span = size + 2 * kQuietZone;
-    std::ostringstream svg;
-    svg << "<rect width=\"" << kQrSvgViewBox << "\" height=\"" << kQrSvgViewBox << "\" fill=\"#ffffff\"/>";
-    svg << "<g transform=\"scale(" << static_cast<double>(kQrSvgViewBox) / span << ")\">";
-    svg << "<path fill=\"#000000\" shape-rendering=\"crispEdges\" d=\"";
-    for (int y = 0; y < size; ++y) {
-      for (int x = 0; x < size; ++x) {
-        if (code.getModule(x, y)) {
-          svg << 'M' << x + kQuietZone << ' ' << y + kQuietZone << "h1v1h-1z";
-        }
-      }
-    }
-    svg << "\"/></g>";
-    return svg.str();
+    return SvgOf(code);
   } catch (const std::exception& e) {
     return Error(std::string("QR code: ") + e.what()); // text too long for any version
+  }
+}
+
+Roe<std::string> QrSvgContentBinary(const std::span<const uint8_t> bytes, QrShape* shape) {
+  try {
+    const std::vector<uint8_t> data(bytes.begin(), bytes.end());
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeBinary(data, kBinaryEcc);
+    if (shape != nullptr) {
+      *shape = QrShape{code.getVersion(), code.getSize(), static_cast<int>(data.size())};
+    }
+    return SvgOf(code);
+  } catch (const std::exception& e) {
+    return Error(std::string("QR code: ") + e.what()); // too long for any version
   }
 }
 

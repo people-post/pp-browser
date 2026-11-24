@@ -52,7 +52,7 @@ constexpr const char* kSavedConfig = R"({
   "relay": { "base_url": "https://saved.example.test/api/relay" },
   "directory": { "base_url": "https://saved.example.test/api/relay" },
   "registration": { "base_url": "https://saved.example.test/api/relay" },
-  "promoted_mcp": { "url": "https://saved.example.test/mcp" }
+  "promoted_mcp": { "url": "https://saved.example.test/mcp", "set_by_user": true }
 })";
 
 } // namespace
@@ -66,7 +66,9 @@ TEST(ConfigOriginTest, EnvOverridesSavedBackendUrls) {
   EXPECT_EQ(loaded->llm.base_url, "https://backend.example.test/api/llm/v1");
   EXPECT_EQ(loaded->relay.base_url, "https://backend.example.test/api/relay");
   EXPECT_EQ(loaded->registration.base_url, "https://backend.example.test/api/relay");
-  EXPECT_EQ(loaded->promoted_mcp.url, "https://backend.example.test/mcp");
+  // Changed by profile-model P2 (#744): the promoted MCP is the user's. The origin only seeds it, so an address the
+  // file holds stays (it used to be replaced by the origin's /mcp on every start and written back).
+  EXPECT_EQ(loaded->promoted_mcp.url, "https://saved.example.test/mcp");
   std::filesystem::remove(path);
 }
 

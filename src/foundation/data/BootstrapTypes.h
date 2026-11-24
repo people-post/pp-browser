@@ -21,6 +21,8 @@ struct BootstrapResult {
   std::string config_path;
   /** BackendProfileKey of the backend this run talks to. */
   std::string backend_key;
+  /** `{profile_data_dir}/backends/{backend_key}/`: what this device keeps of that backend (profile-model PM004). */
+  std::string backend_data_dir;
 };
 
 struct BootstrapOptions {

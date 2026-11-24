@@ -1,5 +1,6 @@
-// The fresh-install PIN gate's paths that bring an existing account (multi-device M023): the transfer code and the
-// recovery phrase share the PIN steps, then go to their own completion.
+// The fresh-install PIN gate's paths that bring an existing account (multi-device M023, M027): linking to the main
+// device (this device's offer as a QR code, the main device's reply scanned or pasted) and the recovery phrase share the
+// PIN steps, then go to their own completion.
 #include "gui/PinGateController.h"
 
 #include "foundation/crypto/PinDefaults.h"
@@ -7,6 +8,14 @@
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
+
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/crypto/ProfileUnlockGate.h"
+
+#include <filesystem>
+
+#include <chrono>
 
 #include <optional>
 #include <string>
@@ -56,6 +65,15 @@ protected:
     complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle, bool is_default) {
       link_ = std::make_tuple(pin.Reveal(), bundle, is_default);
     };
+    complete.begin_link_offer = [this]() -> Roe<LinkOfferDisplay> {
+      ++offers_;
+      return LinkOfferDisplay{.qr_svg = "<rect/>", .text = "pp-browser-link-offer:AQ", .code = "0427"};
+    };
+    complete.forget_link_offer = [this]() { ++forgotten_; };
+    complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
+      scan_done_ = std::move(done);
+      scan_closed_ = std::move(closed);
+    };
     complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
       typed_pin_ = pin.Reveal();
       typed_create_ = create_mode;
@@ -64,7 +82,11 @@ protected:
     complete.use_device_pin_instead = [this]() { ++use_pin_instead_; };
     complete.try_biometric = [this]() { ++biometric_tries_; };
     controller_.BindGateComplete(std::move(complete));
+    // Each reading of the clock a second later: a choice is never "the same tap again" unless a test says so.
+    controller_.SetClockForTest([this]() { return clock_ += std::chrono::seconds(1); });
   }
+
+  std::chrono::steady_clock::time_point clock_{};
 
   PinGateController controller_;
   PinGateState shown_;
@@ -73,6 +95,10 @@ protected:
   std::string hidden_full_;
   std::optional<std::tuple<std::string, std::string, bool>> phrase_restore_;
   std::optional<std::tuple<std::string, std::string, bool>> link_;
+  int offers_ = 0;
+  int forgotten_ = 0;
+  std::function<void(std::string)> scan_done_;
+  std::function<void()> scan_closed_;
   std::vector<std::string> saved_copies_;
   std::string pick_name_;
   std::optional<std::string> pick_text_;
@@ -196,7 +222,7 @@ TEST_F(PinGateControllerTest, ASavedCopyPickedOnThePhrasePageRidesWithTheWords) 
   EXPECT_EQ(saved_copies_, std::vector<std::string>{*pick_text_});
 }
 
-TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
+TEST_F(PinGateControllerTest, TheLinkPathTakesTheMainDevicesReply) {
   controller_.ShowIdentityFork();
   controller_.OnIdentityPhrase();
   controller_.OnCancel(); // no gate bound: stays; back to the fork the way the app does
@@ -205,14 +231,56 @@ TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
   controller_.OnUseDefaultPin();
   ASSERT_TRUE(shown_.link_paste_mode);
   EXPECT_FALSE(shown_.phrase_flow) << "leaving the phrase path forgot it";
-  typed_payload_ = "{\"format\":\"pp-browser-link-device-v1\"}";
+  typed_payload_ = "pp-browser-link-reply:AQ";
   controller_.OnSubmit();
   ASSERT_TRUE(link_);
   EXPECT_FALSE(phrase_restore_);
 }
 
+// M027: the link page shows this device's one-time offer (QR code and digits); "Scan" steps the gate aside for the
+// camera and imports what it reads; nothing read brings the gate back; leaving the page wipes the key.
+TEST_F(PinGateControllerTest, TheLinkPageShowsTheOfferAndScansTheReply) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  ASSERT_TRUE(shown_.link_paste_mode);
+  EXPECT_EQ(offers_, 1);
+  EXPECT_EQ(std::string(shown_.link_offer_qr.c_str()), "<rect/>");
+  EXPECT_EQ(std::string(shown_.link_offer_code.c_str()), "0427");
+  EXPECT_TRUE(shown_.link_can_scan);
+
+  controller_.OnScanReply();
+  ASSERT_TRUE(scan_closed_);
+  EXPECT_FALSE(shown_.active) << "the camera's page, not the gate";
+  scan_closed_(); // cancelled: the gate as it was
+  EXPECT_TRUE(shown_.active);
+  EXPECT_TRUE(shown_.link_paste_mode);
+  EXPECT_FALSE(link_);
+
+  controller_.OnScanReply();
+  ASSERT_TRUE(scan_done_);
+  scan_done_(std::string("\x01reply", 6));
+  ASSERT_TRUE(link_) << "what the camera read is imported at once";
+  EXPECT_EQ(std::get<1>(*link_), std::string("\x01reply", 6));
+  EXPECT_TRUE(shown_.active);
+
+  EXPECT_EQ(forgotten_, 0);
+  controller_.ShowIdentityFork(); // back to the start
+  EXPECT_EQ(forgotten_, 1) << "the one-time key goes with the page";
+}
+
+TEST_F(PinGateControllerTest, ThePhrasePageMakesNoOffer) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityPhrase();
+  controller_.OnUseDefaultPin();
+  EXPECT_EQ(offers_, 0);
+  EXPECT_TRUE(std::string(shown_.link_offer_qr.c_str()).empty());
+  controller_.ShowIdentityFork();
+  EXPECT_EQ(forgotten_, 0);
+}
+
 TEST_F(PinGateControllerTest, AnOverLongTransferCodeSubmitsFromTheHiddenFullValue) {
-  // B166/B167: a transfer code is a multi-KB blob kept out of the rendered link_payload (it froze the app). Submit
+  // B166/B167: the reply is a 1.6 KB blob kept out of the rendered link_payload (it froze the app). Submit
   // must still send the real value, which lives in link_payload_full while payload_hidden.
   controller_.ShowIdentityFork();
   controller_.OnIdentityLink();
@@ -221,7 +289,7 @@ TEST_F(PinGateControllerTest, AnOverLongTransferCodeSubmitsFromTheHiddenFullValu
   // The box renders nothing (the big code was hidden), but the full value is carried alongside.
   typed_payload_ = "";
   payload_hidden_ = true;
-  hidden_full_ = "{\"format\":\"pp-browser-link-device-v1\",\"big\":\"" + std::string(20000, 'A') + "\"}";
+  hidden_full_ = "pp-browser-link-reply:" + std::string(1700, 'A');
   controller_.OnSubmit();
   ASSERT_TRUE(link_) << "the hidden full value is what gets sent";
   EXPECT_EQ(std::get<1>(*link_), hidden_full_);
@@ -485,7 +553,7 @@ TEST_F(PinGateControllerTest, UnlockTextSwitchToKeypadWhenDigitsKnown) {
 
 TEST_F(PinGateControllerTest, VerifyKeypadAutoSubmitsAndCallsBack) {
   pin_digits_ = 4;
-  controller_.ShowVerify(PinVerifyPurpose::ExportTransferCode, Check(), [this]() { ++verified_ok_; });
+  controller_.ShowVerify(PinVerifyPurpose::LinkDevice, Check(), [this]() { ++verified_ok_; });
   ASSERT_TRUE(shown_.verify_mode);
   ASSERT_TRUE(shown_.keypad);
   EXPECT_EQ(Message(), Tr("pin.verify_export_message"));
@@ -517,7 +585,7 @@ TEST_F(PinGateControllerTest, VerifyWrongPinStays) {
 
 TEST_F(PinGateControllerTest, VerifyCancelReturns) {
   pin_digits_ = 4;
-  controller_.ShowVerify(PinVerifyPurpose::ExportTransferCode, Check(), [this]() { ++verified_ok_; });
+  controller_.ShowVerify(PinVerifyPurpose::LinkDevice, Check(), [this]() { ++verified_ok_; });
   Keys("2468");
   controller_.OnCancel(); // while the check runs
   EXPECT_FALSE(shown_.active) << "back to settings";
@@ -817,6 +885,98 @@ TEST_F(PinGateControllerTest, ALostBiometricUnlockOpensThePadOnAKeyOnlyDoor) {
   EXPECT_GT(remounts_, remounts);
   EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_message"));
   EXPECT_EQ(std::string(shown_.biometric_hint.c_str()), "turn it on again");
+}
+
+// The reset's confirm tap, or the fork's own button, delivered twice (a trackpad's touch and the mouse click made from
+// it): the second copy, landing on the page that just appeared, picks nothing there; a real tap after the guard does.
+TEST_F(PinGateControllerTest, AChoicePageIgnoresTheTapThatBroughtItUp) {
+  controller_.SetClockForTest([this]() { return clock_; });
+  controller_.ShowIdentityFork();
+  clock_ += std::chrono::milliseconds(200);
+  controller_.OnIdentityNew();
+  EXPECT_TRUE(shown_.identity_fork_mode) << "still the fork: not taken to \"Set a PIN?\"";
+  EXPECT_FALSE(shown_.chooser_mode);
+  controller_.OnIdentityLink();
+  controller_.OnIdentityPhrase();
+  EXPECT_TRUE(shown_.identity_fork_mode);
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnIdentityNew();
+  EXPECT_TRUE(shown_.chooser_mode) << "a real tap goes on to \"Set a PIN?\"";
+  // Its own double tap does not pick "Set a PIN" or "Just continue" right away either.
+  clock_ += std::chrono::milliseconds(100);
+  controller_.OnSetPin();
+  controller_.OnUseDefaultPin();
+  EXPECT_TRUE(shown_.chooser_mode);
+  EXPECT_FALSE(shown_.create_mode);
+  EXPECT_EQ(completes_, 0);
+  clock_ += PinGateController::kChoiceTapGuard;
+  controller_.OnSetPin();
+  EXPECT_TRUE(shown_.create_mode);
+}
+
+// Reset my profile in the running app, through the real unlock gate and this controller: the page shown is the fresh
+// install's first page (the fork: new account / I already have an account / recovery phrase), not "Set a PIN?" —
+// with the keypad (a phone) and without (a desktop window).
+TEST_F(PinGateControllerTest, AfterAResetInTheRunningAppTheFreshInstallsFirstPageShows) {
+  for (const bool keypad : {true, false}) {
+    keypad_available_ = keypad;
+    shown_ = {};
+    const auto dir = std::filesystem::temp_directory_path() / ("pp_reset_fork_" + std::to_string(keypad));
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ProfileSecretsEngine engine;
+    ASSERT_TRUE(engine.Initialize(dir.string()));
+    ProfileUnlockGate gate;
+    gate.BindSecrets(engine);
+    bool ready = false;
+    ProfileUnlockPorts ports;
+    ports.messaging_initialized = []() { return true; };
+    ports.messaging_ready = [&ready]() { return ready; };
+    ports.ui.show_identity_fork = [this]() { controller_.ShowIdentityFork(); };
+    ports.ui.show_chooser = [this]() { controller_.ShowChooser(); };
+    ports.ui.show_unlock = [this]() { controller_.ShowUnlock(); };
+    ports.ui.dismiss = [this]() { controller_.Dismiss(); };
+    gate.BindPorts(std::move(ports));
+
+    // A fresh install's first frame, for comparison (its own gate: one decision per process).
+    {
+      ProfileUnlockGate fresh_gate;
+      fresh_gate.BindSecrets(engine);
+      ProfileUnlockPorts fresh;
+      fresh.messaging_initialized = []() { return true; };
+      fresh.messaging_ready = []() { return false; };
+      fresh.ui.show_identity_fork = [this]() { controller_.ShowIdentityFork(); };
+      fresh.ui.show_chooser = [this]() { controller_.ShowChooser(); };
+      fresh_gate.BindPorts(std::move(fresh));
+      fresh_gate.BeginDeferredUnlockAfterFirstPresent();
+      fresh_gate.BindPorts({});
+    }
+    EXPECT_TRUE(shown_.identity_fork_mode) << "fresh install, keypad=" << keypad;
+    const std::string fresh_title = shown_.title.c_str();
+    controller_.Dismiss();
+
+    // An account in use (the first-frame decision found it ready), then the reset as Application does it (secrets
+    // shut down, the directory wiped and made again, secrets back, messaging initialized but not ready), then its
+    // EnsureUnlocked.
+    ASSERT_TRUE(engine.Vault()->CreateWithDek("4321", ByteVector(kDataEncryptionKeySize, 0x52)));
+    ready = true;
+    gate.BeginDeferredUnlockAfterFirstPresent();
+    shown_ = {};
+    engine.Shutdown();
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    ASSERT_TRUE(engine.Initialize(dir.string()));
+    ready = false;
+    gate.EnsureUnlocked(nullptr);
+    EXPECT_TRUE(shown_.active) << "keypad=" << keypad;
+    EXPECT_TRUE(shown_.identity_fork_mode) << "the fork, keypad=" << keypad;
+    EXPECT_FALSE(shown_.chooser_mode) << "not \"Set a PIN?\", keypad=" << keypad;
+    EXPECT_FALSE(shown_.create_mode);
+    EXPECT_EQ(std::string(shown_.title.c_str()), fresh_title) << "the same page as a fresh install's";
+    gate.BindPorts({});
+    engine.Shutdown();
+    std::filesystem::remove_all(dir);
+  }
 }
 
 } // namespace

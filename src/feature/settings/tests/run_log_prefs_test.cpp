@@ -60,10 +60,9 @@ protected:
     LogFile::Rotate(log_path_);
     WriteText(log_path_, "current");
   }
-  void SaveMachine(const bool collect, const std::string& active_profile = "default") {
+  void SaveMachine(const bool collect) {
     MachinePreferences prefs;
     prefs.collect_run_logs = collect;
-    prefs.active_profile_id = active_profile;
     ASSERT_TRUE(UserPreferences::SaveMachine(data_dir_.string(), prefs));
   }
   std::string Dir() const { return data_dir_.string(); }
@@ -102,7 +101,6 @@ TEST_F(RunLogPrefsTest, SwitchingBackendAndRestartingKeepsTheSevenDays) {
   Launches(4);
   auto machine = UserPreferences::LoadMachine(Dir());
   ASSERT_TRUE(machine);
-  machine->active_profile_id = "qa"; // as the backend switch's restart leaves it
   ASSERT_TRUE(UserPreferences::SaveMachine(Dir(), *machine));
   fs::create_directories(data_dir_ / "profiles" / "qa");
   WriteText(data_dir_ / "profiles" / "qa" / "preferences.json", R"({"schema_version":16})");
@@ -158,13 +156,11 @@ TEST_F(RunLogPrefsTest, TheSwitchIsNotSavedOverAnUnreadableFile) {
 
 TEST_F(RunLogPrefsTest, SavingTheSwitchKeepsTheOtherMachineSettings) {
   MachinePreferences prefs;
-  prefs.active_profile_id = "qa";
   prefs.window.width = 999;
   ASSERT_TRUE(UserPreferences::SaveMachine(Dir(), prefs));
   ASSERT_TRUE(RunLogPrefs::SetCollect(Dir(), log_path_, true));
   auto machine = UserPreferences::LoadMachine(Dir());
   ASSERT_TRUE(machine);
-  EXPECT_EQ(machine->active_profile_id, "qa");
   EXPECT_EQ(machine->window.width, 999);
   EXPECT_TRUE(machine->collect_run_logs);
 }

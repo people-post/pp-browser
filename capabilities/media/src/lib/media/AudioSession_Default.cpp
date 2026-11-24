@@ -9,6 +9,8 @@ void Deactivate() {}
 void CancelPendingDeactivate() {}
 void SetSystemManaged(bool /*managed*/) {}
 void NotifySystemActivation(bool /*active*/) {}
+void NotifyHostCallAudioFocus(int /*focus_change*/) {}
+void NotifyHostResumed() {}
 
 void ActivateForVoicePlayback() {}
 void ActivateForVoiceRecording() {}

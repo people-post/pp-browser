@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/delivery/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients (`ConversationsHub`); [`CreateOrgBackendClients`](../../capabilities/net/src/lib/net/OrgBackendClientFactory.cpp) builds net's own (directory, registration, blobs, client compat) the same way.
+Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/delivery/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients from the backend's table (`ConversationsHub` through [`BackendClientSet`](../../capabilities/delivery/src/lib/delivery/BackendClientSet.cpp); profile-model PM002); [`CreateOrgBackendClients`](../../capabilities/net/src/lib/net/OrgBackendClientFactory.cpp) is used by tests only.
 
 ## Resolution order
 
@@ -13,9 +13,9 @@ For each of `relay`, `directory`, and `registration`:
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
 | 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
-With `backend.env` `prod`, `staging` or `dev` the three are derived from that backend's compiled origin and the saved values are ignored; `custom` uses the saved ones ([CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
+With `backend.env` `prod`, `staging` or `dev` the three come from that backend's service table, which the build compiles from its origin, and the saved values are ignored (`directory.providers[]` too); `custom` uses the saved ones, and the services it names in `backend.services`; a service its table does not name is **absent** — its clients are not made and no other backend's address stands in for it ([§ Backend tables](#backend-tables-profile-model-p2), [CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from every relay of ours at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
 
-Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
+Platform defaults (`PlatformDefaults`) set all three to the table's address — `<origin>/api/relay` for a built-in backend (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied; a custom backend's defaults are empty. Empty values in settings/config coalesce back to those defaults on a built-in backend only. The hub's own endpoint defaults (`ConversationsHub::SetBackendDefaults`) are set by `Bootstrap::Run` after `Config::Load` latched the backend — before it the backend is the build's fallback, and a custom backend must never be handed that. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
 ## Config shape
 
@@ -354,6 +354,24 @@ preferred first, at most 4, none twice. A new profile's list is seeded once from
 config is only a new profile's default. Our account card lists the `https://` ones, preferred first
 ([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
 
+## Backend tables (profile-model P2)
+
+A **backend** is a table of services, each with its own address (profile-model [PM002](../../projects/profile-model/DECISIONS.md#pm002--a-backend-is-a-named-table-of-services-each-with-its-own-url);
+`BackendTable`, `src/foundation/platform/BackendTable.h`): the org relay and registration (each with the relay id it must
+prove), the directory (first provider primary, the rest failing over), the account locker, client compatibility, the
+Brief LLM gateway and token service, the crash intake, plus the seeds a new profile starts from (the promoted MCP, the mesh
+node list, the extra relays). `prod` / `staging` / `dev` are tables the build compiles from `CompiledOrigins` — every
+service of one operator sits under its one origin (`/api/relay`, `/api/llm/v1`, `/mcp`); that is how a built-in table is
+filled in, not a rule any caller relies on. A **custom** table is the user's (`relay`, `registration`, `directory`,
+`backend.services`); `PP_BROWSER_ORIGIN` names a table with every service under that origin.
+
+**An empty address is an absent service:** its client is not made (`BackendClientSet`: client compat, lockers; the LLM
+token renew sends nothing; no crash report is sent; the directory is not asked), the Brief LLM and the promoted MCP have
+no address, and the settings model lists the feature with a reason (shown on a page from profile-model P2b). No caller falls back to a built-in backend's address.
+Callers read the table: `ActiveBackendTable()` (the backend this run latched), `BriefLlmBaseUrl()`, `BriefMcpUrl()`,
+`BriefRelayBaseUrl()`, `BriefOrgRelayIdentity()`, `HubSettings` (`account_locker_url`, `client_compat_url`,
+`llm_token_url`).
+
 ### Relay services and org services
 
 Two origins ([multi-relay MR006](../../projects/multi-relay/DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin);
@@ -364,11 +382,11 @@ user changes the list.
 | Follows the preferred relay | Stays on the org's origin |
 |---|---|
 | The inbox (polled at pace; the others more slowly), push tokens, registration (the identity's) | Client compatibility (`/v1/client-compat`) and with it Support (`support`) and the crash-report URL it may give |
-| The directory: search and lookups ask the preferred relay's first, then our other relays' ([below](#the-directory-on-each)) — unless `directory` is configured apart from the org's relay | Crash reports (`/v1/crash-reports`), diagnostics (`/api/support/diagnostics`) |
+| The directory: search and lookups ask the preferred relay's first, then our other relays' ([below](#the-directory-on-each)) — unless `directory` is configured apart from the org's relay | Crash reports (`/v1/crash-reports`; the Send diagnostics upload was removed 2026-11-19, DIAGNOSTICS) |
 | Profile photos and blobs ([HTTP relay blobs](#http-relay-blobs-profile-photos)), chat attachment files ([HTTP relay files](#http-relay-files-chat-attachments)) | The Brief LLM gateway (`/api/llm/v1`) and its key, the promoted MCP server (`/mcp`) |
 
 - **The Brief LLM token is the org's:** only a registration at the org's relay keeps the `llm_token` it answers with
-  (`HttpRegistrationClient::SetTakesBriefLlmKey`); when the org's relay is another of ours, its registration
+  (`HttpRegistrationClient::SetTakesBriefLlmKey`), and it is renewed at the table's token service (`HttpRegistrationClient::SetLlmTokenUrl`, `<llm_token>/token/renew`; none named: no renew is sent); when the org's relay is another of ours, its registration
   (`RelayRegistrationsWorkflow`) gives the identity the token, and that relay's registry renews it
   (`ConversationsHub::BriefLlmTokenRegistry`). Another relay's token is not kept.
 - **Not moved (yet):** account lockers stay at the org's registration URL ([HTTP account lockers](#http-account-lockers-multi-device-m023)),
@@ -386,12 +404,20 @@ user changes the list.
   after a failure (1 min, doubling to 30 min) — `RelayRegistrationsWorkflow`, checked every minute while messaging
   runs. What each relay answered (registered until, or failed and why) is kept with the list (`our_relays.json`) and
   given back at the next start: a relay that holds our registration for the current card is not asked again, and its
-  inbox is polled at once. Revoking (a profile reset) revokes on each.
+  inbox is polled at once. Revoking (a profile reset on the account's only device) revokes on each.
 - **Polling.** Each inbox has its own cursor (`relay_inbox_cursor.json`, [DATA_LAYOUT](DATA_LAYOUT.md)) and one poll
   at a time (`RelayInboxCoordinator`). The preferred relay is polled at the app's pace
   ([THREADING](../architecture/THREADING.md): ~2 s in the foreground); the others at every **4th** sync (~8 s), and
   only once they hold our registration. A forced sync — a push or a wake — polls every relay: any of them may hold
-  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox.
+  the mail that woke us. A batch is acked on the relay it came from; `clear` clears every inbox. A cursor counts in
+  one mailbox: the registration we held there when it was kept (`registration_id`, kept beside it). A fresh
+  registration (after a revoke or a lapse) is a new mailbox the relay numbers from the start, so a cursor kept for
+  another registration, or while it was not known, is dropped and that inbox read from its start (a cursor file that
+  noted none at all, an older app's, is read again once per relay: first on from its cursor, unfiltered, until an empty page with no cursor — what the older app would have delivered — then from the start, skipping the records stored before the file was last written, less 10 minutes, and those the first phase took (noted in memory), until an empty page with no cursor — `reread_phase` / `reread_floor_ms`); what was taken already is dropped as below. The relay's poll answer says nothing of this (an empty page carries no cursor).
+  A message deleted here keeps its row as a tombstone, so it is dropped the same way; the messages of a chat cleared
+  or deleted here have no row left, so their ids are kept apart for as long as the relay may hold them
+  ([DATA_LAYOUT](DATA_LAYOUT.md) `removed_messages`) and such a record is dropped before the receive pipeline: no
+  chat comes back, no unread count, no notice.
 - **Twice.** A message that reaches us through two relays (a sender that tried a second after a timeout, a copy
   for our other devices) is taken in twice: the receive pipeline drops the second by its message id, as any
   redelivery. One relay batch is taken in at a time.
@@ -511,7 +537,7 @@ is the reachability the page shows for the contact's preferred relay (in memory,
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
 | `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes, and the node's `amp_wire` (int), `node_version` (string) and `features` (string[]) when sent (N032); echoes **`account_id`** |
-| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ account_id, registration_id, sign_version, audience, timestamp, ext_b64?, signature }`, signed in `pp-browser:relay-revoke` ([§ The audience](#the-audience-every-signed-command-names-its-relay)) by the account key. Best effort on the client: a failure does not block the local reset |
+| `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328) — sent only by the account's only device (the newest card lists it alone, `OwnCards::OnlyDevice`): the next registration gets a new, empty mailbox, so a device that resets while another is on the account sends none and unbinds only its own push (`devices/unregister`, `PushDeviceCoordinator::UnregisterEverywhere`), staying on the device list until the main device takes it off. Body `{ account_id, registration_id, sign_version, audience, timestamp, ext_b64?, signature }`, signed in `pp-browser:relay-revoke` ([§ The audience](#the-audience-every-signed-command-names-its-relay)) by the account key. Best effort on the client: a failure does not block the local reset |
 
 **Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 
@@ -739,7 +765,7 @@ Server should cluster by `fingerprint` (+ version), keep a sample, increment cou
 
 ## HTTP device push (opaque wake)
 
-Signed with `pp-browser:relay-api` (sign version 4, the relay's PeerId as audience) ops `DeviceRegister=3` over `(account_id, platform, device_id, push_token)` and `DeviceUnregister=4` over `(account_id, platform, device_id, binding_id)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds the preferred relay's only; a relay removed from My relays is unbound there ([My relays](#my-relays)).
+Signed with `pp-browser:relay-api` (sign version 4, the relay's PeerId as audience) ops `DeviceRegister=3` over `(account_id, platform, device_id, push_token)` and `DeviceUnregister=4` over `(account_id, platform, device_id, binding_id)`. Tokens are registered per relay, by Account ID, on every relay of ours that holds our registration ([Several relays](#several-relays)): a relay holding mail for the account wakes its phone. A backend switch unbinds every relay of ours that holds a binding (profile-model P4; a binding id not known since a restart is learned from the relay and removed); a relay removed from My relays is unbound there ([My relays](#my-relays)).
 
 | HTTP | Purpose |
 |------|---------|

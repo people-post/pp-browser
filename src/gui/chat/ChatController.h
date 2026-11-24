@@ -6,6 +6,7 @@
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/UpdateCard.h"
 #include "feature/presenters/ChatPresenter.h"
+#include "feature/presenters/DeviceRemovedNotice.h"
 #include "feature/presenters/HomeBrief.h"
 #include "feature/presenters/HomeToday.h"
 #include "feature/presenters/NewsReader.h"
@@ -132,6 +133,8 @@ public:
    * transcript's sender avatars, the chat header, the chats list, Home's widgets and an open group info sheet.
    */
   void OnPeerIconsChanged();
+  /** An imported account's first sync is running / late (AccountSyncState): the empty Chats list shows it. */
+  void SetAccountSync(bool syncing, bool delayed);
 
   ChatController();
   ~ChatController() override = default;
@@ -219,6 +222,12 @@ public:
   void RefreshUpdateCard();
   void OnUpdateCardOpen();
   void OnUpdateCardLater();
+  /**
+   * The Chats page notice that this device was taken off its account (DeviceRemovedNotice): checked at every messaging
+   * start and whenever the device list changes; "Link again" hands over to the reset flow, "OK" hides it this launch.
+   */
+  void BindDeviceRemovedNotice(DeviceRemovedNoticePorts ports);
+  bool DeviceRemovedNoticeShows() const { return device_removed_.Shows(); }
   void OnSessionsTabActivated();
   /**
    * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
@@ -950,6 +959,8 @@ private:
   /** Whether this device holds a recovery phrase: one vault read per messaging session / identity change. */
   std::optional<bool> recovery_phrase_present_;
   UpdateCardPorts update_card_;
+  DeviceRemovedNotice device_removed_{[this] { OnDeviceRemovedNoticeChanged(); }};
+  void OnDeviceRemovedNoticeChanged();
   /** machine.json's memory of "Later", read when the announced version changes (not on every list refresh). */
   UpdateCardState update_card_state_;
   std::optional<std::string> update_card_state_for_;
@@ -996,12 +1007,19 @@ private:
   /** The open chat's rows again (their send marks recomputed), nothing else refreshed. */
   void RedrawSendMarks();
   /**
-   * A tap on a message's red mark (ChatPresenter::TapSendMark): our text sent again as a new message once its
-   * automatic sending has stopped, else the bottom pill says why (still trying, or why it did not go out).
+   * A tap on a message's red mark (ChatPresenter::TapSendMark): our message sent again as itself once its automatic
+   * sending has stopped (B236), else the bottom pill says why (still trying, or why it did not go out).
    */
   void OnSendMarkTapped(const std::string& message_id);
   /** What a tap (or a resend after a card update) came to, told as the composer says it. */
   void ApplySendMarkTap(const std::string& thread_id, const std::string& message_id, const SendMarkTap& tap);
+  /**
+   * B236: the chat `thread_id` is held (the recipient has not added us; ChatPresenter::SendHeld): the pill says so, every
+   * time, and true — the caller sends nothing (the typed text stays). False: send as usual.
+   */
+  bool RefuseSendWhileHeld(const std::string& thread_id);
+  /** A message sent again as itself after a tap (ConversationsFacade::ResendMessageAsync). */
+  void ResendSameMessage(const std::string& thread_id, const std::string& message_id);
   /**
    * Step 0 of DEV/PLAN-chat-picture-previews.md, measurement only. Opening a chat (FinalizeThreadDisplay) arms
    * `armed`; the next display sync records its rows, pictures and build time and sets `layout_pending`; the next

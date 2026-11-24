@@ -47,6 +47,13 @@
       <svg src="../icons/v2/cloud-off.svg" width="16" height="16"></svg>
       <p class="sidebar-reconnect-label">{{i18n:chat.reconnect.banner}}</p>
     </div>
+    <div class="sidebar-tip" data-if="device_removed_notice && sessions_query == '' && !showing_archived">
+      <p class="sidebar-tip-body">{{i18n:device_removed.body}}</p>
+      <div class="sidebar-tip-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="device_removed_relink()">{{i18n:device_removed.relink}}</button>
+        <button class="btn btn-ghost sidebar-tip-later" type="button" data-event-click="device_removed_ok()">{{i18n:device_removed.ok}}</button>
+      </div>
+    </div>
     <div class="sidebar-tip" data-if="recovery_reminder && sessions_query == '' && !showing_archived">
       <p class="sidebar-tip-body">{{i18n:recovery_reminder.body}}</p>
       <div class="sidebar-tip-actions row">
@@ -162,7 +169,12 @@
         </div>
       </div>
     </div>
-    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived">
+    <div class="sync-pending" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived && (account_sync_syncing || account_sync_delayed)">
+      <div class="sync-pending-spinner" data-if="account_sync_syncing"></div>
+      <p class="text muted" data-if="account_sync_syncing">{{i18n:account_sync.pending}}</p>
+      <p class="text muted" data-if="!account_sync_syncing && account_sync_delayed">{{i18n:account_sync.delayed}}</p>
+    </div>
+    <div class="sidebar-empty" data-if="sessions.size == 0 && sessions_query == '' && !showing_archived && !account_sync_syncing && !account_sync_delayed">
       <p class="text muted">{{i18n:sidebar.empty_start}}</p>
       <button class="btn btn-primary" type="button" data-event-click="empty_add_contact()">{{i18n:contacts.add}}</button>
     </div>

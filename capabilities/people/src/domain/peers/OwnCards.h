@@ -7,6 +7,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
+#include "foundation/error/AppError.h"
 
 #include <cstdint>
 #include <functional>
@@ -23,6 +24,10 @@ namespace pbr {
 /** What a device that its account's newest list leaves out is told (M021 d4). */
 inline constexpr const char kSignedOutMessage[] =
     "This device was signed out of your account. Link it again from your main device to use it.";
+/** A send refused because this device is signed out: kSignedOutMessage with its words for the person. */
+inline Error SignedOutSendError() {
+  return AppError::Auth(Err::Auth::DeviceSignedOut, kSignedOutMessage);
+}
 /** A linked device whose kept card does not verify (stepped up on disk): the main device's newer card comes first. */
 inline constexpr const char kAwaitingMainCardMessage[] = "account card: waiting for the main device's card";
 /** A device that holds no card of its account (and starts none): it is getting it back from our relays. */
@@ -49,6 +54,13 @@ struct OwnCardAnswers {
    */
   size_t unreached = 0;
 };
+
+/**
+ * Our newest card among `answers`: one carrying our Account ID and account keys (`identity`'s), signed by our account
+ * key and verifying at `now_ms`; anything else is refused (`warn`, when set, says why). nullopt when none is ours.
+ */
+std::optional<AccountCard> OwnCardAmong(const LocalIdentity& identity, const OwnCardAnswers& answers, int64_t now_ms,
+                                        const std::function<void(const std::string&)>& warn = {});
 
 /** The account's devices as this device knows them (M021 d4): the newest card's list; its first is the master. */
 struct OwnDeviceList {
@@ -120,6 +132,12 @@ public:
   Roe<OwnDeviceList> Devices();
   /** The newest list leaves this device out: it stops sending (M021 d4). */
   bool SignedOut();
+  /**
+   * This device is the account's only one: the newest card lists it alone (or, a new account's first device, none was
+   * issued yet). False while another device is listed, this one is signed out, or no card of ours is at hand: a
+   * profile reset takes the account's registration off our relays only on its last device.
+   */
+  bool OnlyDevice();
   /** The master takes another device off the list (revoke, M021 d4); an error on any other device. */
   Roe<AccountCard> RemoveDevice(const std::string& peer_id, int64_t now_ms);
   /** The master hands its role to another listed device (moves it first). */
@@ -171,8 +189,16 @@ private:
     std::string nickname;
     std::vector<AccountCardRelay> relays;
     int64_t initiation_floor = 0;
+    /**
+     * The account the caller read the identity of ("": the identity's now). Nothing is issued when the identity holds
+     * another account by the time the card is signed (a link or restore swapped it meanwhile, M027).
+     */
+    std::string account_id;
   };
-  /** The card saying `content`: `base` when it says it all (and verifies), else a new one (`issued` set). */
+  /**
+   * The card saying `content`: `base` when it says it all (and verifies), else a new one (`issued` set). Refused when
+   * `base` or `content.account_id` is another account than the identity's keys now.
+   */
   Roe<AccountCard> IssueLocked(const std::optional<AccountCard>& base, CardContent content, int64_t now_ms,
                                bool& issued);
   /** `base` was signed by the account for what it says; checked once per signature. */

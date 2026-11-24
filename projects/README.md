@@ -57,6 +57,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-mesh](p2p-mesh/) | Mesh deepen, relay scope, name directory / pre-chain |
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
+| [audio-resilience](audio-resilience/) | Test the class of OS / hardware audio failures: disruptions × moments × session owner against five invariants (hearing measured, an emulated phone audio system); planned, starts after the ongoing projects |
 | [capability-repos](capability-repos/) | Capability boundaries in the tree (gated); one capabilities repo when a second app picks them |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [social-posts](social-posts/) | Public posts: signed hash-chained author logs, claimed → witnessed → anchored time |
@@ -70,7 +71,9 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
 | [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |
+| [task-scopes](task-scopes/) | Every posted task owned by a scope tied to its owner's lifetime (own sequence, close on it); teardown owner by owner; proposed, after release 1 |
 | [release-compatibility](release-compatibility/) | Release mode: every app, pp-node and relay in the supported range works with every other; format changes by the range rule; one main, a branch per release |
+| [profile-model](profile-model/) | What a device keeps for whom: network → account → device profile → per-backend and per-relay state; backends as service tables; the tester-app guard on the network |
 
 ## Moved to another repo
 

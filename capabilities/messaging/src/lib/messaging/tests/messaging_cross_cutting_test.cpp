@@ -11,12 +11,16 @@
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
+#include "lib/messaging/GroupLinkJoin.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/GroupRosterStatement.h"
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/EditMessage.h"
+#include "lib/messaging/tests/GroupChangeTestKit.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -793,6 +797,159 @@ TEST(MessagingCrossCuttingTest, AGroupFullRefusalIsNewsInTheGroup) {
   EXPECT_TRUE(outcome.persisted);
   EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::GroupFull);
   EXPECT_EQ(outcome.about_us_group_thread_id, group->id);
+}
+
+// ---- an owner's refusal of our accept (G014): applied once, while the invite is the live one ------------------------
+
+/** The hike group owned by the peer, with our invite `nonce` (made at roster epoch 2) accepted, and its thread. */
+Thread SeedAcceptedInvite(PipelineHarness& harness, const std::string& nonce) {
+  GroupMetadata metadata;
+  metadata.group_id = kHikeGroup;
+  metadata.owner_identity = "account:peer";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  EXPECT_TRUE(harness.roster_store.UpsertMetadata(metadata));
+  PendingGroupInvite pending;
+  pending.invite_nonce = nonce;
+  pending.group_id = kHikeGroup;
+  pending.group_title = "Weekend hike";
+  pending.inviter_identity = "account:peer";
+  pending.invitee_identity = harness.local_account_id;
+  pending.roster_epoch = 2;
+  pending.created_at = 1;
+  pending.outbound = false;
+  pending.status = InviteStatus::Accepted;
+  EXPECT_TRUE(harness.roster_store.UpsertPendingInvite(pending));
+  GroupRosterMember me; // added here on accept, until the owner's join bundle comes
+  me.member_identity = harness.local_account_id;
+  me.joined_at = 1;
+  EXPECT_TRUE(harness.roster_store.UpsertMember(kHikeGroup, me));
+  auto group = harness.store.FindOrCreateGroupThread(kHikeGroup, "Weekend hike", {});
+  EXPECT_TRUE(group);
+  return *group;
+}
+
+RelayEnvelope RefusalFromPeer(const PipelineHarness& harness, const std::string& nonce, const uint64_t seq) {
+  auto detail = GroupMembershipCodec::EncodeInviteRefused(nonce, kHikeGroup, "group_full");
+  EXPECT_TRUE(detail);
+  return EventFromPeer(harness, GroupMembershipControlType::GroupInviteRefused, *detail, seq);
+}
+
+size_t Lines(PipelineHarness& harness, const std::string& thread_id) {
+  auto page = harness.store.GetMessagesPage(thread_id, std::nullopt, 100);
+  return page ? page->size() : 0;
+}
+
+/** The owner's statement listing us at `epoch` is held (joined later, or from an earlier membership); group active. */
+void JoinedLater(PipelineHarness& harness, const uint64_t epoch) {
+  GroupRosterStatement draft;
+  draft.group_id = kHikeGroup;
+  draft.roster_epoch = epoch;
+  draft.title = "Weekend hike";
+  draft.members = {test::Row("account:peer", MemberRole::Owner), test::Row(harness.local_account_id)};
+  test::Person owner("owner");
+  GroupRosterStatement statement = test::SignedStatement(owner, draft);
+  statement.owner_identity = "account:peer"; // the harness's readable id for the owner (held as kept, not re-checked)
+  GroupMetadata metadata = **harness.roster_store.LoadMetadata(kHikeGroup);
+  metadata.sync_state = GroupSyncState::Active;
+  metadata.roster_epoch = epoch;
+  metadata.roster_statement_json = DumpJson(group_roster_statement::ToJson(statement));
+  ASSERT_TRUE(harness.roster_store.UpsertMetadata(metadata));
+  ASSERT_TRUE(group_roster_sync::Held(**harness.roster_store.LoadMetadata(kHikeGroup)));
+  GroupRosterMember me;
+  me.member_identity = harness.local_account_id;
+  me.joined_at = 2;
+  ASSERT_TRUE(harness.roster_store.UpsertMember(kHikeGroup, me));
+}
+
+// The first refusal does what it always did: we were never added — out of the group, its chat read-only, one line.
+TEST(MessagingCrossCuttingTest, AnOwnersRefusalOfOurAcceptTakesUsOutOfTheGroup) {
+  PipelineHarness harness("refusal_first", ThreadChannel::E2e);
+  const Thread group = SeedAcceptedInvite(harness, "nonce-1");
+
+  const auto outcome =
+      harness.pipeline.ProcessEnvelope(RefusalFromPeer(harness, "nonce-1", 1), harness.local_account_id);
+
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::GroupFull);
+  EXPECT_FALSE(*harness.roster_store.IsMember(kHikeGroup, harness.local_account_id));
+  EXPECT_EQ((*harness.roster_store.LoadMetadata(kHikeGroup))->sync_state, GroupSyncState::Removed);
+  EXPECT_EQ(Lines(harness, group.id), 1u);
+  EXPECT_EQ((*harness.roster_store.LoadPendingInvite("nonce-1"))->status, InviteStatus::Expired);
+}
+
+// Refused, then invited again and joined: the old refusal coming again (a relay mailbox read again, any late copy)
+// changes nothing — still a member, the group still active, no new line.
+TEST(MessagingCrossCuttingTest, AnOldRefusalComingAgainAfterARejoinChangesNothing) {
+  PipelineHarness harness("refusal_again", ThreadChannel::E2e);
+  const Thread group = SeedAcceptedInvite(harness, "nonce-1");
+  const RelayEnvelope refusal = RefusalFromPeer(harness, "nonce-1", 1);
+  ASSERT_TRUE(harness.pipeline.ProcessEnvelope(refusal, harness.local_account_id).persisted);
+  JoinedLater(harness, 5);
+  const size_t lines = Lines(harness, group.id);
+
+  const auto again = harness.pipeline.ProcessEnvelope(refusal, harness.local_account_id);
+
+  EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
+  EXPECT_EQ(again.about_us, RelayReceiveOutcome::AboutUs::None);
+  EXPECT_TRUE(*harness.roster_store.IsMember(kHikeGroup, harness.local_account_id));
+  EXPECT_EQ((*harness.roster_store.LoadMetadata(kHikeGroup))->sync_state, GroupSyncState::Active);
+  EXPECT_EQ(Lines(harness, group.id), lines);
+}
+
+// A refusal that first arrives only after the owner has stated us into the group at a newer epoch (through a later
+// invite) is stale too: it changes nothing.
+TEST(MessagingCrossCuttingTest, ARefusalOlderThanTheRosterThatHasUsChangesNothing) {
+  PipelineHarness harness("refusal_superseded", ThreadChannel::E2e);
+  const Thread group = SeedAcceptedInvite(harness, "nonce-1");
+  JoinedLater(harness, 5);
+
+  const auto outcome =
+      harness.pipeline.ProcessEnvelope(RefusalFromPeer(harness, "nonce-1", 1), harness.local_account_id);
+
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::None);
+  EXPECT_TRUE(*harness.roster_store.IsMember(kHikeGroup, harness.local_account_id));
+  EXPECT_EQ((*harness.roster_store.LoadMetadata(kHikeGroup))->sync_state, GroupSyncState::Active);
+  EXPECT_EQ(Lines(harness, group.id), 0u);
+}
+
+// A link join stores no invite epoch: a statement from an earlier membership that still lists us does not make the
+// owner's refusal of the new join stale. It applies.
+TEST(MessagingCrossCuttingTest, ARefusedLinkJoinAppliesThoughAnOldStatementStillListsUs) {
+  PipelineHarness harness("refusal_link", ThreadChannel::E2e);
+  const Thread group = SeedAcceptedInvite(harness, "nonce-old");
+  JoinedLater(harness, 5); // an earlier membership, left since: its statement is still held
+  ASSERT_TRUE(harness.roster_store.UpsertPendingInvite(group_link_join::JoinRecord(
+      "req-link", kHikeGroup, "Weekend hike", "account:peer", "account:peer", harness.local_account_id, 10)));
+  ASSERT_LE((*harness.roster_store.LoadPendingInvite("req-link"))->roster_epoch, 1u) << "a link join's: not known";
+
+  const auto outcome =
+      harness.pipeline.ProcessEnvelope(RefusalFromPeer(harness, "req-link", 1), harness.local_account_id);
+
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::GroupFull);
+  EXPECT_FALSE(*harness.roster_store.IsMember(kHikeGroup, harness.local_account_id));
+  EXPECT_EQ((*harness.roster_store.LoadMetadata(kHikeGroup))->sync_state, GroupSyncState::Removed);
+  EXPECT_EQ(Lines(harness, group.id), 1u);
+  EXPECT_EQ((*harness.roster_store.LoadPendingInvite("req-link"))->status, InviteStatus::Expired);
+}
+
+// The invite is marked refused last: the app stopped after the roster changed but before that (the state a crash
+// leaves), and the refusal coming again finishes it — out of the group, one line, the invite refused.
+TEST(MessagingCrossCuttingTest, ARefusalCutShortBeforeTheInviteWasMarkedFinishesWhenItComesAgain) {
+  PipelineHarness harness("refusal_crash", ThreadChannel::E2e);
+  const Thread group = SeedAcceptedInvite(harness, "nonce-1");
+  ASSERT_TRUE(harness.roster_store.RemoveMember(kHikeGroup, harness.local_account_id));
+  GroupMetadata removed = **harness.roster_store.LoadMetadata(kHikeGroup);
+  removed.sync_state = GroupSyncState::Removed;
+  ASSERT_TRUE(harness.roster_store.UpsertMetadata(removed));
+  ASSERT_EQ((*harness.roster_store.LoadPendingInvite("nonce-1"))->status, InviteStatus::Accepted);
+
+  harness.pipeline.ProcessEnvelope(RefusalFromPeer(harness, "nonce-1", 1), harness.local_account_id);
+
+  EXPECT_FALSE(*harness.roster_store.IsMember(kHikeGroup, harness.local_account_id));
+  EXPECT_EQ((*harness.roster_store.LoadMetadata(kHikeGroup))->sync_state, GroupSyncState::Removed);
+  EXPECT_EQ(Lines(harness, group.id), 1u);
+  EXPECT_EQ((*harness.roster_store.LoadPendingInvite("nonce-1"))->status, InviteStatus::Expired);
 }
 
 TEST(MessagingCrossCuttingTest, AGroupInvitationStillShowsAndCountsInTheDirectChat) {

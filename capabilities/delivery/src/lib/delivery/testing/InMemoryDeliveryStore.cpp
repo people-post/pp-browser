@@ -96,6 +96,9 @@ Thread InMemoryDeliveryStore::UpsertThreadLocked(const Thread& thread) {
 }
 
 Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessage& message) {
+  if (removed_.count(message.id) > 0) {
+    return Error("Message was removed here with its chat");
+  }
   std::vector<ThreadMessage>& rows = messages_[message.thread_id];
   for (const ThreadMessage& row : rows) {
     if (row.id == message.id) {
@@ -157,6 +160,7 @@ Roe<Thread> InMemoryDeliveryStore::UpsertThread(const Thread& thread) {
 
 Roe<bool> InMemoryDeliveryStore::DeleteThread(const std::string& thread_id) {
   std::lock_guard lock(mutex_);
+  RememberRemovedLocked(thread_id);
   const bool existed = threads_.erase(thread_id) > 0;
   messages_.erase(thread_id);
   std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
@@ -334,10 +338,16 @@ bool InMemoryDeliveryStore::UpdateMessageLocked(const ThreadMessage& message) {
   for (ThreadMessage& row : rows->second) {
     if (row.id == message.id) {
       const int64_t order = row.display_order; // keeps its place in the thread
+      const bool queued_again =
+          row.delivery != MessageDelivery::Pending && message.delivery == MessageDelivery::Pending;
       row = message;
       row.display_order = order;
       if (message.delivery != MessageDelivery::Pending) {
         std::erase_if(outbox_, [&](const auto& entry) { return entry.first == message.id; });
+      } else if (queued_again && message.relay_visible &&
+                 std::none_of(outbox_.begin(), outbox_.end(),
+                              [&](const auto& entry) { return entry.first == message.id; })) {
+        outbox_.emplace_back(message.id, message.thread_id); // as SQLite's UpdateMessageDelivery (B236)
       }
       return true;
     }
@@ -357,8 +367,36 @@ Roe<bool> InMemoryDeliveryStore::HasMessageId(const std::string& thread_id, cons
   return false;
 }
 
+Roe<bool> InMemoryDeliveryStore::WasMessageRemoved(const std::string& message_id) const {
+  std::lock_guard lock(mutex_);
+  return removed_.count(message_id) > 0;
+}
+
+void InMemoryDeliveryStore::ForgetRemovedIds() {
+  std::lock_guard lock(mutex_);
+  removed_.clear();
+}
+
+void InMemoryDeliveryStore::RememberRemovedLocked(const std::string& thread_id) {
+  const auto thread = threads_.find(thread_id);
+  if (thread == threads_.end()) {
+    return;
+  }
+  const bool from_others = thread->second.kind == ThreadKind::Group ||
+                           (thread->second.kind == ThreadKind::Direct && ThreadChannelIsE2e(thread->second.channel));
+  if (!from_others) {
+    return;
+  }
+  if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
+    for (const ThreadMessage& row : rows->second) {
+      removed_.insert(row.id);
+    }
+  }
+}
+
 Roe<void> InMemoryDeliveryStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
   std::lock_guard lock(mutex_);
+  RememberRemovedLocked(thread_id);
   messages_.erase(thread_id);
   std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
   if (options.forget_memory) {
@@ -533,7 +571,8 @@ Roe<uint32_t> InMemoryDeliveryStore::BumpLocalChatTargetEpoch(const std::string&
 
 Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
   std::lock_guard lock(mutex_);
-  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct message missing one gets it.
+  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct or group message missing one
+  // gets it.
   std::erase_if(outbox_, [&](const auto& entry) {
     auto rows = messages_.find(entry.second);
     if (rows == messages_.end()) {
@@ -544,7 +583,7 @@ Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
     return message == rows->second.end() || message->delivery != MessageDelivery::Pending;
   });
   for (const auto& [thread_id, thread] : threads_) {
-    if (thread.kind != ThreadKind::Direct) {
+    if (thread.kind != ThreadKind::Direct && thread.kind != ThreadKind::Group) {
       continue;
     }
     if (auto rows = messages_.find(thread_id); rows != messages_.end()) {

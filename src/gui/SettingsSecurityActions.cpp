@@ -1,10 +1,12 @@
 #include "gui/SettingsSecurityActions.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
 #include "gui/DefaultPinNote.h"
+#include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -17,6 +19,7 @@
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
+#include "lib/ui/QrSvg.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/data/DataModelHandle.h>
@@ -52,9 +55,14 @@ SettingsSecurityActions::~SettingsSecurityActions() {
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("remove_pin", DataEvent<>([this]() { RemovePin(); }));
-  ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  ctor.BindEventCallback("link_scan_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/true); }));
+  ctor.BindEventCallback("link_paste_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/false); }));
+  ctor.BindEventCallback("copy_link_reply", DataEvent<>([this]() { CopyLinkReply(); }));
+  ctor.BindEventCallback("clear_link_reply", DataEvent<>([this]() { ClearLinkReply(); }));
   SetTransferLabels();
-  ctor.Bind("transfer_code_copied", &transfer_code_copied_);
+  ctor.Bind("link_reply_shown", &link_reply_shown_);
+  ctor.Bind("link_reply_qr_rml", &link_reply_qr_rml_);
+  ctor.Bind("link_can_scan", &link_can_scan_);
   ctor.Bind("move_lead_label", &move_lead_label_);
   ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
@@ -241,15 +249,16 @@ void SettingsSecurityActions::ToggleBiometric() {
       });
 }
 
-void SettingsSecurityActions::ExportLinkDevice() {
-  EnsureUnlocked(Tr("settings.security.link_device.not_ready"), [this]() {
-    if (!commands_.export_link_device) {
+void SettingsSecurityActions::LinkDevice(const bool scan) {
+  EnsureUnlocked(Tr("settings.security.link_device.not_ready"), [this, scan]() {
+    if (!commands_.link_offer_code || !commands_.seal_link_reply) {
       host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
       return;
     }
-    // The app's default PIN is public, so asking for it proves nothing: those profiles only confirm, as before.
+    // The app's default PIN is public, so asking for it proves nothing: those profiles go on (the code check's dialog
+    // says so).
     if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
-      ConfirmExportLinkDevice();
+      ReadLinkOffer(scan);
       return;
     }
     // An own PIN (plan #21 ⑧): holding the unlocked phone is not enough to carry the account away.
@@ -258,60 +267,133 @@ void SettingsSecurityActions::ExportLinkDevice() {
       return;
     }
     pin_prompt_.show_verify(
-        PinVerifyPurpose::ExportTransferCode,
+        PinVerifyPurpose::LinkDevice,
         [this](const SecretText& pin, std::function<void(Roe<void>)> done) { CheckPin(pin, std::move(done)); },
-        [this]() { ConfirmExportLinkDevice(); });
+        [this, scan]() { ReadLinkOffer(scan); });
   });
 }
 
-void SettingsSecurityActions::ConfirmExportLinkDevice() {
-  if (!feedback_.show_confirm) {
-    return;
-  }
-  const auto on_result = [this](const bool ok) {
-    if (!ok) {
+void SettingsSecurityActions::ReadLinkOffer(const bool scan) {
+  if (scan) {
+    if (!commands_.scan_link_offer) {
       return;
     }
-    AppRuntime::PostWorkerNormal([this]() {
-      auto result = commands_.export_link_device ? commands_.export_link_device()
-                                                 : Roe<std::string>{Error("Messaging is not ready")};
-      AppRuntime::PostUI([this, result = std::move(result)]() {
-        if (!result) {
-          host_.ReportFailure(result.error());
-          return;
-        }
-        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-          system->SetClipboardText(result.value().c_str());
-        }
-        UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-        transfer_code_copied_ = true; // the phone page's "copied" box
-        DataModelHost::Instance().Dirty("settings", "transfer_code_copied");
-        host_.ShowStatus("");
-      });
+    const uint64_t request = link_request_;
+    commands_.scan_link_offer([this, request](std::string text) {
+      if (request == link_request_) {
+        CheckLinkCode(std::move(text));
+      }
     });
-  };
-  const std::string title = Tr("settings.security.link_device.export_confirm_title");
-  const std::string message = Tr("settings.security.link_device.export_confirm_message");
-  // On the app's default PIN nothing asks for it: the dialog only says so, with a "?" that tells the digits.
-  if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
-    feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
-                                     on_result, {});
     return;
   }
-  feedback_.show_confirm(title, message, on_result, {});
+  ui::String text;
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->GetClipboardText(text);
+  }
+  if (text.empty()) {
+    UserFeedback::Fail(Tr("settings.security.link_device.paste_empty"));
+    return;
+  }
+  CheckLinkCode(text.c_str());
+}
+
+void SettingsSecurityActions::CheckLinkCode(std::string offer) {
+  const uint64_t request = link_request_;
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+      WorkerLane::Normal, [this, offer]() { return commands_.link_offer_code(offer); },
+      [this, request, offer](Roe<std::string> code) mutable { // a copy: the order the two are built in is open
+        if (request != link_request_ || !feedback_.show_confirm) {
+          return;
+        }
+        if (!code) {
+          ReportLinkFailure(code.error());
+          return;
+        }
+        // The seed goes out only once the person saw these digits on the new device too: a code swapped in (pasted
+        // from a chat, a QR code on another screen) shows other digits (M027).
+        const auto on_result = [this, request, offer = std::move(offer)](const bool same) mutable {
+          if (same && request == link_request_) {
+            SealLinkReply(std::move(offer));
+          }
+        };
+        const std::string title = Tr("settings.security.link_device.check_title");
+        const std::string message = Tr("settings.security.link_device.check_message", {{"code", *code}});
+        const std::string ok = Tr("settings.security.link_device.check_ok");
+        // On the app's default PIN nothing asked for it: the dialog says so, with a "?" that tells the digits.
+        if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
+          feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
+                                           std::move(on_result), ok);
+          return;
+        }
+        feedback_.show_confirm(title, message, std::move(on_result), ok);
+      });
+}
+
+void SettingsSecurityActions::SealLinkReply(std::string offer) {
+  const uint64_t request = link_request_;
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<std::vector<uint8_t>>>(
+      WorkerLane::Normal, [this, offer = std::move(offer)]() { return commands_.seal_link_reply(offer); },
+      [this, request](Roe<std::vector<uint8_t>> reply) {
+        if (request != link_request_) {
+          return;
+        }
+        if (!reply) {
+          ReportLinkFailure(reply.error());
+          return;
+        }
+        auto qr = QrSvgContentBinary(*reply);
+        if (!qr) {
+          host_.ReportFailure(qr.error());
+          return;
+        }
+        link_reply_qr_rml_ = qr->c_str();
+        link_reply_text_ = LinkPayloadText(kLinkReplyTextPrefix, *reply);
+        link_reply_shown_ = true;
+        DataModelHost& model = DataModelHost::Instance();
+        model.Dirty("settings", "link_reply_qr_rml");
+        model.Dirty("settings", "link_reply_shown");
+        host_.ShowStatus("");
+      });
+}
+
+void SettingsSecurityActions::CopyLinkReply() {
+  if (!link_reply_shown_ || link_reply_text_.empty()) {
+    return;
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->SetClipboardText(link_reply_text_.c_str());
+  }
+  UserFeedback::Ok(Tr("settings.security.link_device.reply_copied"));
+}
+
+void SettingsSecurityActions::ReportLinkFailure(const Error& error) {
+  const std::string words = LinkErrorText(error, /*on_new_device=*/false);
+  if (words.empty()) {
+    host_.ReportFailure(error);
+    return;
+  }
+  Error shown = error;
+  host_.ReportFailure(shown.WithUser(words));
 }
 
 void SettingsSecurityActions::SetTransferLabels() {
-  const std::string minutes = std::to_string(kLinkDeviceDefaultTtlMs / 60000);
-  move_lead_label_ = Tr("settings.security.link_device.lead", {{"minutes", minutes}}).c_str();
+  const std::string minutes = std::to_string(kLinkWindowMs / 60000);
+  move_lead_label_ = Tr("settings.security.link_device.lead").c_str();
   move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
+  link_can_scan_ = static_cast<bool>(commands_.scan_link_offer);
 }
 
-void SettingsSecurityActions::ClearTransferCopied() {
-  transfer_code_copied_ = false;
+void SettingsSecurityActions::ClearLinkReply() {
+  ++link_request_; // a check or seal still running belongs to the visit before
+  link_reply_shown_ = false;
+  link_reply_qr_rml_ = "";
+  std::fill(link_reply_text_.begin(), link_reply_text_.end(), '\0');
+  link_reply_text_.clear();
   SetTransferLabels();
   DataModelHost& model = DataModelHost::Instance();
-  model.Dirty("settings", "transfer_code_copied");
+  model.Dirty("settings", "link_reply_shown");
+  model.Dirty("settings", "link_reply_qr_rml");
+  model.Dirty("settings", "link_can_scan");
   model.Dirty("settings", "move_lead_label");
   model.Dirty("settings", "move_valid_label");
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests of the app lab's scenario tags (app_lab_select.py) and of its registry (pp_app_lab.py's SCENARIOS).
+"""Tests of the app lab's scenario tags (app_lab_select.py), of its registry (pp_app_lab.py's SCENARIOS) and of the
+config.json it writes for each user.
 
   python3 -m unittest discover -s scripts/test -p '*_test.py'
 
@@ -210,6 +211,45 @@ class RegistryTest(unittest.TestCase):
             want = [name for name, _, _ in lab.SCENARIOS if name not in skipped]
             rows = S.select(lab.scenario_entries(), lab.default_skips(nat))
             self.assertEqual([r[0] for r in rows if r[2]], want, "nat=%s" % nat)
+
+
+class LabConfigTest(unittest.TestCase):
+    """What a lab user's config.json names: its custom backend's table (profile-model PM002, docs/ops/CONFIGURATION.md
+    `backend.services`). A service the table does not name is absent in the app, so a config without the relay services
+    leaves every restore, linked device and locker scenario with "No locker provider configured"."""
+
+    class FakeLab:
+        user_relay = "http://127.0.0.1:18719/api/relay"
+        hop = "/ip4/198.51.100.10/udp/443/adp/2/p2p/QmHop"
+        tls_relays = {"a": {"origin": "https://relay-a.lab.test/api/relay"},
+                      "b": {"origin": "https://relay-b.lab.test/api/relay"}}
+
+        def relay_id(self, relay):
+            return "relay:" + relay
+
+        def relay_link(self, relay):
+            return lab.Lab.relay_link(self, relay)
+
+    def test_a_user_names_the_lab_relays_services(self):
+        fake = self.FakeLab()
+        config = lab.Lab.config_for(fake, "/tmp/user")
+        self.assertEqual(config["backend"]["env"], "custom")
+        self.assertEqual(config["backend"]["services"], {
+            "account_locker": config["registration"]["base_url"],
+            "client_compat": config["relay"]["base_url"],
+            "crash_intake": config["relay"]["base_url"]})
+        self.assertEqual(config["relay"]["base_url"], fake.user_relay)
+        for llm in ("llm_gateway", "llm_token"):
+            self.assertNotIn(llm, config["backend"]["services"], "the lab has no LLM service")
+
+    def test_a_user_on_the_tls_relays_names_its_preferred_relays_services(self):
+        fake = self.FakeLab()
+        config = lab.Lab.config_for(fake, "/tmp/user")
+        lab.Lab.on_tls_relays(fake, config, ["b", "a"], ["b"])
+        preferred = fake.tls_relays["b"]["origin"]
+        self.assertEqual(config["registration"]["base_url"], preferred)
+        self.assertEqual(config["backend"]["services"], {
+            "account_locker": preferred, "client_compat": preferred, "crash_intake": preferred})
 
 
 if __name__ == "__main__":

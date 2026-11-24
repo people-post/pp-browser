@@ -3,6 +3,7 @@
 #include "lib/media/AudioSession.h"
 
 #include "lib/media/AudioFocusInterruption.h"
+#include "lib/media/MediaHost.h"
 #include "lib/media/MicEndpoints.h"
 #include "lib/media/SpeakerRouteRules.h"
 
@@ -10,7 +11,6 @@
 #include <mutex>
 #include <optional>
 
-#include <jni.h>
 #include <SDL3/SDL.h>
 
 namespace pbr {
@@ -21,107 +21,38 @@ namespace {
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 /**
- * The speaker route: every setVoipSpeakerphoneOn call and `g_routed` under one lock, from the engine's capture
+ * The speaker route: every MediaHost::set_speakerphone call and `g_routed` under one lock, from the engine's capture
  * thread (ActivateForVoip, under MediaEngine's g_audio_session_mu), the ringback thread, the UI thread and the main
  * thread (focus back, under g_focus_mu). Lock order: g_audio_session_mu, then g_focus_mu, then g_route_mu; nothing
- * but the JNI call runs under it (Java posts focus changes to the main looper, never calls back into it synchronously).
+ * but the host's call runs under it (the host posts focus changes to its main looper, never calls back into it
+ * synchronously).
  */
 std::mutex g_route_mu;
-/** What the route was last set to here (RoutedSpeaker), under g_route_mu; set only when the Java call went through.
+/** What the route was last set to here (RoutedSpeaker), under g_route_mu; set only when the host's call went through.
  *  The next activation routes again when it differs from the choice. */
 RoutedSpeaker g_routed = RoutedSpeaker::Unknown;
 
 /**
- * MainActivity, for one call into it. The activity's local reference and its class's go when it does: the media
- * threads SDL attached to the VM never detach, so local references made there are never freed otherwise. An
- * exception the call threw is cleared (a pending one would abort the next JNI call). `env`: the caller's (a native
- * method's), else SDL's for this thread.
+ * Under g_route_mu. The host routes (MediaHost::set_speakerphone: the app's activity owns AudioManager); its answer is
+ * whether it did.
  */
-class ActivityCall {
-public:
-  explicit ActivityCall(JNIEnv* env = nullptr)
-      : env_(env != nullptr ? env : static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv())) {
-    if (env_ == nullptr) {
-      return;
-    }
-    activity_ = static_cast<jobject>(SDL_GetAndroidActivity());
-    if (activity_ != nullptr) {
-      cls_ = env_->GetObjectClass(activity_);
-    }
-  }
-  ~ActivityCall() {
-    if (cls_ != nullptr) {
-      env_->DeleteLocalRef(cls_);
-    }
-    if (activity_ != nullptr) {
-      env_->DeleteLocalRef(activity_);
-    }
-  }
-  ActivityCall(const ActivityCall&) = delete;
-  ActivityCall& operator=(const ActivityCall&) = delete;
-
-  /** False when Java could not be asked (no activity yet, no such method) or it threw. */
-  bool Void(const char* method, const bool arg) {
-    jmethodID mid = Method(method, "(Z)V");
-    if (mid == nullptr) {
-      return false;
-    }
-    env_->CallVoidMethod(activity_, mid, arg ? JNI_TRUE : JNI_FALSE);
-    return !ClearedException();
-  }
-
-  /** Nothing: Java could not be asked (no activity yet, no such method, it threw). */
-  std::optional<bool> Bool(const char* method) {
-    jmethodID mid = Method(method, "()Z");
-    if (mid == nullptr) {
-      return std::nullopt;
-    }
-    const jboolean out = env_->CallBooleanMethod(activity_, mid);
-    if (ClearedException()) {
-      return std::nullopt;
-    }
-    return out == JNI_TRUE;
-  }
-
-private:
-  jmethodID Method(const char* name, const char* signature) {
-    if (cls_ == nullptr) {
-      return nullptr;
-    }
-    jmethodID mid = env_->GetMethodID(cls_, name, signature);
-    if (mid == nullptr) {
-      env_->ExceptionClear();
-    }
-    return mid;
-  }
-
-  bool ClearedException() {
-    if (!env_->ExceptionCheck()) {
-      return false;
-    }
-    env_->ExceptionClear();
-    return true;
-  }
-
-  JNIEnv* env_ = nullptr;
-  jobject activity_ = nullptr;
-  jclass cls_ = nullptr;
-};
-
-/** Under g_route_mu. */
-void RouteSpeakerLocked(bool on, JNIEnv* env = nullptr) {
-  if (ActivityCall(env).Void("setVoipSpeakerphoneOn", on)) {
+void RouteSpeakerLocked(bool on) {
+  const MediaHost host = CurrentMediaHost();
+  if (host.set_speakerphone && host.set_speakerphone(on)) {
     g_routed = on ? RoutedSpeaker::On : RoutedSpeaker::Off;
   }
 }
 
-void ApplySpeakerphoneLocked(bool on, JNIEnv* env = nullptr) {
+void ApplySpeakerphoneLocked(bool on) {
   std::lock_guard lock(g_route_mu);
-  RouteSpeakerLocked(on, env);
+  RouteSpeakerLocked(on);
 }
 
-void ApplyVoipModeLocked(bool active, JNIEnv* env = nullptr) {
-  ActivityCall(env).Void("setAudioSessionActive", active);
+void ApplyVoipModeLocked(bool active) {
+  const MediaHost host = CurrentMediaHost();
+  if (host.set_call_audio_mode) {
+    (void)host.set_call_audio_mode(active);
+  }
 }
 
 /**
@@ -132,16 +63,16 @@ std::mutex g_focus_mu;
 AudioFocusInterruption g_focus; // under g_focus_mu
 
 /** Under g_focus_mu: the call's audio mode, communication device and speaker choice, which the other call changed. */
-void RestoreCallRouteLocked(JNIEnv* env) {
+void RestoreCallRouteLocked() {
   if (!g_session_active.load()) {
     return;
   }
-  ApplyVoipModeLocked(true, env);
-  ApplySpeakerphoneLocked(g_speakerphone.load(), env);
+  ApplyVoipModeLocked(true);
+  ApplySpeakerphoneLocked(g_speakerphone.load());
 }
 
 /** Under g_focus_mu: what `step` does there; true when the interruption is over (notify after the lock). */
-bool TakeFocusStepLocked(const AudioFocusInterruption::Step step, JNIEnv* env) {
+bool TakeFocusStepLocked(const AudioFocusInterruption::Step step) {
   switch (step) {
     case AudioFocusInterruption::Step::Begin:
       SDL_Log("AudioSession: call audio focus lost — interrupted");
@@ -149,7 +80,7 @@ bool TakeFocusStepLocked(const AudioFocusInterruption::Step step, JNIEnv* env) {
       return false;
     case AudioFocusInterruption::Step::RestoreAndEnd:
       SDL_Log("AudioSession: call audio focus back — restoring the route, resuming");
-      RestoreCallRouteLocked(env);
+      RestoreCallRouteLocked();
       return true;
     case AudioFocusInterruption::Step::None:
       return false;
@@ -161,16 +92,17 @@ bool TakeFocusStepLocked(const AudioFocusInterruption::Step step, JNIEnv* env) {
  * After a permanent loss of the focus (nothing gives it back): ask for it again, and a grant ends the interruption.
  * `why`: what brought the user back (the app in front, a call control).
  */
-void RetakeFocusIfLost(const char* why, JNIEnv* env = nullptr) {
+void RetakeFocusIfLost(const char* why) {
   bool ended = false;
   {
     std::lock_guard lock(g_focus_mu);
     if (!g_focus.WantsRetake(g_session_active.load())) {
       return;
     }
-    const bool granted = ActivityCall(env).Bool("retakeCallAudioFocus").value_or(false);
+    const MediaHost host = CurrentMediaHost();
+    const bool granted = host.retake_call_audio_focus ? host.retake_call_audio_focus().value_or(false) : false;
     SDL_Log("AudioSession: call audio focus asked again (%s): %s", why, granted ? "granted" : "not yet");
-    ended = TakeFocusStepLocked(g_focus.OnRetake(granted, IsInterrupted()), env);
+    ended = TakeFocusStepLocked(g_focus.OnRetake(granted, IsInterrupted()));
   }
   if (ended) {
     NotifyInterruptionEnded();
@@ -185,9 +117,10 @@ bool QueryHasEarpieceRoute() {
   if (cached >= 0) {
     return cached != 0;
   }
-  const std::optional<bool> has = ActivityCall().Bool("hasEarpieceRoute");
+  const MediaHost host = CurrentMediaHost();
+  const std::optional<bool> has = host.has_earpiece_route ? host.has_earpiece_route() : std::nullopt;
   if (!has) {
-    return true; // fail open: keep toggle until Activity is ready
+    return true; // fail open: keep toggle until the host can tell (its activity is ready)
   }
   g_has_earpiece.store(*has ? 1 : 0, std::memory_order_release);
   return *has;
@@ -290,7 +223,7 @@ int CaptureReopenSettleDelayMs() {
 void ApplyCaptureAudioHints() {
   // Stock SDL 3.4.16 (B35): "Communications" role → AAUDIO_USAGE_VOICE_COMMUNICATION; input
   // preset 7 = VOICE_COMMUNICATION engages the OEM AEC/NS. Speaker-only tablets keep MEDIA
-  // usage (paired with MODE_NORMAL in MainActivity; IN_COMMUNICATION+MEDIA is whisper-quiet).
+  // usage (paired with MODE_NORMAL in the host's call mode; IN_COMMUNICATION+MEDIA is whisper-quiet).
   if (SupportsSpeakerToggle()) {
     SDL_SetHint(SDL_HINT_AUDIO_DEVICE_STREAM_ROLE, "Communications");
     SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "7");
@@ -305,33 +238,24 @@ void ClearCaptureAudioHints() {
   SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "");
 }
 
-} // namespace AudioSession
-} // namespace pbr
-
-/**
- * MainActivity's call audio-focus listener (main thread): AudioManager's AUDIOFOCUS_* change, as
- * AudioFocusInterruption reads it.
- */
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_MainActivity_nativeOnCallAudioFocus(JNIEnv* env, jclass,
-                                                                                               jint focus_change) {
-  using pbr::AudioFocusInterruption;
-  namespace session = pbr::AudioSession;
+void NotifyHostCallAudioFocus(const int focus_change) {
   bool ended = false;
   {
-    std::lock_guard lock(session::g_focus_mu);
-    const AudioFocusInterruption::Step step = session::g_focus.OnChange(
-        AudioFocusInterruption::FromAndroid(focus_change), session::g_session_active.load(), session::IsInterrupted());
-    ended = session::TakeFocusStepLocked(step, env);
+    std::lock_guard lock(g_focus_mu);
+    const AudioFocusInterruption::Step step =
+        g_focus.OnChange(AudioFocusInterruption::FromAndroid(focus_change), g_session_active.load(), IsInterrupted());
+    ended = TakeFocusStepLocked(step);
   }
   if (ended) {
-    session::NotifyInterruptionEnded();
+    NotifyInterruptionEnded();
   }
 }
 
-/** MainActivity.onResume (main thread): the user is back; a call's focus lost for good is asked for again. */
-extern "C" JNIEXPORT void JNICALL Java_dev_pp_1browser_app_MainActivity_nativeRetakeCallAudioFocus(JNIEnv* env,
-                                                                                                   jclass) {
-  pbr::AudioSession::RetakeFocusIfLost("app in front", env);
+void NotifyHostResumed() {
+  RetakeFocusIfLost("app in front");
 }
+
+} // namespace AudioSession
+} // namespace pbr
 
 #endif // defined(__ANDROID__)

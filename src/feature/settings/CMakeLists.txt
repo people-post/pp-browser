@@ -3,6 +3,7 @@ pp_browser_add_feature_library(pp_feature_settings
     AboutSettingsSection.cpp
     AppearanceSettingsSection.cpp
     BackendChoices.cpp
+    BackendServiceEntries.cpp
     CasLibraryCommands.cpp
     IntegrationsSettingsSection.cpp
     LlmSettingsSection.cpp

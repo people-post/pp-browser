@@ -41,7 +41,9 @@ curl uses **BoringSSL** from [`pp-cpp-crypto`](https://github.com/people-post/pp
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, zlib, Asio, googletest. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) (pinned tag; `-DPP_CPP_AMP_SOURCE_DIR=…` — a `../pp-cpp-amp` beside the repo is not picked up); libsodium + ML-KEM/ML-DSA + BoringSSL from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling for development, the pinned tag for packaged builds).
+**Vendored source** under [`third_party/`](../../third_party/), its one home ([third_party/README.md](../../third_party/README.md), manifest [`UPSTREAM.json`](../../third_party/UPSTREAM.json): name, version, licence, upstream for each): curl, SQLite (amalgamation), Opus, qrcodegen, quirc, zlib, Asio, googletest. Never fetched at configure time.
+
+**People-post libraries**, each at a release tag of the **pin list** [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) ([below](#pins-and-sibling-builds)): JSON (`Value`/`Object`) and the runtime from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA + BoringSSL from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui); pp-node's ledger role from [`pp-ledger`](https://github.com/people-post/pp-ledger).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -57,7 +59,27 @@ Chat/CJK fonts (**Noto Sans CJK Regular OTC** `NotoSansCJK-Regular.ttc` — shar
 
 If libp2p dependency trees are missing, run `./scripts/vendor/libp2p_vendor_import.sh`.
 
-SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump `PP_CPP_UI_GIT_TAG` when updating them.
+SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump the pp-cpp-ui pin when updating them (and, for a new SDL version, SDL's Java glue under `android/`: third_party/README.md § Elsewhere in this repo).
+
+### Pins and sibling builds
+
+**One pin list** ([`cmake/PpPins.cmake`](../../cmake/PpPins.cmake), [capability-repos CR012](../../projects/capability-repos/DECISIONS.md#cr012--before-any-repo-moves-pins-vendored-deps-visibility)): every people-post library pp-browser and pp-node build against, one `pp_pin(<repo> TAG <tag>)` line each. A library bump is one line there (during release 1's freeze the pins stay put). The `cmake/Pp<Lib>.cmake` files add each library with its own options and hold no tag; the mechanism is [`cmake/PpFetchPin.cmake`](../../cmake/PpFetchPin.cmake), which another repo with its own list (a capabilities repo, pp-ledger-apps) copies.
+
+Each pin `<repo>` has cache variables named after it (`pp-cpp-mesh` → `PP_CPP_MESH_…`); a library comes from the first of:
+
+| Source | How | When |
+|--------|-----|------|
+| A local checkout of one library | `-DPP_CPP_MESH_SOURCE_DIR=<path>` (any pin: `PP_CPP_COMMON_`, `PP_CPP_CRYPTO_`, `PP_CPP_AMP_`, `PP_CPP_MESH_`, `PP_CPP_UI_`, `PP_LEDGER_SOURCE_DIR`) | Working on that library with the app |
+| **Sibling mode**: every library from a checkout beside the repo | `-DPP_SIBLINGS_DIR=..` (relative to the repo root, or absolute): `<dir>/pp-cpp-common`, `<dir>/pp-cpp-mesh`, …; a pin with no checkout there is fetched at its tag (warned) | A change across libraries and the app, built together before any release |
+| The pinned tag (FetchContent) | default; `-DPP_CPP_MESH_GIT_TAG=<tag>` tries another tag for one build | CI, releases, everyday builds |
+
+```bash
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DPP_SIBLINGS_DIR=..   # ../pp-cpp-common, ../pp-cpp-mesh, …
+```
+
+A local checkout (either way) is checked at configure: when its HEAD is not the pinned tag, CMake warns, saying whether it is past the pin (it has library changes CI's build does not) or does not contain it (update it, or the build differs from CI's); with no such tag in the checkout, it asks for `git fetch --tags`. Configure prints where each library came from (`pp-browser: pp-cpp-mesh from … (sibling; pin v10.1.0)`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) refuses sibling mode: a release compiles its pinned tags (PB-001). Nothing beside the repo is picked up unasked — `../pp-cpp-ui` was until CR012; configure says so once when one is there.
+
+A pin bump follows a tag (`pp_fetch_git_tag`): an existing build tree takes the new pin at its next configure, unless that tree overrides the tag with `-D…_GIT_TAG`.
 
 ## Configure and build
 
@@ -123,6 +145,18 @@ On Windows, Debug and RelWithDebInfo builds use embedded debug info (`/Z7`) so s
 
 CI uses ccache on every platform automatically via `-DPP_BROWSER_COMPILER_CACHE=ON`. Its Actions cache key includes the runner image (`ImageOS`-`ImageVersion`): ccache misses every object after a compiler change, so a new image starts its own cache, restoring the newest one meanwhile.
 
+### Capabilities on their own
+
+`capabilities/CMakeLists.txt` builds chosen capability folders and what is below them, without the app — the shape of a capabilities repo (capability-repos [CR023](../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first) step 4):
+
+```bash
+cmake -S capabilities -B build-calls -DCMAKE_BUILD_TYPE=Debug -DPP_CAPABILITIES=calls   # base … media, calls
+cmake --build build-calls --target pp_capability_calls_tests -j                          # or everything
+ctest --test-dir build-calls -L '^capability:calls$' -j
+```
+
+It reads the same pin list and `third_party/`, and takes the same options (`PP_SIBLINGS_DIR`, `…_SOURCE_DIR`, `PP_BROWSER_COMPILER_CACHE`); `pp_capability_<name>_tests` builds one capability's tests. Linux and macOS desktop. CI's `capabilities` job runs it for calls ([capabilities/calls/README.md](../../capabilities/calls/README.md)).
+
 ## Run
 
 From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
@@ -167,7 +201,7 @@ PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
   - `--status-addr host:port` or `PP_NODE_STATUS_ADDR` (empty disables; default loopback)
   - `--status-token` / `PP_NODE_STATUS_TOKEN` optional Bearer auth (gates both endpoints)
   - One-shot `pp-node --status` still prints reachability JSON and exits (unchanged)
-- **Ledger role** (pp-ledger platform-integration pi4): `--ledger-role relay|miner` (or `PP_NODE_LEDGER_ROLE`) runs one pp-ledger role on the node's mesh runtime, with the node's identity and address, from `--ledger-dir` (default `<profile data dir>/ledger`: pp-ledger's own `config.json`, keys and data). A first run with no `config.json` writes pp-ledger's template and exits with what to fill in; the role advertises the ledger's protocols while it serves them, and stops before the mesh. Built when `PP_BROWSER_WITH_LEDGER` is on (the default, but not on mobile): pp-ledger comes from [`cmake/PpLedger.cmake`](../../cmake/PpLedger.cmake) (pinned release; `-DPP_LEDGER_SOURCE_DIR=…` for a local checkout), linked only by `pp_domain_node_ledger`. Smoke: `pp_local_test.sh run --suite ledger` (N-LEDGER).
+- **Ledger role** (pp-ledger platform-integration pi4): `--ledger-role relay|miner` (or `PP_NODE_LEDGER_ROLE`) runs one pp-ledger role on the node's mesh runtime, with the node's identity and address, from `--ledger-dir` (default `<profile data dir>/ledger`: pp-ledger's own `config.json`, keys and data). A first run with no `config.json` writes pp-ledger's template and exits with what to fill in; the role advertises the ledger's protocols while it serves them, and stops before the mesh. Built when `PP_BROWSER_WITH_LEDGER` is on (the default, but not on mobile): pp-ledger comes from [`cmake/PpLedger.cmake`](../../cmake/PpLedger.cmake) (pinned in `cmake/PpPins.cmake`; `-DPP_LEDGER_SOURCE_DIR=…` for a local checkout), linked only by `pp_domain_node_ledger`. Smoke: `pp_local_test.sh run --suite ledger` (N-LEDGER).
 - Sketches / release packaging: [`packaging/pp-node/`](../../packaging/pp-node/), [`scripts/platform/pp_node_package_linux.sh`](../../scripts/platform/pp_node_package_linux.sh).
 - **Image smoke (L0/L1/L2 N-FANOUT):** [`packaging/pp-node/IMAGE_SMOKE.md`](../../packaging/pp-node/IMAGE_SMOKE.md). Local lifecycle: [`scripts/test/pp_local_test.sh`](../../scripts/test/pp_local_test.sh) (`run --suite node|cap|soak|chaos|call-hop|msg-call-hop|mix` / `stop` / `clear`). Loopback thin client (no Docker): `--suite call|conflict|msg-call`. Thin smokes: `pp_node_image_smoke.sh`, `pp_node_relay_smoke.sh`, `pp_node_fanout_smoke.sh`, `pp-node-probe`. Strategy / purpose IDs: [`TEST_STRATEGY.md`](TEST_STRATEGY.md). Doctrine (tiers / layers): [`TESTING.md`](../architecture/TESTING.md).
 - **Release trains:** app (`v*` / [`release.yml`](../../.github/workflows/release.yml)) and node (`pp-node/v*` / [`release-pp-node.yml`](../../.github/workflows/release-pp-node.yml)) are independent; their tags go on release branches cut from **`main`** (`release/app-X.Y`, `release/node-X.Y`). See [RELEASE.md](RELEASE.md).
@@ -202,7 +236,7 @@ Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exist
 
 ### Backend origin
 
-The client ships with no backend origin. Every backend URL (LLM, relay, directory, registration, promoted MCP, diagnostics) is derived from one origin; while it is empty those features are disabled and the app still starts. An origin is `scheme://host[:port]` only: no path (the client appends its own), and a trailing slash is stripped.
+The client ships with no backend origin. Each built-in backend (prod, staging, dev) is a table of services ([profile-model PM002](../../projects/profile-model/DECISIONS.md#pm002--a-backend-is-a-named-table-of-services-each-with-its-own-url); `BackendTable`) which the build fills in from that environment's one origin (relay, directory and registration under `/api/relay`, the Brief LLM and its token service under `/api/llm/v1`, the promoted MCP seed under `/mcp`, crash intake, client-compat and the locker under the relay); a custom backend's table is the user's (CONFIGURATION § backend.services); while it is empty those features are disabled and the app still starts. An origin is `scheme://host[:port]` only: no path (the client appends its own), and a trailing slash is stripped.
 
 - Compile time, up to three origins: `cmake -B build -S . -DPP_API_URL_PROD=https://backend.example.test -DPP_API_URL_STAGING=https://staging.backend.example.test -DPP_API_URL_DEV=https://dev.backend.example.test` — the environments are **dev**, **staging** and **prod** (release-compatibility RC009 as amended; qa is retired, RC021, and staging is a new environment, not qa renamed). `PP_API_URL_STAGING` and `PP_API_URL_DEV` are optional (developer and test builds; RC015: store builds compile prod only); when one is empty that choice is not offered in Me → Network, and a saved `staging` / `dev` (or `qa`) runs as `prod` in a store build (as staging, else dev, in a tester build, below); the saved choice itself stays in the file.
 - CI: `PP_API_URL_PROD`, `PP_API_URL_STAGING` and `PP_API_URL_DEV` are repository secrets of the same names. `release.yml` (candidates, and so releases) passes prod only, so a release offers Production and Custom; `ios-testflight.yml` passes staging and dev only, and no prod, to a hand-run tester build (no candidate tag, `PP_TESTER_BUILD=ON`), which offers Staging, Dev and Custom; a release candidate's run passes prod only; `release-pp-node.yml` passes all three; `scripts/platform/ios_build.sh`, `android_build.sh` and `pp_node_package_linux.sh` read the environment variables of those names. A tagged pp-node release fails when `PP_API_URL_PROD` is empty: the node's registration URL derives from it, and a node that publishes itself to the mesh directory (`mesh_publish`, with the opt-in heartbeat) cannot register without one ("mesh_publish requires registration.base_url"). A dogfood build only warns; such a node needs `registration.base_url` in its config or `PP_NODE_REGISTRATION_BASE_URL`.

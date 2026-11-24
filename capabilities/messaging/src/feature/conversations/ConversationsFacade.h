@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/conversations/QueuedResend.h"
 #include "common/Secret.h"
 
 #include "foundation/crypto/CryptoTypes.h"
@@ -92,7 +93,13 @@ public:
   Roe<void> SyncPushDevices();
   /** Whether the saved backend differs from the running one: push is unbound from the running backend meanwhile. */
   void SetBackendSwitchPending(bool pending);
-  Roe<std::string> ExportLinkDevice();
+  /** Linking a device (M027; ConversationsHub::BeginLinkOffer and the rest): the new device's offer, kept in memory. */
+  Roe<LinkOffer::Shown> BeginLinkOffer();
+  void ForgetLinkOffer();
+  /** Main device: the 4 digits of a new device's offer, scanned or pasted. */
+  Roe<std::string> LinkOfferCode(const std::string& scanned_or_pasted);
+  /** Main device, after the digits matched: the sealed reply's bytes (its QR code; LinkPayloadText for the text). */
+  Roe<ByteVector> SealLinkReply(const std::string& scanned_or_pasted);
   /**
    * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
    * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
@@ -100,7 +107,8 @@ public:
   Roe<std::optional<SecretText>> RecoveryPhrase(const SecretText& pin);
   /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
   bool HasRecoveryPhrase();
-  Roe<void> ImportLinkDevice(const std::string& bundle_json, const SecretText& pin);
+  /** New device: the main device's reply, scanned or pasted; the account comes here (ConversationsHub::ImportLinkReply). */
+  Roe<void> ImportLinkDevice(const std::string& reply_scanned_or_pasted, const SecretText& pin);
   /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
   Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                       const std::vector<std::string>& saved_copies = {});
@@ -120,6 +128,8 @@ public:
   Roe<void> StartNewDeviceList();
   /** Our device list changed, or where getting it back stands (read OwnDevices again); runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /** The same change, to the Chats page's removed-device notice (ConversationsHub::SetDeviceRemovedWatch). */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
   /** Me → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
   Roe<OurRelaysStatus> OurRelays();
   /** Adds the relay a relay link names (MR008: `https://host#<PeerId>`). */
@@ -153,11 +163,6 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
-  /**
-   * A message of ours that never went out, sent again as a new one (#210): what is still queued of it is dropped, then
-   * its row goes (IThreadSync::RemoveUnsentMessage). false: not such a row (it was delivered meanwhile), kept.
-   */
-  Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** The rows of `thread_id` whose `generation` is one of `generations`, oldest first (IThreadTranscript). */
   Roe<std::vector<ThreadMessage>> GetMessagesByGeneration(const std::string& thread_id,
@@ -169,6 +174,14 @@ public:
                                  const std::string& new_text, int64_t tapped_at_ms);
   /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * B236: whether the 1:1 chat `thread_id` is held — the recipient has not added us and a refused message of ours is
+   * still queued — so nothing more is sent for now (MeshDeliveryOrchestrator::ChatSendHeld). Blocking (the store).
+   */
+  bool ChatSendHeld(const std::string& thread_id);
+  /** Send our failed message again as itself, after a tap on its red mark (ConversationsHub::ResendMessageAsync). */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();
@@ -509,8 +522,14 @@ public:
   Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
-  /** #328: take this account off the directory (profile reset / delete account). */
-  Roe<void> RevokeRegistration();
+  /**
+   * A profile reset leaves our relays (#328). On the account's only device (OwnCards::OnlyDevice) the account's
+   * registration goes — off the directory, with every push binding; its mailbox is gone. While another device is on
+   * the account (or that cannot be told) the registration stays, for the others: only this device's push bindings go
+   * (M019 phase 1). It stays on the account's device list until the main device takes it off (no device can take
+   * itself off, OwnCards::RemoveDevice).
+   */
+  Roe<void> LeaveRelaysOnReset();
 
   /**
    * Escape hatch for lifecycle / bridges that legitimately need the hub

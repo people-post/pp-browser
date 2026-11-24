@@ -2,45 +2,47 @@
 
 #include "common/Secret.h"
 
-#include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/DataKeyVault.h"
-#include "foundation/crypto/LinkDeviceCodec.h"
+#include "foundation/crypto/LinkHandshake.h"
+#include "foundation/crypto/RelayId.h"
 #include "lib/people/IdentityStore.h"
 
 #include "common/Error.h"
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-struct LinkDeviceImportResult {
-  LocalIdentity identity;
-  /** The issuing device's account card, when the bundle carries one (M021; a recovery bundle does not). */
-  std::optional<std::string> account_card_json;
-};
-
-/** Capture / apply `pp-browser-link-device-v1` (M012). UI and push re-attach stay in feature. */
+/**
+ * The account's side of linking a device (multi-device M027; docs/contracts/LINK_DEVICE.md) and of a restore from the
+ * recovery phrase (M023 §8), which bring an account onto an install the same way: from its recovery seed alone. UI,
+ * the card fetch and push re-attach stay in feature.
+ */
 class LinkDeviceExchange {
 public:
-  /** The account part of a bundle (keys, DEK, nickname, recovery seed); no account card. */
-  static Roe<LinkDeviceBundleV1> Capture(const LocalIdentity& identity, const ByteVector& dek, int64_t now_ms,
-                                         int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
-  /** A bundle for a new device: the account and this device's account card, which it signs itself into (M021). */
-  static Roe<std::string> ExportJson(const LocalIdentity& identity, const ByteVector& dek,
-                                     std::string account_card_json, int64_t now_ms,
-                                     int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
+  /**
+   * The main device's sealed reply to a new device's `offer`: the account's recovery seed, intent join, an expiry
+   * `ttl_ms` from now, and `relay` when given (the account's preferred relay, when it is not the deployment's). Refused
+   * for an account that is not registered or has no recovery seed (one minted before M023 s1: its keys derive from
+   * nothing a link could carry).
+   */
+  static Roe<ByteVector> SealReply(const LocalIdentity& identity, std::span<const uint8_t> offer,
+                                   std::optional<RelayAddress> relay, int64_t now_ms, int64_t ttl_ms = kLinkWindowMs);
 
   /**
-   * Apply `pp-browser-link-device-v1`: wrap the shared DEK, keep local device
-   * Ed25519 / Peer ID, replace account ML-DSA + Account ID + account KEM. Product path is an empty vault (`CreateWithDek`). Existing-vault
-   * `ReplaceWithDek` remains for tests / engine; identity must already be loaded
-   * under the current DEK.
+   * Bring the account of `seed` onto this install: its signing and KEM keys and Account ID derived from the seed
+   * (M023 §2) and the seed kept; this device's own keys (PeerId, device KEM) kept; registered; `card_intent` join (a
+   * link: this device appends itself to the main device's list) or fresh (a restore). The DEK is this install's own:
+   * on an empty vault a fresh one, wrapped with `pin` (`CreateWithDek`); an existing vault (unlocked, the identity
+   * loaded under it) keeps its DEK and PIN. `nickname` replaces this install's when not empty.
    */
-  static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault,
-                                            const std::string& bundle_json, const SecretText& pin, int64_t now_ms);
+  static Roe<LocalIdentity> ImportAccount(IdentityStore& identity, DataKeyVault& vault, const ByteVector& seed,
+                                          std::string_view card_intent, const std::string& nickname,
+                                          const SecretText& pin);
 };
 
 } // namespace pbr

@@ -634,16 +634,30 @@ Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& account_
   return {};
 }
 
+void HttpRegistrationClient::SetLlmTokenUrl(std::string url) {
+  std::lock_guard lock(llm_token_url_mutex_);
+  llm_token_url_ = std::move(url);
+}
+
+std::string HttpRegistrationClient::LlmTokenUrl() const {
+  std::lock_guard lock(llm_token_url_mutex_);
+  return llm_token_url_;
+}
+
 Roe<LlmTokenRenewal> HttpRegistrationClient::RenewLlmToken(const std::string& account_id,
                                                            const SignedRelayCommand& signed_renew) {
-  if (base_url_.empty()) {
-    return Error("Registration base_url not configured");
+  std::string token_url = LlmTokenUrl();
+  while (!token_url.empty() && token_url.back() == '/') {
+    token_url.pop_back();
+  }
+  if (token_url.empty()) {
+    // The backend names no token service: nothing is sent, and never to this relay's origin or another backend's.
+    return Error("LLM token service not configured");
   }
   Object body;
   body.set("account_id", account_id);
   PutSignedRelayCommand(body, signed_renew);
-  // The registry serves it under the LLM prefix of the same origin (`/api/llm/v1`, SPECS § llm-gateway).
-  const auto response = HttpClient::Post(RelayOriginOf(base_url_) + "/api/llm/v1/token/renew", DumpJson(body),
+  const auto response = HttpClient::Post(token_url + "/token/renew", DumpJson(body),
                                          WithRelayClientHeader({{"Content-Type", "application/json"}}),
                                          kMaxHttpClientBodyBytes, {}, public_only_);
   if (!response) {

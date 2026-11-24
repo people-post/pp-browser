@@ -118,6 +118,16 @@ public:
     bool starred = false;
   };
 
+  /** One row of the Groups page (view `group_list`, binding `group_list_rows`): a group this account is in. */
+  struct GroupListRow {
+    ui::String thread_id;
+    ui::String title;
+    /** "5 members" (group_info.members). */
+    ui::String members;
+    ui::String avatar_letter = "?";
+    int avatar_tone = 0;
+  };
+
   /** One lettered group of a contact list: the phone "New chat" page, the Contacts tab. */
   struct NewChatSectionRow {
     ui::String letter;
@@ -219,6 +229,8 @@ public:
    * is read again, so the page on screen and the ones under it show the change without a tap or a page change.
    */
   void OnContactsChanged();
+  /** An imported account's first sync is running / late (AccountSyncState): the empty list shows it, not "No contacts yet". */
+  void SetAccountSync(bool syncing, bool delayed);
   /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
   void SetShowAdvanced(bool advanced);
   void Tick();
@@ -329,6 +341,22 @@ public:
   void OnBlockedPeopleDismissed();
   /** How many saved contacts are blocked (the Settings row's count). */
   int BlockedCount() const;
+  /**
+   * The Groups page (view key `group_list`, pushed over Contacts or New chat): every group this account is in, by name;
+   * a tap opens its chat, a long press the Chats list's menu for it (the rows carry `session-id`).
+   */
+  void OpenGroupList();
+  /** The shell popped the Groups page. */
+  void OnGroupListDismissed();
+  /**
+   * The chats changed (a message, a chat deleted, a group left from the Groups page's long-press menu): an open
+   * Groups page reads its rows again; otherwise nothing is read.
+   */
+  void OnThreadsChanged();
+  const std::vector<GroupListRow>& GroupListRowsForTest() const { return group_list_rows_; }
+  int GroupListCountForTest() const { return group_list_count_; }
+  /** A row of the Groups page (group_list_open): its chat opens; the page, and New chat under it, close first. */
+  void OnGroupListOpen(const std::string& thread_id);
   /** The New chat page left the screen (back, swipe, or a row was chosen). */
   void OnNewChatDismissed();
   /** The Add contact page was closed (the shell popped its transient, or the sheet layer went). */
@@ -509,6 +537,12 @@ private:
   bool SetContactTrust(const std::string& contact_id, const std::string& trust);
   void SyncBlocked();
   void DirtyBlocked();
+  /** group_list_rows (while the page is up) and group_list_count (the Contacts / New chat row), from the store. */
+  void SyncGroupList();
+  void DirtyGroupList();
+  /** The Groups page, New chat (its Groups row) or the Contacts tab (its Groups row) is on screen. */
+  bool GroupsShown() const;
+  void CloseGroupList();
   void OnUnblockListed(const std::string& contact_id);
   void OnOpenBlockedContact(const std::string& contact_id);
   void OnRemoveContact();
@@ -553,6 +587,10 @@ private:
   /** Blocked people, by name (OpenBlockedPeople). */
   std::vector<ContactListRow> blocked_rows_;
   bool blocked_open_ = false;
+  /** The Groups page's rows, by name (OpenGroupList), and how many groups there are (its entry rows). */
+  std::vector<GroupListRow> group_list_rows_;
+  int group_list_count_ = 0;
+  bool group_list_open_ = false;
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
   RemarkSaveNotice remark_notice_;
@@ -594,6 +632,8 @@ private:
   ui::String my_account_id_;
   ui::String my_account_id_shown_;
   bool my_has_icon_ = false;
+  bool account_sync_syncing_ = false;
+  bool account_sync_delayed_ = false;
   ui::String my_icon_src_;
   ui::String my_avatar_letter_ = "?";
   int my_avatar_tone_ = 0;
@@ -674,5 +714,8 @@ ContactRelayLine DescribeContactRelay(const ContactRelayView& view);
 
 /** The blocked ones of `contacts`, sorted by name as the Contacts list sorts them. */
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts);
+
+/** The Groups page's rows from the store's entries: by name as the Contacts list sorts, "N members" under each. */
+std::vector<ContactsController::GroupListRow> GroupListRowsByName(std::vector<GroupListEntry> entries);
 
 } // namespace pbr
