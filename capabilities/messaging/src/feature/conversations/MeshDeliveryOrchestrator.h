@@ -479,6 +479,12 @@ private:
   Roe<void> DispatchGroup(const Thread& thread, const ThreadMessage& message, const std::string& text,
                           const SendRelayOptions& options, const std::vector<GroupRosterMember>& members,
                           const LocalIdentity& identity);
+  /**
+   * What a direct chat's send does before its copies are sealed, a first send's and one sent again as itself
+   * (ResendStoredMessage) alike: the initiation billing gate (P001; skipped for `system_control`) and a 1:1 pair
+   * restored without our numbering starting its next epoch (StartNextEpochIfRestored). An error: nothing is sent.
+   */
+  Roe<void> PrepareDirectDispatch(const Thread& thread, bool system_control);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */

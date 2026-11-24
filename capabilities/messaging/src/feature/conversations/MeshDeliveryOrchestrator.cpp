@@ -1703,6 +1703,31 @@ Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const PeerSessi
   return {};
 }
 
+Roe<void> MeshDeliveryOrchestrator::PrepareDirectDispatch(const Thread& thread, const bool system_control) {
+  // P001: first initiate blocked when peer floor > 0 and payment rails unavailable.
+  if (!system_control && initiation_billing_ && !initiation_billing_->IsOpen(thread.peer_identity_value)) {
+    const InitiationPeerBilling billing = initiation_billing_->Get(thread.peer_identity_value);
+    const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
+    if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
+      return payable.error();
+    }
+    if (auto floor_ok = InitiationPricing::CheckOfferAgainstFloor(offer, billing.floor_minor); !floor_ok) {
+      return floor_ok.error();
+    }
+    if (offer > 0) {
+      (void)initiation_billing_->MarkOffered(thread.peer_identity_value, offer, billing.floor_minor);
+    } else {
+      (void)initiation_billing_->MarkOpen(thread.peer_identity_value);
+    }
+  }
+  if (thread.kind == ThreadKind::Direct && thread.channel == ThreadChannel::E2ePublic) {
+    if (auto restarted = StartNextEpochIfRestored(thread); !restarted) {
+      return restarted.error();
+    }
+  }
+  return {};
+}
+
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& thread_id, const std::string& text,
                                                              const SendRelayOptions& options) {
   auto thread = store_.GetThread(thread_id);
@@ -1736,26 +1761,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       return rotated.error();
     }
   }
-  if (!system_control && initiation_billing_ && !initiation_billing_->IsOpen((*thread)->peer_identity_value)) {
-    const InitiationPeerBilling billing = initiation_billing_->Get((*thread)->peer_identity_value);
-    const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
-    if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
-      return payable.error();
-    }
-    if (auto floor_ok = InitiationPricing::CheckOfferAgainstFloor(offer, billing.floor_minor); !floor_ok) {
-      return floor_ok.error();
-    }
-    if (offer > 0) {
-      (void)initiation_billing_->MarkOffered((*thread)->peer_identity_value, offer, billing.floor_minor);
-    } else {
-      (void)initiation_billing_->MarkOpen((*thread)->peer_identity_value);
-    }
-  }
-
-  if ((*thread)->kind == ThreadKind::Direct && (*thread)->channel == ThreadChannel::E2ePublic) {
-    if (auto restarted = StartNextEpochIfRestored(**thread); !restarted) {
-      return restarted.error();
-    }
+  if (auto prepared = PrepareDirectDispatch(**thread, system_control); !prepared) {
+    return prepared.error();
   }
   ThreadMessage outbound = NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs());
   if (options.stored_payload_json) {
@@ -2352,6 +2359,14 @@ Roe<bool> MeshDeliveryOrchestrator::ResendStoredMessage(const std::string& threa
     gate.locked_out = *scope == PublicKeyScope::LockedOut;
     if (auto allowed = CheckDirectSendAllowed(gate); !allowed) {
       return allowed.error();
+    }
+    // As a first send: the initiation billing gate (a recipient that charges, and no way to pay: refused here as a new
+    // send is, never sent blindly), and a pair restored without our numbering starting its next epoch (D014).
+    if (auto prepared = PrepareDirectDispatch(**thread, /*system_control=*/false); !prepared) {
+      if (message.delivery == MessageDelivery::Pending) {
+        (void)FailOutbound(store_, message, prepared.error()); // the start's resume: red, not left queued
+      }
+      return prepared.error();
     }
   }
   // Queued again before anything goes: the clock shows, and a restart before it is through finds it to send.

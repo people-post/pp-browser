@@ -16,6 +16,7 @@
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "lib/pricing/InitiationBillingStore.h"
 #include "lib/people/PeerCards.h"
 #include "lib/people/PeerKemKeyStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
@@ -66,8 +67,8 @@ ByteVector TestDek(const uint8_t seed) {
 
 /** One device: its account, stores and receive pipeline. */
 struct Side {
-  explicit Side(const uint8_t seed) {
-    keys = test::TestAccount::Make();
+  explicit Side(const uint8_t seed, std::optional<test::TestAccount> account = std::nullopt) {
+    keys = account ? std::move(*account) : test::TestAccount::Make();
     store = std::make_unique<InMemoryDeliveryStore>();
     EXPECT_TRUE(store->SetDek(TestDek(seed)) && store->ListThreads());
     roster = std::make_unique<InMemoryGroupRosterStore>(*store);
@@ -825,6 +826,72 @@ TEST_F(StoredResendTest, AfterARestartAChatsQueuedMessagesGoInTheOrderWritten) {
   for (const std::string& id : written) {
     EXPECT_EQ(Delivery(chat_.id, id), MessageDelivery::Relayed);
   }
+}
+
+// Pre-PR review 1: a resend takes a first send's preparation. A pair restored without our numbering (Reset chats keeps
+// public sessions, restart_pending) starts its next epoch before the copy is sealed, and the peer reads the copy.
+TEST_F(StoredResendTest, AResendInARestoredPairStartsItsNextEpochFirstAndThePeerReadsIt) {
+  Side bob(0x40, bob_);
+  auto own_card = mesh_->OwnAccountCards().Card(util::NowUnixMs());
+  ASSERT_TRUE(own_card) << own_card.error().message;
+  bob.cards[identity_.Get()->account_id] = *own_card;
+
+  Add(chat_.id, "m0", MessageDelivery::Failed);
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m0"));
+  Drain();
+  ASSERT_EQ(relay_->Sent().size(), 1u);
+  ASSERT_TRUE(bob.Receive(relay_->Sent().back()).persisted) << "the pair's session as it was";
+
+  const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(bob_.account_id, bob_.device.peer_id);
+  auto before = psk_.Load(pair);
+  ASSERT_TRUE(before && before->has_value());
+  const uint32_t old_epoch = (*before)->session_epoch;
+  PeerSessionRecord restored = **before;
+  restored.restart_pending = true; // as SessionsAChatResetKeeps leaves it
+  ASSERT_TRUE(psk_.Save(restored));
+
+  Add(chat_.id, "m1", MessageDelivery::Failed);
+  ASSERT_TRUE(mesh_->ResendStoredMessage(chat_.id, "m1"));
+  Drain();
+  auto after = psk_.Load(pair);
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_EQ((*after)->session_epoch, old_epoch + 1) << "the next epoch, not a rewound count in the old one";
+  EXPECT_FALSE((*after)->restart_pending);
+  ASSERT_EQ(relay_->Sent().size(), 2u);
+  const RelayEnvelope copy = relay_->Sent().back();
+  ASSERT_EQ(copy.message_id, "m1");
+  const RelayReceiveOutcome read = bob.Receive(copy);
+  EXPECT_TRUE(read.persisted) << "the peer follows the new epoch and keeps the message";
+  ASSERT_TRUE(read.persisted_message);
+  EXPECT_EQ(read.persisted_message->id, "m1");
+}
+
+// Pre-PR review 1: a recipient that charges, and no way to pay (P001): a new send is refused before anything is stored
+// or sent; a resend of a row of that chat is refused the same way — never sent blindly — and the start's resume of one
+// ends red rather than queued.
+TEST_F(StoredResendTest, ARecipientThatChargesRefusesAResendAsItRefusesANewSend) {
+  InitiationBillingStore billing(dir_.string());
+  ASSERT_TRUE(billing.SetRelayFloor(bob_.account_id, 100)); // the relay's payment_required
+  ASSERT_TRUE(billing.MarkClosed(bob_.account_id));
+  mesh_->SetInitiationBillingStore(&billing);
+
+  auto fresh = mesh_->SendUserMessage(chat_.id, "new", SendRelayOptions{});
+  ASSERT_FALSE(fresh) << "the gate a new send meets";
+  const std::string refusal = fresh.error().message;
+
+  Add(chat_.id, "tapped", MessageDelivery::Failed);
+  auto tapped = mesh_->ResendStoredMessage(chat_.id, "tapped");
+  ASSERT_FALSE(tapped);
+  EXPECT_EQ(tapped.error().message, refusal) << "the same refusal";
+  EXPECT_EQ(Delivery(chat_.id, "tapped"), MessageDelivery::Failed);
+
+  Add(chat_.id, "queued", MessageDelivery::Pending);
+  mesh_->ResumeQueuedSends();
+  Drain();
+  EXPECT_EQ(Delivery(chat_.id, "queued"), MessageDelivery::Failed) << "red, not left queued";
+  EXPECT_FALSE(mesh_->SendStartedMs("queued"));
+  EXPECT_TRUE(relay_->Sent().empty()) << "nothing went to the relay";
+  mesh_->SetInitiationBillingStore(nullptr);
 }
 
 // --- B236: our other devices get a message only once it is through ------------------------------------------------
