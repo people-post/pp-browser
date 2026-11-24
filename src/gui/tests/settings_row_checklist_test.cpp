@@ -702,8 +702,8 @@ TEST(SettingsDevicesCaptionsTest, TheLinkButtonIsOnTheMainDeviceOnlyAndALinkedPh
   EXPECT_EQ(PhoneShown({rename}, linked_this_row), 1u);
   EXPECT_EQ(PhoneShown({rename}, LinkedFacts()), 0u) << "no other row renames";
   for (const char* event :
-       {"open_security_page('transfer')", "export_link_device()", "open_own_device_actions(device_index)",
-        "make_main_device(device_index)", "remove_own_device(device_index)"}) {
+       {"open_security_page('transfer')", "link_scan_offer()", "link_paste_offer()",
+        "open_own_device_actions(device_index)", "make_main_device(device_index)", "remove_own_device(device_index)"}) {
     const std::string token = std::string("data-event-click=\"") + event + "\"";
     EXPECT_EQ(PhoneShown({token}, LinkedFacts()), 0u) << "devices page, linked phone: " << event;
     for (const Occurrence& o : Scan(ReadAsset("views/settings_security_transfer.rml"))) {

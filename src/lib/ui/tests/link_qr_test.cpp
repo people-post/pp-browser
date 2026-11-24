@@ -38,10 +38,10 @@ TEST(LinkQrTest, EachPayloadIsOneBinaryCodeAtErrorCorrectionMThatPhonesScan) {
   const QrShape offer_shape = ShapeOf(offer);
   const QrShape reply_shape = ShapeOf(reply);
   const QrShape relayed_shape = ShapeOf(relayed);
-  std::cout << "link offer: " << offer.size() << " B, QR version " << offer_shape.version << " ("
-            << offer_shape.modules << " modules)\n"
-            << "link reply: " << reply.size() << " B, QR version " << reply_shape.version << " ("
-            << reply_shape.modules << " modules)\n"
+  std::cout << "link offer: " << offer.size() << " B, QR version " << offer_shape.version << " (" << offer_shape.modules
+            << " modules)\n"
+            << "link reply: " << reply.size() << " B, QR version " << reply_shape.version << " (" << reply_shape.modules
+            << " modules)\n"
             << "link reply with a 132-byte relay origin: " << relayed.size() << " B, QR version "
             << relayed_shape.version << " (" << relayed_shape.modules << " modules)\n";
   EXPECT_EQ(offer.size(), 1202u);
@@ -51,8 +51,8 @@ TEST(LinkQrTest, EachPayloadIsOneBinaryCodeAtErrorCorrectionMThatPhonesScan) {
     EXPECT_LE(shape->version, kMaxLinkQrVersion);
   }
   // Binary mode at M: the version qrcodegen picks for those bytes at M (it may only raise the level, never lower it).
-  const auto medium = qrcodegen::QrCode::encodeBinary(std::vector<uint8_t>(offer.begin(), offer.end()),
-                                                      qrcodegen::QrCode::Ecc::MEDIUM);
+  const auto medium =
+      qrcodegen::QrCode::encodeBinary(std::vector<uint8_t>(offer.begin(), offer.end()), qrcodegen::QrCode::Ecc::MEDIUM);
   EXPECT_EQ(offer_shape.version, medium.getVersion());
   EXPECT_GE(static_cast<int>(medium.getErrorCorrectionLevel()), static_cast<int>(qrcodegen::QrCode::Ecc::MEDIUM));
 }

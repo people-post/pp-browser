@@ -90,13 +90,16 @@
 //   locker_fetch {phrase}               the locker a recovery phrase opens: {found, nickname,
 //                                       contacts: [account ids], groups: [group ids], card_floors}
 //   locker_export {path}                save the account's state as an exported locker file at path: {version}
-//   link_export                         Me → Security → Copy link payload: the link bundle {bundle}
+//   link_reply {offer}                  the main device (M027): the new device's offer read, sealed: {code, reply}
+//                                       (the 4 digits it shows, the reply's text form)
 //   devices                             this account's devices (M021 d4): {devices: [peer ids], main, self,
 //                                       signed_out} — the first is the main device
 //   remove_device {peer_id}             on the main device: take another device off the account
 //   make_main {peer_id}                 on the main device: hand the main role to another device
-//   link_import {bundle, pin}           a new device takes it (then restart): another device of the
-//                                       account (M021)
+//   link_offer                          a new device's link page (M027): {offer, code} — its one-time key's text
+//                                       form and the 4 digits it shows
+//   link_import {reply, pin}            the new device takes the main device's reply (then restart): another
+//                                       device of the account (M021)
 //   state                               the call surface + media counters (joined participants; `members` with
 //                                       guest / brought_by / can_remove / can_add_to_group, V062, and
 //                                       reconnecting, V067; ring_guest / ring_people: ringing in as a guest
