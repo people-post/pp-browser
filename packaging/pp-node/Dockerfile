@@ -9,7 +9,7 @@
 #   config.json.example
 # See scripts/platform/pp_node_package_linux.sh and .github/workflows/release.yml.
 
-FROM ubuntu:24.04
+FROM public.ecr.aws/docker/library/ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
