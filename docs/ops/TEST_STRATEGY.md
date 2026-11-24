@@ -132,25 +132,24 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
-| **Every merge to main** | Lab smoke — the app lab's `smoke` scenarios on the lab machine, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
+| **Every merge to main** | Lab smoke — the app lab's `smoke` scenarios on a CodeBuild runner, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
 | **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 
 ### Nightly lab
 
-[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): start the machine, build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report, stop the machine.
+[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report.
 
-- **Machine:** a self-hosted EC2 instance (`c7i.2xlarge`, 150 GB), registered as this repository's self-hosted runner `pp-lab`. It is stopped except while the workflow runs: a hosted job starts it (OIDC role `github-pp-lab`, start/stop of that one instance only), a hosted job stops it after, and it shuts itself down four hours after boot whatever happens. Its build and ccache stay on its disk between nights.
+- **Runner:** an ephemeral CodeBuild-hosted runner (project `pp-browser` in pp-runners-infra: privileged for Docker, `BUILD_GENERAL1_LARGE`, 240 min job timeout), started by the `codebuild-pp-browser-<run id>-<attempt>` label. Nothing is kept on the runner between runs: ccache lives in the Actions cache (saved by the nightly only) and the relay checkout and build are fresh each time.
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
 - **Flakes:** `pp_app_lab.py --retry-failed` runs each failed scenario once more; passing then is a flake (listed in the run's summary), failing again a failure. `--summary <file>` writes every outcome as JSON.
 - **Reporting:** [`nightly_lab_report.py`](../../scripts/test/nightly_lab_report.py) keeps one issue per failing scenario (label `nightly-lab`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
-- **Idle until configured:** the repository variables `PP_LAB_INSTANCE_ID` and `PP_LAB_AWS_ROLE` and the secret `PP_LAB_RELAY_APIS_TOKEN` (read access to the private pp-relay-apis) switch it on. Until then each run's first (hosted) job says which are missing in a notice and starts nothing.
-- **One machine, two workflows:** the machine's one runner takes the nightly's and lab smoke's lab jobs in turn; a run's stop job leaves the machine on while another run's lab job has not finished (that run stops it), and a start waits for a machine still stopping.
+- **Idle until configured:** the secret `PP_LAB_RELAY_APIS_TOKEN` (read access to the private pp-relay-apis) switches it on. Until then each run's first job says so in a notice and starts nothing.
 
 ### Lab smoke
 
-[`lab-smoke.yml`](../../.github/workflows/lab-smoke.yml) runs the app lab's `smoke` scenarios ([§ Scenario tags](#scenario-tags-and-selection)) on the lab machine after every merge to main — `pp_local_test.sh run --suite app --tags smoke`, as the nightly runs its suites — with the same `--retry-failed` and artifact (`lab-smoke`, 14 days). The tier's budget is 15 min of scenarios ([release-compatibility § Regression suites](../../projects/release-compatibility/DESIGN.md#regression-suites)).
+[`lab-smoke.yml`](../../.github/workflows/lab-smoke.yml) runs the app lab's `smoke` scenarios ([§ Scenario tags](#scenario-tags-and-selection)) on a CodeBuild runner after every merge to main — `pp_local_test.sh run --suite app --tags smoke`, as the nightly runs its suites — with the same `--retry-failed` and artifact (`lab-smoke`, 14 days). The tier's budget is 15 min of scenarios ([release-compatibility § Regression suites](../../projects/release-compatibility/DESIGN.md#regression-suites)).
 
 - **Blocks nothing:** it runs on the push to main, never on a pull request, and is not a required check. A failure shows on the commit and in the run's summary (`nightly_lab_report.py --no-issues`); the nightly keeps the issues.
 - **One at a time:** a newer push replaces one still waiting for the run before it (`concurrency`, not cancelled once running). Merges that touch only docs (`docs/`, `projects/`, `*.md`) do not run it.

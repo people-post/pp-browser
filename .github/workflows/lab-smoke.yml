@@ -2,13 +2,13 @@ name: lab-smoke
 
 # Lab smoke (docs/ops/TEST_STRATEGY.md § Lab smoke; release-compatibility RC013): the app lab's `smoke` scenarios
 # (`pp_local_test.sh run --suite app --tags smoke`: register, find someone, a first message, a group, a call, a
-# group call, a push wake, a linked device, a restore, the relay's identity) on the lab machine after every merge to
+# group call, a push wake, a linked device, a restore, the relay's identity) on a CodeBuild runner after every merge to
 # main, as nightly-lab.yml runs its suites (lab-run.yml). On demand (Run workflow) it takes any tags or a --changed
 # range instead: the scenarios a branch touches.
 #
 # Never on pull requests and never a required check: it runs after the merge and blocks nothing; a failure shows on
-# the commit and in the run's summary (no issue: the nightly keeps those). Idle (a notice) until the lab machine is
-# set up — the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the secret PP_LAB_RELAY_APIS_TOKEN.
+# the commit and in the run's summary (no issue: the nightly keeps those). Idle (a notice) until the lab is set up —
+# the secret PP_LAB_RELAY_APIS_TOKEN.
 
 on:
   push:
@@ -41,9 +41,7 @@ jobs:
   lab:
     permissions:
       contents: read
-      id-token: write # the hosted jobs start and stop the lab machine (OIDC role)
       issues: write # lab-run.yml's report job asks for it; with issues false it files none
-      actions: read # the stop job looks for other lab runs still on the machine
     uses: ./.github/workflows/lab-run.yml
     secrets: inherit
     with:
