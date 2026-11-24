@@ -128,6 +128,9 @@ Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*a
 
 Roe<void> MockBlobClient::FileDelete(const std::string& /*account_id*/, const std::string& blob_id) {
   deleted_file_ids_.push_back(blob_id);
+  if (file_delete_error_) {
+    return *file_delete_error_;
+  }
   return Roe<void>{};
 }
 

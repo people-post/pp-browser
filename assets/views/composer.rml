@@ -11,7 +11,7 @@
 </div>
 <div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
-     data-class-prompt-composer--disabled="composer_input_disabled">
+     data-class-prompt-composer--disabled="composer_input_disabled &amp;&amp; !voice_recording">
   <!-- Status row above the input, only when something needs saying: an attachment uploading (the card below) /
        preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. A picture being sent shows as a
        bubble in the transcript instead (attachment_in_transcript): then no card and no chip here. -->
@@ -72,7 +72,7 @@
   <div class="prompt-composer-row">
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--start" type="button"
             data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="voice_toggle_disabled" data-class-prompt-entry-off="voice_toggle_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-classic" src="../icons/mic.svg" width="18" height="18" crop-to-content="true"></svg>
     </button>
@@ -127,19 +127,26 @@
         <svg class="prompt-icon-home-emoji" src="../icons/v2/emoji-round.svg" width="24" height="24"></svg>
     </button>
     <!-- Voice mode (WeChat style): one wide bar takes the pill's place. A phone presses and holds on it (mousedown
-         starts, the document sees the release); the desktop clicks, then uses Cancel / Send beside it. While
-         recording it shows the red dot, the timer and the hint. -->
+         starts, the document sees the release); the desktop clicks, then uses Cancel / Send beside it. On a phone the
+         bar says what releasing does and the floating bubble (shell-chat-overlay, ShellLayoutRml) shows the rest; the
+         desktop's bar shows the dot, the timer and the hint itself. -->
     <button class="prompt-voice-bar" type="button" data-if="voice_mode && show_voice"
             data-class-prompt-voice-bar--blocked="voice_blocked"
-            data-class-prompt-voice-bar--active="voice_recording" data-attr-title="voice_title"
+            data-class-prompt-voice-bar--active="voice_recording"
+            data-class-prompt-voice-bar--armed="voice_recording &amp;&amp; voice_cancel_zone"
+            data-attr-title="voice_title"
             data-event-mousedown="voice_press()" data-event-click="voice_click()">
+      <svg class="prompt-voice-bar-mic" data-if="!voice_finishing &amp;&amp; !(voice_recording &amp;&amp; voice_click_mode)"
+           src="../icons/v2/mic.svg" width="20" height="20"></svg>
       <span class="prompt-voice-bar-hold" data-if="!voice_recording && !voice_finishing && !voice_click_mode">{{i18n:chat.voice.hold_to_talk}}</span>
       <span class="prompt-voice-bar-click" data-if="!voice_recording && !voice_finishing && voice_click_mode">{{i18n:chat.voice.click_to_talk}}</span>
       <span class="prompt-voice-bar-sending" data-if="voice_finishing">{{i18n:chat.attachment.sending}}</span>
-      <div class="prompt-voice-status" data-if="voice_recording && !voice_finishing">
+      <span class="prompt-voice-bar-release" data-if="voice_recording &amp;&amp; !voice_finishing &amp;&amp; !voice_click_mode &amp;&amp; !voice_cancel_zone">{{i18n:chat.voice.hint_send}}</span>
+      <span class="prompt-voice-bar-release" data-if="voice_recording &amp;&amp; !voice_finishing &amp;&amp; !voice_click_mode &amp;&amp; voice_cancel_zone">{{i18n:chat.voice.hint_cancel}}</span>
+      <div class="prompt-voice-status" data-if="voice_recording &amp;&amp; !voice_finishing &amp;&amp; voice_click_mode">
         <div class="prompt-voice-dot"></div>
         <span class="prompt-voice-timer" data-class-prompt-voice-timer--countdown="voice_countdown">{{voice_timer}}</span>
-        <span class="prompt-voice-hint" data-class-prompt-voice-hint--cancel="voice_cancel_zone">{{voice_hint}}</span>
+        <span class="prompt-voice-hint">{{voice_hint}}</span>
       </div>
     </button>
     <!-- Desktop recording (started by a click on the voice bar): Cancel / Send. -->
@@ -164,7 +171,7 @@
          text; in voice mode the keyboard key takes it. Same buttons and handlers as the desktop's leading pair. -->
     <button class="prompt-voice-toggle-btn prompt-voice-toggle-btn--end prompt-mic-btn" type="button"
             data-if="(show_voice || voice_entry_off) && !voice_mode && !voice_recording && draft == ''"
-            data-event-click="voice_mode_toggle()" data-attrif-disabled="attach_disabled" data-class-prompt-entry-off="attach_disabled"
+            data-event-click="voice_mode_toggle()" data-attrif-disabled="voice_toggle_disabled" data-class-prompt-entry-off="voice_toggle_disabled"
             title="{{i18n:chat.voice.mode_voice}}">
       <svg class="prompt-icon-v2" src="../icons/v2/mic.svg" width="20" height="20"></svg>
     </button>

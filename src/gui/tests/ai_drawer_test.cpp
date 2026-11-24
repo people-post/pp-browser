@@ -663,7 +663,13 @@ TEST_F(ShellDrawerTest, ADragAcrossTheAiPageOpensIt) {
   ASSERT_NE(landing, nullptr) << "home.rml's minimal block";
   ASSERT_TRUE(landing->IsClassSet("home-landing--minimal"));
   const ui::Vector2f at = landing->GetAbsoluteOffset(ui::BoxArea::Border);
-  // Below the composer and the chips, at the bottom of the block.
+  // Below the composer and the chips, at the bottom of the block. This fixture has no chat model, so the composer's
+  // hidden parts (the 50dp voice bar, the second mic) show and their stack runs down over the block's foot: take the
+  // composer out of the layout, the press is meant for the page's empty space.
+  if (ui::Element* composer = ById("home-composer-mount")) {
+    composer->SetProperty("display", "none");
+    context_->Update();
+  }
   const int y = static_cast<int>(at.y + landing->GetBox().GetSize(ui::BoxArea::Border).y - 10.f);
   Drag(30, y, 130, y);
   EXPECT_TRUE(host_.State().ai_drawer_open);

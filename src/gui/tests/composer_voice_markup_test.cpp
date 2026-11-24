@@ -2,6 +2,7 @@
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/ShellLayoutRml.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <ui/core/Core.h>
@@ -95,6 +96,7 @@ protected:
                             "attachment_in_transcript",
                             "composer_input_disabled",
                             "attach_disabled",
+                            "voice_toggle_disabled",
                             "voice_entry_off",
                             "picking_busy",
                             "attachment_draft_name",
@@ -255,22 +257,57 @@ TEST_F(ComposerVoiceMarkupTest, NoVoiceHidesTheToggleAndTheBar) {
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
 }
 
-TEST_F(ComposerVoiceMarkupTest, RecordingOnAPhoneShowsDotTimerAndHintInsideTheBar) {
+TEST_F(ComposerVoiceMarkupTest, TheIdleBarHasTheMicrophoneAndTheLabel) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  state.voice_click_mode = false;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-bar"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar-mic"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar-hold"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar-release"), 0);
+  EXPECT_GE(SizeOf("prompt-voice-bar").y, 50.f) << "an easy target: 50dp or more";
+}
+
+TEST_F(ComposerVoiceMarkupTest, RecordingOnAPhoneSaysWhatReleasingDoesAndTheBubbleHasTheRest) {
   state.show_voice = true;
   state.voice_mode = true;
   state.voice_click_mode = false;
   state.voice_recording = true;
+  state.composer_input_disabled = true; // the recording locks the input; the bar must not look dimmed because of it
   Apply();
+  {
+    ui::ElementList composer;
+    document->GetElementsByClassName(composer, "prompt-composer");
+    ASSERT_FALSE(composer.empty());
+    EXPECT_FALSE(composer[0]->IsClassSet("prompt-composer--disabled")) << "no 55% opacity over the accent bar";
+  }
   EXPECT_EQ(Shown("prompt-voice-bar"), 1);
-  EXPECT_EQ(Shown("prompt-voice-status"), 1);
-  EXPECT_TRUE(InsideClass("prompt-voice-status", "prompt-voice-bar"));
-  EXPECT_EQ(Shown("prompt-voice-dot"), 1);
-  EXPECT_EQ(Shown("prompt-voice-timer"), 1);
-  EXPECT_EQ(Shown("prompt-voice-hint"), 1);
-  EXPECT_EQ(Shown("prompt-voice-bar-hold"), 0) << "the status takes the label's place";
+  EXPECT_EQ(Shown("prompt-voice-bar-mic"), 1);
+  EXPECT_EQ(Shown("prompt-voice-bar-release"), 1);
+  EXPECT_EQ(Shown("prompt-voice-status"), 0) << "the phone's dot, timer and levels are in the bubble";
+  EXPECT_EQ(Shown("prompt-voice-bar-hold"), 0);
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
   EXPECT_EQ(Shown("prompt-voice-cancel-btn"), 0);
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
+  ui::ElementList bar;
+  document->GetElementsByClassName(bar, "prompt-voice-bar");
+  ASSERT_EQ(bar.size(), 1u);
+  EXPECT_TRUE(bar[0]->IsClassSet("prompt-voice-bar--active"));
+  EXPECT_FALSE(bar[0]->IsClassSet("prompt-voice-bar--armed"));
+  state.voice_cancel_zone = true;
+  Apply();
+  EXPECT_TRUE(bar[0]->IsClassSet("prompt-voice-bar--armed")) << "slid up to the cancel line: the soft red";
+  ui::ElementList release;
+  document->GetElementsByClassName(release, "prompt-voice-bar-release");
+  int shown = 0;
+  for (ui::Element* element : release) {
+    if (element->IsVisible(true)) {
+      ++shown;
+      EXPECT_EQ(element->GetInnerRML(), Tr("chat.voice.hint_cancel"));
+    }
+  }
+  EXPECT_EQ(shown, 1);
 }
 
 TEST_F(ComposerVoiceMarkupTest, RecordingOnTheDesktopAddsCancelAndSendBesideTheBar) {
@@ -372,8 +409,9 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   state.show_voice = true;
   state.voice_mode = true;
   state.voice_recording = true;
+  state.voice_click_mode = true; // the desktop's bar shows its own dot, timer and hint
   state.voice_timer = "0:07";
-  state.voice_hint = "Slide up to cancel";
+  state.voice_hint = "Recording";
   Apply();
   ui::ElementList timer;
   document->GetElementsByClassName(timer, "prompt-voice-timer");
@@ -637,17 +675,20 @@ TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
 // A picture uploading as a bubble (device report 2026-11-11: the right end was empty, as if nothing could be sent):
 // the send hides the microphone (show_voice off), but beside the bubble it stays in its place greyed
 // (voice_entry_off); once text is typed Send takes the spot, enabled.
-TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndTextBringsAWorkingSend) {
+TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysUsableAndTextBringsAWorkingSend) {
   state.thread_is_private = true;
   state.show_attach_button = true;
   state.attachment_here = true;
   state.attachment_uploading = true;
   state.attachment_in_transcript = true;
-  state.show_voice = false; // VoiceComposer: not while a send is in flight
-  state.voice_entry_off = true;
+  state.show_voice = true; // voice messages queue behind the picture: the microphone is not off for an upload
+  state.voice_entry_off = false;
   const ComposerLocks locks = ComposerLocksOf(false, true, true, /*attachment_busy=*/true, false, false);
   state.composer_input_disabled = locks.input;
   state.attach_disabled = locks.attach;
+  state.voice_toggle_disabled = locks.voice;
+  EXPECT_TRUE(locks.attach);
+  EXPECT_FALSE(locks.voice);
   Apply();
   std::vector<std::string> order = RowOrder();
   ASSERT_EQ(order.size(), 3u);
@@ -655,13 +696,13 @@ TEST_F(ComposerPhoneRowTest, BesideAPictureBubbleTheMicrophoneStaysGreyedAndText
   ui::ElementList mics;
   document->GetElementsByClassName(mics, "prompt-voice-toggle-btn--end");
   ASSERT_FALSE(mics.empty());
-  EXPECT_TRUE(mics[0]->HasAttribute("disabled")) << "greyed: no voice message while the picture goes";
+  EXPECT_FALSE(mics[0]->HasAttribute("disabled")) << "a voice message can be recorded while the picture goes";
   EXPECT_EQ(Shown("prompt-send-btn"), 0);
   ui::ElementList composers;
   document->GetElementsByClassName(composers, "prompt-composer");
   ASSERT_FALSE(composers.empty());
-  EXPECT_TRUE(mics[0]->IsClassSet("prompt-entry-off")) << "greyed by a class (the engine's <button> has no :disabled)";
-  EXPECT_LT(mics[0]->GetComputedValues().opacity(), 0.5f);
+  EXPECT_FALSE(mics[0]->IsClassSet("prompt-entry-off"));
+  EXPECT_GT(mics[0]->GetComputedValues().opacity(), 0.5f);
 
   state.draft = "running late";
   Apply();
@@ -858,7 +899,127 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
   EXPECT_NE(body.find("    if (!from_picture_queue) {\n      release_pick_(path); // a queue's file stays the queue's"),
             std::string::npos);
   EXPECT_LT(body.find("release_pick_(path); // a queue's file"), body.find("    if (busy) {"));
-  EXPECT_NE(body.find("KeepVoiceForRetry(path, thread_id);"), std::string::npos);
+  EXPECT_NE(body.find("FailVoiceKeepingRecording(reuse_row, path, thread_id);"), std::string::npos);
+}
+
+// The phone's hold-to-talk bubble, the real RML of the chat overlay on the real "chat" model, in a 393dp wide overlay.
+class VoiceBubbleMarkupTest : public ComposerVoiceMarkupTest {
+protected:
+  void SetUp() override {
+    wrap_open_ =
+        "<div class=\"shell-chat-overlay shell-chat-overlay--frost\" style=\"position: absolute; left: 0px; "
+        "top: 0px; width: 393px; height: 760px;\">" +
+        ShellLayoutRml::VoiceBubbleRml();
+    wrap_close_ = "</div>";
+    ComposerVoiceMarkupTest::SetUp();
+  }
+  void ApplyBubble() {
+    for (const char* key : {"voice_bubble", "voice_bubble_left", "voice_bubble_top", "voice_limit"}) {
+      DataModelHost::Instance().Dirty("chat", key);
+    }
+    for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+      DataModelHost::Instance().Dirty("chat", "voice_lv_" + std::to_string(i));
+    }
+    Apply();
+  }
+  ui::Element* Bubble() {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, "voice-bubble");
+    return found.empty() ? nullptr : found.front();
+  }
+};
+
+TEST_F(VoiceBubbleMarkupTest, TheBubbleShowsOnlyWhileAPhoneHoldRecords) {
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble"), 0);
+  state.voice_bubble = true;
+  state.voice_recording = true;
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble"), 1);
+  EXPECT_EQ(Shown("voice-bubble-material"), 1);
+  state.voice_bubble = false;
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble"), 0) << "the desktop never sets it";
+}
+
+TEST_F(VoiceBubbleMarkupTest, TheBubbleIs176By64AndSitsWhereTheComposerPutsIt) {
+  state.voice_bubble = true;
+  state.voice_bubble_left = "112dp";
+  state.voice_bubble_top = "338dp";
+  ApplyBubble();
+  context->Update();
+  ui::Element* bubble = Bubble();
+  ASSERT_NE(bubble, nullptr);
+  EXPECT_FLOAT_EQ(bubble->GetBox().GetSize(ui::BoxArea::Border).x, 176.f);
+  EXPECT_FLOAT_EQ(bubble->GetBox().GetSize(ui::BoxArea::Border).y, 64.f);
+  EXPECT_FLOAT_EQ(bubble->GetAbsoluteOffset(ui::BoxArea::Border).x, 112.f);
+  EXPECT_FLOAT_EQ(bubble->GetAbsoluteOffset(ui::BoxArea::Border).y, 338.f);
+  // Left end, right end: inside the 393dp screen with the 12dp margins.
+  for (const char* left : {"16dp", "201dp"}) {
+    state.voice_bubble_left = left;
+    ApplyBubble();
+    context->Update();
+    const float x = bubble->GetAbsoluteOffset(ui::BoxArea::Border).x;
+    EXPECT_GE(x, 16.f);
+    EXPECT_LE(x + 176.f, 393.f - 16.f + 0.5f);
+  }
+}
+
+TEST_F(VoiceBubbleMarkupTest, TheLevelBarsTakeTheirHeightsFromTheModel) {
+  state.voice_bubble = true;
+  for (int i = 0; i < ChatScreenState::kVoiceLevelBars; ++i) {
+    state.voice_lv[i] = "4dp";
+  }
+  state.voice_lv[11] = "20dp";
+  state.voice_lv[3] = "12dp";
+  ApplyBubble();
+  context->Update();
+  ui::ElementList bars;
+  document->GetElementsByClassName(bars, "voice-bubble-bar");
+  ASSERT_EQ(bars.size(), 12u);
+  EXPECT_FLOAT_EQ(bars[0]->GetBox().GetSize(ui::BoxArea::Border).y, 4.f);
+  EXPECT_FLOAT_EQ(bars[3]->GetBox().GetSize(ui::BoxArea::Border).y, 12.f);
+  EXPECT_FLOAT_EQ(bars[11]->GetBox().GetSize(ui::BoxArea::Border).y, 20.f);
+}
+
+TEST_F(VoiceBubbleMarkupTest, EachStateShowsItsOwnFirstAndSecondLine) {
+  state.voice_bubble = true;
+  state.voice_recording = true;
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble-bars"), 1) << "recording: dot, timer, levels";
+  EXPECT_EQ(Shown("voice-bubble-bin"), 0);
+  EXPECT_FALSE(Bubble()->IsClassSet("voice-bubble--armed"));
+  EXPECT_EQ(Shown("voice-bubble-sub"), 1);
+  auto second_line = [&]() {
+    ui::ElementList subs;
+    document->GetElementsByClassName(subs, "voice-bubble-sub");
+    for (ui::Element* sub : subs) {
+      if (sub->IsVisible(true)) {
+        return std::string(sub->GetInnerRML().c_str());
+      }
+    }
+    return std::string();
+  };
+  EXPECT_EQ(second_line(), Tr("chat.voice.hint_slide_up"));
+
+  state.voice_countdown = true;
+  state.voice_hint = "8 s left";
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble-bars"), 0) << "the last seconds: the count down takes the first line";
+  EXPECT_EQ(second_line(), Tr("chat.voice.hint_slide_up"));
+
+  state.voice_countdown = false;
+  state.voice_limit = true;
+  state.voice_hint = "2 min limit";
+  ApplyBubble();
+  EXPECT_EQ(Shown("voice-bubble-bars"), 0);
+  EXPECT_EQ(second_line(), Tr("chat.voice.hint_send")) << "at the limit: release to send";
+
+  state.voice_cancel_zone = true;
+  ApplyBubble();
+  EXPECT_TRUE(Bubble()->IsClassSet("voice-bubble--armed")) << "armed: the soft red tint is this class's";
+  EXPECT_EQ(Shown("voice-bubble-bin"), 1);
+  EXPECT_EQ(second_line(), Tr("chat.voice.hint_slide_down"));
 }
 
 } // namespace

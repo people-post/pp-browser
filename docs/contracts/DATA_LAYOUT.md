@@ -186,9 +186,14 @@ Durable bytes live in a profile-level CAS with **two realms**. Chat decrypt neve
     blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
                         # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)
   threads/voice/        # reserved name, NOT a thread (no thread.db): blobs_view/ only
-    blobs_view/voice-rec/  # the voice recording before it is sent: written when the recording ends (nothing on disk before, and a cancelled
-                        # one leaves nothing), deleted once it has been read for the send (the staged ciphertext is the retry path),
-                        # emptied when the next recording starts, cleared at startup and when the vault locks (like all blobs_view/)
+    blobs_view/voice-rec/r<n>-<t>/voice-<ms>.ogg
+                        # a voice recording before it is sent, each in a folder of its own (two of the same length never share a
+                        # file; the name the recipient reads is unchanged): written when the recording ends (nothing on disk
+                        # before, a cancelled one leaves nothing); deleted once the message is out or its ciphertext is staged
+                        # (the staged copy is the retry path). Kept while it waits in the send line (also after a send-pace
+                        # refusal) and when its send failed before staging (behind its own bubble's Retry); every other entry
+                        # goes when the next recording starts. Cleared at startup and on ClearDek (lock, sign-out), like all
+                        # blobs_view/: recordings still waiting, and failed ones holding their recording, are then dropped
 ```
 
 | Realm | At rest | Object id | How it gets bytes |
@@ -225,6 +230,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | `own_card.enc` | Our account's newest card under DEK AEAD (beside the identity, outside the chat store) |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `pin_digits` | Optional (no schema bump); the PIN's kind, not a secret: absent = unknown, `0` = text PIN, `4`–`8` = digit PIN of that length (the phone gate's number pad). Written after each unlock with an own PIN and on Change PIN |
+| `preferences.json` → `composer_voice_mode_last` | Additive optional boolean (no schema bump); default false = keyboard, absent reads false, old readers ignore it. The phone chat composer's last input mode (true = voice). Device-local, not synced, phone only |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.

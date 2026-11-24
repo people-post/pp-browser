@@ -50,8 +50,8 @@ TEST(UpdateCardTest, AStillNewerVersionStartsOver) {
   EXPECT_EQ(next.dismissals, 1) << "the count belongs to the new version";
 }
 
-// The comparison is the one that decides the card (CompareSemverCore): a leading "v" is ignored, a pre-release suffix
-// is not looked at.
+// The comparison is the one that decides the card (CompareReleaseVersions): a leading "v" and build metadata are
+// ignored.
 TEST(UpdateCardTest, VersionsAreComparedNotTextAndALeadingVIsTheSameVersion) {
   const UpdateCardState later = UpdateCardAfterLater("1.2.0", {}, kNow);
   EXPECT_FALSE(ShouldShowUpdateCard("v1.2.0", later, kNow + 1000)) << "v1.2.0 is the announcement 1.2.0";
@@ -60,6 +60,20 @@ TEST(UpdateCardTest, VersionsAreComparedNotTextAndALeadingVIsTheSameVersion) {
   EXPECT_EQ(again.version, "1.2.0") << "the stored text stays";
   EXPECT_EQ(again.dismissals, 2) << "a second tap on the same announcement, not a restart";
   EXPECT_TRUE(ShouldShowUpdateCard("v1.3.0", later, kNow + 1000)) << "greater: starts over";
+}
+
+// The pre-release suffix counts: a later candidate, or the release after its candidate, is a new announcement.
+TEST(UpdateCardTest, APreReleaseSuffixIsComparedRc15BelowRc16BelowTheRelease) {
+  const UpdateCardState later16 = UpdateCardAfterLater("1.0.0-rc16", {}, kNow);
+  EXPECT_FALSE(ShouldShowUpdateCard("1.0.0-rc16", later16, kNow + 1000)) << "equal is not newer";
+  EXPECT_FALSE(ShouldShowUpdateCard("1.0.0-rc15", later16, kNow + 1000)) << "rc15 < rc16: not new";
+  EXPECT_TRUE(ShouldShowUpdateCard("1.0.0-rc17", later16, kNow + 1000)) << "rc17 after a dismissed rc16 starts over";
+  EXPECT_TRUE(ShouldShowUpdateCard("1.0.0", later16, kNow + 1000)) << "the release after its candidate starts over";
+  const UpdateCardState later_release = UpdateCardAfterLater("1.0.0", {}, kNow);
+  EXPECT_FALSE(ShouldShowUpdateCard("1.0.0-rc16", later_release, kNow + 1000)) << "1.0.0-rc16 < 1.0.0: not new";
+  const UpdateCardState kept = UpdateCardAfterLater("1.0.0-rc15", later16, kNow + 2000);
+  EXPECT_EQ(kept.version, "1.0.0-rc16") << "a lower candidate never overwrites the state";
+  EXPECT_EQ(UpdateCardAfterLater("1.0.0-rc17", later16, kNow + 2000).version, "1.0.0-rc17");
 }
 
 TEST(UpdateCardTest, ALowerAnnouncedVersionNeverRestartsTheCardOrOverwritesTheState) {
