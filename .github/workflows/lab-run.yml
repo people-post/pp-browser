@@ -173,18 +173,19 @@ jobs:
       - name: NAT diagnostics
         if: always()
         run: |
-          uname -r
-          lsmod 2>&1 | grep -i "nat\|masq\|conntrack\|nf_tables\|iptable" | head -20 || true
-          docker ps -a --format '{{.Names}}\t{{.Status}}' | head -40
-          for c in gw-a user-a; do
-            echo "::group::logs $c"; docker logs --tail 40 pp-app-lab-$c-1 2>&1 || true; echo "::endgroup::"
-          done
-          echo "::group::start gw-a and probe"
-          docker start pp-app-lab-gw-a-1 pp-app-lab-user-a-1 >/dev/null 2>&1 || true
-          sleep 3
-          docker exec pp-app-lab-gw-a-1 sh -c 'ip -4 addr; ip route; iptables -t nat -S; iptables -S FORWARD; cat /proc/sys/net/ipv4/ip_forward; ping -c1 -W2 198.51.100.20' 2>&1 || true
-          docker exec pp-app-lab-user-a-1 sh -c 'ip route; ping -c1 -W2 198.51.100.20; ping -c1 -W2 10.119.1.254' 2>&1 || true
-          echo "::endgroup::"
+          set +e
+          docker start pp-app-lab-gw-a-1 pp-app-lab-user-a-1 >/dev/null 2>&1; sleep 3
+          G="docker exec pp-app-lab-gw-a-1 sh -c"
+          U="docker exec pp-app-lab-user-a-1 sh -c"
+          echo "== backend"; $G 'iptables -V; update-alternatives --display iptables | head -8'
+          echo "== counters before"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n'
+          echo "== user ping relay (nft backend)"; $U 'ping -c2 -W2 198.51.100.20'
+          echo "== counters after"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n; cat /proc/net/nf_conntrack 2>&1 | head -5'
+          echo "== switch gw to legacy backend"
+          $G 'update-alternatives --set iptables /usr/sbin/iptables-legacy; iptables -V; iptables -t nat -F POSTROUTING; iptables -t nat -A POSTROUTING -s 10.119.1.0/24 -o eth0 -j MASQUERADE --random-fully; iptables -P FORWARD DROP; iptables -F FORWARD; iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT; iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT; iptables -t nat -S; iptables -S FORWARD'
+          echo "== user ping relay (legacy backend)"; $U 'ping -c2 -W2 198.51.100.20'
+          echo "== counters legacy"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n'
+          echo "== lsmod nat"; lsmod 2>&1 | grep -i "nat\|masq\|conntrack\|nf_tables\|nft" | head -20
 
       - uses: actions/upload-artifact@v7
         if: always()
