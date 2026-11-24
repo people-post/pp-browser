@@ -57,6 +57,13 @@ MAX_ANSWER_TO_AUDIO_S = 8.0
 REGISTRATION_LIMITS = "/_local/limits/clear?scope=register:"
 
 
+def lab_relay_services(relay, registration):
+    """A lab user's `backend.services` (docs/ops/CONFIGURATION.md): the relay services the local stack's relay serves
+    under its base URL — the account lockers at the registration URL (multi-relay MR006), client compatibility and the
+    crash intake at the org relay. The LLM gateway and token service are left out (absent: the lab has none)."""
+    return {"account_locker": registration, "client_compat": relay, "crash_intake": relay}
+
+
 class ProbeError(Exception):
     pass
 
@@ -461,9 +468,10 @@ class Lab:
         return {
             "config_version": 1,
             "data_dir": data_dir,
-            # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
-            # A custom backend has only the services it lists: the account locker is the relay's, as on a built-in one.
-            "backend": {"env": "custom", "services": {"account_locker": self.user_relay}},
+            # The lab relay is a backend of its own: say so (a config without `backend` is on the default one). Its
+            # table names the relay services the local stack serves (profile-model PM002: a service a custom table
+            # does not name is absent): no LLM gateway or token service in the lab.
+            "backend": {"env": "custom", "services": lab_relay_services(self.user_relay, self.user_relay)},
             # As deployed builds set it (PP_RELAY_CONTENT_SHA256): the relay's CDN refuses a POST without it.
             # Its address carries its relay id (MR008: a custom backend names it, as a release build ships the org's).
             "relay": {"base_url": self.user_relay, "content_sha256": True, "relay_id": self.relay_id("a")},
@@ -490,7 +498,7 @@ class Lab:
         config["relay"] = {"base_url": origins[0], "relay_id": first, "content_sha256": True,
                            "extra_base_urls": [self.relay_link(r) for r in relays[1:]]}  # relay links (MR008)
         config["registration"] = {"base_url": origins[0], "relay_id": first}
-        config["backend"]["services"]["account_locker"] = origins[0]
+        config["backend"]["services"] = lab_relay_services(origins[0], origins[0])
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
                                "providers": [{"base_url": o, "transport": "http"} for o in found]}
