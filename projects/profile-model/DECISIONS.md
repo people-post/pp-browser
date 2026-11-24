@@ -12,8 +12,8 @@ guard reads the profile's network, not its backend key.
 - Every profile records its network in its manifest, written when the profile is made and never changed.
 - A store app opens `main`, `staging` and `dev` profiles; a tester app opens `staging`, `dev` and `test-custom`, never
   `main`. The check runs before anything in the profile is read.
-- A store app's custom backend is on `main`: the same account as prod. A tester app's custom backend is on
-  `test-custom`.
+- A store app's custom backend is on `main` (a real user's data, out of the tester app's reach); for release 1 it
+  has a profile of its own (PM009). A tester app's custom backend is on `test-custom`.
 **Rationale:**
 - An account is the user's own key (multi-relay [MR001](../multi-relay/DECISIONS.md#mr001--inboxes-are-keyed-by-account-id)),
   so nothing ties a profile to one backend. What must stay apart is the test networks from the real one, and from each
@@ -70,7 +70,8 @@ the key (fixes one route, leaves adoption and the name clash).
 ## PM004 — Per-backend state lives in the device profile, under `backends/{backend_id}/`
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23). Not built. Built before release 1, with one backend per profile
+([PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)).
 **Decision:**
 - What the device knows about one backend's services goes in `profiles/{id}/backends/{backend_id}/`: the org
   registration slot and the Brief LLM token (moved out of `identity.enc`, sealed under the DEK with the backend id in
@@ -85,7 +86,9 @@ those under the backend's id is what lets one account use several backends of it
 ## PM005 — A backend switch keeps the profile within a network, changes it across networks, and unbinds push everywhere
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23: "Backend switch may also be redesigned if needed"). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23: "Backend switch may also be redesigned if needed"). Not built. Narrowed
+for release 1 by [PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout): every switch opens that
+backend's own profile; keeping the profile within a network comes later, with no layout change.
 **Decision:**
 - Switching to a backend on the same network keeps the profile (the same account, chats and contacts) and changes the
   active backend; its state under `backends/{backend_id}/` is made on first use.
@@ -127,10 +130,37 @@ by backend.
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "We do only one account for now, just to make the design ready"). Not built.
+Amended the same day with [PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout): the pointer is per
+backend, not per network.
 **Decision:**
-- `profiles.json` lists profiles and keeps one active profile id per network; the manifest stays the only record of a
-  profile's network.
-- Release 1 makes and opens one profile per network and shows no account switcher. A second account on a network is a
-  second profile and a change of that network's pointer; nothing else in the layout changes for it.
-**Rationale:** One pointer per network means a tester app and a store app on one install never overwrite each other's
-choice, and a later switcher needs no new layout.
+- `profiles.json` lists profiles and keeps one active profile id per **backend** (`active: {backend_id → profile
+  id}`); the manifest stays the only record of a profile's network.
+- Release 1 makes and opens one profile per backend and shows no account switcher. A second account on a backend is a
+  second profile and a change of that backend's pointer; nothing else in the layout changes for it.
+**Rationale:**
+- One pointer per backend means a tester app and a store app on one install never overwrite each other's choice.
+- It serves both steps: today each backend points at its own profile; once a profile may use several backends of its
+  network, a switch points the new backend at the same profile. A later switcher needs no new layout either.
+
+## PM009 — One backend per profile for release 1, in the final layout
+
+**Date:** 2026-11-23
+**Status:** Accepted (Hongwei, 2026-11-23: "only support one backend for now and expand more support later, the file
+layout are expected to be the final version upfront"). Not built. Narrows PM005 for release 1.
+**Decision:**
+- The whole layout of [DESIGN § On disk](DESIGN.md#on-disk) is built before release 1, `backends/{backend_id}/`
+  included, with the registration slot and the Brief LLM token out of `identity.enc` (PM004).
+- For release 1 a profile has exactly one `backends/{backend_id}/` folder, made with the profile. A backend switch,
+  within a network or across, opens that backend's profile, or makes one.
+- Letting a second backend of the same network into a profile is a later feature: a second folder under `backends/`
+  and the new backend's pointer at the same profile. No file moves and no format changes.
+- If a backend's pointer is missing or stale, the registry takes the profile on the backend's network that holds
+  `backends/{backend_id}/`; if there is none, it makes one.
+**Rationale:**
+- The layout is free to change before release 1 (RC017) and costs a migration after; the behaviour can grow later.
+- With one backend per profile, the questions about sharing an account across backends (the org relay in the relay
+  list, which locker, which history) wait until that feature ([DESIGN § Open questions](DESIGN.md#open-questions)).
+- A store app's custom backend keeps an identity of its own, so the account is never registered with another
+  deployment without the user asking.
+**Alternatives rejected:** keep the per-backend files where they are now and move them later (a migration after release
+1 for a layout we already know).
