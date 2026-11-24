@@ -2,7 +2,8 @@
      the conversation, in the shell's frame (its x, Escape and a click on the dimmed window close it). The item's title on
      top (from the list, never from the model), for a translated digest the "AI translation of the original" line under
      it, then "Getting the article..." with a spinner until the first of the digest arrives; the digest then grows as it
-     is written and is replaced by the final text, or by the fixed "couldn't get the article text" line; "Open original"
+     is written and is replaced by the final text, or by the fixed "couldn't get the article text" line with "Try again"
+     under it (news_reader_can_retry, news_reader_retry()); "Open original"
      and, for a list, Previous / Next in a row at the bottom. Same data model and events as the phone's view
      (ChatController). Styles: assets/themes/wide.rcss. -->
 <div class="news-reader news-reader--wide" data-model="chat">
@@ -14,6 +15,8 @@
       <p class="news-reader-note">{{i18n:chat.news.loading}}</p>
     </div>
     <p class="news-reader-note" data-if="news_reader_failed">{{i18n:chat.news.unavailable}}</p>
+    <button class="news-reader-retry" type="button" data-if="news_reader_can_retry"
+            data-event-click="news_reader_retry()">{{i18n:chat.news.retry}}</button>
     <div class="news-reader-body" selectable="text" data-rml="news_reader_body_rml"></div>
   </div>
   <div class="news-reader-bar news-reader-bar--wide">

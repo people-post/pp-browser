@@ -1189,6 +1189,74 @@ TEST_F(ChatWideLayoutTest, TheNewsReaderIsACentredPanelWithItsTitleBodyAndBar) {
   document->Close();
 }
 
+// The failed read on the wide panel: "Try again" directly under the fixed sentence, above the bottom row, at least 44dp
+// high, only while news_reader_can_retry is set; the row (Open original, Previous / Next) stays where it is.
+TEST_F(ChatWideLayoutTest, TheWideNewsReaderOffersTryAgainOnlyInTheFailedState) {
+  state.news_reader_title = "Chip makers brace for new export rules";
+  state.news_reader_has_nav = true;
+  state.news_reader_can_prev = true;
+  state.news_reader_can_next = true;
+  state.news_reader_body_rml = "";
+  state.news_reader_failed = true;
+  state.news_reader_can_retry = true;
+  const std::string wide = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("news_reader", true));
+  EXPECT_NE(wide.find("news_reader_retry()"), std::string::npos);
+  EXPECT_NE(wide.find("news_reader_can_retry"), std::string::npos);
+  EXPECT_NE(Asset("views/news_reader_wide.rml").find("{{i18n:chat.news.retry}}"), std::string::npos);
+  for (const bool failed : {true, false}) {
+    SCOPED_TRACE(failed);
+    state.news_reader_failed = failed;
+    state.news_reader_can_retry = failed;
+    DataModelHost::Instance().Dirty("chat", "news_reader_failed");
+    DataModelHost::Instance().Dirty("chat", "news_reader_can_retry");
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: 1280dp; "
+        "height: 700dp;\"><div class=\"shell-layer shell-layer-overlay\" style=\"position: absolute; top: 0; left: "
+        "0; right: 0; bottom: 0;\"><div class=\"shell-scrim\"></div>"
+        "<div id=\"frame\" class=\"shell-frame shell-frame--news_reader\"><div class=\"shell-overlay-body\">" +
+        wide + "</div></div></div></div></body></rml>";
+    document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+    context->Update();
+    const Box frame = BoxOf(document->GetElementById("frame"));
+    ui::Element* retry = First("news-reader-retry");
+    ASSERT_NE(retry, nullptr);
+    if (!failed) {
+      EXPECT_FALSE(retry->IsVisible()) << "no button without the failure";
+    } else {
+      ASSERT_TRUE(retry->IsVisible());
+      const Box r = BoxOf(retry);
+      ui::Element* note = nullptr;
+      for (ui::Element* n : All("news-reader-note")) {
+        if (n->IsVisible() && BoxOf(n).H() > 0.f) { // the hidden loading line has no box
+          note = n;
+        }
+      }
+      ASSERT_NE(note, nullptr);
+      const Box n = BoxOf(note);
+      const Box bar = BoxOf(First("news-reader-bar--wide"));
+      EXPECT_GE(r.top, n.bottom - 0.5f) << "under the sentence";
+      EXPECT_LE(r.top - n.bottom, 30.f) << "directly under it";
+      EXPECT_LE(r.bottom, bar.top + 0.5f) << "above the bottom row";
+      EXPECT_GE(r.H(), 44.f);
+      EXPECT_LE(r.H(), 46.f) << "the desktop size, not the phone's 50dp";
+      EXPECT_GE(r.W(), 120.f);
+      EXPECT_GE(r.left, frame.left);
+      EXPECT_LE(r.right, frame.right);
+      EXPECT_EQ(All("news-reader-open").size(), 1u);
+      EXPECT_EQ(All("news-reader-step").size(), 2u);
+      EXPECT_GE(BoxOf(First("news-reader-open")).H(), 44.f);
+    }
+    document->Close();
+    context->Update();
+  }
+}
+
 TEST_F(ChatWideLayoutTest, ANewsLinkHoversOnTheWideLayoutOnly) {
   for (const char* theme : {"light", "dark"}) {
     const std::string colors = Asset((std::string("themes/colors-") + theme + ".rcss").c_str());

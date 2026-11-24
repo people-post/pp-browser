@@ -2963,6 +2963,14 @@
   cursor: pointer;
 }
 
+/* "Try again" under the failure line: the same secondary pill, 44dp on the desktop. */
+.shell-body--wide .news-reader--wide .news-reader-retry {
+  height: 44dp;
+  border-radius: 22dp;
+  line-height: 44dp;
+  cursor: pointer;
+}
+
 /* ---- The Groups list (group_list_wide.rml): the phone's page in a centred column, like the contact page ---- */
 .shell-body--wide .group-list-wide {
   box-sizing: border-box;
