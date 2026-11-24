@@ -24,6 +24,13 @@ struct McpConfig {
   std::vector<std::string> args;
   std::string url;
   bool enabled = true;
+  /**
+   * `set_by_user` (optional key): the promoted MCP's address is the user's own, typed in Integrations. Only an entry that
+   * carries it, or one with a `command` (a stdio server the user configured), is the user's: any other `promoted_mcp` in
+   * a file is a leftover of the old app, which wrote the running backend's derived address into every save, and is replaced
+   * by the active backend's seed on load (profile-model P2a, #741, #744). Read for `promoted_mcp` only.
+   */
+  bool user_set = false;
 
   bool IsConfigured() const { return !command.empty() || !url.empty(); }
 };
@@ -98,12 +105,6 @@ struct AppConfig {
    */
   int64_t initiation_floor = 0;
 };
-
-/**
- * `mcp` is a bare derived address, not something the user set: an address only (no id, command or args; enabled), equal to
- * a built-in backend's promoted-MCP seed. A user's entry (an id, a command, switched off, or any other address) is not.
- */
-bool IsPromotedMcpSeedEntry(const McpConfig& mcp, const CompiledOrigins& compiled);
 
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults);
 
