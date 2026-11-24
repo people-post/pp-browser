@@ -1,24 +1,10 @@
-# Fetch people-post/pp-cpp-crypto (sodium + ML-KEM/ML-DSA + BoringSSL + pp_crypto).
-#
-# Pin a release tag from that repo's main line (PP_CPP_CRYPTO_GIT_TAG).
-# Do not track the main branch tip or auto-pick a sibling checkout.
-
-include(FetchContent)
-include(PpFetchPin)
-
-set(PP_CPP_CRYPTO_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-crypto.git"
-  CACHE STRING "Git remote for pp-cpp-crypto")
-pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v1.4.1"
-  "Release tag on pp-cpp-crypto main (not a branch name)")
+# Add people-post/pp-cpp-crypto (sodium + ML-KEM/ML-DSA + BoringSSL + pp_crypto), at its pin (cmake/PpPins.cmake;
+# PP_CPP_CRYPTO_GIT_TAG, a release tag on that repo's main line), a local checkout (PP_CPP_CRYPTO_SOURCE_DIR) or a
+# sibling (PP_SIBLINGS_DIR). Never a checkout it was not told about.
 
 set(PP_CRYPTO_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-crypto tests" FORCE)
 
-FetchContent_Declare(
-  pp_cpp_crypto
-  GIT_REPOSITORY ${PP_CPP_CRYPTO_GIT_REPOSITORY}
-  GIT_TAG ${PP_CPP_CRYPTO_GIT_TAG}
-)
-FetchContent_MakeAvailable(pp_cpp_crypto)
+pp_pin_make_available(pp-cpp-crypto)
 
 if(NOT TARGET pp_crypto)
   message(FATAL_ERROR "pp-cpp-crypto did not define target pp_crypto")

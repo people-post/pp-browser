@@ -73,14 +73,13 @@ data = {}
 if path.exists():
     data = json.loads(path.read_text())
 
-libp2p = {}
+# One manifest entry per dependency (third_party/README.md): refresh its source, keep its other fields.
 for item in entries:
     if not item:
         continue
     name, url = item.split("|", 1)
-    libp2p[name] = {"url": url}
-
-data["libp2p_dependencies"] = libp2p
+    data.setdefault(name, {}).update({"source": url})
+data.pop("libp2p_dependencies", None)
 path.write_text(json.dumps(data, indent=2) + "\n")
 print(f"Updated {path}")
 PY

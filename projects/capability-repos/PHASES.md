@@ -91,7 +91,12 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 
 ## P4 — The capabilities repo (when a second app needs it, CR005 / CR006)
 
-Not scheduled. Before it: one pin list per app and a sibling-build mode; one home for vendored deps (CR012).
+Not scheduled. Before it (CR012):
+
+- [x] One pin list per app (`cmake/PpPins.cmake`) and a sibling-build mode (`-DPP_SIBLINGS_DIR=..`, HEAD checked against
+      the pin).
+- [x] One home for vendored deps in pp-browser: `third_party/` with its manifest (`UPSTREAM.json`).
+- [ ] The shared home across repos, when a second repo builds the same vendored code.
 
 - [ ] Create the capabilities repo (people-post, public) with the target sets that app needs, the gate, and
       their contracts and tests; release; pin in every app; pp-browser drops its copy.
