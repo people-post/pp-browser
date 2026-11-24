@@ -7,4 +7,4 @@ whole layout with one backend per profile (PM009). In [DESIGN § Open questions]
 defaults and 4–6 wait for several backends per profile; P0 is done.
 Nothing is built: the app still keeps one profile per backend
 ([DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles)), and #733 stays open
-until P1. The issues found in the inventory are #738–#751.
+until P1. The issues found in the inventory are #738–#751; the phases are tracked in #752–#757.
