@@ -348,6 +348,13 @@ public:
   void OpenGroupList();
   /** The shell popped the Groups page. */
   void OnGroupListDismissed();
+  /**
+   * The chats changed (a message, a chat deleted, a group left from the Groups page's long-press menu): an open
+   * Groups page reads its rows again; otherwise nothing is read.
+   */
+  void OnThreadsChanged();
+  const std::vector<GroupListRow>& GroupListRowsForTest() const { return group_list_rows_; }
+  int GroupListCountForTest() const { return group_list_count_; }
   /** A row of the Groups page (group_list_open): its chat opens; the page, and New chat under it, close first. */
   void OnGroupListOpen(const std::string& thread_id);
   /** The New chat page left the screen (back, swipe, or a row was chosen). */
@@ -533,6 +540,8 @@ private:
   /** group_list_rows (while the page is up) and group_list_count (the Contacts / New chat row), from the store. */
   void SyncGroupList();
   void DirtyGroupList();
+  /** The Groups page, New chat (its Groups row) or the Contacts tab (its Groups row) is on screen. */
+  bool GroupsShown() const;
   void CloseGroupList();
   void OnUnblockListed(const std::string& contact_id);
   void OnOpenBlockedContact(const std::string& contact_id);
