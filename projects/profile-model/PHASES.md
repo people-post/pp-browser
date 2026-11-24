@@ -6,7 +6,7 @@ a profile of the old layout is not read.
 ## P0 — Design
 
 - [x] Inventory of what is on disk and every service ([INVENTORY.md](INVENTORY.md)).
-- [x] Decisions PM001–PM011 accepted; open questions 2–3 are defaults, 4–6 wait for several backends per profile
+- [x] Decisions PM001–PM012 accepted; open questions 2–3 are defaults, 4–6 closed by PM012
       ([DESIGN § Open questions](DESIGN.md#open-questions)).
 
 ## P1 — Networks and opaque profiles (PM001, PM003, PM007, PM008, PM009)
@@ -69,7 +69,8 @@ Tracked in [#757](https://github.com/people-post/pp-browser/issues/757).
       the drift in INVENTORY § E 14 fixed with them.
 - [ ] RC022 points at the network guard.
 
-## Later — Several backends per profile (after release 1)
+## Later — Home move (possible, after release 1)
 
-- [ ] Open questions 4–6 answered; a same-network switch keeps the profile and points the new backend at it; the
-      custom-backend confirm in a store app. No layout change.
+- [ ] Design and decide a home move (PM012): a profile to another backend of its network with the same identity —
+      register at the new org relay, move the locker, revoke the old registration; the custom-backend confirm in a
+      store app. No layout change.

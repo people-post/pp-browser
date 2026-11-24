@@ -85,14 +85,16 @@ node list, its reputation and the Home feed follow profile settings and stay at 
 - Account data (account keys, Account ID, recovery seed, own card) and device data (device key, vault wrap, chats,
   contacts, preferences) do not depend on the backend and stay where they are.
 **Rationale:** The inventory found the one-backend assumption in a short, specific list of files (INVENTORY § B); moving
-those under the backend's id is what lets one account use several backends of its network.
+those under the backend's id keeps them apart from the rest of the profile, and lets a later home move
+(PM012) hold two backends' state for a while without mixing them.
 
 ## PM005 — A backend switch keeps the profile within a network, changes it across networks, and unbinds push everywhere
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "Backend switch may also be redesigned if needed"). Not built. Narrowed
 for release 1 by [PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout): every switch opens that
-backend's own profile; keeping the profile within a network comes later, with no layout change.
+backend's own profile. Its keeping the profile within a network, and the privacy confirm, are now part of a possible
+home move ([PM012](#pm012--a-profile-has-exactly-one-home-backend-permanently)).
 **Decision:**
 - Switching to a backend on the same network keeps the profile (the same account, chats and contacts) and changes the
   active backend; its state under `backends/{backend_id}/` is made on first use.
@@ -145,21 +147,21 @@ backend, not per network.
   second profile and a change of that backend's pointer; nothing else in the layout changes for it.
 **Rationale:**
 - One pointer per backend means a tester app and a store app on one install never overwrite each other's choice.
-- It serves both steps: today each backend points at its own profile; once a profile may use several backends of its
-  network, a switch points the new backend at the same profile. A later switcher needs no new layout either.
+- Each backend points at its own profile, and the profile is found again by its `backends/{backend_id}/` folder if
+  the pointer is lost. A later switcher needs no new layout either.
 
 ## PM009 — One backend per profile for release 1, in the final layout
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "only support one backend for now and expand more support later, the file
-layout are expected to be the final version upfront"). Not built. Narrows PM005 for release 1.
+layout are expected to be the final version upfront"). Not built. Narrows PM005 for release 1. Made permanent by
+[PM012](#pm012--a-profile-has-exactly-one-home-backend-permanently): a profile never uses several backends; the "later feature" below is replaced by a home move.
 **Decision:**
 - The whole layout of [DESIGN § On disk](DESIGN.md#on-disk) is built before release 1, `backends/{backend_id}/`
   included, with the registration slot and the Brief LLM token out of `identity.enc` (PM004).
 - For release 1 a profile has exactly one `backends/{backend_id}/` folder, made with the profile. A backend switch,
   within a network or across, opens that backend's profile, or makes one.
-- Letting a second backend of the same network into a profile is a later feature: a second folder under `backends/`
-  and the new backend's pointer at the same profile. No file moves and no format changes.
+- ~~Letting a second backend of the same network into a profile is a later feature.~~ Superseded by PM012.
 - If a backend's pointer is missing or stale, the registry takes the profile on the backend's network that holds
   `backends/{backend_id}/`; if there is none, it makes one.
 **Rationale:**
@@ -211,3 +213,27 @@ longer split"). Not built. Narrows PM002, PM004 and PM006.
 - `config.json` (shared by every build) and the profile's files freeze at release 1, so the split is made now.
 **Alternatives rejected:** custom tables that take a service `from` another backend of the same network (more rules —
 same network only, custom only, explicit — for what profile settings give without them).
+
+## PM012 — A profile has exactly one home backend, permanently
+
+**Date:** 2026-11-23
+**Status:** Accepted (Hongwei, 2026-11-23). Not built. Makes PM009's rule permanent; closes DESIGN open questions 4–6.
+**Decision:**
+- A profile's backend is its account's **home operator** on its network: exactly one, for the profile's life. A profile
+  never uses two backends at once.
+- **Being reachable at several operators is the relay list's job** (multi-relay MR002–MR006): the account registers on
+  up to four relays and is delivered to on each. A backend's org relay is one entry in that list, seeded when the
+  profile is made.
+- So the questions a shared profile would have raised are settled: the org relay is seeded into the relay list (as
+  today); the account locker is the home backend's; stream history is read from the home backend's org relay while it
+  is ours (as today).
+- **A home move** — taking a profile to another backend of its network with the same identity (register at the new
+  org relay, move the locker, revoke the old registration) — is a possible later feature, not designed now. The layout
+  needs no change for it: during a move the profile holds two `backends/` folders, kept apart by the backend id in
+  their AAD, then one again. Until then a switch opens the other backend's own profile (PM009), so a store app's custom
+  backend has an identity of its own unless the user moves home.
+**Rationale:** After PM011 a backend holds only what depends on the account's registration there: its registration,
+one locker, one LLM token, the operator's policy. Each of those wants one owner. What a second backend would add —
+being registered and reachable elsewhere — the relay list already does.
+**Alternatives rejected:** several backends per profile (PM009's later feature): it needs rules for which locker and
+which history, for what the relay list gives.
