@@ -106,7 +106,31 @@ jobs:
           python3 -m pip install --user cmake
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: ccache path experiment
+        run: |
+          set +e
+          tgts="ui_widgets libcurl_static pp_foundation_error"
+          run_build() { # label ccache-dir [VAR=value ...]
+            label=$1; cdir=$2; shift 2
+            root=/tmp/exp/$label; rm -rf "$root"; mkdir -p "$root/src" "$root/build"
+            tar --exclude=.git --exclude=pp-relay-apis -cf - . | tar -xf - -C "$root/src"
+            env CCACHE_DIR="$cdir" "$@" bash -c '
+              ccache --zero-stats >/dev/null
+              cmake -S "$0/src" -B "$0/build" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPP_BROWSER_COMPILER_CACHE=ON >/dev/null 2>&1
+              t0=$(date +%s)
+              cmake --build "$0/build" --target '"$tgts"' -j"$(nproc)" >/dev/null 2>&1
+              echo "RESULT '"$label"' build_seconds=$(( $(date +%s) - t0 ))"
+              ccache --show-stats 2>&1 | grep -i "hits\|misses\|cacheable" | sed "s/^/RESULT '"$label"'   /"
+            ' "$root"
+          }
+          mkdir -p /tmp/ccA /tmp/ccB
+          run_build a1 /tmp/ccA
+          run_build a2 /tmp/ccA
+          run_build b1 /tmp/ccB CCACHE_BASEDIR=/tmp/exp CCACHE_NOHASHDIR=true
+          run_build b2 /tmp/ccB CCACHE_BASEDIR=/tmp/exp CCACHE_NOHASHDIR=true
+
       - name: Restore ccache
+        if: false
         id: ccache
         uses: actions/cache/restore@v6
         with:
@@ -117,6 +141,7 @@ jobs:
             lab-ccache-v1-
 
       - name: Build the probe and pp-node
+        if: false
         run: |
           mkdir -p "$PP_LOCAL_BUILD_DIR" "$CCACHE_DIR"
           # Debug: only a Debug desktop build reads PP_BROWSER_CA_BUNDLE, the lab CA its TLS relays need
@@ -128,6 +153,7 @@ jobs:
           cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
 
       - name: Run the suites
+        if: false
         env:
           LAB_SUITES: ${{ inputs.suites }}
           LAB_ONLY: ${{ inputs.only }}
