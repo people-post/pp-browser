@@ -46,8 +46,8 @@ the date) and the INVENTORY item it names, in one PR, and drop the row from the 
   - prod's update links on the release day (C3);
   - Support retention and the S3 lifecycle days (O5);
   - the crash-report endpoint (O6);
-  - the support-worker's "not readable" reply (X9), the wake payload version (X10). PITR on every state table: no
-    longer waiting on Leo; drafted with the pre-deploy backups (PRs open 2026-11-23, [PHASES § P2](PHASES.md#p2--one-main-release-branches) Backups).
+  - the support-worker's "not readable" reply (X9), the wake payload version (X10). PITR on every state table (still
+    Leo's: drafted for his review with the pre-deploy backups, PRs open 2026-11-23, [PHASES § P2](PHASES.md#p2--one-main-release-branches) Backups).
 
 **For Hongwei** (from the cutover's build; each has a default that stands, none blocks):
 - a group preset this build does not know reads as **Open** (today's behaviour; Managed would be the safer reading);
