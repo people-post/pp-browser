@@ -132,7 +132,11 @@ public class MainActivity extends SDLActivity {
      */
     private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = MainActivity::onCallAudioFocus;
 
-    /** `focusChange`: AudioManager's AUDIOFOCUS_* value. */
+    /**
+     * `focusChange`: AudioManager's AUDIOFOCUS_* value. This and the methods native calls for media's audio session
+     * (setAudioSessionActive, setVoipSpeakerphoneOn, hasEarpieceRoute, retakeCallAudioFocus, getDeviceVitals) are the
+     * app's side of media's host ports: src/app/MediaHost_Android.cpp (capability-repos CR023 step 5).
+     */
     private static native void nativeOnCallAudioFocus(int focusChange);
 
     /** The user is back (onResume): a call's focus lost for good is asked for again. */
@@ -1573,7 +1577,7 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * For DeviceVitals_Android.cpp, read every couple of seconds in a call: {power saver on (1/0), thermal state
+     * For media's device vitals (MediaHost_Android.cpp), read every couple of seconds in a call: {power saver on (1/0), thermal state
      * 0 nominal .. 3 critical (Apple's four; -1 before API 29), battery percent (-1 unknown), charging (1/0)}.
      */
     public int[] getDeviceVitals() {

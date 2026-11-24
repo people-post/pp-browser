@@ -48,6 +48,8 @@ jobs:
       src: ${{ steps.filter.outputs.src }}
       apple: ${{ steps.filter.outputs.apple }}
       android: ${{ steps.filter.outputs.android }}
+      # calls or anything below it, or the standalone root: the capabilities job (CR023 step 4).
+      calls_standalone: ${{ steps.filter.outputs.calls_standalone }}
       # The filters that matched, as a JSON list: the Test step reads the capability folders' from it.
       changes: ${{ steps.filter.outputs.changes }}
     steps:
@@ -153,6 +155,10 @@ jobs:
             node: &node
               - *net
               - 'capabilities/node/**'
+            # The standalone calls build (capabilities/CMakeLists.txt; the capabilities job): calls and what is below it.
+            calls_standalone:
+              - *calls
+              - 'capabilities/CMakeLists.txt'
 
   lint:
     needs: changes
@@ -670,11 +676,67 @@ jobs:
             | tail -n +$((KEEP + 1)) \
             | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done
 
+  # Calls on its own (projects/capability-repos CR023 step 4): the standalone configure of capabilities/ with calls and
+  # what is below it — no app — builds calls' tests and runs them (label capability:calls). A link to something above
+  # calls fails its configure. Linux only. Release and the build job's tree layout, so its ccache (restored, never
+  # saved here) serves most objects.
+  capabilities:
+    needs: changes
+    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.calls_standalone == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CCACHE_COMPRESSLEVEL: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux deps
+        # The build job's packages: SDL configures the same, so the objects match its cache.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev
+
+      - name: Ensure ccache directory exists
+        run: |
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
+
+      - name: Runner image (ccache key)
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
+      - name: Restore ccache (the build job's)
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-
+            ${{ runner.os }}-ccache-v2-
+
+      - name: Configure (capabilities/, calls)
+        run: |
+          ccache --zero-stats || true
+          cmake -B build -S capabilities -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_COMPILER_CACHE=ON \
+            -DPP_CAPABILITIES=calls
+
+      - name: Build calls' tests
+        run: cmake --build build --target pp_capability_calls_tests -j "$(cmake -P cmake/HostCores.cmake)"
+
+      - name: Test (capability:calls)
+        env:
+          TRACE_DEBUG: "1"
+        run: ctest --test-dir build -j --output-on-failure -L '^capability:calls$'
+
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats || true
+
   # The one check branch protection requires (release-compatibility P2): it passes when every job above passed or was
   # skipped (a docs-only PR, a platform the PR does not touch), and fails on any failure or cancellation. A skipped
   # matrix job reports under its bare name, so the matrix checks themselves cannot be the required ones.
   required:
-    needs: [changes, lint, build, ios, android]
+    needs: [changes, lint, build, ios, android, capabilities]
     if: always()
     runs-on: ubuntu-24.04
     steps:

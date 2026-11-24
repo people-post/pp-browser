@@ -10,6 +10,9 @@ Links count too (CR016): every pp-browser target a src/ CMakeLists.txt names (PU
 target_link_libraries) is a link from that folder's capability to the target's, held to the same order;
 the allowlist names those as "link from -> to count".
 
+The standalone build's table (capabilities/CMakeLists.txt, CR023 step 4: what each capability builds on) must match
+the order here.
+
 Usage: scripts/check/check_capability_edges.py [--list | --lib-edges]
   --list       prints every cross-capability edge (includes, then links)
   --lib-edges  prints the src/lib module pairs one may include from the other ("from->to"): different
@@ -273,6 +276,29 @@ def allowed_lib_edges() -> list[str]:
     return pairs
 
 
+STANDALONE = CAPABILITIES / "CMakeLists.txt"
+STANDALONE_BELOW = re.compile(r"^set\(PP_CAPABILITY_BELOW_(\w+)([^)]*)\)", re.M)
+
+
+def standalone_mismatches() -> list[str]:
+    """capabilities/CMakeLists.txt (the standalone build, CR023 step 4) builds each capability with what is below it:
+    its table must be ALLOWED, for every capability folder."""
+    if not STANDALONE.is_file():
+        return []
+    table = {m.group(1): set(m.group(2).replace('""', "").split())
+             for m in STANDALONE_BELOW.finditer(STANDALONE.read_text())}
+    out = []
+    folders = sorted(folder.name for folder in CAPABILITIES.iterdir() if (folder / "src").is_dir())
+    for name in folders:
+        if name not in table:
+            out.append(f"{name}: no PP_CAPABILITY_BELOW_{name}")
+        elif table[name] != ALLOWED[name]:
+            out.append(f"{name}: builds on {' '.join(sorted(table[name])) or '(nothing)'}, "
+                       f"the order says {' '.join(sorted(ALLOWED[name])) or '(nothing)'}")
+    out += [f"{name}: not a capability folder" for name in sorted(set(table) - set(folders))]
+    return out
+
+
 def main() -> int:
     if "--lib-edges" in sys.argv:
         print("\n".join(allowed_lib_edges()))
@@ -286,6 +312,12 @@ def main() -> int:
     if misplaced:
         for line in misplaced:
             print(f"FAIL: {line}: a capability folder holds only its own paths (CR022)")
+        return 1
+
+    drift = standalone_mismatches()
+    if drift:
+        for line in drift:
+            print(f"FAIL: {STANDALONE.relative_to(ROOT)}: {line} (keep its table to ALLOWED)")
         return 1
 
     edges, sites = count_edges()

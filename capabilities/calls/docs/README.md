@@ -1,6 +1,6 @@
 # calls — capability docs
 
-Audio / video calls: the call vocabulary and its store ports, the call sounds (`call_audio`), the media legs on the mesh (`call_media`) and the session orchestration (`feature/calls`), on media's engine and devices. Delivery carries its signaling; it never uses messaging. It is the first capability being made repo-ready (CR023, steps 1–3 of 5 done; step 5 gives it its own docs here).
+Audio / video calls: the call vocabulary and its store ports, the call sounds (`call_audio`), the media legs on the mesh (`call_media`) and the session orchestration (`feature/calls`), on media's engine and devices. Delivery carries its signaling; it never uses messaging. It is the first capability made repo-ready (CR023): it builds and tests on its own, and its host contract — the ports an app fills — is in [the folder's README](../README.md), with how to build it standalone.
 
 **Paths** (under this folder; includes read as before, e.g. `"lib/calls/…"`): [`src/lib/calls/`](../src/lib/calls/), [`src/lib/call_audio/`](../src/lib/call_audio/), [`src/common/media/`](../src/common/media/), [`src/domain/call_media/`](../src/domain/call_media/), [`src/feature/calls/`](../src/feature/calls/). Its targets are in [`CMakeLists.txt`](../CMakeLists.txt); its tests carry the CTest label `capability:calls`.
 

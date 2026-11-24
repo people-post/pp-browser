@@ -120,6 +120,17 @@ bool DiagnosticsEnabled();
  */
 void NoteToneStreamClosed(const char* holder, int64_t since_stop_ms);
 
+/**
+ * The host's call audio-focus listener (MediaHost; Android: AudioManager's AUDIOFOCUS_* `focus_change`, on the host's
+ * main thread, as AudioFocusInterruption reads it). No-op where the host keeps no call focus.
+ */
+void NotifyHostCallAudioFocus(int focus_change);
+/**
+ * The host's app is in front again (Android: the activity's onResume, main thread): a call's focus lost for good is
+ * asked for again. No-op elsewhere.
+ */
+void NotifyHostResumed();
+
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();
 /** The live session's speaker choice. */
