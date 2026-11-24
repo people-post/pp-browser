@@ -55,4 +55,11 @@ std::string BackendProfileKey(const AppConfig& config);
 /** The id of the backend a saved config selects: differs from the running one once a switch awaits restart. */
 std::string SavedBackendKey(const AppConfig& config);
 
+/**
+ * A backend switch awaits a restart (profile-model P4, #747): the saved config selects another backend id than the run's
+ * (`running_key`, BootstrapResult::backend_key) — another environment, or a custom backend's registration URL or org
+ * relay edited (PM010). The one rule for the restart banner and for push. No running key known: the environments.
+ */
+bool BackendSwitchPending(const AppConfig& saved, const std::string& running_key);
+
 } // namespace pbr

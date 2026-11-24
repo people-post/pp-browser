@@ -174,7 +174,10 @@ void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const 
   switch (hub.PushGate().OnSwitchPending(pending)) {
     case PushBindingGate::Action::Unbind:
       AppRuntime::PostWorkerNormal([&hub]() {
-        auto unbound = Unregister(hub);
+        // Every relay that holds a binding of ours, not the preferred one alone (profile-model P4, #746): after the
+        // restart this account is not on this device any more. A binding id not known (a restart since it was made)
+        // is learned from the relay and removed (HttpPushDeviceClient::UnregisterDevice).
+        auto unbound = UnregisterEverywhere(hub);
         if (!unbound) {
           PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
         }

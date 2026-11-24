@@ -540,6 +540,8 @@ private:
   /** Mobile has no sanctioned programmatic quit: a confirmed environment switch asks the user to reopen the app. */
   bool CanQuit() const;
   void QuitApp();
+  /** The restart banner while a backend switch awaits a restart (BackendSwitchPending); dismissed once it does not. */
+  void ShowRestartBanner(bool pending);
   bool restart_banner_shown_ = false;
   std::function<void()> open_ui_perf_test_;
   std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"

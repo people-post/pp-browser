@@ -1,4 +1,5 @@
 #include "feature/settings/NetworkSettingsSection.h"
+#include "foundation/data/BackendProfile.h"
 
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -31,7 +32,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.backend_prod_available = BackendAvailable(BackendEnv::Prod);
   state.backend_staging_available = BackendAvailable(BackendEnv::Staging);
   state.backend_dev_available = BackendAvailable(BackendEnv::Dev);
-  state.backend_restart_pending = ParseBackendEnv(state.backend_env) != ActiveBackend();
+  state.backend_restart_pending = BackendSwitchPending(bootstrap.config, bootstrap.backend_key);
   // Prod / staging / dev derive the URLs from the origin; the fields edit the custom ones.
   const BackendConfig& backend = bootstrap.config.backend;
   const bool saved = backend.has_saved_urls;

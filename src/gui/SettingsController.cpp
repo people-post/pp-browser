@@ -1364,7 +1364,10 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
   if (section_id == "network" && commands_.set_backend_switch_pending) {
     const BootstrapResult& saved = Store().Snapshot();
-    commands_.set_backend_switch_pending(SavedBackendKey(saved.config) != saved.backend_key);
+    const bool pending = BackendSwitchPending(saved.config, saved.backend_key);
+    commands_.set_backend_switch_pending(pending);
+    // A custom backend's registration URL or org relay edited is a switch too (PM010, #745): the same banner.
+    ShowRestartBanner(pending);
   }
 
   status_ = "";
@@ -2008,8 +2011,11 @@ void SettingsController::SaveBackendChoice(const std::string& env) {
     return;
   }
   // No quit here: pin a banner while the saved service differs from the one this run started on.
-  const bool pending = ParseBackendEnv(Store().Snapshot().config.backend.env) != ActiveBackend();
-  if (pending && shell_feedback_.show_banner) {
+  ShowRestartBanner(BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key));
+}
+
+void SettingsController::ShowRestartBanner(const bool pending) {
+  if (pending && !restart_banner_shown_ && shell_feedback_.show_banner) {
     shell_feedback_.show_banner(Tr("settings.network.backend.restart_banner"), true);
     restart_banner_shown_ = true;
   } else if (!pending && restart_banner_shown_ && shell_feedback_.dismiss_banner) {
@@ -2047,7 +2053,8 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
         }
         if (CanQuit()) {
           QuitApp();
-        } else if (ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+        } else if (BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key) &&
+                   shell_feedback_.show_alert) {
           // Only a switch away from the running service needs a reopen; back to it, the banner is gone and that is all.
           shell_feedback_.show_alert(Tr("settings.network.backend.switch_title"),
                                      Tr("settings.network.backend.switched_reopen", {{"destEnv", dest_label}}), {},

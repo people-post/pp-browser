@@ -57,10 +57,13 @@ Tracked in [#754](https://github.com/people-post/pp-browser/issues/754).
 
 Tracked in [#755](https://github.com/people-post/pp-browser/issues/755).
 
-- [ ] Every switch opens the new backend's profile (PM009); editing a custom backend's registration URL or org relay is
-      a switch (PM010, #745).
-- [ ] Push unbound on every relay with a binding; binding ids kept on disk.
-- [ ] One "switch pending" rule for the banner and push.
+- [x] Every switch opens the new backend's profile (PM009, built in P1); editing a custom backend's registration URL or
+      org relay is a switch (PM010, #745): the restart banner (desktop and mobile — the field saves as it is typed, so
+      no confirm dialog), push unbound, and its addresses never applied to the running profile.
+- [x] Push unbound on every relay with a binding. Binding ids are **not** kept on disk: one not known (a restart since)
+      is learned from the relay and removed (`HttpPushDeviceClient::UnregisterDevice`), which is what keeping them would
+      give.
+- [x] One "switch pending" rule for the banner and push (`BackendSwitchPending`: the saved backend id against the run's).
 
 ## P5 — Machine-wide settings (PM006)
 

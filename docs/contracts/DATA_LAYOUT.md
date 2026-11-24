@@ -285,7 +285,7 @@ At startup, after the config is loaded, the registry picks the running backend's
 
 **The per-backend layout before this** (manifest and `profiles.json` schema 1, folders named `default`, `prod`, `staging`, …) is not read: the app removes each such profile with its keychain items at its first start, with a log line (a clean start, RC017). pp-node converts its own in place instead, once — the old active one (else `default`) becomes its home profile on `node`, the others keep their old id as a label — so a deployed node keeps its identity.
 
-Saving a backend switch also removes the device's push bindings from the running backend ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
+Saving a backend switch — another environment, or a custom backend's registration URL or org relay edited (PM010) — also removes the device's push bindings from every relay of ours, and the new addresses are not applied to the running profile ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
 
 There is no account-switcher UI: the profile follows the backend. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 

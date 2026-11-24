@@ -34,3 +34,6 @@ origin (pp-cpp-mesh writes `mesh_directory_nodes.json`).
 **P5 (machine-wide settings) is built** (same branch, #756): seed relays from the backend's table, `show_tester_options`
 in `machine.json`. `initiation_floor` stays the config dogfood seed (pricing P001 item 7) until there is a Me screen
 for it.
+
+**P4 (backend switch) is built** (same branch, #755): one pending rule (`BackendSwitchPending`), push unbound on every
+relay, a custom backend's registration URL or org relay edited is a switch (banner, unbind, not applied live).
