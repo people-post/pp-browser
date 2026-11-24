@@ -175,17 +175,18 @@ jobs:
         run: |
           set +e
           docker start pp-app-lab-gw-a-1 pp-app-lab-user-a-1 >/dev/null 2>&1; sleep 3
-          G="docker exec pp-app-lab-gw-a-1 sh -c"
           U="docker exec pp-app-lab-user-a-1 sh -c"
-          echo "== backend"; $G 'iptables -V; update-alternatives --display iptables | head -8'
-          echo "== counters before"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n'
-          echo "== user ping relay (nft backend)"; $U 'ping -c2 -W2 198.51.100.20'
-          echo "== counters after"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n; cat /proc/net/nf_conntrack 2>&1 | head -5'
-          echo "== switch gw to legacy backend"
-          $G 'update-alternatives --set iptables /usr/sbin/iptables-legacy; iptables -V; iptables -t nat -F POSTROUTING; iptables -t nat -A POSTROUTING -s 10.119.1.0/24 -o eth0 -j MASQUERADE --random-fully; iptables -P FORWARD DROP; iptables -F FORWARD; iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT; iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT; iptables -t nat -S; iptables -S FORWARD'
-          echo "== user ping relay (legacy backend)"; $U 'ping -c2 -W2 198.51.100.20'
-          echo "== counters legacy"; $G 'iptables -t nat -L POSTROUTING -v -n; iptables -L FORWARD -v -n'
-          echo "== lsmod nat"; lsmod 2>&1 | grep -i "nat\|masq\|conntrack\|nf_tables\|nft" | head -20
+          id -u; docker version --format '{{.Server.Version}}'
+          echo "== host sysctl"; for f in /proc/sys/net/bridge/bridge-nf-call-iptables /proc/sys/net/ipv4/ip_forward; do echo "$f=$(cat $f 2>&1)"; done
+          echo "== networks"; docker network ls --format '{{.Name}}' | grep app-lab | while read n; do docker network inspect "$n" --format '{{.Name}} internal={{.Internal}} opts={{.Options}}'; done
+          echo "== host iptables FORWARD"; iptables -S FORWARD 2>&1 | head -30; iptables -L FORWARD -v -n 2>&1 | head -30
+          echo "== user ping (before)"; $U 'ping -c2 -W2 198.51.100.20' | tail -3
+          echo "== host FORWARD counters after"; iptables -L FORWARD -v -n 2>&1 | head -30
+          echo "== bridge-nf-call-iptables=0"; echo 0 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>&1
+          $U 'ping -c2 -W2 198.51.100.20' | tail -3
+          echo "== DOCKER-USER accept all"; iptables -I DOCKER-USER -j ACCEPT 2>&1; iptables -I FORWARD 1 -j ACCEPT 2>&1
+          $U 'ping -c2 -W2 198.51.100.20' | tail -3
+          echo "== tcp via gw"; $U 'timeout 3 sh -c "echo > /dev/tcp/198.51.100.20/9097" && echo tcp-ok || echo tcp-fail'
 
       - uses: actions/upload-artifact@v7
         if: always()
