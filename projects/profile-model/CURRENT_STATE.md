@@ -41,3 +41,7 @@ relay, a custom backend's registration URL or org relay edited is a switch (bann
 **P2b is built** (same branch, #753): `services.json` per profile (the user's promoted MCP moved there out of
 `config.json`; directory providers and mesh node source as overrides), the Network page's editor for a custom backend's
 whole table, and the line saying which features it leaves off. Not built: a consumer for the mesh node override.
+
+**P6 (promote) is done** (same branch, #757): the contracts say the built layout, and #751's drift is fixed. Left
+open across the project: the mesh node override's consumer and the mesh caches keyed by origin (pp-cpp-mesh);
+`initiation_floor` stays the config dogfood seed (pricing P001); the home move (PM012) is a possible later feature.

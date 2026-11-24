@@ -86,9 +86,13 @@ Tracked in [#756](https://github.com/people-post/pp-browser/issues/756).
 
 Tracked in [#757](https://github.com/people-post/pp-browser/issues/757).
 
-- [ ] DATA_LAYOUT, SERVICE_ENDPOINTS, CONFIGURATION, BUILD § Backend origin, AT_REST_ENCRYPTION say the new layout;
-      the drift in INVENTORY § E 14 fixed with them.
-- [ ] RC022 points at the network guard.
+- [x] DATA_LAYOUT, SERVICE_ENDPOINTS, CONFIGURATION, BUILD § Backend origin, AT_REST_ENCRYPTION say the new layout
+      (each phase's own text landed with it); the drift in INVENTORY § E 14 (#751) fixed: thread `blobs/` and
+      `blob_cipher/`, `picked/` and its previews, the undocumented `profile.db` tables and preferences, `ai_dot_look`,
+      § Outside the data root (keychain, Android preferences, the iOS debug log, the cache dir), the removed diagnostics
+      upload, `CreateOrgBackendClients`, CONFIGURATION's file-without-`backend` sentence. M023's synced-keychain tier is
+      a decision not yet built (its status says so), not drift: left as it is.
+- [x] RC022 points at the network guard (its item 3 and its Status line).
 
 ## Later — Home move (possible, after release 1)
 

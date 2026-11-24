@@ -3,7 +3,7 @@
 ## PM001 — A network on top; the tester-app guard is at the network
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built. Amends
+**Status:** Accepted (Hongwei, 2026-11-23). Built; the outcome is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles). Amends
 [RC022](../release-compatibility/DECISIONS.md#rc022--tester-builds-never-touch-production-profiles-hard-guard): the
 guard reads the profile's network, not its backend key.
 **Decision:**
@@ -28,7 +28,7 @@ guard reads the profile's network, not its backend key.
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "a group of services provided by remote servers, each service can be on a
-different server with different url"). Not built. Narrowed by
+different server with different url"). Built. Narrowed by
 [PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the table
 holds only the operator's services; directory, mesh node list and promoted MCP are profile settings it seeds.
 **Decision:**
@@ -51,7 +51,7 @@ correctly, and every new service adds another fixed path).
 ## PM003 — A profile id is opaque and fixed for the profile's life; a reset makes a new profile
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23). Built; the outcome is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles).
 **Decision:**
 - A profile's folder is `profiles/{id}/`, `{id}` a random opaque name, never derived from a network or backend.
 - The id never changes: every DEK-sealed file's AAD and the keychain items (`{id}/unlock_grace`,
@@ -72,7 +72,7 @@ the key (fixes one route, leaves adoption and the name clash).
 ## PM004 — Per-backend state lives in the device profile, under `backends/{backend_id}/`
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built. Built before release 1, with one backend per profile
+**Status:** Accepted (Hongwei, 2026-11-23). Built; the outcome is in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (`backends/`), [AT_REST_ENCRYPTION § Registration plaintext](../../docs/contracts/AT_REST_ENCRYPTION.md#registration-plaintext-inside-backendsbackend-idregistrationenc). Built before release 1, with one backend per profile
 ([PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)). Narrowed by
 [PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the mesh
 node list, its reputation and the Home feed follow profile settings and stay at the profile's top level.
@@ -91,7 +91,7 @@ those under the backend's id keeps them apart from the rest of the profile, and 
 ## PM005 — A backend switch keeps the profile within a network, changes it across networks, and unbinds push everywhere
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23: "Backend switch may also be redesigned if needed"). Not built. Narrowed
+**Status:** Accepted (Hongwei, 2026-11-23: "Backend switch may also be redesigned if needed"). Built. Narrowed
 for release 1 by [PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout): every switch opens that
 backend's own profile. Its keeping the profile within a network, and the privacy confirm, are now part of a possible
 home move ([PM012](#pm012--a-profile-has-exactly-one-home-backend-permanently)).
@@ -110,7 +110,7 @@ keep pushing to a device that has left (INVENTORY § E 8).
 ## PM006 — Machine-wide config holds only machine-wide settings
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built. Amended by
+**Status:** Accepted (Hongwei, 2026-11-23). Built; the outcome is in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (`machine.json`), [CONFIGURATION](../../docs/ops/CONFIGURATION.md) (`relay.extra_base_urls`). Amended by
 [PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the
 promoted-MCP URL and `directory.providers` are profile settings.
 **Decision:**
@@ -127,7 +127,7 @@ profile starts with the tester options off.
 ## PM007 — pp-node has its own network and its own data root
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23). Built.
 **Decision:** pp-node's profile records network `node`, and pp-node uses a data root of its own by default, not the
 desktop app's.
 **Rationale:** pp-node shares the desktop app's data root and `profiles.json` today unless `data_dir` is set, takes the
@@ -137,7 +137,7 @@ by backend.
 ## PM008 — One account per install for release 1; the layout allows more
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23: "We do only one account for now, just to make the design ready"). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23: "We do only one account for now, just to make the design ready"). Built.
 Amended the same day with [PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout): the pointer is per
 backend, not per network.
 **Decision:**
@@ -154,7 +154,7 @@ backend, not per network.
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "only support one backend for now and expand more support later, the file
-layout are expected to be the final version upfront"). Not built. Narrows PM005 for release 1. Made permanent by
+layout are expected to be the final version upfront"). Built. Narrows PM005 for release 1. Made permanent by
 [PM012](#pm012--a-profile-has-exactly-one-home-backend-permanently): a profile never uses several backends; the "later feature" below is replaced by a home move.
 **Decision:**
 - The whole layout of [DESIGN § On disk](DESIGN.md#on-disk) is built before release 1, `backends/{backend_id}/`
@@ -176,7 +176,7 @@ layout are expected to be the final version upfront"). Not built. Narrows PM005 
 ## PM010 — A custom backend is identified by its registration URL and its org relay
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built. Answers DESIGN open question 1.
+**Status:** Accepted (Hongwei, 2026-11-23). Built. Answers DESIGN open question 1.
 **Decision:**
 - A custom backend's id is `custom-<hash>` (`test-custom-<hash>` in a tester app) over its registration URL and its org
   relay's origin and relay id, normalized. The id names its `backends/` folder and is in the AAD of that folder's
@@ -193,7 +193,7 @@ URL makes a new profile on the next start without saying so (#745).
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "shrink backend definitions … so that it only holds services that are no
-longer split"). Not built. Narrows PM002, PM004 and PM006.
+longer split"). Built; the outcome is in [DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md) (`services.json`), [CONFIGURATION](../../docs/ops/CONFIGURATION.md) (`promoted_mcp`). Narrows PM002, PM004 and PM006.
 **Decision:**
 - A backend's services are only those that need the account's registration there, or are the operator's own:
   registration and org relay (its identity, PM010), account locker, the Brief LLM token and the gateway that takes it,
@@ -217,7 +217,7 @@ same network only, custom only, explicit — for what profile settings give with
 ## PM012 — A profile has exactly one home backend, permanently
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built. Makes PM009's rule permanent; closes DESIGN open questions 4–6.
+**Status:** Accepted (Hongwei, 2026-11-23). Built. Makes PM009's rule permanent; closes DESIGN open questions 4–6.
 **Decision:**
 - A profile's backend is its account's **home operator** on its network: exactly one, for the profile's life. A profile
   never uses two backends at once.

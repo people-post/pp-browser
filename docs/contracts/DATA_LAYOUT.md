@@ -160,6 +160,13 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # us, attached to relay sends to it; `issued` — the grant we gave each account, confirmed once it acked.
                             # Plaintext (signed statements the relay sees anyway). Not in the account locker: each device asks and issues
                             # for itself. Additive table — ACCOUNT_CARD § Relay grants
+                            # call_sessions, call_participants, pending_call_invites, call_media_keys — the calls a profile took part in, who was
+                            # in each, invites not yet answered, and the media keys of a call under way (V011; SqliteCallSessionStore; keys under the DEK)
+                            # control_lane_seen — control-lane messages already applied, pruned past their retention (SqliteControlLaneSeenStore)
+                            # device_sessions — device-pair sessions with their own numbering (M021; PSK columns under the DEK; SqlitePeerSessionStore)
+                            # group_member_seq — per member, the newest roster sequence seen (SqliteGroupRosterStore)
+                            # post_entries, post_heads, post_own_lanes — public posts: signed entries, each author's head, our own lanes
+                            # (social-posts; SqlitePostStore)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 4, floor 4 — D102, § Schema versions)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
@@ -198,9 +205,13 @@ Durable bytes live in a profile-level CAS with **two realms**. Chat decrypt neve
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
                         # a file above 4 MiB appears here only after an explicit Open; {hash}.poster.jpg = a video's poster,
                         # a sound file's cover, or a picture's preview (long side <= 640 px: what its chat bubble shows)
-    # blobs/            # not used; durable bytes live in cas/private only
-  picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
-                        # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
+    blobs/              # made (empty) with each thread by SqliteThreadDb and never written: durable bytes live in cas/private only
+    blob_cipher/{hash}  # a peer's pushed attachment ciphertext waiting for its message's key (AttachmentCache a6): kept while a message
+                        # names it; an orphan push expires after 24 h, at most 64 per thread; counted in Me → Storage
+  picked/               # every platform: the scratch copy a picked photo or video is read and shrunk from (ChatController), and on Android
+                        # <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as the attachment is
+                        # prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
+    preview/{session}/  # the previews of a picture send (PictureSendHost: what the send sheet shows), removed with the send
   blob_cipher/
     outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,
                         # thread) sealed under the profile DEK. Removed when the message is sent, when the person
@@ -263,6 +274,20 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
 
 Flat `threads/index.json` and `{thread_id}.json` from before the SQLite store are not read (nor removed); plaintext `identity.json` is not migrated — wipe the profile and recreate ([chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
+
+### Outside the data root
+
+Kept by the app but not under `{data_dir}`:
+
+| Where | What | Layer |
+|-------|------|-------|
+| iOS keychain, service `dev.pp-browser.secure-blob` | `{profile id}/unlock_grace`, `{profile id}/unlock_biometric` (AT_REST_ENCRYPTION); `account-backup` (retired, only deleted) | profile; device |
+| Android keystore | `pp_secure_blob_when_unlocked`, `pp_secure_blob_after_first_unlock`; the entries themselves as files under `noBackupFilesDir/secure_blob/` | device; profile |
+| Android SharedPreferences `pp_browser_device` | `device_id` (the push device id, `ANDROID_ID`, for every profile and backend), `message_banners_on` (a mirror of the running profile's `show_notifications`, for pushes that wake a stopped app) | device |
+| Android SharedPreferences `pp_keep_alive` | `last_ms`: when the keep-alive service last ran (Stay connected, P011) | device |
+| iOS | the push device id is `identifierForVendor`, held by the OS | device |
+| iOS `{SDL pref path}/pp-browser-debug.log` (+ `.1.log`) | the iOS debug log, outside `data_dir` | device |
+| The platform cache dir (`{data_dir}/cache` on Linux and iOS, `~/Library/Caches/pp-browser` on macOS, `%LOCALAPPDATA%/pp-browser/cache` on Windows, Android's cache) | made empty at start; nothing writes into it today | device |
 
 ### Per-backend profiles
 
@@ -384,7 +409,7 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 | `call_invite_policy` | `preferences.json` | string, `contacts_only` \| `everyone` \| `nobody`; default `everyone` (Kenneth, 2026-11-11). Who may call this profile |
 | `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
-| `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
+| `ai_dot_look` | `preferences.json` | string `auto` (default: a different look each weekday, `gui/shell/MascotLook.h`) \| `a` (one eye) \| `b` (two eyes) \| `c` (cool) \| `d` (plain) \| `e` (Friday) \| `f` (Saturday) \| `g` (Sunday); anything else reads back as `auto`. Also the AI Home's mascot |
 | `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |
 | `ai_dot_left` | `preferences.json` | boolean, optional; default false (right edge). The side the phone AI dot rests on, written after a drag |
 | `ai_dot_y_permille` | `preferences.json` | integer 0–1000, optional; default 600. How far down its band (under the navigation bar, above the tab bar) the dot rests |
@@ -398,6 +423,13 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `recovery_reminder_dismissed_ms` | `preferences.json` | integer (Unix ms), optional (added after schema v14, no version bump); default 0. When "Later" was last tapped on that card. Device-only, never synced or sent |
 | `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60 or -1 (Always: until the phone restarts, [at-rest A015](../../projects/_archive/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)), default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
 | `home_show_dynamic` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Home shows the 动态 widgets section; default off = minimal AI-first Home (Me → Appearance → Show Activity on Home, phones). Device-only, never synced or sent (like `thread_local_prefs`) |
+| `show_notification_preview` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Banners show the message text; off shows a neutral line (the sender or group stays in the title) |
+| `stay_connected` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Android: stay connected in the background (P011; a foreground service keeps the app working, the relay polled slowly) |
+| `call_diagnostics` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Call media diagnostics (V032), OR'd with `--debug` |
+| `group_invite_policy` | `preferences.json` | string `everyone` (default) \| `contacts_only` \| `nobody` (G007): who may invite this profile into a group; an unrecognised value is kept as written and acts as `contacts_only` |
+| `show_advanced_settings` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Me → Help: show the technical options (ids, endpoints, MCP, paths). The tester switch is the device's, in `machine.json` (profile-model PM006) |
+| `onboarding_completed` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. The first-run wizard was finished or skipped (or an account was brought over) |
+| `home_animated_logo` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. The AI Home's logo is the animated mascot (Settings → Appearance); off: the static icon |
 
 `tool_permissions` shape:
 
