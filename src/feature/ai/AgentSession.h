@@ -215,10 +215,11 @@ public:
    * article could not be read (done.answer_kind). An error or a stop stores no answer (the item stays unread). Its
    * text streams as AssistantDelta events for the reader (the chat screen keeps them out of the chat); only done's
    * response is stored. `title` (the item's, from the list) goes as client.news_title, data the
-   * server checks the page against; never in the message.
+   * server checks the page against; never in the message. `retry`: started from the reader's "Try again" (counted in
+   * the "ai.news_read" metrics line only).
    */
   SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
-                               const std::string& title = {});
+                               const std::string& title = {}, bool retry = false);
   /**
    * Resume a parked tool-permission confirm from an in-chat choice payload.
    * decision: allow_once | allow_always | deny

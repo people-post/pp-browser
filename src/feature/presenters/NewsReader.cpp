@@ -202,8 +202,14 @@ NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& it
     shows.loading = streamed.empty();
   } else {
     shows.failed = true;
+    shows.can_retry = true;
   }
   return shows;
+}
+
+bool NewsRetryTakesTap(const std::optional<std::chrono::steady_clock::time_point> failed_since,
+                       const std::chrono::steady_clock::time_point now) {
+  return failed_since && now - *failed_since >= kNewsRetryGuard;
 }
 
 NewsNav NewsNavFor(const size_t index, const size_t count, const bool reading) {

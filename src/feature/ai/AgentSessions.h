@@ -110,7 +110,7 @@ public:
                                    AtAiMode mode = AtAiMode::Local);
   /** A news item read in an AI thread (AgentSession::SubmitNewsRead); counts like any thread turn. */
   SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
-                               const std::string& title = {});
+                               const std::string& title = {}, bool retry = false);
   /** An empty `thread_id` runs in the Home session. */
   SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
                                   Object args, bool in_peer_chat = false);

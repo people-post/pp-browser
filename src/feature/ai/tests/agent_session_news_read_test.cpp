@@ -2,9 +2,12 @@
 // the digest are stored hidden, the text streams to the reader as deltas (the chat screen keeps them out of the chat)
 // and only done's text is stored, failures store no digest, every brief turn declares `news_digest`, and the latest
 // news list stays in the history sent.
+#include "common/Metrics.h"
 #include "feature/ai/tests/agent_session_test_support.h"
 
 #include <algorithm>
+#include <memory>
+#include <mutex>
 
 namespace {
 
@@ -37,6 +40,35 @@ ThreadMessage Stored(const std::string& id, const std::string& sender, const std
 const char* kList =
     "1. [A](https://n.example/a \"pp:news\")\n2. [B](https://n.example/b \"pp:news\")\n"
     "3. [C](https://n.example/c \"pp:news\")\n4. [D](https://n.example/d \"pp:news\")";
+
+/** The "Metrics" channel's lines (a logger's handlers cannot be removed: one capture for the process). */
+struct MetricsCapture : logging::Handler {
+  static MetricsCapture& Instance() {
+    static const std::shared_ptr<MetricsCapture> capture = [] {
+      auto made = std::make_shared<MetricsCapture>();
+      MetricsLog().addHandler(made);
+      return made;
+    }();
+    return *capture;
+  }
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mu);
+    lines.push_back(message);
+  }
+  std::vector<std::string> Take(const std::string& event) {
+    std::lock_guard lock(mu);
+    std::vector<std::string> found;
+    for (const std::string& line : lines) {
+      if (line.find("event=" + event + " ") != std::string::npos) {
+        found.push_back(line.substr(line.find("event=")));
+      }
+    }
+    lines.clear();
+    return found;
+  }
+  std::mutex mu;
+  std::vector<std::string> lines;
+};
 
 bool HasNewsDigest(const BriefAiRequest& request) {
   return std::find(request.capabilities.begin(), request.capabilities.end(), "news_digest") !=
@@ -146,6 +178,46 @@ TEST_F(AgentSessionBriefStreamTest, UnavailableAfterTokensStoresOnlyTheFailure) 
   ASSERT_EQ(store.messages.size(), 2u);
   EXPECT_EQ(store.messages[1].text, "这篇暂时取不到内容。");
   EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsFailedGeneration);
+}
+
+// "ai.news_read" counts reads by outcome, the server's reason for no digest, and whether "Try again" started the read:
+// fixed words only, never the URL, the title or any text.
+TEST_F(AgentSessionBriefStreamTest, TheNewsReadMetricSaysTheOutcomeTheReasonAndARetry) {
+  MetricsCapture& metrics = MetricsCapture::Instance();
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  metrics.Take("ai.news_read");
+
+  BriefAiEvent unavailable = DoneKind("这篇暂时取不到内容。", "news_unavailable");
+  unavailable.unavailable_kind = "blocked";
+  Script({Meta(), unavailable}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest, "Rates rise");
+  WaitForTurn();
+  EXPECT_EQ(metrics.Take("ai.news_read"),
+            std::vector<std::string>{"event=ai.news_read answer=news_unavailable unavailable_kind=blocked "
+                                     "translated=0 retry=0"});
+
+  BriefAiEvent digest = DoneKind("n.example\n\nThe article says…", "news_digest");
+  digest.translated = true;
+  Script({Meta(), Token("n.example\n\n"), digest}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest, "Rates rise", /*retry=*/true);
+  WaitForTurn();
+  const std::vector<std::string> lines = metrics.Take("ai.news_read");
+  ASSERT_EQ(lines.size(), 1u);
+  EXPECT_EQ(lines[0], "event=ai.news_read answer=news_digest unavailable_kind=- translated=1 retry=1");
+  EXPECT_EQ(lines[0].find("n.example"), std::string::npos);
+  EXPECT_EQ(lines[0].find("Rates"), std::string::npos);
+
+  // A new server's unknown reason reads "other".
+  BriefAiEvent odd = DoneKind("x", "news_unavailable");
+  odd.unavailable_kind = "https://n.example/a";
+  Script({Meta(), odd}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest);
+  WaitForTurn();
+  EXPECT_EQ(metrics.Take("ai.news_read"),
+            std::vector<std::string>{"event=ai.news_read answer=news_unavailable unavailable_kind=other "
+                                     "translated=0 retry=0"});
 }
 
 TEST_F(AgentSessionBriefStreamTest, AnUnreadableArticleIsStoredAsFailed) {

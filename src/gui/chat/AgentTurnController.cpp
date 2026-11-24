@@ -848,11 +848,11 @@ void AgentTurnController::OnStopTurn() {
 }
 
 SubmitOutcome AgentTurnController::StartNewsRead(const std::string& thread_id, const std::string& request_text,
-                                                 const std::string& title) {
+                                                 const std::string& title, const bool retry) {
   if (thread_id.empty() || !AgentReady() || !agent_ports_.submit_news_read) {
     return SubmitOutcome::Ignored;
   }
-  const SubmitOutcome outcome = agent_ports_.submit_news_read(thread_id, request_text, title);
+  const SubmitOutcome outcome = agent_ports_.submit_news_read(thread_id, request_text, title, retry);
   if (outcome != SubmitOutcome::Started) {
     return outcome;
   }

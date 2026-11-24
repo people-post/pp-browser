@@ -177,6 +177,7 @@ struct ChatScreenState {
   bool news_reader_translated = false; // the digest shown is an AI translation: one line under the title says so
   bool news_reader_loading = false;
   bool news_reader_failed = false;
+  bool news_reader_can_retry = false; // "Try again" under the failure line (event news_reader_retry())
   ui::String news_reader_body_rml;
   bool news_reader_has_nav = false;
   bool news_reader_can_prev = false;

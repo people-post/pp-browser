@@ -1340,6 +1340,20 @@ select selectbox option {
   opacity: 0.35;
 }
 
+/* "Try again" under the failure line: the bar's secondary pill (50dp), as wide as its words. */
+.news-reader-retry {
+  display: inline-block;
+  height: 50dp;
+  min-width: 120dp;
+  margin-top: 14dp;
+  padding: 0 20dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  font-size: 15dp;
+  box-sizing: border-box;
+}
+
 /* A mention / @everyone in a group message (group-chat G015): a tinted chip, bold; a member's opens them. */
 .chat-mention {
   font-weight: bold;

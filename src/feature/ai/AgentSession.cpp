@@ -234,7 +234,8 @@ struct AgentSession::Impl : public Module {
   /** This turn reads a news item (SubmitNewsRead): its messages are stored hidden; its text streams to the reader
    *  only (the chat screen keeps its deltas out of the chat). */
   bool news_read = false;
-  std::string news_title; // the read item's title (client.news_title)
+  std::string news_title;  // the read item's title (client.news_title)
+  bool news_retry = false; // the read was started from the reader's "Try again" (metrics only)
   /** The streamed answer's done.answer_kind (empty: none); set by on_done for the persist and the ready event. */
   std::string answer_kind;
   bool translated = false; // the streamed digest's done.translated
@@ -1843,6 +1844,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
           .Pick("answer", answer_kind, kNewsAnswerKinds)
           .Pick("unavailable_kind", unavailable_kind, kNewsUnavailableKinds)
           .Add("translated", translated)
+          .Add("retry", state->news_retry)
           .Emit();
     }
     if (!role_thread_id.empty()) {
@@ -2746,7 +2748,7 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
 }
 
 SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
-                                           const std::string& title) {
+                                           const std::string& title, const bool retry) {
   if (thread_id.empty() || request_text.empty()) {
     return SubmitOutcome::Ignored;
   }
@@ -2766,6 +2768,7 @@ SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const s
   impl_->turn_mode = AgentTurnMode::Thread;
   impl_->news_read = true;
   impl_->news_title = title;
+  impl_->news_retry = retry;
 
   PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {

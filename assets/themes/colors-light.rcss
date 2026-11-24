@@ -425,7 +425,8 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
-.news-reader-step {
+.news-reader-step,
+.news-reader-retry {
   background-color: #78788033;
   color: #000000;
 }

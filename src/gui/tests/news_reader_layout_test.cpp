@@ -19,6 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <tuple>
 
 namespace pbr {
 namespace {
@@ -314,6 +315,47 @@ TEST_F(NewsReaderLayoutTest, TheEnglishFailureSentenceSitsAboveTheRow) {
   EXPECT_EQ(std::string(failed->GetInnerRML().c_str()).rfind("Couldn", 0), 0u);
   EXPECT_LE(BorderEdges(failed).bottom, BorderEdges(First("news-reader-bar")).top);
   EXPECT_LE(BorderEdges(failed).right, BorderEdges(document_->GetElementById("sheet")).right) << "it wraps";
+}
+
+// The failure line with "Try again" under it, in both languages: the button is under the sentence, above the bottom
+// row, overlaps neither, is at least 44dp and is what a tap at its centre hits.
+TEST_F(NewsReaderLayoutTest, TryAgainSitsUnderTheFailureLineAboveTheRow) {
+  for (const auto& [language, sentence, label] :
+       {std::tuple<std::string, std::string, std::string>{"zh-Hans", "暂时取不到正文，可以打开原文试试。", "再试一次"},
+        {"en", "t get the article text. Try opening the original.", "Try again"}}) {
+    Fill("以色列总理内塔尼亚胡与反对派领袖艾森科特的政党结束新一轮组阁谈判但未能达成任何协议各方仍在继续接触", "");
+    state_.news_reader_body_rml = "";
+    state_.news_reader_failed = true;
+    state_.news_reader_can_retry = true;
+    Show(language);
+    ExpectTheBarAtTheBottomAndTappable();
+    ui::Element* note = VisibleNote(All("news-reader-note"), sentence);
+    ui::Element* retry = First("news-reader-retry");
+    ASSERT_NE(note, nullptr) << language;
+    ASSERT_NE(retry, nullptr) << language;
+    ASSERT_TRUE(retry->IsVisible()) << language;
+    EXPECT_NE(std::string(retry->GetInnerRML().c_str()).find(label), std::string::npos) << language;
+    const Edges n = BorderEdges(note);
+    const Edges r = BorderEdges(retry);
+    const Edges bar = BorderEdges(First("news-reader-bar"));
+    EXPECT_GE(r.top, n.bottom - 0.5f) << language << ": under the sentence";
+    EXPECT_LE(r.top - n.bottom, 30.f) << language << ": directly under it";
+    EXPECT_LE(r.bottom, bar.top + 0.5f) << language << ": above the bottom row";
+    EXPECT_GE(r.Height(), 44.f) << language;
+    EXPECT_GE(r.right - r.left, 44.f) << language;
+    EXPECT_LE(r.right, BorderEdges(document_->GetElementById("sheet")).right) << language;
+    EXPECT_TRUE(HitsItsCentre(retry)) << language;
+    context_->UnloadDocument(document_);
+    context_->Update();
+  }
+}
+
+// No button without the failure line (a digest, loading).
+TEST_F(NewsReaderLayoutTest, NoTryAgainWithoutTheFailureLine) {
+  Fill("A Russian cargo ship remains on fire off Finland", "Economic Times\n\nThe ship is still burning.");
+  Show("en");
+  ASSERT_NE(First("news-reader-retry"), nullptr);
+  EXPECT_FALSE(First("news-reader-retry")->IsVisible());
 }
 
 // While a digest streams: the spinner line goes with the first text and the body grows under the title. The scroll

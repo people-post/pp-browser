@@ -1069,7 +1069,7 @@ TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
   std::string sent_title;
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text, const std::string& title) {
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text, const std::string& title, bool) {
     submitted.push_back({thread_id, text});
     sent_title = title;
     return SubmitOutcome::Started;
@@ -1125,7 +1125,7 @@ TEST_F(AgentTurnBusyTest, ANewsReadsStreamedTextGoesToTheReaderNotTheChat) {
   host_.messaging_ready = true;
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
     return SubmitOutcome::Started;
   };
   controller_.BindPorts(std::move(ports));
@@ -1159,12 +1159,47 @@ TEST_F(AgentTurnBusyTest, ANewsReadsStreamedTextGoesToTheReaderNotTheChat) {
   EXPECT_EQ(chat_.messages.size(), rows_before + 1) << "the ordinary answer's streaming bubble";
 }
 
+// "Try again" after a failed read takes the path of a tap on an unread item: read now (marked as a retry for the
+// metrics line), or, while the chat answers something else, the "wait" pill and no request.
+TEST_F(AgentTurnBusyTest, TryAgainReadsTheItemAgainOrWaits) {
+  std::vector<bool> retries;
+  bool running = false;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string&, const std::string&, const std::string&, const bool retry) {
+    retries.push_back(retry);
+    running = true;
+    return SubmitOutcome::Started;
+  };
+  ports.can_start = [&](const std::string&) { return running ? TurnStart::BusyHere : TurnStart::Yes; };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  const std::string url = "https://n.example/a";
+  ASSERT_EQ(controller_.StartNewsRead("A", url + "\nWhat's in the article", "One"), SubmitOutcome::Started);
+  running = false;
+  controller_.HandleAgentEvent(Loading(false, "A")); // ended with nothing stored: the failure line and the button
+  const NewsReads failed;                            // no digest for it
+
+  ASSERT_EQ(DecideNewsTapFor(failed, url, "", controller_.NewsReadMustWait("A")), NewsTap::StartRead);
+  ASSERT_EQ(controller_.StartNewsRead("A", url + "\nWhat's in the article", "One", /*retry=*/true),
+            SubmitOutcome::Started);
+  EXPECT_EQ(retries, (std::vector<bool>{false, true}));
+  EXPECT_TRUE(controller_.ReadingNews("A"));
+  running = false;
+  controller_.HandleAgentEvent(Loading(false, "A"));
+
+  // Another answer runs in this chat: the retry waits; nothing is asked.
+  controller_.MarkAgentBusy("A");
+  EXPECT_EQ(DecideNewsTapFor(failed, url, "", controller_.NewsReadMustWait("A")), NewsTap::Wait);
+  EXPECT_EQ(retries.size(), 2u);
+}
+
 // What a tap on a news item does, against the chat's real busy state (ChatController::ShowNewsItem asks exactly this).
 TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
   std::set<std::string> running; // the sessions' threads with a turn
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [&](const std::string& thread_id, const std::string&, const std::string&) {
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string&, const std::string&, bool) {
     running.insert(thread_id);
     return SubmitOutcome::Started;
   };
@@ -1202,7 +1237,7 @@ TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
 TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
     return SubmitOutcome::Started;
   };
   ports.is_busy = [](const std::string&) { return false; }; // the session's turn is over; its end was lost
@@ -1223,7 +1258,7 @@ TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
 TEST_F(AgentTurnBusyTest, ANewsReadTheSessionDidNotTakeLeavesNothingBusy) {
   AgentUiPorts ports;
   ports.has_session = [] { return true; };
-  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
     return SubmitOutcome::BusyHere;
   };
   controller_.BindPorts(std::move(ports));

@@ -1138,6 +1138,7 @@
     "chat.news.translated": "AI 翻译自原文，细节以原文为准",
     "chat.news.open_original": "打开原文",
     "chat.news.previous": "上一条",
+    "chat.news.retry": "再试一次",
     "chat.news.next": "下一条",
     "chat.news.wait": "等这条说完再点",
     "chat.open_link_title": "在浏览器中打开？",

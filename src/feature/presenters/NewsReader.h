@@ -94,6 +94,7 @@ struct NewsReaderShows {
   bool loading = false;                      // reading, and nothing of the text has come yet: the spinner line
   std::string_view partial;                  // reading: the text so far (points into `streamed`), never stored
   bool failed = false;
+  bool can_retry = false; // with the failure line: "Try again" under it (every failure kind)
 };
 /** `streamed`: the text the running read of `reading_url` has streamed so far ("" while none has come). */
 NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
@@ -127,6 +128,15 @@ struct NewsStreamText {
     last_drawn = now;
   }
 };
+
+/**
+ * "Try again" under the failure line reads the same item again (as a tap on an unread item does). Taps within
+ * kNewsRetryGuard of the failure line appearing are ignored, so a burst of taps never starts reads back to back.
+ * `failed_since`: when the failure line appeared (none: it is not shown).
+ */
+inline constexpr std::chrono::milliseconds kNewsRetryGuard{1000};
+bool NewsRetryTakesTap(std::optional<std::chrono::steady_clock::time_point> failed_since,
+                       std::chrono::steady_clock::time_point now);
 
 /** Previous / Next under the reader: only for a list (two or more items), off at the ends and while a read runs. */
 struct NewsNav {

@@ -127,6 +127,25 @@ TEST(NewsReaderWiringTest, AStreamingReadDrawsThrottledAndLeavesNothingBehind) {
   EXPECT_EQ(text.find("AppendMessage"), std::string::npos);
 }
 
+// "Try again" reads the same item again through ShowNewsItem (the decision a tap on an unread item takes: read, or
+// the "wait" pill), marked as a retry, and ignores taps for a second after the failure line appeared.
+TEST(NewsReaderWiringTest, TryAgainReadsTheSameItemThroughTheTapDecision) {
+  const std::string retry = Body(kController, "void ChatController::RetryNewsItem(");
+  EXPECT_NE(retry.find("!chat_.news_reader_can_retry"), std::string::npos);
+  EXPECT_NE(retry.find("NewsRetryTakesTap(news_failed_since_,"), std::string::npos);
+  EXPECT_NE(retry.find("ShowNewsItem(news_reader_->index, /*retry=*/true);"), std::string::npos);
+  const std::string show = Body(kController, "void ChatController::ShowNewsItem(");
+  EXPECT_NE(show.find("item.title, retry)"), std::string::npos) << "the retry flag reaches the read";
+  EXPECT_NE(show.find("DecideNewsTapFor("), std::string::npos);
+  const std::string apply = Body(kController, "void ChatController::ApplyNewsReader(");
+  EXPECT_NE(apply.find("chat_.news_reader_can_retry = shows.can_retry;"), std::string::npos);
+  EXPECT_NE(apply.find("news_failed_since_ = std::chrono::steady_clock::now();"), std::string::npos);
+  EXPECT_NE(apply.find("\"news_reader_can_retry\""), std::string::npos);
+  const std::string source = ReadFile(std::string(PP_SOURCE_DIR) + "/" + kController);
+  EXPECT_NE(source.find("BindEventCallback(\"news_reader_retry\", DataEvent([this] { RetryNewsItem(); }))"),
+            std::string::npos);
+}
+
 TEST(NewsReaderWiringTest, TheDigestHasNothingToTap) {
   // The article is untrusted: no link in the digest is tappable ("Open original" is the way out).
   const std::string apply = Body(kController, "void ChatController::ApplyNewsReader(");

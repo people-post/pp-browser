@@ -5119,7 +5119,7 @@ void ChatController::OpenNewsReader(const std::string& thread_id, const std::str
   }
 }
 
-void ChatController::ShowNewsItem(const size_t index) {
+void ChatController::ShowNewsItem(const size_t index, const bool retry) {
   if (!news_reader_ || index >= news_reader_->items.size()) {
     return;
   }
@@ -5138,7 +5138,7 @@ void ChatController::ShowNewsItem(const size_t index) {
     case NewsTap::StartRead:
       if (agent_.StartNewsRead(thread_id,
                                NewsReadRequestText(item.url, LocalizationService::Instance().ResolvedLanguage()),
-                               item.title) != SubmitOutcome::Started) {
+                               item.title, retry) != SubmitOutcome::Started) {
         ShowToast(Tr("chat.news.wait"));
         if (news_reader_layer_ < 0) {
           news_reader_.reset(); // never opened
@@ -5165,6 +5165,18 @@ void ChatController::StepNewsReader(const int step) {
   ShowNewsItem(step < 0 ? news_reader_->index - 1 : news_reader_->index + 1);
 }
 
+void ChatController::RetryNewsItem() {
+  if (!news_reader_ || !chat_.news_reader_can_retry) {
+    return;
+  }
+  if (!NewsRetryTakesTap(news_failed_since_, std::chrono::steady_clock::now())) {
+    log().debug << "news retry tap ignored: the failure showed less than 1 s ago";
+    return;
+  }
+  // The decision a tap on an unread item takes: read it now, or the "wait" pill (nothing asked, the sheet stays).
+  ShowNewsItem(news_reader_->index, /*retry=*/true);
+}
+
 void ChatController::OpenNewsOriginal() {
   if (!news_reader_ || news_reader_->index >= news_reader_->items.size()) {
     return;
@@ -5188,10 +5200,12 @@ void ChatController::CloseNewsReader() {
 }
 
 void ChatController::ApplyNewsReader() {
+  const bool was_failed = chat_.news_reader_failed;
   chat_.news_reader_title = "";
   chat_.news_reader_translated = false;
   chat_.news_reader_loading = false;
   chat_.news_reader_failed = false;
+  chat_.news_reader_can_retry = false;
   chat_.news_reader_body_rml = ""; // the digest is bound only while it shows (and never kept under a lock)
   chat_.news_reader_has_nav = false;
   chat_.news_reader_can_prev = false;
@@ -5218,14 +5232,20 @@ void ChatController::ApplyNewsReader() {
     chat_.news_reader_translated = shows.translated;
     chat_.news_reader_loading = shows.loading;
     chat_.news_reader_failed = shows.failed;
+    chat_.news_reader_can_retry = shows.can_retry;
     const NewsNav nav = NewsNavFor(news_reader_->index, news_reader_->items.size(), shows.reading);
     chat_.news_reader_has_nav = nav.shown;
     chat_.news_reader_can_prev = nav.can_prev;
     chat_.news_reader_can_next = nav.can_next;
   }
-  for (const char* field :
-       {"news_reader_title", "news_reader_translated", "news_reader_loading", "news_reader_failed",
-        "news_reader_body_rml", "news_reader_has_nav", "news_reader_can_prev", "news_reader_can_next"}) {
+  if (!chat_.news_reader_failed) {
+    news_failed_since_.reset();
+  } else if (!was_failed || !news_failed_since_) {
+    news_failed_since_ = std::chrono::steady_clock::now(); // "Try again" takes taps 1 s from now
+  }
+  for (const char* field : {"news_reader_title", "news_reader_translated", "news_reader_loading", "news_reader_failed",
+                            "news_reader_can_retry", "news_reader_body_rml", "news_reader_has_nav",
+                            "news_reader_can_prev", "news_reader_can_next"}) {
     DataModelHost::Instance().Dirty("chat", field);
   }
 }
@@ -6926,6 +6946,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("news_reader_prev", DataEvent([this] { StepNewsReader(-1); }));
         ctor.BindEventCallback("news_reader_next", DataEvent([this] { StepNewsReader(1); }));
         ctor.BindEventCallback("news_reader_open_original", DataEvent([this] { OpenNewsOriginal(); }));
+        ctor.BindEventCallback("news_reader_retry", DataEvent([this] { RetryNewsItem(); }));
         ctor.BindEventCallback("cancel_queued", DataEvent([this] { CancelQueuedHere(); }));
         // The row of a picture being sent (pending-upload-…) is no message: none of the row events below acts on it.
         ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(

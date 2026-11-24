@@ -639,8 +639,11 @@ private:
   /** A tap on news item `tapped` of answer `entry_id` whose links are `links`, in AI thread `thread_id`. */
   void OpenNewsReader(const std::string& thread_id, const std::string& entry_id, const std::vector<MarkdownLink>& links,
                       const MarkdownLink& tapped);
-  /** Shows item `index` of the open reader's list: its stored digest, or reads it (NewsReader decides). */
-  void ShowNewsItem(size_t index);
+  /** Shows item `index` of the open reader's list: its stored digest, or reads it (NewsReader decides); `retry`: from
+   *  "Try again" (the metrics line says so). */
+  void ShowNewsItem(size_t index, bool retry = false);
+  /** "Try again" under the failure line: the same item read again in place (ignored just after the failure showed). */
+  void RetryNewsItem();
   /** Previous / Next under the reader (`step` -1 / +1); ignored while it is off. */
   void StepNewsReader(int step);
   /** "Open original": the item's own URL in the system browser (the trusted path). */
@@ -1128,6 +1131,7 @@ private:
   };
   std::optional<NewsReaderOpen> news_reader_;
   int news_reader_layer_ = -1;
+  std::optional<std::chrono::steady_clock::time_point> news_failed_since_; // the failure line appeared (retry guard)
   std::map<std::string, std::string> news_reading_url_; // AI thread -> the URL its running news read reads
   std::map<std::string, NewsReads> news_reads_;         // AI thread -> its read items (NewsReadsOf)
   std::map<std::string, NewsStreamText> news_streams_;  // AI thread -> its running read's text so far (never stored)

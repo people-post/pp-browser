@@ -222,6 +222,64 @@ TEST(NewsReaderTest, TheStreamRedrawIsThrottledWithoutDroppingText) {
   EXPECT_FALSE(stream.DrawDue(t0 + 1s)) << "the same text again needs no redraw";
 }
 
+// The failure line comes with "Try again" (every failure kind); a digest, the spinner or streamed text never does.
+TEST(NewsReaderTest, OnlyTheFailureLineOffersTryAgain) {
+  const std::string url = "https://n.example/a";
+  NewsReaderShows shows = NewsReaderShowsFor(ScanNewsReads({Request("r1", url), Failed("f1")}), url, "");
+  EXPECT_TRUE(shows.failed);
+  EXPECT_TRUE(shows.can_retry);
+  shows = NewsReaderShowsFor(ScanNewsReads({Request("r1", url)}), url, ""); // stopped, or an error: nothing stored
+  EXPECT_TRUE(shows.can_retry);
+  // Tapped: the read runs again in place, with the spinner and then its text, and the buttons off.
+  shows = NewsReaderShowsFor(ScanNewsReads({Request("r1", url), Failed("f1")}), url, url, "");
+  EXPECT_FALSE(shows.failed || shows.can_retry);
+  EXPECT_TRUE(shows.loading);
+  EXPECT_FALSE(NewsNavFor(1, 3, shows.reading).can_next);
+  shows = NewsReaderShowsFor(ScanNewsReads({Request("r1", url), Failed("f1")}), url, url, "n.example");
+  EXPECT_FALSE(shows.failed || shows.can_retry || shows.loading);
+  // It ends with a digest: read (the item greys), no button.
+  const NewsReads reads = ScanNewsReads({Request("r1", url), Failed("f1"), Request("r2", url), Digest("d2", "A")});
+  EXPECT_TRUE(reads.IsRead(url));
+  shows = NewsReaderShowsFor(reads, url, "");
+  EXPECT_FALSE(shows.failed || shows.can_retry);
+  ASSERT_NE(shows.digest, nullptr);
+  EXPECT_EQ(shows.digest->message_id, "d2");
+  // It fails again: the line and the button again.
+  shows =
+      NewsReaderShowsFor(ScanNewsReads({Request("r1", url), Failed("f1"), Request("r2", url), Failed("f2")}), url, "");
+  EXPECT_TRUE(shows.failed && shows.can_retry);
+}
+
+// Retries add a request (and an answer, or none) each time; the item's state is its latest read's outcome.
+TEST(NewsReaderTest, ReadStateIsTheLatestOutcomeAcrossRetries) {
+  const std::string url = "https://n.example/a";
+  // Failed, stopped (unanswered), failed, then a digest: read, with that digest.
+  NewsReads reads = ScanNewsReads({Request("r1", url), Failed("f1"), Request("r2", url), Request("r3", url),
+                                   Failed("f3"), Request("r4", url), Digest("d4", "final")});
+  ASSERT_TRUE(reads.IsRead(url));
+  EXPECT_EQ(reads.Find(url)->message_id, "d4");
+  EXPECT_EQ(reads.Find(url)->text, "final");
+  // The newest attempt still unanswered after failures: not read.
+  reads = ScanNewsReads({Request("r1", url), Failed("f1"), Request("r2", url)});
+  EXPECT_FALSE(reads.IsRead(url));
+  // Another item's failure between this item's request and digest does not take the digest away from it.
+  reads = ScanNewsReads({Request("r1", url), Failed("f1"), Request("r2", url), Digest("d2", "A"),
+                         Request("r3", "https://n.example/b"), Failed("f3")});
+  EXPECT_TRUE(reads.IsRead(url));
+  EXPECT_FALSE(reads.IsRead("https://n.example/b"));
+}
+
+// "Try again" ignores taps for a second after the failure line appears; after that each tap counts.
+TEST(NewsReaderTest, TryAgainIgnoresTapsJustAfterTheFailureShows) {
+  using namespace std::chrono_literals;
+  const auto shown = std::chrono::steady_clock::time_point{} + 10s;
+  EXPECT_FALSE(NewsRetryTakesTap(std::nullopt, shown)) << "no failure line, nothing to retry";
+  EXPECT_FALSE(NewsRetryTakesTap(shown, shown));
+  EXPECT_FALSE(NewsRetryTakesTap(shown, shown + 999ms));
+  EXPECT_TRUE(NewsRetryTakesTap(shown, shown + 1s));
+  EXPECT_TRUE(NewsRetryTakesTap(shown, shown + 5s));
+}
+
 TEST(NewsReaderTest, TheRequestIsTheUrlAndTheFixedSentence) {
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "zh-Hans"), "https://n.example/a\n这篇讲了什么");
   EXPECT_EQ(NewsReadRequestText("https://n.example/a", "en"), "https://n.example/a\nWhat's in the article");
