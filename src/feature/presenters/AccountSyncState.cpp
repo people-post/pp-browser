@@ -44,8 +44,26 @@ void AccountSyncState::OnSyncFailed() {
   }
 }
 
-void AccountSyncState::OnTimeout() {
+void AccountSyncState::OnSyncImpossible() {
+  if (view_ == AccountSyncView::None) {
+    return; // an account that was never importing
+  }
+  view_ = AccountSyncView::None;
+  if (persist_) {
+    persist_(false);
+  }
+}
+
+void AccountSyncState::OnTimeout(const uint64_t token) {
+  if (token != timer_token_) {
+    return; // armed before a profile reset
+  }
   OnSyncFailed();
+}
+
+void AccountSyncState::ResetForNewProfile() {
+  view_ = AccountSyncView::None;
+  ++timer_token_;
 }
 
 } // namespace pbr

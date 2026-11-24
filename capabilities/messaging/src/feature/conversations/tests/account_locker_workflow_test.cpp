@@ -241,6 +241,14 @@ TEST_F(AccountLockerWorkflowTest, AGroupTheDeviceLeftStaysGone) {
   EXPECT_EQ(taken, 0);
 }
 
+// The "Syncing…" indicator ends when a sync can never run in this state; "not yet" states are not this.
+TEST(AccountLockerSyncImpossibleTest, NoSeedNotRegisteredOrSignedOutCanNeverSync) {
+  EXPECT_FALSE(LockerSyncImpossible(/*has_recovery_seed=*/true, /*registered=*/true, /*signed_out=*/false));
+  EXPECT_TRUE(LockerSyncImpossible(false, true, false)) << "an account from before M023";
+  EXPECT_TRUE(LockerSyncImpossible(true, false, false)) << "this device is not registered";
+  EXPECT_TRUE(LockerSyncImpossible(true, true, true)) << "this device was taken off the account";
+}
+
 // X12: the relay's 409 names the version it holds; the next write goes above it instead of meeting the 409 again.
 TEST_F(AccountLockerWorkflowTest, ANotNewerAnswerNamingTheStoredVersionPutsTheNextWriteAboveIt) {
   ASSERT_TRUE(workflow_->Publish());

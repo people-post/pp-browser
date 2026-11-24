@@ -366,11 +366,12 @@ public:
    */
   void SetOnContactsChanged(std::function<void()> callback);
   /**
-   * An account-locker sync (the account's contacts and groups across its devices) ended: true when it completed (with
-   * changes or without), false when it failed (the locker could not be read or written). Not called when the sync did
-   * not run (messaging down, no recovery seed, not registered, signed out). Runs on a worker thread.
+   * An account-locker sync (the account's contacts and groups across its devices) ended: Synced when it completed
+   * (with changes or without), Failed when the locker could not be read or written, CannotSync when it can never run
+   * in this state (no recovery seed, not registered, signed out). Not called when it did not run for now (messaging
+   * not up yet). Runs on a worker thread.
    */
-  void SetOnAccountSyncResult(std::function<void(bool ok)> callback);
+  void SetOnAccountSyncResult(std::function<void(AccountSyncResult)> callback);
   /** Me → My relays (multi-relay R3, MR006): ours, preferred first, each with its state. */
   Roe<OurRelaysStatus> OurRelays();
   /**
@@ -876,7 +877,7 @@ private:
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
   std::mutex account_sync_result_mu_;
-  std::function<void(bool ok)> on_account_sync_result_;
+  std::function<void(AccountSyncResult)> on_account_sync_result_;
   std::mutex our_relays_changed_mu_;
   std::function<void()> on_our_relays_changed_;
   /** Read with MyRelays (any thread: the page's worker); Shutdown closes it before what its ports touch goes. */

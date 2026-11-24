@@ -21,6 +21,20 @@
 
 namespace pbr {
 
+/** How one account-locker sync attempt ended (the "Syncing…" indicator after linking or a phrase restore). */
+enum class AccountSyncResult {
+  Synced,    // the locker was read and written, with changes or without
+  Failed,    // it ran and failed (offline, the provider refused): a later attempt may succeed
+  CannotSync // it can never run on this device as it is now: no recovery seed, not registered, or signed out
+};
+
+/**
+ * True when a locker sync can never run in this state, whatever is retried: the account has no recovery seed (from
+ * before M023), this device is not registered, or it was signed out (taken off the account). Not for "not yet" states
+ * (messaging still starting, offline): those stay pending.
+ */
+bool LockerSyncImpossible(bool has_recovery_seed, bool registered, bool signed_out);
+
 /**
  * The account locker as a product step (multi-device M023 s3): publish this account's state to the locker
  * provider (the relay) sealed under keys from the recovery seed, and fetch / open a locker from a seed (restore).

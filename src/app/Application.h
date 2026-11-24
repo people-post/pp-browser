@@ -96,7 +96,7 @@ private:
   void PersistAccountSyncPending(bool pending);
   void ApplyAccountSyncView();
   void ArmAccountSyncTimeout();
-  void OnAccountSyncResult(bool ok);
+  void OnAccountSyncResult(AccountSyncResult result);
   /** One info line per new call-alert tap: when it was recorded against the first presented frame. Any thread. */
   void LogCallTapTiming();
   /**

@@ -86,6 +86,55 @@ TEST(AccountSyncPageTest, TheBothModelsBindTheTwoFlags) {
   }
 }
 
+std::string ReadSource(const std::string& relative) {
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / relative);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
+}
+
+std::string FunctionBody(const std::string& source, const std::string& signature) {
+  const size_t begin = source.find(signature);
+  if (begin == std::string::npos) {
+    return {};
+  }
+  return source.substr(begin, source.find("\n}\n", begin) - begin);
+}
+
+// A sync that can never run (no recovery seed, not registered, signed out) is reported, so the indicator does not wait
+// for it forever; one that only cannot run yet (messaging not up) reports nothing and stays pending.
+TEST(AccountSyncPageTest, TheHubReportsASyncThatCanNeverRunAndTheAppEndsTheIndicator) {
+  const std::string hub =
+      FunctionBody(ReadSource("capabilities/messaging/src/feature/conversations/ConversationsHub.cpp"),
+                   "void ConversationsHub::PublishAccountLockerSoon() {");
+  ASSERT_FALSE(hub.empty());
+  const size_t impossible = hub.find("LockerSyncImpossible(");
+  ASSERT_NE(impossible, std::string::npos);
+  EXPECT_NE(hub.find("report(AccountSyncResult::CannotSync);", impossible), std::string::npos);
+  EXPECT_LT(impossible, hub.find("account_locker_->Publish()"));
+
+  const std::string app = ReadSource("src/app/Application.cpp");
+  const std::string on_result = FunctionBody(app, "void Application::OnAccountSyncResult(");
+  const size_t cannot = on_result.find("AccountSyncResult::CannotSync");
+  ASSERT_NE(cannot, std::string::npos);
+  EXPECT_NE(on_result.find("account_sync_.OnSyncImpossible();", cannot), std::string::npos);
+  EXPECT_NE(on_result.find("PersistAccountSyncPending(false);", cannot), std::string::npos);
+}
+
+// Reset my profile makes the old account's timers stale (the 60-second "still syncing" and the retries).
+TEST(AccountSyncPageTest, AProfileResetMakesTheOldAccountsSyncTimersStale) {
+  const std::string app = ReadSource("src/app/Application.cpp");
+  EXPECT_NE(
+      FunctionBody(app, "Roe<void> Application::ResetActiveProfile() {").find("account_sync_.ResetForNewProfile();"),
+      std::string::npos);
+  const std::string arm = FunctionBody(app, "void Application::ArmAccountSyncTimeout() {");
+  EXPECT_NE(arm.find("token = account_sync_.TimerToken()"), std::string::npos);
+  EXPECT_NE(arm.find("account_sync_.OnTimeout(token);"), std::string::npos);
+  EXPECT_NE(FunctionBody(app, "void Application::OnAccountSyncResult(").find("token == account_sync_.TimerToken()"),
+            std::string::npos)
+      << "a retry armed before the reset does not publish for the new account";
+}
+
 TEST(AccountSyncPageTest, TheLinesAreTranslatedAndPlain) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
