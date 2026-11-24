@@ -138,8 +138,8 @@ Roe<ByteVector> SealLinkReply(std::span<const uint8_t> offer, const LinkBundle& 
  * fields and algorithm ids, the AEAD (NotForThisDevice), the bundle's fields and its area's critical entries (update
  * needed), an intent this build does not know (update needed), and the expiry against `now_ms` (Expired).
  */
-Roe<LinkBundle> OpenLinkReply(std::span<const uint8_t> offer, const LinkOfferKeys& keys,
-                              std::span<const uint8_t> reply, int64_t now_ms);
+Roe<LinkBundle> OpenLinkReply(std::span<const uint8_t> offer, const LinkOfferKeys& keys, std::span<const uint8_t> reply,
+                              int64_t now_ms);
 
 /** A payload as text: `prefix` then base64url without padding. */
 std::string LinkPayloadText(std::string_view prefix, std::span<const uint8_t> payload);

@@ -220,7 +220,9 @@ LinkBundle::~LinkBundle() {
 }
 
 LinkBundle::LinkBundle(LinkBundle&& other) noexcept
-    : seed(std::move(other.seed)), intent(other.intent), expires_at_ms(other.expires_at_ms),
+    : seed(std::move(other.seed)),
+      intent(other.intent),
+      expires_at_ms(other.expires_at_ms),
       relay(std::move(other.relay)) {
   Zero(other.seed);
 }
@@ -313,8 +315,9 @@ Roe<ByteVector> SealLinkReply(const std::span<const uint8_t> offer, const LinkBu
   }
   ByteVector plain = BundleBytes(bundle, ext);
   auto nonce = MessageCipher::GenerateNonce();
-  auto sealed = nonce ? MessageCipher::Encrypt(*key, plain, ReplyAad(kLinkReplyVersion, offer, *typed_ciphertext), *nonce)
-                      : Roe<EncryptedBlob>(nonce.error());
+  auto sealed = nonce
+                    ? MessageCipher::Encrypt(*key, plain, ReplyAad(kLinkReplyVersion, offer, *typed_ciphertext), *nonce)
+                    : Roe<EncryptedBlob>(nonce.error());
   Zero(plain);
   Zero(*key);
   if (!sealed) {
@@ -358,7 +361,7 @@ Roe<LinkBundle> OpenLinkReply(const std::span<const uint8_t> offer, const LinkOf
   TypedRead ciphertext = ReadTypedBlob(pp::BlobKind::kKemCiphertext, typed_ciphertext, "link reply ciphertext");
   if (!ciphertext.ok()) {
     return ciphertext.status == TypedBlobStatus::UnknownAlgorithm ? ciphertext.ToError()
-                                                                   : Unreadable(ciphertext.detail);
+                                                                  : Unreadable(ciphertext.detail);
   }
   TypedRead sealed = ReadTypedBlob(pp::BlobKind::kAeadSealed, typed_sealed, "link reply bundle");
   if (!sealed.ok()) {
@@ -404,8 +407,8 @@ std::optional<ByteVector> FindLinkPayload(const std::string_view prefix, const s
     std::string text;
     for (size_t i = at + prefix.size(); i < input.size() && text.size() <= kMaxLinkPayloadBytes * 2; ++i) {
       const char c = input[i];
-      const bool b64 = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
-                       c == '_';
+      const bool b64 =
+          (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
       if (!b64) {
         break;
       }

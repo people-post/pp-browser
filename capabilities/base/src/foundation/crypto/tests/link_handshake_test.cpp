@@ -207,8 +207,7 @@ TEST(LinkHandshakeTest, NoSecretIsInEitherPayload) {
   for (const ByteVector* payload : {&offer, &reply}) {
     EXPECT_FALSE(Contains(*payload, seed_part));
     EXPECT_FALSE(Contains(*payload, secret_part));
-    const std::string text =
-        LinkPayloadText(payload == &offer ? kLinkOfferTextPrefix : kLinkReplyTextPrefix, *payload);
+    const std::string text = LinkPayloadText(payload == &offer ? kLinkOfferTextPrefix : kLinkReplyTextPrefix, *payload);
     EXPECT_EQ(text.find(Base64UrlEncode(bundle.seed).substr(0, 12)), std::string::npos);
     EXPECT_EQ(text.find(Base64Encode(bundle.seed).substr(0, 12)), std::string::npos);
   }
@@ -264,10 +263,11 @@ Object BuildVectors() {
   const ByteVector offer = OfferOf(keys);
   Object root;
   root.set("format", "pp-browser link handshake vectors v1");
-  root.set("about", "The link offer and sealed reply, version 1 (docs/contracts/LINK_DEVICE.md). The offer is frozen "
-                    "(the new device's one-time ML-KEM-768 key from kem_coins_hex), and so is its 4-digit code. "
-                    "Encapsulation is randomized: compare without reply_b64, and check each committed reply opens with "
-                    "that key to its bundle fields.");
+  root.set("about",
+           "The link offer and sealed reply, version 1 (docs/contracts/LINK_DEVICE.md). The offer is frozen "
+           "(the new device's one-time ML-KEM-768 key from kem_coins_hex), and so is its 4-digit code. "
+           "Encapsulation is randomized: compare without reply_b64, and check each committed reply opens with "
+           "that key to its bundle fields.");
   root.set("offer_version", static_cast<int64_t>(kLinkOfferVersion));
   root.set("reply_version", static_cast<int64_t>(kLinkReplyVersion));
   root.set("kem_coins_hex", BytesToHex(ByteVector(64, 0x61)));
