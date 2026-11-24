@@ -66,8 +66,13 @@ Tracked in [#755](https://github.com/people-post/pp-browser/issues/755).
 
 Tracked in [#756](https://github.com/people-post/pp-browser/issues/756).
 
-- [ ] `relay.extra_base_urls` into the backend's seeds and the LLM URLs into its table; `initiation_floor` to the account;
-      `show_tester_options` to `machine.json`.
+- [x] `relay.extra_base_urls` into the backend's seeds: a custom backend's table carries them; a built-in backend seeds
+      its own (none) and ignores the file's; under `PP_BROWSER_ORIGIN` the file's still seed.
+- [x] The Brief LLM URLs are the table's (P2a); a user's own LLM endpoint stays in `config.json` (a device setting).
+- [x] `show_tester_options` to `machine.json` (an optional key); the profile preference is gone (a tester taps the
+      version five times once more).
+- [ ] `initiation_floor` to the account: **kept** as the config dogfood seed for now — pricing P001 item 7 makes it the
+      only way to set the floor until a Me screen exists; it only seeds the account's own value while that is 0.
 
 ## P6 — Promote
 

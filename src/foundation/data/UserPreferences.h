@@ -40,6 +40,12 @@ struct MachinePreferences {
    */
   bool collect_run_logs = false;
   /**
+   * Me → Help, five taps on the version: the internal test options (and the Staging / Dev services in the service
+   * list). Off by default. The device's, not a profile's (profile-model PM006): it decides which backends are offered
+   * before a profile is open. Optional key; an older build ignores it.
+   */
+  bool show_tester_options = false;
+  /**
    * Settings → Advanced → "Collect crash logs": when on, Send run logs also carries the crash records. Device-wide,
    * optional on disk (absent = off). Not the old per-profile `crash_reports_enabled` (its upload stays dormant).
    */
@@ -118,8 +124,6 @@ struct ProfilePreferences {
   bool attachment_auto_on_cellular = false;
   /** Me → About: show the technical options (ids, endpoints, MCP, paths). Off for everyone by default. */
   bool show_advanced_settings = false;
-  /** Me → Help, five taps on the version: the internal test options (and the Staging / Dev services in the service list). Off by default. */
-  bool show_tester_options = false;
   /** First-run wizard finished or skipped (or an account was brought over). */
   bool onboarding_completed = false;
   /** The ask-AI panel's one-time privacy card was dismissed ("Got it"; DEV/PLAN-ui-batch5-ask-ai.md 5a). */

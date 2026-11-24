@@ -20,10 +20,17 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   HubSettings settings;
   settings.mesh = config.mesh;
   settings.relay = config.relay;
-  settings.relay_extra_base_urls = config.relay_extra_base_urls;
+
   settings.directory = config.directory;
   settings.registration = config.registration;
   const BackendTable table = ActiveBackendTable();
+  // The other relays a new profile's list starts with are the backend's seeds (profile-model PM006, PM011): a custom
+  // backend's `relay.extra_base_urls`, none for a built-in one. Under PP_BROWSER_ORIGIN (a developer's own backend) the
+  // file's still seed it.
+  settings.relay_extra_base_urls = table.seed_relays;
+  if (settings.relay_extra_base_urls.empty() && OriginEnvOverrideActive()) {
+    settings.relay_extra_base_urls = config.relay_extra_base_urls;
+  }
   settings.account_locker_url = table.account_locker_url;
   settings.client_compat_url = table.client_compat_url;
   settings.llm_token_url = table.llm_token_url;

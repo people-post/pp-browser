@@ -30,3 +30,7 @@ PM010's (`CustomBackendId`), so its folder under `backends/` follows the registr
 holds `registration.enc` (the registration slot and the Brief LLM token, out of `identity.enc`), `client_compat.json`
 and `account_locker.json`; the inbox cursor file keeps every relay's cursor by origin. Left: the mesh caches keyed by
 origin (pp-cpp-mesh writes `mesh_directory_nodes.json`).
+
+**P5 (machine-wide settings) is built** (same branch, #756): seed relays from the backend's table, `show_tester_options`
+in `machine.json`. `initiation_floor` stays the config dogfood seed (pricing P001 item 7) until there is a Me screen
+for it.
