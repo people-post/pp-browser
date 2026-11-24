@@ -298,6 +298,7 @@
     "settings.network.backend.custom_addresses": "Custom addresses",
     "settings.network.backend.custom_caption": "Custom is for organizations that run their own server.",
     "settings.network.relay_id_missing": "This server's relay link has no relay ID, so its relay isn't used: you can't register or get mail there. Paste the relay's whole link, with the part after #, in Message server URL (and in Account server URL if it's another server).",
+    "settings.network.registration_required": "Enter the account server URL. A custom service can't be saved without one.",
     "settings.network.relay": "Message server URL",
     "settings.network.directory": "User directory URL",
     "settings.network.registration": "Account server URL",

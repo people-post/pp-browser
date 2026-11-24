@@ -7,6 +7,7 @@
 #include "feature/settings/NetworkSettingsSection.h"
 
 #include "foundation/data/Config.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -148,4 +149,26 @@ TEST(BackendServiceEntriesTest, TheSettingsSectionsListThemFromTheActiveTable) {
   pbr::IntegrationsSettingsSection{}.SyncFromSession(bootstrap, integrations_state);
   ASSERT_EQ(integrations_state.backend_services.size(), 7U);
   EXPECT_TRUE(Find(integrations_state.backend_services, "feeds")->available);
+}
+
+// A custom backend's account server URL names its account (profile folder, registration): the Network page does not save
+// an empty one, and says why on the page.
+TEST(NetworkRegistrationTest, ACustomBackendWithoutAnAccountServerUrlIsNotSaved) {
+  LoadLocale("en");
+  pbr::SettingsUiState state;
+  state.backend_env = "custom";
+  state.registration_base_url = "  ";
+  EXPECT_FALSE(state.registration_required);
+  // The refusal needs the saved config to be custom; Flush reads it from the store.
+  pbr::SessionStore store;
+  pbr::BootstrapResult bootstrap;
+  bootstrap.config.backend.env = "custom";
+  store.Initialize(std::move(bootstrap));
+  auto flushed = pbr::NetworkSettingsSection{}.Flush(state, store);
+  EXPECT_FALSE(flushed);
+  EXPECT_TRUE(state.registration_required);
+  EXPECT_EQ(flushed.error().message, "Enter the account server URL. A custom service can't be saved without one.");
+  LoadLocale("zh-Hans");
+  EXPECT_NE(pbr::Tr("settings.network.registration_required"), "settings.network.registration_required");
+  LoadLocale("en");
 }

@@ -22,6 +22,7 @@
           <button class="btn btn-secondary settings-action-bar settings-action-row" type="button"
                   data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>
         </div>
+        <p class="text error settings-help group-foot" data-if="registration_required">{{i18n:settings.network.registration_required}}</p>
         <p class="text error settings-help group-foot" data-if="relay_id_missing">{{i18n:settings.network.relay_id_missing}}</p>
         <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.network.backend.custom_caption}}</p>
         </div>

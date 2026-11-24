@@ -238,6 +238,7 @@ private:
     bool backend_is_custom = false;
     /** The backend's relay names no relay ID: not used in this build (MR008). */
     bool relay_id_missing = false;
+    bool registration_required = false;
     /** Hidden in the UI demo app (BackendSwitchVisible). */
     bool show_backend_switch = true;
     ui::String direct_connections = "contacts";

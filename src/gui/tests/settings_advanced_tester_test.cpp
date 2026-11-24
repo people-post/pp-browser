@@ -680,8 +680,11 @@ protected:
   void UseCustomService() {
     AppConfig config = store.Snapshot().config;
     config.backend.env = "custom";
+    // A custom service has an account server URL (an empty one is not saved: profile-model P2a).
+    config.registration.base_url = "https://custom.example.test/api/relay";
     ASSERT_TRUE(static_cast<bool>(store.SaveConfig(config)));
     host().UiState().backend_env = "custom";
+    host().UiState().registration_base_url = config.registration.base_url;
     host().PushToView(false);
   }
   ui::ElementDocument* real = nullptr;

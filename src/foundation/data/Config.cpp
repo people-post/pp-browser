@@ -47,6 +47,11 @@ void ApplyBackendOverride(AppConfig& config, const BackendTable& table) {
 
 } // namespace
 
+bool IsPromotedMcpSeedEntry(const McpConfig& mcp, const CompiledOrigins& compiled) {
+  return mcp.id.empty() && mcp.command.empty() && mcp.args.empty() && mcp.enabled &&
+         IsBuiltInPromotedMcpSeed(mcp.url, compiled);
+}
+
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
   if (config.promoted_mcp.IsConfigured()) {
     return config.promoted_mcp;
@@ -174,7 +179,12 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path, const bool ui_demo)
   if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
     ApplyBackendOverride(config, table);
   }
-  // The promoted MCP the profile starts with is the table's seed; the user's own value (the file's) wins.
+  // The promoted MCP the profile starts with is the table's seed; the user's own value (the file's) wins. A file's value
+  // that is any built-in backend's seed (the old app wrote the running backend's into every save) was never the user's:
+  // it is replaced by this backend's seed — none on a custom backend that names none.
+  if (IsPromotedMcpSeedEntry(config.promoted_mcp, BuildCompiledOrigins())) {
+    config.promoted_mcp = McpConfig{};
+  }
   if (!config.promoted_mcp.IsConfigured()) {
     config.promoted_mcp.url = table.promoted_mcp_url;
   }

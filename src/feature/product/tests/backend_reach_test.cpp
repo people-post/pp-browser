@@ -5,6 +5,8 @@
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
+#include "foundation/data/PlatformDefaults.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/data/UserPreferences.h"
 #include "foundation/diagnostics/CrashReportEnvelope.h"
 #include "foundation/platform/BackendTable.h"
@@ -124,6 +126,15 @@ pbr::BackendClientSet::Endpoints EndpointsOf(const pbr::HubSettings& settings) {
           .extra_relays = settings.relay_extra_base_urls};
 }
 
+/**
+ * The hub's backend defaults as Bootstrap::Run sets them: after Config::Load latched the backend (the hub itself is built
+ * before it). An empty endpoint falls back to these, so for a custom backend they must hold nothing of a built-in's.
+ */
+void SetHubDefaultsAsBootstrapDoes(pbr::BackendClientSet& clients) {
+  const pbr::AppConfig defaults = pbr::PlatformDefaults::For(pbr::Platform::Detect());
+  clients.SetDefaults({defaults.relay, defaults.directory, defaults.registration});
+}
+
 const pbr::SignedRelayCommand kSigned{.audience = "QmRelay", .timestamp = 1, .signature = "sig"};
 
 } // namespace
@@ -156,6 +167,7 @@ TEST(BackendReachTest, ACustomBackendReachesOnlyItsOwnUrlsWhateverServiceIsMissi
     const RequestRecorder recorder;
     pbr::SwitchableDirectoryClient directory;
     pbr::BackendClientSet clients(directory);
+    SetHubDefaultsAsBootstrapDoes(clients);
     clients.Apply(EndpointsOf(settings));
     ASSERT_NE(clients.Registration(), nullptr);
     // Every service, asked once.
@@ -243,4 +255,41 @@ TEST(BackendReachTest, ABuiltInBackendsTokenRenewIsUnderItsOriginsLlmPrefix) {
   (void)clients.Registration()->RenewLlmToken("account:me", kSigned);
   ASSERT_EQ(recorder.Urls().size(), 1U);
   EXPECT_EQ(recorder.Urls().front(), "POST https://prod.example.test/api/llm/v1/token/renew");
+}
+
+// A custom backend that names no relay, registration or directory at all: the hub's defaults (taken after the latch)
+// hold nothing, so no client is made and nothing is sent anywhere — not to the build's prod, which is compiled here.
+TEST(BackendReachTest, ACustomBackendWithNoRelayRegistrationOrDirectoryFallsBackToNothing) {
+  const ScopedUnset no_origin("PP_BROWSER_ORIGIN");
+  const ScopedUnset no_relay_id("PP_BROWSER_RELAY_ID");
+  const pbr::ScopedCompiledOriginsForTest compiled(kCompiled);
+  const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_reach_bare.json").string();
+  {
+    std::ofstream out(path);
+    out << R"({ "config_version": 1, "backend": { "env": "custom" } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(path, false);
+  std::filesystem::remove(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  const RequestRecorder recorder;
+  pbr::SwitchableDirectoryClient directory;
+  pbr::BackendClientSet clients(directory);
+  SetHubDefaultsAsBootstrapDoes(clients);
+  const pbr::AppConfig defaults = pbr::PlatformDefaults::For(pbr::Platform::Detect());
+  EXPECT_TRUE(defaults.relay.base_url.empty() && defaults.directory.base_url.empty() &&
+              defaults.registration.base_url.empty());
+  clients.Apply(EndpointsOf(pbr::HubSettingsFrom(*loaded, pbr::ProfilePreferences{})));
+  EXPECT_EQ(clients.Relay(), nullptr);
+  EXPECT_EQ(clients.Registration(), nullptr);
+  EXPECT_EQ(clients.ClientCompat(), nullptr);
+  EXPECT_EQ(clients.Locker(), nullptr);
+  EXPECT_FALSE(directory.Configured());
+  (void)directory.SearchPeople("alice");
+  EXPECT_TRUE(recorder.Urls().empty());
+  // What the app did before the fix: defaults taken before the latch are the build's fallback (prod's), and would have
+  // been filled in. The test holds the ordering: a built-in table's defaults are not what a custom backend is given.
+  const pbr::AppConfig prod_defaults =
+      pbr::PlatformDefaults::ForTable(pbr::BuiltInBackendTable(pbr::BackendEnv::Prod, kCompiled));
+  EXPECT_EQ(prod_defaults.relay.base_url, "https://prod.example.test/api/relay");
+  EXPECT_NE(prod_defaults.relay.base_url, defaults.relay.base_url);
 }
