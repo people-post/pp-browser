@@ -618,15 +618,15 @@ and `PP_LAB_AWS_ROLE` that start the lab machine were never set. Tiers, each wit
 - **Scenarios are tagged by capability** (messaging, calls, groups, relay, push, mesh, …). `--tags calls` runs every
   calls scenario; `--changed` works the tags out from the branch's diff, with the capability paths CI already uses to
   skip tests. "Run what my change touches" needs no scenario names.
-- **Developers run the lab remotely**: the manual trigger takes tags or `--changed`, runs on the lab machine, and
-  returns an artifact and a summary. One run at a time, queued; more lab machines if the queue grows.
+- **Developers run the lab remotely**: the manual trigger takes tags or `--changed`, runs on a CodeBuild runner, and
+  returns an artifact and a summary. Runs are independent (one runner each).
 - **The full run gets shorter, not only rarer:** per-scenario times kept from `--summary` and the slowest fixed first;
-  the run split across two or three lab machines; a tier over its budget is a finding like a failing test.
+  the run split across two or three runners; a tier over its budget is a finding like a failing test.
 - **Flaky scenarios are named:** one that passes only on retry (`--retry-failed`) is recorded as flaky; if it stays so,
   it leaves smoke and the PR-facing tiers for a quarantine with an issue. A lab failure a unit test can reproduce gets
   that test ([TESTING § When a higher tier finds a bug](../../docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug)).
-- **The lab machine is set up**: an EC2 runner started per run and stopped after, with the two repo variables and an
-  AWS role (a request to the infra repos). The cheapest high-value item here.
+- **The lab runner is set up**: a privileged CodeBuild runner project in pp-runners-infra plus the relay-checkout
+  deploy key. The cheapest high-value item here.
 
 The tiers move into `docs/ops/TEST_STRATEGY.md` (the home of test tiers) when release mode ships.
 

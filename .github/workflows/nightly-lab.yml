@@ -1,13 +1,11 @@
 name: nightly-lab
 
 # The app lab every night on main (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
-# `--suite app-nat` on the lab machine — a self-hosted EC2 runner that is stopped except while a lab run
-# runs (lab-run.yml: start, build, run, report, stop). A scenario that fails twice (one retry) opens or updates an issue
-# labelled nightly-lab; one that passes again closes it.
+# `--suite app-nat` on a CodeBuild-hosted runner (lab-run.yml: build, run, report). A scenario that fails twice (one
+# retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
 #
-# Never on pull requests: the lab machine runs only what this workflow, from the default branch, gives
-# it. Idle (a notice) until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the
-# secret PP_LAB_RELAY_APIS_TOKEN (read access to people-post/pp-relay-apis, which is private) are set.
+# Never on pull requests: the lab runs only what this workflow, from the default branch, gives it. Idle (a notice)
+# until the secret PP_LAB_RELAY_APIS_DEPLOY_KEY (a read-only deploy key of people-post/pp-relay-apis, which is private) is set.
 
 on:
   schedule:
@@ -35,9 +33,7 @@ jobs:
   lab:
     permissions:
       contents: read
-      id-token: write # the hosted jobs start and stop the lab machine (OIDC role)
       issues: write # one issue per failing scenario
-      actions: read # the stop job looks for other lab runs still on the machine
     uses: ./.github/workflows/lab-run.yml
     secrets: inherit
     with:

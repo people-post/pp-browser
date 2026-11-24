@@ -80,12 +80,12 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
   release, hotfix, app incident (pp-browser); relay rollback, restore, key compromise (pp-relay-apis, Leo). So far:
   pp-browser's three (2026-11-20); the relay's three drafted in pp-relay-apis for Leo's review (PR open 2026-11-23). Left: their
   rehearsals on staging (need AWS access); their steps are still commands, not workflow runs.
-- [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab machine set up (its repo
-  variables and AWS role) so the nightly runs; scenarios tagged by capability, `--tags` and `--changed`; the lab-smoke
+- [ ] Regression suites ([DESIGN § Regression suites](DESIGN.md#regression-suites)): the lab runner set up (a CodeBuild
+  project and the relay-checkout secret) so the nightly runs; scenarios tagged by capability, `--tags` and `--changed`; the lab-smoke
   set on every merge to main; the after-deploy smoke run in the relay's deploys. So far: tags, `--tags`,
-  `--changed` and lab-smoke on main (2026-11-20; idle until the lab machine is set up); the relay's after-deploy
+  `--changed` and lab-smoke on main (2026-11-20; idle until the lab runner is set up); the relay's after-deploy
   smoke drafted in its deploy job for Leo's review (PR open 2026-11-23; skipped until its origin and relay-id variables are set);
-  the lab machine is left.
+  the lab runner is left.
 - [x] The PR template and `docs/ops/RELEASE.md` say what a release branch takes, that fixes land on main first, and
   how a backport is asked for.
 

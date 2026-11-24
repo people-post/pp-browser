@@ -1,14 +1,14 @@
 name: lab-run
 
-# One app-lab run on the lab machine, called by nightly-lab.yml (every suite, nightly) and lab-smoke.yml (the smoke
-# set, every merge to main) — docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. A hosted job starts the machine
-# (a self-hosted EC2 runner, label pp-lab, stopped between runs), the machine builds pp-app-probe and pp-node and runs
-# the suites, a hosted job reports and another stops the machine. The relay is pp-relay-apis's local stack, from a
-# checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).
+# One app-lab run on a CodeBuild-hosted runner (pp-runners-infra: project pp-browser, privileged, LARGE), called by
+# nightly-lab.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
+# docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
+# (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
+# from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).
 #
-# Idle — a notice and nothing started — until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the
-# secret PP_LAB_RELAY_APIS_TOKEN (read access to people-post/pp-relay-apis, which is private) are set. Callers pass
-# `secrets: inherit` and grant contents: read, id-token: write, issues: write and actions: read.
+# Idle — a notice and nothing started — until the secret PP_LAB_RELAY_APIS_DEPLOY_KEY (a read-only
+# deploy key of people-post/pp-relay-apis, which is private) is set. Callers pass `secrets: inherit` and grant contents: read and
+# issues: write.
 
 on:
   workflow_call:
@@ -48,65 +48,37 @@ on:
         type: number
         default: 220
 
-env:
-  AWS_REGION: us-east-1
-
 jobs:
-  start:
-    runs-on: ubuntu-24.04
-    permissions:
-      id-token: write
+  gate:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     outputs:
       enabled: ${{ steps.gate.outputs.enabled }}
     steps:
       # The secrets context is unavailable in job-level `if`, so the whole gate is a step.
-      - name: Check the lab machine is set up
+      - name: Check the lab is set up
         id: gate
         env:
           RUN_NAME: ${{ inputs.name }}
-          INSTANCE_ID: ${{ vars.PP_LAB_INSTANCE_ID }}
-          AWS_ROLE: ${{ vars.PP_LAB_AWS_ROLE }}
-          RELAY_APIS_TOKEN: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
+          RELAY_APIS_KEY: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
         run: |
-          missing=()
-          [ -n "$INSTANCE_ID" ] || missing+=("variable PP_LAB_INSTANCE_ID")
-          [ -n "$AWS_ROLE" ] || missing+=("variable PP_LAB_AWS_ROLE")
-          [ -n "$RELAY_APIS_TOKEN" ] || missing+=("secret PP_LAB_RELAY_APIS_TOKEN")
-          if [ ${#missing[@]} -gt 0 ]; then
-            printf -v list '%s, ' "${missing[@]}"
-            msg="$RUN_NAME skipped: the lab machine is not set up (no ${list%, }; docs/ops/TEST_STRATEGY.md § Nightly lab)."
+          if [ -z "$RELAY_APIS_KEY" ]; then
+            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Nightly lab)."
             echo "::notice title=$RUN_NAME idle::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: aws-actions/configure-aws-credentials@v6
-        if: steps.gate.outputs.enabled == 'true'
-        with:
-          role-to-assume: ${{ vars.PP_LAB_AWS_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Start the lab machine
-        if: steps.gate.outputs.enabled == 'true'
-        env:
-          INSTANCE_ID: ${{ vars.PP_LAB_INSTANCE_ID }}
-        run: |
-          # Another run's stop job may have just stopped it: wait for that before starting it again.
-          state=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
-            --query 'Reservations[0].Instances[0].State.Name' --output text)
-          if [ "$state" = stopping ]; then aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"; fi
-          aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
-          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
   lab:
-    name: lab machine run
-    needs: start
-    if: needs.start.outputs.enabled == 'true'
-    runs-on: [self-hosted, pp-lab]
+    name: lab run
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: codebuild-pp-browser-${{ github.run_id }}-${{ github.run_attempt }}
     timeout-minutes: ${{ inputs.job_timeout_minutes }}
     env:
-      # Outside the workspace (checkout cleans it): the build and its ccache carry over between runs.
-      PP_LOCAL_BUILD_DIR: /home/runner/pp-lab/build
-      CCACHE_DIR: /home/runner/pp-lab/ccache
+      # Outside the workspace: checkout cleans the workspace.
+      PP_LOCAL_BUILD_DIR: ${{ github.workspace }}/../pp-lab/build
+      CCACHE_DIR: ${{ github.workspace }}/../pp-lab/ccache
       # The lab's relays build from it (packaging/pp-node/docker-compose.app-lab.yml).
       PP_RELAY_APIS_ROOT: ${{ github.workspace }}/pp-relay-apis
     steps:
@@ -119,12 +91,27 @@ jobs:
         with:
           repository: people-post/pp-relay-apis
           ref: ${{ vars.PP_LAB_RELAY_APIS_REF || 'main' }}
-          token: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
+          ssh-key: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
           path: pp-relay-apis
           persist-credentials: false
 
       - name: Record the relay commit
         run: git -C "$PP_RELAY_APIS_ROOT" rev-parse HEAD | tee "$RUNNER_TEMP/relay-commit.txt"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev
+
+      - name: Restore ccache
+        id: ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: lab-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: |
+            lab-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake') }}-
+            lab-ccache-v1-
 
       - name: Build the probe and pp-node
         run: |
@@ -172,6 +159,14 @@ jobs:
           EOF
           cp "$RUNNER_TEMP/relay-commit.txt" "$RUNNER_TEMP/lab/"
 
+      # Nightly only: a smoke run per merge would fill the repository's cache quota.
+      - name: Save ccache
+        if: always() && github.event_name == 'schedule'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -184,9 +179,9 @@ jobs:
         run: docker compose -p pp-app-lab down --remove-orphans || true
 
   report:
-    needs: [start, lab]
-    if: always() && needs.start.result == 'success' && needs.start.outputs.enabled == 'true'
-    runs-on: ubuntu-24.04
+    needs: [gate, lab]
+    if: always() && needs.gate.result == 'success' && needs.gate.outputs.enabled == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
       contents: read
       issues: write
@@ -209,43 +204,3 @@ jobs:
           if [ "$ISSUES" != true ]; then args+=(--no-issues); fi
           python3 scripts/test/nightly_lab_report.py "${args[@]}" --name "$RUN_NAME" --sha "$GITHUB_SHA" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-  stop:
-    needs: [start, lab]
-    if: always() && needs.start.result == 'success' && needs.start.outputs.enabled == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      id-token: write
-      actions: read
-    steps:
-      # nightly-lab and lab-smoke share the machine (its one runner takes their lab jobs in turn). A run whose lab job
-      # has not finished stops the machine itself after it, so it is left on for that run.
-      - name: Another run still needs the machine?
-        id: busy
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          busy=""
-          for workflow in nightly-lab.yml lab-smoke.yml; do
-            for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow "$workflow" --status in_progress \
-                          --json databaseId -q '.[].databaseId'); do
-              [ "$id" = "$GITHUB_RUN_ID" ] && continue
-              if gh run view -R "$GITHUB_REPOSITORY" "$id" --json jobs \
-                   -q '.jobs[] | select(.name | endswith("lab machine run")) | select(.status != "completed") | .name' \
-                   | grep -q .; then
-                busy="$busy $id"
-              fi
-            done
-          done
-          if [ -n "$busy" ]; then
-            echo "busy=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::The lab machine is left on: run(s)$busy still need it and stop it after."
-          fi
-      - uses: aws-actions/configure-aws-credentials@v6
-        if: steps.busy.outputs.busy != 'true'
-        with:
-          role-to-assume: ${{ vars.PP_LAB_AWS_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Stop the lab machine
-        if: steps.busy.outputs.busy != 'true'
-        run: aws ec2 stop-instances --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}" >/dev/null
