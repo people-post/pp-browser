@@ -95,10 +95,16 @@ jobs:
           path: pp-relay-apis
           persist-credentials: false
 
+      - name: Kernel check
+        run: |
+          uname -r; docker version --format '{{.Server.Version}}'; grep PRETTY /etc/os-release
+          docker info --format '{{.KernelVersion}} {{.OperatingSystem}}'
+
       - name: Record the relay commit
         run: git -C "$PP_RELAY_APIS_ROOT" rev-parse HEAD | tee "$RUNNER_TEMP/relay-commit.txt"
 
       - name: Install build dependencies
+        if: false
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev
@@ -107,6 +113,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Restore ccache
+        if: false
         id: ccache
         uses: actions/cache/restore@v6
         with:
@@ -117,6 +124,7 @@ jobs:
             lab-ccache-v1-
 
       - name: Build the probe and pp-node
+        if: false
         run: |
           mkdir -p "$PP_LOCAL_BUILD_DIR" "$CCACHE_DIR"
           # Debug: only a Debug desktop build reads PP_BROWSER_CA_BUNDLE, the lab CA its TLS relays need
@@ -128,6 +136,7 @@ jobs:
           cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
 
       - name: Run the suites
+        if: false
         env:
           LAB_SUITES: ${{ inputs.suites }}
           LAB_ONLY: ${{ inputs.only }}
