@@ -292,6 +292,34 @@ TEST(SettingsTitlesTest, StartOverOnTheUnlockGateIsResetMyDataAndLeavesTheRelays
   EXPECT_LT(reset_body.find("ForgetProfileProblem()"), reset_body.find("unlock_gate_->EnsureUnlocked("));
 }
 
+// A tester build refusing a store build's profile (release-compatibility RC022) is not "this profile cannot be
+// opened": Bootstrap refuses before the secrets are initialized for that profile, and the app stops on that refusal
+// before Application (and its unlock gate) starts, so the probe behind the start-over page never sees that profile.
+TEST(SettingsTitlesTest, TheTesterBuildRefusalComesBeforeTheProfileCanBeProbed) {
+  auto read = [](const char* path) {
+    std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / path);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+  };
+  const std::string bootstrap = read("src/app/Bootstrap.cpp");
+  const size_t guard = bootstrap.find("!ProfileBackendAllowed(recorded, ThisBuildKind())");
+  const size_t secrets = bootstrap.find("secrets.Initialize(profile_data_dir)");
+  ASSERT_NE(guard, std::string::npos);
+  ASSERT_NE(secrets, std::string::npos);
+  EXPECT_LT(guard, secrets);
+  EXPECT_NE(bootstrap.substr(guard, secrets - guard).find("return Error("), std::string::npos)
+      << "the refusal returns; it does not go on to open the profile";
+
+  const std::string main_cpp = read("src/app/main.cpp");
+  const size_t booted = main_cpp.find("if (!bootstrap_result) {");
+  const size_t app_init = main_cpp.find("app.Initialize(");
+  ASSERT_NE(booted, std::string::npos);
+  ASSERT_NE(app_init, std::string::npos);
+  EXPECT_LT(booted, app_init);
+  EXPECT_NE(main_cpp.substr(booted, app_init - booted).find("return 1;"), std::string::npos);
+}
+
 TEST(SettingsTitlesTest, SettingsPagesScrollTheirLastRowsClearOfTheFloatingAiButton) {
   // The button is up to 76dp; both mounts (the page sheet and the pushed pane) keep that much (plus air) at the end.
   const std::string css = ReadAsset("themes/components.rcss");

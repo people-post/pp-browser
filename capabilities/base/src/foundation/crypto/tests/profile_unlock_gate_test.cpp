@@ -1242,5 +1242,63 @@ TEST_F(ProfileUnlockGateProblemTest, StartOverWaitsForARunningUnlock) {
   finish();
 }
 
+// --- What main has around the gate: one profile directory per environment (profiles/<prod|staging|dev|...>/), a
+// tester build that never opens a store build's profile (RC022), the Chats page's device-removed notice (#724) ---
+
+// A tester build refuses a store build's profile in Bootstrap, before the secrets are initialized for it (and the app
+// then stops): with no profile named, nothing is probed, so that refusal can never become this page.
+TEST_F(ProfileUnlockGateProblemTest, NothingIsProbedBeforeTheSecretsNameAProfile) {
+  WriteFile("identity.enc", ByteVector(64, 0x33)); // would be "cannot open" for an engine initialized here
+  engine_.Shutdown();
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::nullopt);
+  Bind();
+  gate_.EnsureUnlocked(nullptr);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(DiagCount("unlock.profile_problem"), 0);
+}
+
+// Another environment's profile on the same device (here a store build's `prod` folder whose account data would be
+// "cannot open" if it were this one's) is never looked at: a fresh profile of this environment gets the first-run page.
+TEST_F(ProfileUnlockGateProblemTest, AnotherEnvironmentsProfileBesideAFreshOneIsNotLookedAt) {
+  const auto profiles = dir_ / "profiles";
+  std::filesystem::create_directories(profiles / "prod");
+  std::filesystem::create_directories(profiles / "dev");
+  {
+    std::ofstream out(profiles / "prod" / "identity.enc", std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << std::string(64, '\x33');
+    std::ofstream manifest(profiles / "prod" / "manifest.json", std::ios::trunc);
+    manifest << R"({"schema_version": 1, "backend": "prod"})";
+  } // closed before anything reads them
+  engine_.Shutdown();
+  ASSERT_TRUE(static_cast<bool>(engine_.Initialize((profiles / "dev").string())));
+  EXPECT_EQ(engine_.ProbeBeforeUnlock(), std::nullopt);
+  Bind();
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_EQ(forks_, 1) << "the fresh install's first page";
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(DiagCount("unlock.profile_problem"), 0);
+}
+
+// The device-removed notice lives on the Chats page, with the account open and messaging up (#724): there the gate
+// answers yes and never probes the files, so the problem page never comes up over that notice.
+TEST_F(ProfileUnlockGateProblemTest, AnOpenAccountIsNeverProbed) {
+  CreateVault();
+  ASSERT_TRUE(static_cast<bool>(engine_.Unlock(SecretText("4321"))));
+  WriteFile("vault.bin", ByteVector(120, 0x78)); // would be "cannot open" before a PIN
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return true; };
+  ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+  ports.ui.show_unlock = [this]() { ++doors_; };
+  gate_.BindPorts(std::move(ports));
+  std::vector<bool> answers;
+  gate_.EnsureUnlocked([&answers](const bool unlocked) { answers.push_back(unlocked); });
+  ASSERT_EQ(answers.size(), 1u);
+  EXPECT_TRUE(answers.front());
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(doors_, 0);
+}
+
 } // namespace
 } // namespace pbr
