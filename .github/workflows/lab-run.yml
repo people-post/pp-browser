@@ -170,6 +170,22 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ steps.ccache.outputs.cache-primary-key }}
 
+      - name: NAT diagnostics
+        if: always()
+        run: |
+          uname -r
+          lsmod 2>&1 | grep -i "nat\|masq\|conntrack\|nf_tables\|iptable" | head -20 || true
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | head -40
+          for c in gw-a user-a; do
+            echo "::group::logs $c"; docker logs --tail 40 pp-app-lab-$c-1 2>&1 || true; echo "::endgroup::"
+          done
+          echo "::group::start gw-a and probe"
+          docker start pp-app-lab-gw-a-1 pp-app-lab-user-a-1 >/dev/null 2>&1 || true
+          sleep 3
+          docker exec pp-app-lab-gw-a-1 sh -c 'ip -4 addr; ip route; iptables -t nat -S; iptables -S FORWARD; cat /proc/sys/net/ipv4/ip_forward; ping -c1 -W2 198.51.100.20' 2>&1 || true
+          docker exec pp-app-lab-user-a-1 sh -c 'ip route; ping -c1 -W2 198.51.100.20; ping -c1 -W2 10.119.1.254' 2>&1 || true
+          echo "::endgroup::"
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
