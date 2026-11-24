@@ -1370,6 +1370,14 @@ void ConversationsHub::OpenContactCards() {
         auto identity = Identity().Get();
         return identity && identity->registered ? identity->account_id : std::string();
       },
+      [this]() -> size_t {
+        // As NudgeSiblings counts them: the devices our own account card lists (none known: 0).
+        if (!mesh_messaging_) {
+          return 0;
+        }
+        auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
+        return card ? card->devices.size() : 0;
+      },
       [](const std::string& profile_dir, const std::string& key, const mesh::ProfileIconRef& icon) {
         return FetchProfileIcon(profile_dir, key, icon);
       },

@@ -4,8 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 #include "common/MeshAlias.h"
@@ -45,7 +47,7 @@ protected:
     std::filesystem::create_directories(dir_);
     directory_.answer.account_id = kAccount;
     sync_ = std::make_unique<OwnProfileIconSync>(
-        dir_.string(), directory_, [this]() { return account_; },
+        dir_.string(), directory_, [this]() { return account_; }, [this]() { return devices_; },
         [this](const std::string& profile_dir, const std::string& key, const mesh::ProfileIconRef& icon) -> Roe<void> {
           ++fetches;
           fetched_urls.push_back(icon.url);
@@ -69,10 +71,22 @@ protected:
 
   void Advance(const int64_t ms) { now_ += ms; }
 
+  /** A photo cached here earlier (an old one, as after an upgrade: written `age_ms` ago). */
+  void CacheOldPhoto(const int64_t age_ms) {
+    ProfileIconCacheMeta meta;
+    meta.url = "https://cdn.example/me-old.png";
+    meta.blob_id = "b0";
+    meta.kind = "png";
+    meta.fetched_at_ms = now_ - age_ms;
+    ASSERT_TRUE(static_cast<bool>(SaveProfileIconCache(dir_.string(), {1, 2, 3}, "png", meta, "self")));
+    ASSERT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+  }
+
   std::filesystem::path dir_;
   FakeDirectory directory_;
   std::unique_ptr<OwnProfileIconSync> sync_;
   std::string account_ = kAccount;
+  size_t devices_ = 2; // the account's own card lists this many devices
   int64_t now_ = kNow;
   int fetches = 0;
   bool fetch_fails = false;
@@ -147,18 +161,75 @@ TEST_F(OwnProfileIconSyncTest, AnAnswerForAnotherAccountTakesNothing) {
   EXPECT_TRUE(ProfileIconLocalPath(dir_.string()).empty());
 }
 
-TEST_F(OwnProfileIconSyncTest, APhotoRemovedOnAnotherDeviceClearsTheCacheButNotAFreshOne) {
+// Two or more devices: cleared only after two no-photo answers at least kClearGraceMs apart in this run.
+TEST_F(OwnProfileIconSyncTest, APhotoRemovedOnAnotherDeviceIsClearedAfterTwoNoPhotoAnswersApart) {
   directory_.answer.icon = mesh::ProfileIconRef{"https://cdn.example/me-1.png", "b1", "png"};
   ASSERT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Fetched);
   directory_.answer.icon.reset();
 
   Advance(OwnProfileIconSync::kLookupGapMs + 1);
-  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "set a moment ago: the directory may lag";
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "the first no-photo answer only counts";
   EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
 
-  Advance(OwnProfileIconSync::kClearGraceMs);
+  Advance(OwnProfileIconSync::kLookupGapMs + 1);
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "a second one, but too soon";
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+
+  Advance(11LL * 60LL * 1000LL - (OwnProfileIconSync::kLookupGapMs + 1)); // 11 minutes after the first
   EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Cleared);
   EXPECT_TRUE(ProfileIconLocalPath(dir_.string()).empty());
+}
+
+// The only device of the account: nobody else could have removed the photo, so a no-photo answer never clears it.
+TEST_F(OwnProfileIconSyncTest, TheOnlyDeviceKeepsItsPhotoWhateverTheDirectorySays) {
+  devices_ = 1;
+  CacheOldPhoto(/*age_ms=*/24LL * 60LL * 60LL * 1000LL);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged);
+    Advance(11LL * 60LL * 1000LL);
+  }
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+  EXPECT_EQ(directory_.lookups, 4);
+
+  devices_ = 0; // signed out or no card known yet: treated as "not more than one"
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged);
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+}
+
+// Right after an upgrade the cache is old: the first no-photo answer of the run must not clear it.
+TEST_F(OwnProfileIconSyncTest, AnOldPhotoIsKeptAtTheFirstNoPhotoAnswerAfterAnUpgrade) {
+  CacheOldPhoto(/*age_ms=*/30LL * 24LL * 60LL * 60LL * 1000LL);
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged);
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+}
+
+// A no-photo answer, then one with the photo: kept, and the count starts over.
+TEST_F(OwnProfileIconSyncTest, AnAnswerWithThePhotoStartsTheCountOver) {
+  CacheOldPhoto(/*age_ms=*/60LL * 60LL * 1000LL);
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged); // no photo: counted
+
+  Advance(OwnProfileIconSync::kLookupGapMs + 1);
+  directory_.answer.icon = mesh::ProfileIconRef{"https://cdn.example/me-old.png", "b0", "png"};
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "the cached photo is the current one";
+
+  directory_.answer.icon.reset();
+  Advance(11LL * 60LL * 1000LL);
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "the first no-photo answer after the reset";
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
+
+  Advance(11LL * 60LL * 1000LL);
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Cleared);
+}
+
+// A failed lookup does not count as a no-photo answer.
+TEST_F(OwnProfileIconSyncTest, AFailedLookupDoesNotCountTowardsClearing) {
+  CacheOldPhoto(/*age_ms=*/60LL * 60LL * 1000LL);
+  directory_.fail = true;
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Failed);
+  Advance(11LL * 60LL * 1000LL);
+  directory_.fail = false;
+  EXPECT_EQ(sync_->Refresh(), OwnProfileIconSync::Outcome::Unchanged) << "the first counted no-photo answer";
+  EXPECT_FALSE(ProfileIconLocalPath(dir_.string()).empty());
 }
 
 TEST_F(OwnProfileIconSyncTest, NoPhotoAnywhereChangesNothing) {

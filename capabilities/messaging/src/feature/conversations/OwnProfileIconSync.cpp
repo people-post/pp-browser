@@ -9,11 +9,13 @@
 namespace pbr {
 
 OwnProfileIconSync::OwnProfileIconSync(std::string profile_dir, mesh::IDirectoryClient& directory,
-                                       std::function<std::string()> own_account_id, FetchFn fetch,
+                                       std::function<std::string()> own_account_id,
+                                       std::function<size_t()> own_device_count, FetchFn fetch,
                                        std::function<int64_t()> now_ms)
     : profile_dir_(std::move(profile_dir)),
       directory_(directory),
       own_account_id_(std::move(own_account_id)),
+      own_device_count_(std::move(own_device_count)),
       fetch_(std::move(fetch)),
       now_ms_(std::move(now_ms)) {}
 
@@ -50,6 +52,10 @@ OwnProfileIconSync::Outcome OwnProfileIconSync::Refresh() {
   }
   const std::string self_key = "self";
   if (hit->icon && !hit->icon->url.empty()) {
+    {
+      std::lock_guard lock(mutex_);
+      no_photo_since_ms_ = 0; // the photo is there: a later no-photo answer starts the count over
+    }
     if (!ProfileIconNeedsFetch(profile_dir_, self_key, *hit->icon)) {
       finish(true, now);
       return Outcome::Unchanged;
@@ -64,14 +70,28 @@ OwnProfileIconSync::Outcome OwnProfileIconSync::Refresh() {
     finish(true, now);
     return Outcome::Fetched;
   }
-  // The directory shows no photo for us: set nowhere, or removed on another device.
+  // The directory shows no photo for us: set nowhere, removed on another device, or missing from the backend that
+  // answered.
   finish(true, now);
   const auto meta = LoadProfileIconCacheMeta(profile_dir_, self_key);
   if (!meta || ProfileIconLocalPath(profile_dir_, self_key).empty()) {
     return Outcome::Unchanged;
   }
-  if (now - meta.value().fetched_at_ms < kClearGraceMs) {
-    return Outcome::Unchanged; // set on this device a moment ago; the directory may not show it yet
+  const size_t devices = own_device_count_ ? own_device_count_() : 0;
+  {
+    std::lock_guard lock(mutex_);
+    if (devices < 2) {
+      no_photo_since_ms_ = 0;
+      return Outcome::Unchanged; // the only device: nobody else could have removed it
+    }
+    if (no_photo_since_ms_ == 0) {
+      no_photo_since_ms_ = now; // the first such answer in this run: wait for a second one
+      return Outcome::Unchanged;
+    }
+    if (now - no_photo_since_ms_ < kClearGraceMs) {
+      return Outcome::Unchanged;
+    }
+    no_photo_since_ms_ = 0;
   }
   if (auto cleared = ClearProfileIconCache(profile_dir_, self_key); !cleared) {
     return Outcome::Failed;
