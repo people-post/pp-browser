@@ -23,7 +23,7 @@ AI-generated UI must follow this profile.
 
 ## Growing textarea (`max-rows`)
 
-`<textarea rows="2" max-rows="6">` grows with its text between `rows` and `max-rows`, then scrolls. The chat composer uses it. The attribute needs the pp-cpp-ui release **after v0.3.1**; older engines ignore it and keep `rows` (no error), so check `cmake/PpCppUi.cmake` when the composer does not grow.
+`<textarea rows="2" max-rows="6">` grows with its text between `rows` and `max-rows`, then scrolls. The chat composer uses it. The attribute needs the pp-cpp-ui release **after v0.3.1**; older engines ignore it and keep `rows` (no error), so check the pp-cpp-ui pin (`cmake/PpPins.cmake`) when the composer does not grow.
 
 ## Selectable text (pp-browser fork)
 

@@ -3,4 +3,4 @@ pp_browser_add_feature_folder_tests(
   pp_browser_feature_conversations_test
   LINK_LIBS pp_foundation_identity pp_mesh_testing pp_lib_net_testing pp_lib_delivery_testing pp_lib_messaging_testing pp_lib_people_testing pp_lib_content_testing
   PRIVATE_DEFINITIONS
-    PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
+    PP_BROWSER_ASSETS_DIR="${PP_BROWSER_ROOT}/assets")

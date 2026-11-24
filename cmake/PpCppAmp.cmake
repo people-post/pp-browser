@@ -1,41 +1,14 @@
-# Fetch people-post/pp-cpp-amp (ADP L1, MSH L2, channel L3, link).
-#
-# Pin a release tag (PP_CPP_AMP_GIT_TAG), or a local checkout through PP_CPP_AMP_SOURCE_DIR. There is
-# no implicit sibling: a stale ../pp-cpp-amp must not build silently (PB-001; pp-cpp-mesh does the
-# same). AMP unit/integration tests run in pp-cpp-amp CI.
+# Add people-post/pp-cpp-amp (ADP L1, MSH L2, channel L3, link), at its pin (cmake/PpPins.cmake; PP_CPP_AMP_GIT_TAG),
+# a local checkout (PP_CPP_AMP_SOURCE_DIR) or a sibling (PP_SIBLINGS_DIR). There is no implicit sibling: a stale
+# ../pp-cpp-amp must not build silently (PB-001). AMP unit/integration tests run in pp-cpp-amp CI.
 #
 # Public CMake target names match pp-cpp-amp: pp_amp_l1, pp_amp_l2, pp_amp_l3,
 # pp_amp_link. Do not reintroduce pp_base_* aliases for these.
 
-include(FetchContent)
-include(PpFetchPin)
-
-set(PP_CPP_AMP_SOURCE_DIR "" CACHE PATH
-  "Optional local checkout of pp-cpp-amp (overrides FetchContent)")
-set(PP_CPP_AMP_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-amp.git"
-  CACHE STRING "Git remote for pp-cpp-amp")
-pp_fetch_git_tag(PP_CPP_AMP_GIT_TAG "v6.1.0"
-  "Release tag on pp-cpp-amp main (not a branch name)")
-
 set(PP_AMP_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-amp tests" FORCE)
 
-set(_pp_amp_src "${PP_CPP_AMP_SOURCE_DIR}")
-if(_pp_amp_src)
-  message(STATUS "pp-browser: using local pp-cpp-amp at ${_pp_amp_src}")
-endif()
-
 if(NOT TARGET pp_amp_l1)
-  if(_pp_amp_src)
-    add_subdirectory("${_pp_amp_src}"
-                     "${CMAKE_BINARY_DIR}/_deps/pp_cpp_amp-build" EXCLUDE_FROM_ALL)
-  else()
-    FetchContent_Declare(
-      pp_cpp_amp
-      GIT_REPOSITORY ${PP_CPP_AMP_GIT_REPOSITORY}
-      GIT_TAG ${PP_CPP_AMP_GIT_TAG}
-    )
-    FetchContent_MakeAvailable(pp_cpp_amp)
-  endif()
+  pp_pin_make_available(pp-cpp-amp)
 endif()
 
 foreach(_layer pp_amp_l1 pp_amp_l2 pp_amp_l3 pp_amp_link)

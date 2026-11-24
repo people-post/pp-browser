@@ -39,10 +39,6 @@ else()
   target_sources(pp_lib_net PRIVATE PublicOnlySocket_Posix.cpp)
 endif()
 
-target_compile_definitions(pp_lib_net PUBLIC
-  "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
-  "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
-
 if(PP_BROWSER_BUILD_TESTS)
   # Mock backend clients: test binaries only, never linked into the app or pp-node.
   pp_browser_add_lib_library(pp_lib_net_testing

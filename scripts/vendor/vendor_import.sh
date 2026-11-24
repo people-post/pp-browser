@@ -190,7 +190,10 @@ if upstream_path.exists():
     data = json.loads(upstream_path.read_text())
 
 patch = json.loads(patch_path.read_text())
-data.update(patch)
+# Merge each entry: the import refreshes where it came from and keeps the manifest's other fields (path, version,
+# license, ...; third_party/README.md). Bump "version" by hand with the tag.
+for name, entry in patch.items():
+    data.setdefault(name, {}).update(entry)
 
 upstream_path.write_text(json.dumps(data, indent=2) + "\n")
 print(f"Updated {upstream_path}")

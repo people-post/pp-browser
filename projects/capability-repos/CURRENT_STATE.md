@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-23  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done; the docs split (CR025) step 1 done
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest)
 
 ## Done
 
@@ -145,12 +145,36 @@
   `projects/_archive/`; media-hop-reachability in pp-cpp-mesh (stubs here); a `docs/README.md` in every capability
   folder.
 
+- **CR012's prerequisites (2026-11-23):** one pin list, [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) (pp-cpp-common,
+  -crypto, -amp, -mesh, -ui, pp-ledger; pp-browser's and pp-node's), with the mechanism in `cmake/PpFetchPin.cmake` for
+  another repo to copy; sibling mode, `-DPP_SIBLINGS_DIR=..`, every library from a checkout beside the repo, warned
+  when a checkout's HEAD is not its pin; `third_party/UPSTREAM.json` the manifest of every vendored copy (and
+  `third_party/README.md` what comes from the libraries' trees). The same compile commands and targets as before; full
+  ctest, and a sibling build against checkouts at the pins, pass. The shared home across repos waits for a second repo
+  (CR012's notes).
+
+- **CR023 steps 4–5, calls repo-ready (2026-11-23):** calls builds and tests on its own —
+  `cmake -S capabilities -DPP_CAPABILITIES=calls` (calls, base, people, net, delivery, pricing, media; no app), and
+  CI's `capabilities` job builds calls' tests so and runs its 784 on every PR that touches calls or what is below it. A
+  link above calls fails that configure; the gate holds the standalone table to the order. The host contract is
+  [capabilities/calls/README.md](../../capabilities/calls/README.md); the Android hooks media called on the app's
+  activity by name are a port (`MediaHost`) the app fills (`src/app/MediaHost_Android.cpp`).
+
+## Defaults taken (owners may revisit)
+
+- **pp-cpp-ui's implicit `../pp-cpp-ui` is gone** (CR012): a developer who built a checkout beside the repo without
+  asking now builds the pinned tag, and configure says so once. Pass `-DPP_SIBLINGS_DIR=..` or `-DPP_CPP_UI_SOURCE_DIR=…`
+  (Kenneth: the UI engine's main user of it).
+- **`cmake/PpPins.cmake` is owned by @yhw1630** in CODEOWNERS (it holds Amp's and the mesh's tags, which only he owned);
+  pp-cpp-common, -crypto and -ui bumps were also Kenneth's to approve.
+
 ## Next
 
-1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
-2. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
+1. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
    the cross-repo programs, this project included).
-3. P3's namespaces when a second app needs a capability.
+2. P3's namespaces when a second app needs a capability.
+3. The same standalone build for the next capability a second app asks for (net and base for the operator app,
+   below): `-DPP_CAPABILITIES=net` configures today; a CI job of its own when it leaves.
 
 ## A second app is waiting (2026-11-22)
 
@@ -162,8 +186,8 @@ It is P4's first move (CR005), after release 1: not earlier, because pp-browser 
 Not pp-cpp-crypto: its README keeps product wire formats in the apps, and only the hashing, signatures, typed blobs
 and PeerId in this code are crypto.
 
-- **Before it:** CR012's prerequisites (one pin list per app and a sibling-build mode; one home for vendored deps).
-  The vectors go to the contracts repo (pp-specs, CR010 / CR025 step 2) in the same step if it exists by then, since the relay reads them too.
+- **Before it:** CR012's prerequisites (one pin list per app and a sibling-build mode; one home for vendored deps) —
+  done in pp-browser; the operator app keeps its own list with a copy of `cmake/PpFetchPin.cmake`. The vectors go to the contracts repo (pp-specs, CR010 / CR025 step 2) in the same step if it exists by then, since the relay reads them too.
 - **A reference port:** pp-cpp-crypto branch `feat/relay-certificate` (commit 402421f; not merged, not to be released
   from there) carries the code with these vectors byte for byte, every case with the same verdict. Moving it here:
   - origin policy becomes the caller's: the shared code keeps the structural rules and takes an origin predicate, and

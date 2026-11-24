@@ -111,20 +111,36 @@ fi
 # already existed but newly joined the closure is not visible from a single build.
 
 echo
-echo "== Sibling pins since $SINCE"
+echo "== Library pins since $SINCE"
+# "<repo> <tag>" per pin at a ref: cmake/PpPins.cmake (CR012), or before it one cmake/Pp<Lib>.cmake per library.
+pins_at() {
+  local ref="$1"
+  if git -C "$ROOT" cat-file -e "$ref:cmake/PpPins.cmake" 2>/dev/null; then
+    git -C "$ROOT" show "$ref:cmake/PpPins.cmake" | sed -nE 's/^pp_pin\(([a-z0-9-]+) +TAG +([^ )]+).*/\1 \2/p'
+  else
+    local f
+    for f in $(git -C "$ROOT" ls-tree --name-only "$ref" cmake/ | grep -E '^cmake/Pp(Cpp[A-Za-z]+|Ledger)\.cmake$'); do
+      # PpCppAmp.cmake -> pp-cpp-amp
+      local name tag
+      name="$(basename "$f" .cmake | sed -E 's/([a-z])([A-Z])/\1-\2/g' | tr 'A-Z' 'a-z')"
+      tag="$(git -C "$ROOT" show "$ref:$f" | grep -oE '_GIT_TAG "[^"]+"' | head -1 | sed -E 's/_GIT_TAG "(.*)"/\1/')"
+      [[ -n "$tag" ]] && echo "$name $tag"
+    done
+  fi
+}
+pins_at "$SINCE" > "$tmp/pins_old"
+sed -nE 's/^pp_pin\(([a-z0-9-]+) +TAG +([^ )]+).*/\1 \2/p' "$ROOT/cmake/PpPins.cmake" > "$tmp/pins_new"
 pins_changed=0
-for f in "$ROOT"/cmake/PpCpp*.cmake; do
-  rel="${f#"$ROOT"/}"
-  # PpCppAmp.cmake -> _deps/pp_cpp_amp-*: only pins whose sources feed this binary.
-  dep="$(basename "$f" .cmake | sed -E 's/([a-z])([A-Z])/\1_\2/g' | tr 'A-Z' 'a-z')"
+while read -r name new; do
+  # pp-cpp-amp -> _deps/pp_cpp_amp-*: only pins whose sources feed this binary.
+  dep="${name//-/_}"
   if [[ -d "$BUILD/_deps/$dep-src" ]] && ! grep -q "/_deps/$dep-" "$tmp/inputs"; then
     continue
   fi
-  if ! git -C "$ROOT" diff --quiet "$SINCE"...HEAD -- "$rel"; then
-    old="$(git -C "$ROOT" show "$SINCE:$rel" 2>/dev/null | grep -oE '_GIT_TAG "[^"]+"' | head -1 || true)"
-    new="$(grep -oE '_GIT_TAG "[^"]+"' "$f" | head -1 || true)"
-    echo "  $rel: ${old#_GIT_TAG } -> ${new#_GIT_TAG }"
+  old="$(awk -v n="$name" '$1 == n {print $2}' "$tmp/pins_old")"
+  if [[ "$old" != "$new" ]]; then
+    echo "  $name: ${old:-(none)} -> $new"
     pins_changed=1
   fi
-done
+done < "$tmp/pins_new"
 [[ "$pins_changed" -eq 1 ]] || echo "  (none)"
