@@ -73,7 +73,7 @@ jobs:
     name: lab run
     needs: gate
     if: needs.gate.outputs.enabled == 'true'
-    runs-on: codebuild-pp-browser-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ inputs.job_timeout_minutes }}
     env:
       # Outside the workspace: checkout cleans the workspace.
@@ -116,6 +116,9 @@ jobs:
             lab-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake') }}-
             lab-ccache-v1-
 
+      - name: Disk before
+        run: df -h / | tail -1; nproc; free -g | head -2
+
       - name: Build the probe and pp-node
         run: |
           mkdir -p "$PP_LOCAL_BUILD_DIR" "$CCACHE_DIR"
@@ -126,6 +129,9 @@ jobs:
             cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPP_BROWSER_COMPILER_CACHE=ON
           fi
           cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
+
+      - name: Disk after build
+        run: df -h / | tail -1
 
       - name: Run the suites
         env:
