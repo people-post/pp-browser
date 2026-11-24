@@ -101,28 +101,28 @@ renew under the registry's origin), `LlmPreset.cpp`, `HttpBlobClient.cpp` / `Rel
 
 ## E. Found on the way
 
-Read from the code, not run, except where a test is named. Each to be filed or fixed on its own.
+Read from the code, not run, except where a test is named. Each is filed as its own issue.
 
-1. **Reset, then a backend switch before the restart:** the next start claims the reset folder for the new backend;
+1. [#738](https://github.com/people-post/pp-browser/issues/738) **Reset, then a backend switch before the restart:** the next start claims the reset folder for the new backend;
    switching back finds no profile for the old one and cannot make `profiles/{key}` — the app does not start on it
    (#733 by another route).
-2. **`machine.json` `active_profile_id` is dead** (above).
-3. **Every DEK-sealed file and the keychain items are bound to the folder name;** pp-node with `--profile` gives
+2. [#739](https://github.com/people-post/pp-browser/issues/739) **`machine.json` `active_profile_id` is dead** (above).
+3. [#740](https://github.com/people-post/pp-browser/issues/740) **Every DEK-sealed file and the keychain items are bound to the folder name;** pp-node with `--profile` gives
    `IdentityStore` the registry's id while its secrets engine takes the folder name.
-4. **A custom backend uses the fallback environment's LLM and MCP** (prod's in a store app; `CompiledEnvFor`), while its
+4. [#741](https://github.com/people-post/pp-browser/issues/741) **A custom backend uses the fallback environment's LLM and MCP** (prod's in a store app; `CompiledEnvFor`), while its
    LLM token is issued and renewed at the custom origin.
-5. **A custom relay may inherit the fallback's relay id** when the file names none (defaults applied before the latch,
+5. [#742](https://github.com/people-post/pp-browser/issues/742) **A custom relay may inherit the fallback's relay id** when the file names none (defaults applied before the latch,
    kept by the merge).
-6. **`directory.providers[]` in the config overrides the compiled directory**, prod included.
-7. **A user's promoted-MCP URL is overwritten** on prod, staging and dev, and written back.
-8. **Editing custom URLs while on custom** applies them live under the old profile, leaves the preferred relay on the
+6. [#743](https://github.com/people-post/pp-browser/issues/743) **`directory.providers[]` in the config overrides the compiled directory**, prod included.
+7. [#744](https://github.com/people-post/pp-browser/issues/744) **A user's promoted-MCP URL is overwritten** on prod, staging and dev, and written back.
+8. [#745](https://github.com/people-post/pp-browser/issues/745) **Editing custom URLs while on custom** applies them live under the old profile, leaves the preferred relay on the
    old URL, unbinds push, and opens a new profile on the next start.
-9. **A backend switch unbinds push on the preferred relay only;** binding ids are in memory only.
-10. **"Switch pending" is decided twice:** the banner compares environments, push compares profile keys.
-11. **`show_tester_options` is per profile** but decides which backends are offered; a new profile starts with it off.
-12. **The machine-wide push device id** is shared by every profile and backend; a reset keeps it.
-13. **pp-node shares the desktop app's data root and `profiles.json`** by default and never selects by backend.
-14. **Documentation drift:** DATA_LAYOUT lacks `threads/{id}/blob_cipher/`, `picked/preview/`, several `profile.db`
+9. [#746](https://github.com/people-post/pp-browser/issues/746) **A backend switch unbinds push on the preferred relay only;** binding ids are in memory only.
+10. [#747](https://github.com/people-post/pp-browser/issues/747) **"Switch pending" is decided twice:** the banner compares environments, push compares profile keys.
+11. [#748](https://github.com/people-post/pp-browser/issues/748) **`show_tester_options` is per profile** but decides which backends are offered; a new profile starts with it off.
+12. [#749](https://github.com/people-post/pp-browser/issues/749) **The machine-wide push device id** is shared by every profile and backend; a reset keeps it.
+13. [#750](https://github.com/people-post/pp-browser/issues/750) **pp-node shares the desktop app's data root and `profiles.json`** by default and never selects by backend.
+14. [#751](https://github.com/people-post/pp-browser/issues/751) **Documentation drift:** DATA_LAYOUT lacks `threads/{id}/blob_cipher/`, `picked/preview/`, several `profile.db`
     tables (calls, posts, `device_sessions`, `control_lane_seen`, `group_member_seq`, `group_targets`), preferences
     past schema 14, `ai_dot_look`'s current values, Android SharedPreferences and several `identity.enc` keys; it still
     lists the root `mesh_directory_nodes.json` and says `threads/{id}/blobs/` is unused (it is still made).

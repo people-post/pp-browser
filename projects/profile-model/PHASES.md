@@ -17,9 +17,9 @@ a profile of the old layout is not read.
 - [ ] The guard reads the network: a tester app never opens `main`, `--profile` included.
 - [ ] Reset my data makes a new profile on the same network and deletes the old folder.
 - [ ] `machine.json` loses `active_profile_id`; pp-node gets its own data root and network.
-- [ ] Tests: #733's three scenarios, reset then switch (INVENTORY § E 1), a tester app given a `main` profile, a
+- [ ] Tests: #733's three scenarios, reset then switch (INVENTORY § E 1, #738), a tester app given a `main` profile, a
       folder without a manifest.
-- [ ] Closes #733.
+- [ ] Closes #733 and #738.
 
 ## P2 — Backends as service tables (PM002)
 
