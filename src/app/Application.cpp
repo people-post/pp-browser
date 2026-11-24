@@ -605,7 +605,8 @@ Roe<void> Application::ResetActiveProfile() {
   }
 
   // The old account's pending first sync is gone with its preferences: a new account starts with none.
-  account_sync_ = AccountSyncState([this](const bool pending) { PersistAccountSyncPending(pending); });
+  // Timers armed for the old account (the 60-second "still syncing", a retry) are stale from here on.
+  account_sync_.ResetForNewProfile();
   account_sync_retries_ = 0;
   ApplyAccountSyncView();
   chat_->OnProfileDataReset();
@@ -2652,16 +2653,25 @@ void Application::ApplyAccountSyncView() {
 void Application::ArmAccountSyncTimeout() {
   // The spinner never runs forever: after this the page says the sync is late (the next success still clears it).
   constexpr auto kSpinnerTimeout = std::chrono::seconds(60);
-  AppRuntime::ScheduleCoordinatorOneShot(kSpinnerTimeout, [this]() {
-    AppRuntime::PostUI([this]() {
-      account_sync_.OnTimeout();
+  AppRuntime::ScheduleCoordinatorOneShot(kSpinnerTimeout, [this, token = account_sync_.TimerToken()]() {
+    AppRuntime::PostUI([this, token]() {
+      account_sync_.OnTimeout(token);
       ApplyAccountSyncView();
     });
   });
 }
 
-void Application::OnAccountSyncResult(const bool ok) {
-  if (ok) {
+void Application::OnAccountSyncResult(const AccountSyncResult result) {
+  if (result == AccountSyncResult::CannotSync) {
+    // Nothing is coming in this state (no recovery seed, not registered, signed out): the normal empty pages, not a
+    // "Still syncing" line forever. A device taken off its account says so in its own notice.
+    account_sync_retries_ = 0;
+    account_sync_.OnSyncImpossible();
+    PersistAccountSyncPending(false);
+    ApplyAccountSyncView();
+    return;
+  }
+  if (result == AccountSyncResult::Synced) {
     account_sync_retries_ = 0;
     account_sync_.OnSyncSucceeded();
     PersistAccountSyncPending(false); // also when the relaunch's opening has not marked it yet
@@ -2675,9 +2685,9 @@ void Application::OnAccountSyncResult(const bool ok) {
   constexpr int kMaxRetries = 3;
   if (account_sync_.Pending() && account_sync_retries_ < kMaxRetries) {
     ++account_sync_retries_;
-    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(30), [this]() {
-      AppRuntime::PostUI([this]() {
-        if (messaging_ && account_sync_.Pending()) {
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(30), [this, token = account_sync_.TimerToken()]() {
+      AppRuntime::PostUI([this, token]() {
+        if (messaging_ && account_sync_.Pending() && token == account_sync_.TimerToken()) {
           messaging_->PublishAccountLockerSoon();
         }
       });
@@ -2801,8 +2811,8 @@ void Application::WireHubCallbacks() {
       }
     });
   });
-  messaging.SetOnAccountSyncResult([this](const bool ok) {
-    AppRuntime::PostUI([this, ok]() { OnAccountSyncResult(ok); }); // a worker thread → the UI thread
+  messaging.SetOnAccountSyncResult([this](const AccountSyncResult result) {
+    AppRuntime::PostUI([this, result]() { OnAccountSyncResult(result); }); // a worker thread → the UI thread
   });
   messaging.SetOnContactsChanged([this]() {
     // Whoever changed the address book, on whatever thread: every list of people on screen (New chat, Contacts, the

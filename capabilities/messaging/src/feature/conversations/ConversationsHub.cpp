@@ -2784,26 +2784,33 @@ void ConversationsHub::PublishAccountLockerSoon() {
       if (!account_locker_ || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
         return;
       }
+      const auto report = [this](const AccountSyncResult result) {
+        std::function<void(AccountSyncResult)> on_result;
+        {
+          std::lock_guard lock(account_sync_result_mu_);
+          on_result = on_account_sync_result_;
+        }
+        if (on_result) {
+          on_result(result);
+        }
+      };
       auto seed = Identity().RecoverySeed();
       auto identity = Identity().Get();
-      if (!seed || !*seed || !identity || !identity->registered) {
-        return; // an account from before M023, or not registered yet: nothing to publish
+      if (!seed || !identity) {
+        return; // could not be read now: the next attempt tries again
       }
-      if (mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut()) {
-        return; // M021 d4: a signed-out device no longer speaks for the account
+      // An account from before M023 (no seed), not registered, or (M021 d4) a signed-out device that no longer speaks
+      // for the account: nothing to publish, now or later — the indicator must not wait for it.
+      const bool signed_out = mesh_messaging_ && mesh_messaging_->OwnAccountCards().SignedOut();
+      if (LockerSyncImpossible(seed->has_value(), identity->registered, signed_out)) {
+        report(AccountSyncResult::CannotSync);
+        return;
       }
       auto published = account_locker_->Publish();
       if (!published) {
         log().info << "Account locker not published: " << published.error().message;
       }
-      std::function<void(bool)> on_result;
-      {
-        std::lock_guard lock(account_sync_result_mu_);
-        on_result = on_account_sync_result_;
-      }
-      if (on_result) {
-        on_result(static_cast<bool>(published));
-      }
+      report(published ? AccountSyncResult::Synced : AccountSyncResult::Failed);
       if (published) {
         RefreshOwnProfileIconSoon(); // a photo set on another device of the account: ours has none yet
       }
@@ -4570,7 +4577,7 @@ void ConversationsHub::RefreshOwnProfileIconSoon() {
   });
 }
 
-void ConversationsHub::SetOnAccountSyncResult(std::function<void(bool ok)> callback) {
+void ConversationsHub::SetOnAccountSyncResult(std::function<void(AccountSyncResult)> callback) {
   std::lock_guard lock(account_sync_result_mu_);
   on_account_sync_result_ = std::move(callback);
 }

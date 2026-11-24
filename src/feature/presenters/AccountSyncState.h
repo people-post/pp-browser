@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 
 namespace pbr {
@@ -32,8 +33,23 @@ public:
   void OnSyncSucceeded();
   /** A locker sync failed (no network, the provider refused): the spinner gives way to the "still syncing" line. */
   void OnSyncFailed();
-  /** The timeout armed by OnImported / OnProfileOpened ran out. */
-  void OnTimeout();
+  /**
+   * A locker sync can never run in this state (no recovery seed, not registered, signed out): nothing is coming, so
+   * the indicator goes and the stored flag is cleared — the pages show their normal empty state.
+   */
+  void OnSyncImpossible();
+  /**
+   * The timeout armed by OnImported / OnProfileOpened ran out. `token` is TimerToken() as it was when the timer was
+   * armed: a timer from before a profile reset (ResetForNewProfile) changes nothing.
+   */
+  void OnTimeout(uint64_t token);
+  /** Taken by each timer the owner arms (the timeout, a retry); a reset makes every earlier one stale. */
+  uint64_t TimerToken() const { return timer_token_; }
+  /**
+   * The profile was reset (Reset my profile): no account, nothing pending; timers armed before it are stale. The
+   * stored flag went with the old preferences, so nothing is written.
+   */
+  void ResetForNewProfile();
 
   AccountSyncView View() const { return view_; }
   bool Pending() const { return view_ != AccountSyncView::None; }
@@ -43,6 +59,7 @@ private:
 
   std::function<void(bool)> persist_;
   AccountSyncView view_ = AccountSyncView::None;
+  uint64_t timer_token_ = 0;
 };
 
 } // namespace pbr

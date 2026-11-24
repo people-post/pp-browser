@@ -596,4 +596,8 @@ Roe<LockerRecord> LockerRecordFromFileJson(const std::string& file_json) {
   return LockerRecordFromJson(*locker);
 }
 
+bool LockerSyncImpossible(const bool has_recovery_seed, const bool registered, const bool signed_out) {
+  return !has_recovery_seed || !registered || signed_out;
+}
+
 } // namespace pbr
