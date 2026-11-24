@@ -64,6 +64,11 @@ public:
    */
   static void SetFirstHopLocalForTest(bool allow);
   /**
+   * Tests only: `gate` sees the method and URL of every Get / Post / Put before it is sent; false refuses it (an error,
+   * no connection). Lets a test assert which hosts a client would reach without any network. An empty function removes it.
+   */
+  static void SetRequestGateForTest(std::function<bool(const std::string& method, const std::string& url)> gate);
+  /**
    * Tests only: a followed redirect may go to plain http (a loopback test server) when the request is not
    * `restrict_to_public_https`. Off by default and in the app: redirects go to https only.
    */

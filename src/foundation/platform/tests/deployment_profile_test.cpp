@@ -292,27 +292,27 @@ TEST(DeploymentProfileTesterBuildTest, ATesterBuildFallsBackToStagingThenDevThen
   EXPECT_EQ(pbr::ResolveLatchedBackend(pbr::BackendEnv::Prod, kStoreAll), pbr::BackendEnv::Prod);
 }
 
+// Changed by profile-model P2 (#741): a custom backend has no origin of its own to borrow — before, a tester build's
+// custom backend took the first usable tester environment's origin, a store build's custom backend prod's.
 TEST(DeploymentProfileTesterBuildTest, ATesterBuildsOriginIsNeverProds) {
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterAll),
-            "https://staging.example.test");
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly),
-            "https://dev.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterAll), "");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly), "");
   EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kTesterNone), "");
   EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Dev, kTesterAll), "https://dev.example.test");
   for (const pbr::BackendEnv env : kAllEnvs) {
     EXPECT_NE(pbr::ResolveBriefOrigin(false, nullptr, env, kTesterWithProdNamed), "https://prod.example.test");
   }
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAll), "https://prod.example.test")
-      << "a store build's custom backend keeps prod's origin for the org's services";
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAll), "")
+      << "a store build's custom backend no longer borrows prod's origin (#741)";
 }
 
-// Store builds give a custom backend prod's org relay identity; a tester build the tester environment's, or none.
+// Changed by profile-model P2 (#742): a custom backend takes no relay identity from a compiled environment — it names its
+// own relay id in its table, or none (fails closed). Before, a store build gave it prod's and a tester build staging's.
 TEST(DeploymentProfileTesterBuildTest, ATesterBuildsCustomBackendNeverGetsProdsOrgRelayIdentity) {
   const auto custom = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterAll);
-  EXPECT_EQ(custom.relay_id, "relay:staging");
-  EXPECT_EQ(custom.certificate_b64, "c3RhZ2luZw==");
-  EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly).relay_id,
-            "relay:dev");
+  EXPECT_TRUE(custom.relay_id.empty() && custom.certificate_b64.empty());
+  const auto custom_dev = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterDevOnly);
+  EXPECT_TRUE(custom_dev.relay_id.empty() && custom_dev.certificate_b64.empty());
   const auto none = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kTesterNone);
   EXPECT_TRUE(none.relay_id.empty() && none.certificate_b64.empty()) << "no tester environment: none";
   for (const pbr::BackendEnv env : kAllEnvs) {
@@ -323,8 +323,8 @@ TEST(DeploymentProfileTesterBuildTest, ATesterBuildsCustomBackendNeverGetsProdsO
   EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Staging, kTesterAll).relay_id,
             "relay:staging");
   const auto store_custom = pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Custom, kStoreAll);
-  EXPECT_EQ(store_custom.relay_id, "relay:prod") << "a store build: as before";
-  EXPECT_EQ(store_custom.certificate_b64, "cHJvZA==");
+  EXPECT_TRUE(store_custom.relay_id.empty() && store_custom.certificate_b64.empty())
+      << "a store build's custom backend no longer inherits prod's relay id (#742)";
 }
 
 // A tester build offers and starts only on an environment it can use: compiled, and its relay id not the placeholder
@@ -402,6 +402,9 @@ TEST(DeploymentProfileUsableEnvTest, ATesterBuildListsOnlyTheEnvironmentsItCanUs
 TEST(DeploymentProfileUsableEnvTest, ATesterBuildTakesNoOriginOrRelayOfAnEnvironmentItCannotUse) {
   // Whatever backend is passed — the latched one is always usable — none of these takes staging's pending relay.
   for (const pbr::BackendEnv env : kAllEnvs) {
+    if (env == pbr::BackendEnv::Custom) {
+      continue; // a custom backend takes no compiled environment at all (#741, #742)
+    }
     EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, env, kTesterStagingPendingDevSet), "https://dev.example.test")
         << pbr::BackendEnvName(env);
     const auto identity = pbr::ResolveOrgRelayIdentity(false, nullptr, env, kTesterStagingPendingDevSet);
@@ -418,8 +421,8 @@ TEST(DeploymentProfileUsableEnvTest, AStoreBuildIsUnchangedWithPendingRelayIds) 
   EXPECT_EQ(pbr::FallbackBackendIn(kStoreAllPending), pbr::BackendEnv::Prod);
   EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Staging, kStoreAllPending),
             "https://staging.example.test");
-  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAllPending),
-            "https://prod.example.test");
+  EXPECT_EQ(pbr::ResolveBriefOrigin(false, nullptr, pbr::BackendEnv::Custom, kStoreAllPending), "")
+      << "a custom backend has no origin of its own (#741)";
   EXPECT_EQ(pbr::ResolveOrgRelayIdentity(false, nullptr, pbr::BackendEnv::Staging, kStoreAllPending).relay_id,
             pbr::kPendingRelayId)
       << "a store build's pending relay fails closed where it is used, as before";

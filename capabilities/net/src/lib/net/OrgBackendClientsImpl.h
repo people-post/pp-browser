@@ -159,15 +159,23 @@ public:
                                          const std::string& account_id) override;
   Roe<void> RevokeRegistration(const std::string& account_id, const std::string& registration_id,
                                const SignedRelayCommand& signed_revoke) override;
-  /** `POST <origin>/api/llm/v1/token/renew` on this relay's origin (the registry serves it there, SPECS). */
+  /**
+   * The Brief LLM token service's base URL (`…/api/llm/v1`) from the backend's table (profile-model PM002): the renew
+   * goes there and nowhere else. Empty (the default): the backend names none, and RenewLlmToken sends nothing.
+   */
+  void SetLlmTokenUrl(std::string url);
+  /** `POST <llm token url>/token/renew` (the registry serves it under the LLM prefix, SPECS § llm-gateway). */
   Roe<LlmTokenRenewal> RenewLlmToken(const std::string& account_id, const SignedRelayCommand& signed_renew) override;
 
 private:
+  std::string LlmTokenUrl() const;
   std::string base_url_;
   bool public_only_ = false;
   std::shared_ptr<IRelayAudience> audience_;
   /** Set on the owner's thread, read by a registration on a worker. */
   std::atomic<bool> takes_llm_key_{true};
+  mutable std::mutex llm_token_url_mutex_;
+  std::string llm_token_url_;
 };
 
 class HttpClientCompatClient : public IClientCompatClient {

@@ -269,6 +269,9 @@ void ConversationsHub::UpdateOrgBackendClients(const HubSettings& settings) {
   clients_.Apply({.relay = settings.relay,
                   .directory = settings.directory,
                   .registration = settings.registration,
+                  .account_locker = settings.account_locker_url,
+                  .client_compat = settings.client_compat_url,
+                  .llm_token = settings.llm_token_url,
                   .our_relays = our_relays_ ? our_relays_->List().Origins() : std::vector<std::string>{},
                   .extra_relays = settings.relay_extra_base_urls});
   relay_ = clients_.Relay();
@@ -299,10 +302,14 @@ void ConversationsHub::ExpectRelayIdentities(const HubSettings& settings) {
       (void)pins->Expect(origin, relay_id); // a full store is logged and leaves that relay unused
     }
   };
+  // The locker service's own address names its relay id only where it is the registration URL's or the org relay's;
+  // anywhere else its id is unknown and the relay cannot be signed for (fails closed, profile-model PM002).
   const std::string home_relay_id =
-      settings.registration.relay_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
-          ? settings.relay.relay_id
-          : settings.registration.relay_id;
+      SameRelay(clients_.LockerHome(), settings.registration.base_url)
+          ? (settings.registration.relay_id.empty() && SameRelay(clients_.LockerHome(), clients_.OrgRelay())
+                 ? settings.relay.relay_id
+                 : settings.registration.relay_id)
+          : (SameRelay(clients_.LockerHome(), clients_.OrgRelay()) ? settings.relay.relay_id : std::string());
   const RelayId org_id = RelayId::Parse(settings.relay.relay_id).value_or(RelayId{});
   const RelayId home_id = RelayId::Parse(home_relay_id).value_or(RelayId{});
   expect(clients_.OrgRelay(), org_id);

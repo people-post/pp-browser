@@ -22,6 +22,13 @@ struct HubSettings {
   std::vector<std::string> relay_extra_base_urls;
   DirectoryConfig directory;
   ServiceEndpointConfig registration;
+  /**
+   * The backend table's other services (profile-model PM002), by their own addresses: **empty is absent** (what needs it is
+   * off; no other service's address stands in). Account lockers, client compatibility, the Brief LLM token service.
+   */
+  std::string account_locker_url;
+  std::string client_compat_url;
+  std::string llm_token_url;
   /** Dogfood: the initiation floor seeded into the local identity while it is still 0 (P001). */
   int64_t initiation_floor = 0;
   /** The app's data directory (machine-level files: the mesh directory cache). */

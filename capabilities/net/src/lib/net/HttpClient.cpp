@@ -23,7 +23,9 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <functional>
 #include <mutex>
+#include <utility>
 #include <optional>
 #include <string_view>
 
@@ -120,6 +122,19 @@ private:
 };
 
 std::atomic<bool> g_first_hop_local_for_test{false};
+
+std::mutex g_request_gate_mutex;
+std::function<bool(const std::string&, const std::string&)> g_request_gate_for_test;
+
+/** The test gate's answer for a request (true: send it; no gate: always true). */
+bool PassesRequestGate(const char* method, const std::string& url) {
+  std::function<bool(const std::string&, const std::string&)> gate;
+  {
+    std::lock_guard lock(g_request_gate_mutex);
+    gate = g_request_gate_for_test;
+  }
+  return !gate || gate(method, url);
+}
 std::atomic<bool> g_plain_http_redirects_for_test{false};
 
 /**
@@ -167,6 +182,9 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
                           const std::map<std::string, std::string>& headers, std::optional<size_t> max_response_bytes,
                           HttpTimeout timeout, bool restrict_to_public_https, bool follow_redirects = false,
                           bool add_content_sha256 = false) {
+  if (!PassesRequestGate(method, url)) {
+    return AppError::Network(Err::Network::HttpError, "request refused by the test gate");
+  }
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
@@ -421,6 +439,11 @@ void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const
 
 void HttpClient::SetPlainHttpRedirectsForTest(const bool allow) {
   g_plain_http_redirects_for_test.store(allow);
+}
+
+void HttpClient::SetRequestGateForTest(std::function<bool(const std::string& method, const std::string& url)> gate) {
+  std::lock_guard lock(g_request_gate_mutex);
+  g_request_gate_for_test = std::move(gate);
 }
 
 void HttpClient::SetFirstHopLocalForTest(const bool allow) {

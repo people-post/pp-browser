@@ -28,12 +28,12 @@ Tracked in [#752](https://github.com/people-post/pp-browser/issues/752).
 
 Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 
-- [ ] A backend type: id, network, one URL (and relay id where it applies) per operator service, and the seeds
-      (PM011).
+- [x] A backend type: id, network, one URL (and relay id where it applies) per operator service, and the seeds
+      (PM011). (P2a: `BackendTable`.)
 - [ ] `profiles/{id}/services.json`: directory providers, mesh node list source, promoted MCP, seeded from the
       backend when the profile is made; `directory.providers` and `promoted_mcp` leave `config.json`.
-- [ ] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL.
-- [ ] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list).
+- [x] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL. (P2a.)
+- [x] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list). (P2a, the operator services; the directory providers', mesh node list's and extra relays' consumers still read `config.json` and move with P2b / P5.)
 - [ ] The Network page edits a custom backend's whole table.
 
 ## P3 — Per-backend state (PM004)

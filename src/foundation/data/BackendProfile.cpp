@@ -15,18 +15,65 @@ constexpr std::string_view kTesterCustomPrefix = "test-custom-";
 
 } // namespace
 
-std::string CustomProfileKey(const std::string& url, const BuildKind kind) {
-  // FNV-1a 64: stable across platforms and releases, which std::hash is not.
+namespace {
+
+/** `<prefix><12 hex>` of the FNV-1a 64 of `text`: stable across platforms and releases, which std::hash is not. */
+std::string HashedKey(const std::string_view prefix, const std::string& text) {
   uint64_t hash = 14695981039346656037ULL;
-  for (const unsigned char c : NormalizeBackendUrl(url)) {
+  for (const unsigned char c : text) {
     hash = (hash ^ c) * 1099511628211ULL;
   }
   static const char* kHex = "0123456789abcdef";
-  std::string key(kind == BuildKind::Tester ? kTesterCustomPrefix : kStoreCustomPrefix);
+  std::string key(prefix);
   for (int shift = 44; shift >= 0; shift -= 4) {
     key.push_back(kHex[(hash >> shift) & 0xF]);
   }
   return key;
+}
+
+std::string_view CustomPrefix(const BuildKind kind) {
+  return kind == BuildKind::Tester ? kTesterCustomPrefix : kStoreCustomPrefix;
+}
+
+/** The URL's scheme and host (and port), no path: how a relay's origin is compared. */
+std::string OriginOfUrl(const std::string& url) {
+  const std::string normalized = NormalizeBackendUrl(url);
+  const size_t scheme_end = normalized.find("://");
+  const size_t host_begin = scheme_end == std::string::npos ? 0 : scheme_end + 3;
+  const size_t path = normalized.find('/', host_begin);
+  return path == std::string::npos ? normalized : normalized.substr(0, path);
+}
+
+std::string TrimmedId(const std::string& id) {
+  size_t begin = 0;
+  size_t end = id.size();
+  while (begin < end && std::isspace(static_cast<unsigned char>(id[begin]))) {
+    ++begin;
+  }
+  while (end > begin && std::isspace(static_cast<unsigned char>(id[end - 1]))) {
+    --end;
+  }
+  return id.substr(begin, end - begin);
+}
+
+} // namespace
+
+std::string CustomProfileKey(const std::string& url, const BuildKind kind) {
+  return HashedKey(CustomPrefix(kind), NormalizeBackendUrl(url));
+}
+
+std::string CustomBackendId(const std::string& registration_url, const std::string& org_relay_url,
+                            const std::string& org_relay_id, const BuildKind kind) {
+  // One field per line: a URL holds no newline, so two different triples never share a text.
+  return HashedKey(CustomPrefix(kind), NormalizeBackendUrl(registration_url) + "\n" + OriginOfUrl(org_relay_url) +
+                                           "\n" + TrimmedId(org_relay_id));
+}
+
+std::string BackendTableId(const BackendTable& table, const BuildKind kind) {
+  if (table.id != "custom" && table.id != "test-custom") {
+    return table.id;
+  }
+  return CustomBackendId(table.registration_url, table.org_relay_url, table.org_relay_id, kind);
 }
 
 std::string BackendProfileKeyFor(const BackendEnv env, const std::string& registration_url,

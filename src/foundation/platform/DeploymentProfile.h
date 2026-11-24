@@ -6,6 +6,8 @@
 
 namespace pbr {
 
+struct CustomServices; // BackendTable.h
+
 inline constexpr const char* kProductDirName = "pp-browser";
 
 /** Which backend the user picked (config `backend.env`). `Custom` uses the URLs saved in the config file. */
@@ -30,8 +32,8 @@ const char* BackendEnvName(BackendEnv env);
 
 /**
  * Backend origin (scheme://host, no path, no trailing slash). Precedence: PP_BROWSER_ORIGIN, then the
- * latched backend's compiled origin (`Staging` -> CMake PP_API_URL_STAGING, `Dev` -> PP_API_URL_DEV, otherwise
- * PP_API_URL_PROD); none set yields "". Read on every call. All URLs derived from it are empty when the origin is empty, which
+ * latched backend's compiled origin (`Staging` -> CMake PP_API_URL_STAGING, `Dev` -> PP_API_URL_DEV, `Prod` ->
+ * PP_API_URL_PROD); none set yields "", and so does a `Custom` backend (its services are its table's: BackendTable.h). Read on every call. All URLs derived from it are empty when the origin is empty, which
  * disables the backend features.
  */
 std::string BriefOrigin();
@@ -69,6 +71,12 @@ struct CompiledOrigins {
 /** `compiled`'s origin for `env` (`Custom` has none: ""; nor has `Prod` in a tester build). */
 const char* CompiledOriginFor(BackendEnv env, const CompiledOrigins& compiled);
 /**
+ * The compiled environment whose origin and org relay `backend` takes: `Staging` / `Dev` their own (in a tester build only
+ * when it can run them), anything else the fallback's — so a tester build never takes an environment it cannot use.
+ * Only for the built-in tables: a `Custom` backend takes nothing from a compiled environment (BackendTable.h).
+ */
+BackendEnv CompiledBackendFor(BackendEnv backend, const CompiledOrigins& compiled);
+/**
  * Whether `env` can run (and Settings lists it): `Custom` always; `Prod` in a store build only (never in a tester build);
  * `Staging` / `Dev` only with a compiled origin — and in a tester build only when their relay id is also not the
  * placeholder (IsPendingRelayId: that relay is refused, so no account could be set up there). A store build ignores the
@@ -84,6 +92,18 @@ bool BackendAvailableIn(BackendEnv env, const CompiledOrigins& compiled);
 BackendEnv FallbackBackendIn(const CompiledOrigins& compiled);
 /** This build's compile-time origins. */
 CompiledOrigins BuildCompiledOrigins();
+/**
+ * Tests only: BuildCompiledOrigins() answers `compiled` while this object lives (a build's origins are macros, and a test
+ * binary has none), so a test can run the whole config pipeline against a prod / staging / dev it names. Also resets the
+ * latch on both ends (ResetActiveBackendForTest). Not nestable.
+ */
+class ScopedCompiledOriginsForTest {
+public:
+  explicit ScopedCompiledOriginsForTest(const CompiledOrigins& compiled);
+  ~ScopedCompiledOriginsForTest();
+  ScopedCompiledOriginsForTest(const ScopedCompiledOriginsForTest&) = delete;
+  ScopedCompiledOriginsForTest& operator=(const ScopedCompiledOriginsForTest&) = delete;
+};
 /**
  * The rule behind BriefOrigin(), with its inputs passed in. The UI demo app (`ui_demo`) has no backend: always "".
  * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over `compiled`'s origin for `backend` (`Prod` / `Custom`,
@@ -101,9 +121,9 @@ struct OrgRelayIdentity {
 };
 /**
  * The relay id the org's relay (BriefRelayBaseUrl) must prove (MR008, SIGNED_FORMATS § 3.5), and the build's
- * certificate for it: `compiled`'s for `backend` (`Staging` / `Dev` → their own; `Prod` / `Custom`, and in a tester build a
+ * certificate for it: `compiled`'s for `backend` (`Staging` / `Dev` → their own; `Prod`, and in a tester build a
  * `Staging` / `Dev` it cannot use → FallbackBackendIn's: prod's in a store build, the first usable of staging's / dev's or
- * none in a tester build, never prod's); none in the UI demo app. When
+ * none in a tester build, never prod's); none for `Custom` (it names its own in its table, #742) and in the UI demo app. When
  * `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin, `env_relay_id` (PP_BROWSER_RELAY_ID, may be null) and
  * no certificate: none there, a developer build pins that relay on its first valid certificate (warned) and a release
  * build does not use it.
@@ -183,12 +203,15 @@ BackendEnv ResolveLatchedBackend(BackendEnv requested, const CompiledOrigins& co
  */
 BackendEnv ActiveBackend();
 void LatchActiveBackend(BackendEnv requested);
+/** LatchActiveBackend, with the services of the custom backend the config file names (latched with it; first wins). */
+void LatchActiveBackend(BackendEnv requested, CustomServices custom);
 bool ActiveBackendLatched();
 /** Tests only. */
 void ResetActiveBackendForTest();
 /** True when PP_BROWSER_ORIGIN is set and non-empty. */
 bool OriginEnvOverrideActive();
 
+/** The active backend table's LLM gateway ("" when it has none: a custom backend that names none). */
 std::string BriefLlmBaseUrl();
 /** The backend URLs derived from an `origin` (as BriefOrigin() gives it); each "" when the origin is "". */
 std::string BriefLlmBaseUrlFor(const std::string& origin);
