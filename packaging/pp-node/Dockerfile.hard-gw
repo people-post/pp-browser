@@ -1,6 +1,6 @@
 # Hard-lab SNAT gateway (Wave 5 CGNAT-ish).
 # Dual-homed: private peer LAN + public hop LAN; MASQUERADE outbound; no unsolicited inbound.
-FROM debian:trixie-slim
+FROM public.ecr.aws/docker/library/debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       iproute2 \
