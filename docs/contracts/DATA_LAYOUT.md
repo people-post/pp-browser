@@ -29,14 +29,19 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 ```
 {config_dir}/config.json
 {data_dir}/profiles.json              # schema_version 2: profiles [{id, label}], active {backend id → profile id} (§ Per-backend profiles)
-{data_dir}/machine.json               # device-wide: window, safe area, display; collect_run_logs, collect_crash_logs (optional bools, absent = off: "Collect run logs", "Collect crash logs"); update_card_version, update_card_dismissals, update_card_dismissed_ms (optional string / integer / integer, absent = never tapped: "Later" on the Chats page's new-version card, for that latest_client_version; no schema bump; an older build does not understand them and drops them the next time it saves the file, which is harmless: the card simply shows again)
+{data_dir}/machine.json               # device-wide: show_tester_options (optional bool, absent = off: Me → Help's five taps; the device's, not a profile's — profile-model PM006), window, safe area, display; collect_run_logs, collect_crash_logs (optional bools, absent = off: "Collect run logs", "Collect crash logs"); update_card_version, update_card_dismissals, update_card_dismissed_ms (optional string / integer / integer, absent = never tapped: "Later" on the Chats page's new-version card, for that latest_client_version; no schema bump; an older build does not understand them and drops them the next time it saves the file, which is harmless: the card simply shows again)
 {data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .N = previous launches: 7 days / 50 MB with collect_run_logs on, else only .1; .1 is always kept) — ops/CONFIGURATION.md § Log file; leaves the device only by Send run logs (test phase, contracts/DIAGNOSTICS.md)
 {data_dir}/logs/metrics.log            # Metrics channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/logs/diag.log               # Diag channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/                # {id}: opaque (16 hex), fixed for the profile's life — every sealed file's AAD and the keychain items name it
   manifest.json             # schema_version 2; network = main | staging | dev | test-custom | node — written first, never changed (see Per-backend profiles)
-  backends/{backend id}/    # the backend this is the home profile of (exactly one); empty until profile-model P3 moves the per-backend files in
+  backends/{backend id}/    # the backend this is the home profile of (exactly one): what this device keeps of that backend (profile-model PM004)
+    registration.enc        # the registration slot and the Brief LLM token under DEK AEAD (AAD registration|{profile_id}/{backend id}|1; plaintext schema_version 1:
+                            # registered, registration_expires_at, registered_backend_url, registration_id, registered_card_issued_at, kem_binding_published,
+                            # brief_llm_api_key, brief_llm_token_expires_at, brief_llm_guest_api_key); an identity.enc that still holds them gives them up at its next save
+    account_locker.json     # (below) moved here from the profile's top level at the first start after P3
+    client_compat.json      # (below) likewise
   mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1; optional amp_wire / node_version / features, N032); per profile, so per backend
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
@@ -50,7 +55,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the relay id each relay origin of ours must prove, and the highest certificate per relay id (SIGNED_FORMATS § 3, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}, reread_phase?: {origin: drain|backfill}, reread_floor_ms?: {origin: unix_ms}}:
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, relays?: {origin: cursor} — every relay's, the preferred one's too (an older file's cursor / cursor_relay are read once), registrations?: {origin: registration_id}, reread_phase?: {origin: drain|backfill}, reread_floor_ms?: {origin: unix_ms}}:
                             # the preferred relay's (cursor_relay names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
                             # registrations (additive, 2026-11-22, schema stays 1 (INVENTORY S3); always written, empty too; an older app ignores it and drops it when it writes): the
                             # registration each relay's cursor counts in — a fresh registration is a new mailbox numbered from the start, so a cursor kept for another one,
@@ -66,7 +71,11 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional registration_id — the preferred relay's registration a revoke names, MR007, additive; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext; the registration slot and the Brief LLM token are in backends/{backend id}/registration.enc)
+  services.json             # the profile's own service choices (profile-model PM011): {schema_version: 1, promoted_mcp?: {id?, url?, command?, args?, enabled?}
+                            # (Integrations), directory_providers?: [base_url] (first primary), mesh_nodes?: base_url}; a key absent is the backend's
+                            # (its table, followed as the build changes it — never copied in); none set: no file; a newer one is read as none and never written over.
+                            # The user's promoted MCP lives here, not in config.json (one a config.json still holds moves here once)
   own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
                             # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
                             # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
@@ -77,14 +86,14 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   payment_promises.json     # payment promise receipts (pricing P002 / P003; plaintext, the signed promises as received): {schema_version: 2, promises: [...],
                             # pending_inbound?: [...] — inbound receipts staged until Accept or Ignore}; 2 is also its floor: another version, or none, is refused,
                             # and a file not read is never written over (that run's receipts live in memory); optional
-  account_locker.json       # account locker sync state: schema_version 1, highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md
+  account_locker.json       # (in backends/{backend id}/) account locker sync state: schema_version 1, highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md
                             # § On disk); no schema_version (a file from before it): 1; a newer one is not read and never written over (that run keeps it in memory)
   attachment_suppressions.json # attachments the person deleted here, not fetched again (R020): {schema_version: 1, threads: {thread_id: [content hash hex]}};
                             # plaintext, written atomically; no schema_version (a file from before it): 1; a newer one, or one not read, refuses every change; optional
   contacts.json             # address book (schema_version 3: local + remote + overrides{}); another version, or none, is refused; optional
                             # remote.locator_relay: a QR locator's preferred relay address {origin, relay_id} (multi-relay R4, MR008, SIGNED_FORMATS § 3.3), its relay list
                             # until a card (additive; one without a relay id of the `relay:` form, a `peer_id` one included, is read as none)
-  client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
+  client_compat.json        # (in backends/{backend id}/) cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
                             # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches, the org relay's certificate); no schema_version (a file from
                             # before it): read as it is; a newer one is no cache and never written over
   cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours: written when this device uploads it, and on a device that did not, fetched after an account-locker sync from our own directory entry by Account ID) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,
@@ -151,6 +160,13 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # us, attached to relay sends to it; `issued` — the grant we gave each account, confirmed once it acked.
                             # Plaintext (signed statements the relay sees anyway). Not in the account locker: each device asks and issues
                             # for itself. Additive table — ACCOUNT_CARD § Relay grants
+                            # call_sessions, call_participants, pending_call_invites, call_media_keys — the calls a profile took part in, who was
+                            # in each, invites not yet answered, and the media keys of a call under way (V011; SqliteCallSessionStore; keys under the DEK)
+                            # control_lane_seen — control-lane messages already applied, pruned past their retention (SqliteControlLaneSeenStore)
+                            # device_sessions — device-pair sessions with their own numbering (M021; PSK columns under the DEK; SqlitePeerSessionStore)
+                            # group_member_seq — per member, the newest roster sequence seen (SqliteGroupRosterStore)
+                            # post_entries, post_heads, post_own_lanes — public posts: signed entries, each author's head, our own lanes
+                            # (social-posts; SqlitePostStore)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 4, floor 4 — D102, § Schema versions)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)
@@ -189,9 +205,13 @@ Durable bytes live in a profile-level CAS with **two realms**. Chat decrypt neve
     blobs_view/         # optional session plaintext materialization (not source of truth); wiped at start and on ClearDek;
                         # a file above 4 MiB appears here only after an explicit Open; {hash}.poster.jpg = a video's poster,
                         # a sound file's cover, or a picture's preview (long side <= 640 px: what its chat bubble shows)
-    # blobs/            # not used; durable bytes live in cas/private only
-  picked/               # Android: <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as
-                        # the attachment is prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
+    blobs/              # made (empty) with each thread by SqliteThreadDb and never written: durable bytes live in cas/private only
+    blob_cipher/{hash}  # a peer's pushed attachment ciphertext waiting for its message's key (AttachmentCache a6): kept while a message
+                        # names it; an orphan push expires after 24 h, at most 64 per thread; counted in Me → Storage
+  picked/               # every platform: the scratch copy a picked photo or video is read and shrunk from (ChatController), and on Android
+                        # <unique>/<name> = a copy of a content:// pick, made so decoders can read it; removed as soon as the attachment is
+                        # prepared, and the whole folder at start (iOS keeps its own tmp/pp-picks)
+    preview/{session}/  # the previews of a picture send (PictureSendHost: what the send sheet shows), removed with the send
   blob_cipher/
     outgoing/           # <id> = AEAD ciphertext of an attachment being sent, <id>.rec = its record (content key, fields,
                         # thread) sealed under the profile DEK. Removed when the message is sent, when the person
@@ -255,6 +275,20 @@ Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
 
 Flat `threads/index.json` and `{thread_id}.json` from before the SQLite store are not read (nor removed); plaintext `identity.json` is not migrated — wipe the profile and recreate ([chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
 
+### Outside the data root
+
+Kept by the app but not under `{data_dir}`:
+
+| Where | What | Layer |
+|-------|------|-------|
+| iOS keychain, service `dev.pp-browser.secure-blob` | `{profile id}/unlock_grace`, `{profile id}/unlock_biometric` (AT_REST_ENCRYPTION); `account-backup` (retired, only deleted) | profile; device |
+| Android keystore | `pp_secure_blob_when_unlocked`, `pp_secure_blob_after_first_unlock`; the entries themselves as files under `noBackupFilesDir/secure_blob/` | device; profile |
+| Android SharedPreferences `pp_browser_device` | `device_id` (the push device id, `ANDROID_ID`, for every profile and backend), `message_banners_on` (a mirror of the running profile's `show_notifications`, for pushes that wake a stopped app) | device |
+| Android SharedPreferences `pp_keep_alive` | `last_ms`: when the keep-alive service last ran (Stay connected, P011) | device |
+| iOS | the push device id is `identifierForVendor`, held by the OS | device |
+| iOS `{SDL pref path}/pp-browser-debug.log` (+ `.1.log`) | the iOS debug log, outside `data_dir` | device |
+| The platform cache dir (`{data_dir}/cache` on Linux and iOS, `~/Library/Caches/pp-browser` on macOS, `%LOCALAPPDATA%/pp-browser/cache` on Windows, Android's cache) | made empty at start; nothing writes into it today | device |
+
 ### Per-backend profiles
 
 Each backend (Me → Network → Service, `backend.env`) has its own profile, so identities, contacts, conversations and caches of different backends never mix, and switching back finds everything as it was. Each backend has an id, also the name of its folder under the profile's `backends/`:
@@ -280,7 +314,7 @@ At startup, after the config is loaded, the registry picks the running backend's
 
 **The per-backend layout before this** (manifest and `profiles.json` schema 1, folders named `default`, `prod`, `staging`, …) is not read: the app removes each such profile with its keychain items at its first start, with a log line (a clean start, RC017). pp-node converts its own in place instead, once — the old active one (else `default`) becomes its home profile on `node`, the others keep their old id as a label — so a deployed node keeps its identity.
 
-Saving a backend switch also removes the device's push bindings from the running backend ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
+Saving a backend switch — another environment, or a custom backend's registration URL or org relay edited (PM010) — also removes the device's push bindings from every relay of ours, and the new addresses are not applied to the running profile ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
 
 There is no account-switcher UI: the profile follows the backend. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 
@@ -375,7 +409,7 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 | `call_invite_policy` | `preferences.json` | string, `contacts_only` \| `everyone` \| `nobody`; default `everyone` (Kenneth, 2026-11-11). Who may call this profile |
 | `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
-| `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
+| `ai_dot_look` | `preferences.json` | string `auto` (default: a different look each weekday, `gui/shell/MascotLook.h`) \| `a` (one eye) \| `b` (two eyes) \| `c` (cool) \| `d` (plain) \| `e` (Friday) \| `f` (Saturday) \| `g` (Sunday); anything else reads back as `auto`. Also the AI Home's mascot |
 | `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |
 | `ai_dot_left` | `preferences.json` | boolean, optional; default false (right edge). The side the phone AI dot rests on, written after a drag |
 | `ai_dot_y_permille` | `preferences.json` | integer 0–1000, optional; default 600. How far down its band (under the navigation bar, above the tab bar) the dot rests |
@@ -389,6 +423,13 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `recovery_reminder_dismissed_ms` | `preferences.json` | integer (Unix ms), optional (added after schema v14, no version bump); default 0. When "Later" was last tapped on that card. Device-only, never synced or sent |
 | `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60 or -1 (Always: until the phone restarts, [at-rest A015](../../projects/_archive/at-rest-crypto/DECISIONS.md#a015--pin-grace-window-an-always-option-the-phones-own-lock-is-the-lock)), default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
 | `home_show_dynamic` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Home shows the 动态 widgets section; default off = minimal AI-first Home (Me → Appearance → Show Activity on Home, phones). Device-only, never synced or sent (like `thread_local_prefs`) |
+| `show_notification_preview` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Banners show the message text; off shows a neutral line (the sender or group stays in the title) |
+| `stay_connected` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Android: stay connected in the background (P011; a foreground service keeps the app working, the relay polled slowly) |
+| `call_diagnostics` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Call media diagnostics (V032), OR'd with `--debug` |
+| `group_invite_policy` | `preferences.json` | string `everyone` (default) \| `contacts_only` \| `nobody` (G007): who may invite this profile into a group; an unrecognised value is kept as written and acts as `contacts_only` |
+| `show_advanced_settings` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Me → Help: show the technical options (ids, endpoints, MCP, paths). The tester switch is the device's, in `machine.json` (profile-model PM006) |
+| `onboarding_completed` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. The first-run wizard was finished or skipped (or an account was brought over) |
+| `home_animated_logo` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. The AI Home's logo is the animated mascot (Settings → Appearance); off: the static icon |
 
 `tool_permissions` shape:
 

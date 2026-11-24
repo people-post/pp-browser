@@ -211,8 +211,9 @@ TEST_F(RelayInboxCoordinatorTest, EachRelayPollsOnFromItsOwnCursorAcrossARestart
   EXPECT_EQ(preferred_->polled_with.back(), "a-1");
   EXPECT_EQ(other_->polled_with.back(), "b-1");
   const RelayInboxCursors kept = LoadRelayInboxCursors(dir_.string(), kMe);
-  EXPECT_EQ(kept.preferred, "a-1");
-  EXPECT_EQ(kept.others.size(), 1u);
+  EXPECT_TRUE(kept.preferred.empty()) << "every relay's cursor is kept by its origin (profile-model P3)";
+  EXPECT_EQ(kept.others.at(RelayOriginKey(kPreferred)), "a-1");
+  EXPECT_EQ(kept.others.size(), 2u);
 }
 
 TEST_F(RelayInboxCoordinatorTest, ARelayThatFailsIsReportedAndTheOthersStillDeliver) {
@@ -300,7 +301,7 @@ TEST_F(RelayInboxCoordinatorTest, ARelayMadePreferredPollsOnFromItsOwnCursor) {
   again.Sync(true, kMe);
   EXPECT_EQ(other_->polled_with.back(), "b-1") << "across a restart too";
   EXPECT_EQ(preferred_->polled_with.back(), "a-1");
-  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred_relay, "https://b.example/api/relay");
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).others.at(RelayOriginKey(kOther)), "b-1");
 }
 
 TEST_F(RelayInboxCoordinatorTest, ARelayLeavingTheListLosesItsCursor) {
@@ -325,7 +326,7 @@ TEST_F(RelayInboxCoordinatorTest, AnUnchangedInboxKeepsItsPollUnderWayAcrossALis
   coordinator_->Sync(false, kMe);
   coordinator_->Sync(false, kMe);
   EXPECT_EQ(preferred_->polled_with.back(), "a-1") << "the cursor the poll under way brought back is kept";
-  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred, "a-1");
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).others.at(RelayOriginKey(kPreferred)), "a-1");
 }
 
 TEST_F(RelayInboxCoordinatorTest, ACursorFromBeforeMyRelaysIsThePreferredRelays) {
@@ -360,7 +361,7 @@ TEST_F(RelayInboxCoordinatorTest, ANewRegistrationIsANewMailboxReadFromItsStart)
   again.Sync(false, kMe);
   EXPECT_EQ(preferred_->polled_with.back(), "c1:1") << "kept across a restart, with its registration";
   const RelayInboxCursors kept = LoadRelayInboxCursors(dir_.string(), kMe);
-  EXPECT_EQ(kept.preferred, "c1:1");
+  EXPECT_EQ(kept.others.at(RelayOriginKey(kPreferred)), "c1:1");
   ASSERT_TRUE(kept.registrations);
   EXPECT_EQ(kept.registrations->at(RelayOriginKey(kPreferred)), "reg-2");
 }
@@ -494,7 +495,8 @@ TEST_F(RelayInboxCoordinatorTest, ABacklogBehindTheOlderAppsCursorIsDelivered) {
   EXPECT_TRUE(reread->backfill);
   ASSERT_TRUE(reread->floor_ms);
   EXPECT_NEAR(static_cast<double>(*reread->floor_ms), static_cast<double>(floor_ms), 1000.0);
-  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).preferred, "c1:5") << "past what was skipped";
+  EXPECT_EQ(LoadRelayInboxCursors(dir_.string(), kMe).others.at(RelayOriginKey(kPreferred)), "c1:5")
+      << "past what was skipped";
   app->Sync(false, kMe);
   EXPECT_EQ(preferred_->polled_with.back(), "c1:5");
   EXPECT_FALSE(KeptReread(dir_, kPreferred)) << "an empty page: read through";

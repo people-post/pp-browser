@@ -352,6 +352,13 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.relay_base_url = bindings_.relay_base_url.c_str();
   ui_state_.directory_base_url = bindings_.directory_base_url.c_str();
   ui_state_.registration_base_url = bindings_.registration_base_url.c_str();
+  ui_state_.service_account_locker = bindings_.service_account_locker.c_str();
+  ui_state_.service_client_compat = bindings_.service_client_compat.c_str();
+  ui_state_.service_llm_gateway = bindings_.service_llm_gateway.c_str();
+  ui_state_.service_llm_token = bindings_.service_llm_token.c_str();
+  ui_state_.service_crash_intake = bindings_.service_crash_intake.c_str();
+  ui_state_.service_mesh_nodes = bindings_.service_mesh_nodes.c_str();
+  ui_state_.service_promoted_mcp = bindings_.service_promoted_mcp.c_str();
   ui_state_.node_enabled = bindings_.node_enabled.c_str();
   ui_state_.show_node_toggle = bindings_.show_node_toggle;
   ui_state_.amp_listen_multiaddr = bindings_.amp_listen_multiaddr.c_str();
@@ -451,6 +458,14 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.relay_base_url = ui_state_.relay_base_url.c_str();
   bindings_.directory_base_url = ui_state_.directory_base_url.c_str();
   bindings_.registration_base_url = ui_state_.registration_base_url.c_str();
+  bindings_.service_account_locker = ui_state_.service_account_locker.c_str();
+  bindings_.service_client_compat = ui_state_.service_client_compat.c_str();
+  bindings_.service_llm_gateway = ui_state_.service_llm_gateway.c_str();
+  bindings_.service_llm_token = ui_state_.service_llm_token.c_str();
+  bindings_.service_crash_intake = ui_state_.service_crash_intake.c_str();
+  bindings_.service_mesh_nodes = ui_state_.service_mesh_nodes.c_str();
+  bindings_.service_promoted_mcp = ui_state_.service_promoted_mcp.c_str();
+  bindings_.backend_services_missing = ui_state_.backend_services_missing.c_str();
   bindings_.node_enabled = ui_state_.node_enabled.c_str();
   bindings_.show_node_toggle = ui_state_.show_node_toggle;
   bindings_.amp_listen_multiaddr = ui_state_.amp_listen_multiaddr.c_str();
@@ -686,6 +701,14 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("relay_base_url", &controller.bindings_.relay_base_url);
     ctor.Bind("directory_base_url", &controller.bindings_.directory_base_url);
     ctor.Bind("registration_base_url", &controller.bindings_.registration_base_url);
+    ctor.Bind("service_account_locker", &controller.bindings_.service_account_locker);
+    ctor.Bind("service_client_compat", &controller.bindings_.service_client_compat);
+    ctor.Bind("service_llm_gateway", &controller.bindings_.service_llm_gateway);
+    ctor.Bind("service_llm_token", &controller.bindings_.service_llm_token);
+    ctor.Bind("service_crash_intake", &controller.bindings_.service_crash_intake);
+    ctor.Bind("service_mesh_nodes", &controller.bindings_.service_mesh_nodes);
+    ctor.Bind("service_promoted_mcp", &controller.bindings_.service_promoted_mcp);
+    ctor.Bind("backend_services_missing", &controller.bindings_.backend_services_missing);
     ctor.Bind("node_enabled", &controller.bindings_.node_enabled);
     ctor.Bind("show_node_toggle", &controller.bindings_.show_node_toggle);
     ctor.Bind("amp_listen_multiaddr", &controller.bindings_.amp_listen_multiaddr);
@@ -959,6 +982,14 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "relay_base_url");
   host.Dirty("settings", "directory_base_url");
   host.Dirty("settings", "registration_base_url");
+  host.Dirty("settings", "service_account_locker");
+  host.Dirty("settings", "service_client_compat");
+  host.Dirty("settings", "service_llm_gateway");
+  host.Dirty("settings", "service_llm_token");
+  host.Dirty("settings", "service_crash_intake");
+  host.Dirty("settings", "service_mesh_nodes");
+  host.Dirty("settings", "service_promoted_mcp");
+  host.Dirty("settings", "backend_services_missing");
   host.Dirty("settings", "node_enabled");
   host.Dirty("settings", "show_node_toggle");
   host.Dirty("settings", "amp_listen_multiaddr");
@@ -1364,7 +1395,10 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   }
   if (section_id == "network" && commands_.set_backend_switch_pending) {
     const BootstrapResult& saved = Store().Snapshot();
-    commands_.set_backend_switch_pending(SavedBackendKey(saved.config) != saved.backend_key);
+    const bool pending = BackendSwitchPending(saved.config, saved.backend_key);
+    commands_.set_backend_switch_pending(pending);
+    // A custom backend's registration URL or org relay edited is a switch too (PM010, #745): the same banner.
+    ShowRestartBanner(pending);
   }
 
   status_ = "";
@@ -2008,8 +2042,11 @@ void SettingsController::SaveBackendChoice(const std::string& env) {
     return;
   }
   // No quit here: pin a banner while the saved service differs from the one this run started on.
-  const bool pending = ParseBackendEnv(Store().Snapshot().config.backend.env) != ActiveBackend();
-  if (pending && shell_feedback_.show_banner) {
+  ShowRestartBanner(BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key));
+}
+
+void SettingsController::ShowRestartBanner(const bool pending) {
+  if (pending && !restart_banner_shown_ && shell_feedback_.show_banner) {
     shell_feedback_.show_banner(Tr("settings.network.backend.restart_banner"), true);
     restart_banner_shown_ = true;
   } else if (!pending && restart_banner_shown_ && shell_feedback_.dismiss_banner) {
@@ -2047,7 +2084,8 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
         }
         if (CanQuit()) {
           QuitApp();
-        } else if (ParseBackendEnv(env) != ActiveBackend() && shell_feedback_.show_alert) {
+        } else if (BackendSwitchPending(Store().Snapshot().config, Store().Snapshot().backend_key) &&
+                   shell_feedback_.show_alert) {
           // Only a switch away from the running service needs a reopen; back to it, the banner is gone and that is all.
           shell_feedback_.show_alert(Tr("settings.network.backend.switch_title"),
                                      Tr("settings.network.backend.switched_reopen", {{"destEnv", dest_label}}), {},

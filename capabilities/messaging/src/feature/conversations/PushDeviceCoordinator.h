@@ -31,7 +31,10 @@ public:
    * account stays registered for its other devices, this device stops being woken for it. Blocks (HTTP).
    */
   static Roe<void> UnregisterEverywhere(ConversationsHub& hub);
-  /** A saved backend switch (applied on restart) removes the binding now; undoing it registers again. */
+  /**
+   * A saved backend switch (applied on restart) removes this device's bindings from every relay of ours now
+   * (UnregisterEverywhere); undoing it registers again (on every relay, Register).
+   */
   static void OnBackendSwitchPending(ConversationsHub& hub, bool pending);
 
   /**

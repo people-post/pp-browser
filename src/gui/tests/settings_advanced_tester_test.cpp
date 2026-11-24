@@ -181,7 +181,7 @@ TEST_F(SettingsAdvancedTesterTest, TheHelpSwitchShowsAdvancedAndLeavesTheTesterO
   EXPECT_EQ(Text("adv"), "1");
   EXPECT_EQ(Text("tst"), "0");
   EXPECT_TRUE(store.Snapshot().profile_prefs.show_advanced_settings) << "saved at once";
-  EXPECT_FALSE(store.Snapshot().profile_prefs.show_tester_options);
+  EXPECT_FALSE(store.Snapshot().machine_prefs.show_tester_options);
   Click("toggle_adv");
   EXPECT_EQ(Text("adv"), "0");
   EXPECT_FALSE(store.Snapshot().profile_prefs.show_advanced_settings);
@@ -194,8 +194,16 @@ TEST_F(SettingsAdvancedTesterTest, FiveTapsOnTheVersionSwitchOnlyTheTesterOption
   }
   EXPECT_EQ(Text("tst"), "1");
   EXPECT_EQ(Text("adv"), "1") << "the advanced switch keeps its value";
-  EXPECT_TRUE(store.Snapshot().profile_prefs.show_tester_options);
+  EXPECT_TRUE(store.Snapshot().machine_prefs.show_tester_options);
   EXPECT_TRUE(store.Snapshot().profile_prefs.show_advanced_settings);
+  {
+    // The device's: in machine.json, not the profile's preferences (profile-model PM006).
+    auto machine = UserPreferences::LoadMachine(root.string());
+    ASSERT_TRUE(static_cast<bool>(machine));
+    EXPECT_TRUE(machine->show_tester_options);
+    auto profile = UserPreferences::LoadProfile((root / "profile").string());
+    ASSERT_TRUE(static_cast<bool>(profile));
+  }
   EXPECT_EQ(toasts.back(), Tr("settings.help.tester_on"));
   for (int i = 0; i < 5; ++i) {
     Click("version");

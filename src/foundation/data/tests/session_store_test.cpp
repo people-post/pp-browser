@@ -1,3 +1,4 @@
+#include "foundation/data/ProfileServices.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
@@ -6,6 +7,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -198,4 +200,48 @@ TEST(SessionStoreTest, ProfilePrefsListenerFiresOnRelevantChange) {
   std::filesystem::remove(config_path);
   std::filesystem::remove_all(profile_dir);
   std::filesystem::remove_all(data_dir);
+}
+
+// profile-model PM011 (#744): the user's promoted MCP is the profile's. One a config.json still holds moves to the
+// profile's services.json; a save keeps it there and out of config.json; a reload overlays it again; cleared, the
+// backend's seed is back.
+TEST(SessionStoreTest, TheUsersPromotedMcpIsTheProfilesNotConfigJsons) {
+  const std::string config_path = UniquePath("pp_browser_session_store_mcp_") + ".json";
+  const std::string profile_dir = UniquePath("pp_browser_session_store_mcp_profile_");
+  std::filesystem::create_directories(profile_dir);
+  {
+    std::ofstream out(config_path);
+    out << R"({ "config_version": 1, "promoted_mcp": { "url": "https://mine.example.test/mcp", "set_by_user": true } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(config_path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  ASSERT_TRUE(loaded->promoted_mcp.user_set);
+
+  pbr::BootstrapResult bootstrap;
+  bootstrap.config = *loaded;
+  bootstrap.config_path = config_path;
+  bootstrap.profile_data_dir = profile_dir;
+  pbr::SessionStore store;
+  store.Initialize(std::move(bootstrap));
+  ASSERT_TRUE(pbr::LoadProfileServices(profile_dir).promoted_mcp.has_value()) << "moved to the profile";
+  EXPECT_EQ(store.Snapshot().config.promoted_mcp.url, "https://mine.example.test/mcp");
+
+  ASSERT_TRUE(static_cast<bool>(store.SaveConfig(store.Snapshot().config)));
+  {
+    std::ifstream in(config_path);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(text.find("mine.example.test"), std::string::npos) << "config.json no longer holds it";
+  }
+  EXPECT_EQ(store.Snapshot().config.promoted_mcp.url, "https://mine.example.test/mcp") << "overlaid after the save";
+  ASSERT_TRUE(static_cast<bool>(store.ReloadConfig()));
+  EXPECT_EQ(store.Snapshot().config.promoted_mcp.url, "https://mine.example.test/mcp") << "and after a reload";
+
+  pbr::AppConfig cleared = store.Snapshot().config;
+  cleared.promoted_mcp = pbr::McpConfig{};
+  ASSERT_TRUE(static_cast<bool>(store.SaveConfig(cleared)));
+  EXPECT_FALSE(pbr::LoadProfileServices(profile_dir).promoted_mcp.has_value());
+  EXPECT_FALSE(store.Snapshot().config.promoted_mcp.user_set) << "the backend's seed again";
+
+  std::filesystem::remove(config_path);
+  std::filesystem::remove_all(profile_dir);
 }

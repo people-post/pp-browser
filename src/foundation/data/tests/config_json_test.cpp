@@ -46,10 +46,10 @@ TEST(ConfigJsonTest, ParsesTheCurrentKeysOnly) {
 TEST(ConfigJsonTest, EmitsModernConfigKeys) {
   pbr::AppConfig config;
   config.promoted_mcp.url = "https://promoted.example/mcp";
-  config.promoted_mcp.user_set = true; // only the user's own entry is written (set_by_user)
+  config.promoted_mcp.user_set = true;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
-  EXPECT_TRUE(out.contains("promoted_mcp"));
+  EXPECT_FALSE(out.contains("promoted_mcp")) << "the user's is the profile's (services.json, profile-model PM011)";
   EXPECT_FALSE(out.contains("mcp"));
 }
 

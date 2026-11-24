@@ -8,7 +8,7 @@ MessagingCompatPorts MakeMessagingCompatPorts(ConversationsHub& hub) {
   MessagingCompatPorts ports;
   ports.messaging_initialized = [&hub]() { return hub.IsInitialized(); };
   ports.client_compat = [&hub]() { return hub.ClientCompat(); };
-  ports.profile_data_dir = [&hub]() { return hub.ProfileDataDir(); };
+  ports.backend_data_dir = [&hub]() { return hub.BackendDataDir(); };
   ports.watch_upgrade_required = [&hub](std::function<void()> upgrade_required) {
     hub.SetOnOrgRelayRequiresUpgrade(std::move(upgrade_required));
   };

@@ -18,7 +18,8 @@ struct MessagingCompatPorts {
   std::function<bool()> messaging_initialized;
   /** Shared: a fetch on a worker keeps the client it started with when the org's relay changes. */
   std::function<std::shared_ptr<IClientCompatClient>()> client_compat;
-  std::function<std::string()> profile_data_dir;
+  /** Where client_compat.json is kept: the profile's `backends/{backend id}/` (profile-model PM004). */
+  std::function<std::string()> backend_data_dir;
   /**
    * Subscribes `upgrade_required` (nullptr: unsubscribes): the org's relay answered a call `426
    * client_upgrade_required` (any thread; ConversationsHub::SetOnOrgRelayRequiresUpgrade).

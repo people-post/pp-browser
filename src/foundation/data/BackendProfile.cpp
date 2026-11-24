@@ -156,4 +156,11 @@ std::string SavedBackendKey(const AppConfig& config) {
                       BuildCompiledOrigins());
 }
 
+bool BackendSwitchPending(const AppConfig& saved, const std::string& running_key) {
+  if (running_key.empty()) {
+    return ParseBackendEnv(saved.backend.env) != ActiveBackend();
+  }
+  return SavedBackendKey(saved) != running_key;
+}
+
 } // namespace pbr

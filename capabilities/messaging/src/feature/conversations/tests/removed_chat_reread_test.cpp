@@ -310,8 +310,17 @@ protected:
       text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
     auto root = TryParseObject(text);
-    ASSERT_TRUE(root && root->contains("registrations") && root->contains("cursor")) << text;
+    ASSERT_TRUE(root && root->contains("registrations") && root->getObject("relays")) << text;
     root->erase("registrations");
+    // An older app kept the preferred relay's cursor apart (`cursor`, `cursor_relay`); this app keeps every relay's by
+    // origin (profile-model P3). The one relay here is the preferred one.
+    const Object relays = *root->getObject("relays");
+    ASSERT_EQ(relays.size(), 1u) << text;
+    for (const auto& [origin, cursor] : relays.fields()) {
+      root->set("cursor", cursor);
+      root->set("cursor_relay", origin);
+    }
+    root->erase("relays");
     {
       std::ofstream out(path, std::ios::trunc);
       out << DumpJson(*root);

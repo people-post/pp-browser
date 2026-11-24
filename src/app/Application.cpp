@@ -592,6 +592,8 @@ Roe<void> Application::ResetActiveProfile() {
   }
   const std::string new_profile_dir = registry.ActiveProfileDataDir();
   store_.Mutable().profile_data_dir = new_profile_dir;
+  store_.Mutable().backend_data_dir =
+      (std::filesystem::path(new_profile_dir) / "backends" / registry.ActiveBackendId()).string();
   log().info << "New profile " << registry.ActiveProfileId() << " for backend " << registry.ActiveBackendId();
   AppPaths::EnsureDirs(new_profile_dir);
 
@@ -609,6 +611,10 @@ Roe<void> Application::ResetActiveProfile() {
 
   if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
+  }
+  // The old profile's own service choices (services.json) went with it: the config runs on the backend's again.
+  if (auto reloaded = store_.ReloadConfig(); !reloaded) {
+    return reloaded.error();
   }
 
   // The old account's pending first sync is gone with its preferences: a new account starts with none.

@@ -1,6 +1,6 @@
 # Profile model: design
 
-**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM012](DECISIONS.md#pm012--a-profile-has-exactly-one-home-backend-permanently)); nothing built. **Release 1 builds this whole layout.** A profile has exactly one home backend, permanently (PM009, PM012); being reachable at several operators is the relay list's job. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
+**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM012](DECISIONS.md#pm012--a-profile-has-exactly-one-home-backend-permanently)); built in P1–P5 (see CURRENT_STATE), promoted into the contracts in P6. **Release 1 builds this whole layout.** A profile has exactly one home backend, permanently (PM009, PM012); being reachable at several operators is the relay list's job. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles).
 
 ## Why
 

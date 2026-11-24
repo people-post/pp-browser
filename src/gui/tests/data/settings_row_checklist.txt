@@ -159,7 +159,7 @@ data-value="server.url"	1	integrations	advanced_integrations	advanced;;advanced	
 {{i18n:settings.integrations.search}}	1	-	advanced_integrations	advanced;;advanced	integrations	
 {{i18n:settings.integrations.server_id}}	1	-	advanced_integrations	advanced;;advanced	integrations	
 {{i18n:settings.integrations.server_url}}	1	-	advanced_integrations	advanced;;advanced	integrations	
-data-event-change="on_network_field_changed()"	3	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-event-change="on_network_field_changed()"	10	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-event-click="reset_section('network')"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-value="directory_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 data-value="registration_base_url"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
@@ -171,6 +171,21 @@ data-value="relay_base_url"	1	network	advanced_backend	advanced;;advanced;;backe
 {{i18n:settings.network.relay}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
 {{i18n:settings.network.registration_required}}	1	network	advanced_backend	advanced;;advanced;;backend_is_custom;;registration_required	network	
 {{i18n:settings.network.relay_id_missing}}	1	network	advanced_backend	advanced;;advanced;;backend_is_custom;;relay_id_missing	network	
+data-value="service_account_locker"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_client_compat"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_llm_gateway"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_llm_token"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_crash_intake"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_mesh_nodes"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+data-value="service_promoted_mcp"	1	network	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.account_locker}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.client_compat}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.llm_gateway}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.llm_token}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.crash_intake}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.mesh_nodes}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{i18n:settings.network.service.promoted_mcp}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom	network	
+{{backend_services_missing}}	1	-	advanced_backend	advanced;;advanced;;backend_is_custom;;backend_services_missing != ''	network	
 data-event-click="share_profile()"	1	-	profile	-	profile	
 data-event-click="tap_profile_avatar()"	1	-	profile	-	profile	
 data-event-click="toggle_auto_renew_registration()"	2	profile	profile	advanced	profile	10

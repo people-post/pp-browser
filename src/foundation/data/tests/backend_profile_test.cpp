@@ -225,3 +225,32 @@ TEST_F(BackendProfileTest, ThisBuildsKeysFollowItsKind) {
     EXPECT_TRUE(pbr::ProfileNetworkAllowed(pbr::NetworkOfBackend(pbr::SavedBackendKey(config)), pbr::ThisBuildKind()));
   }
 }
+
+// profile-model P4 (#745, #747): one rule for the restart banner and push — the saved config selects another backend id
+// than the run's. A custom backend's registration URL or org relay edited is one; any other service edited is not.
+TEST_F(BackendProfileTest, ASwitchIsPendingWhenTheSavedConfigSelectsAnotherBackendId) {
+  pbr::LatchActiveBackend(pbr::BackendEnv::Custom);
+  pbr::AppConfig config;
+  config.backend.env = "custom";
+  config.registration.base_url = "https://custom.example.test/api/relay";
+  config.relay.base_url = "https://custom.example.test/api/relay";
+  config.relay.relay_id = "relay:custom";
+  const std::string running = pbr::BackendProfileKey(config);
+  EXPECT_FALSE(pbr::BackendSwitchPending(config, running));
+
+  pbr::AppConfig llm = config;
+  llm.llm.base_url = "https://llm.example.test/v1";
+  EXPECT_FALSE(pbr::BackendSwitchPending(llm, running)) << "not part of the id";
+
+  pbr::AppConfig registration = config;
+  registration.registration.base_url = "https://other.example.test/api/relay";
+  EXPECT_TRUE(pbr::BackendSwitchPending(registration, running));
+
+  pbr::AppConfig relay = config;
+  relay.relay.relay_id = "relay:other";
+  EXPECT_TRUE(pbr::BackendSwitchPending(relay, running));
+
+  pbr::AppConfig other_env = config;
+  other_env.backend.env = pbr::IsTesterBuild() ? "staging" : "prod";
+  EXPECT_TRUE(pbr::BackendSwitchPending(other_env, running));
+}

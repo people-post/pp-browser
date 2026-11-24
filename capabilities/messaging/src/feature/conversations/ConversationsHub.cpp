@@ -1475,6 +1475,12 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
+  backend_data_dir_ = settings.backend_id.empty()
+                          ? data_dir_
+                          : (std::filesystem::path(data_dir_) / "backends" / settings.backend_id).string();
+  if (!settings.backend_id.empty()) {
+    identity_->SetBackend(backend_data_dir_, settings.backend_id);
+  }
   OpenOurRelays(settings);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
@@ -1847,7 +1853,7 @@ void ConversationsHub::BuildMessagingObjects() {
   BindGroupLinkJoinFamily();
   account_locker_ = std::make_unique<AccountLockerWorkflow>(*identity_, *contacts_, LockerSources());
   account_locker_->SetClient(clients_.Locker());
-  account_locker_->SetDataDir(data_dir_);
+  account_locker_->SetDataDir(backend_data_dir_);
   // The account's devices keep one address book: a write here nudges the others; a nudge from one syncs here.
   account_locker_->SetOnWritten([this]() {
     if (mesh_messaging_) {

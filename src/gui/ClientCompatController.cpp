@@ -89,7 +89,7 @@ bool ClientCompatController::CheckAsync(const CompatCheck mode) {
     return false;
   }
   std::shared_ptr<IClientCompatClient> client = compat_ports_.client_compat ? compat_ports_.client_compat() : nullptr;
-  const std::string profile_dir = compat_ports_.profile_data_dir ? compat_ports_.profile_data_dir() : std::string{};
+  const std::string profile_dir = compat_ports_.backend_data_dir ? compat_ports_.backend_data_dir() : std::string{};
   check_in_flight_ = true;
   EnsureRecheckTimer();
   AppRuntime::PostWorkerAndReplyOnUI<ClientCompatResolution>(

@@ -1,6 +1,7 @@
 // Backends as service tables, through the config pipeline (profile-model P2): what a config file does to the active table
 // and to the AppConfig every caller reads — built-in backends keep today's URLs, a custom backend reaches only what it
 // names, and nothing is taken from another backend. Example hosts only.
+#include "foundation/data/ProfileServices.h"
 #include "common/ValueJson.h"
 #include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
@@ -263,12 +264,10 @@ TEST_F(BackendTableConfigTest, AUsersPromotedMcpUrlSurvivesAStartOnProdStagingAn
              std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
                  "\" }, \"promoted_mcp\": { \"url\": \"https://mine.example.test/mcp\", \"set_by_user\": true } }");
     EXPECT_EQ(config.promoted_mcp.url, "https://mine.example.test/mcp") << "not replaced by the backend's";
-    // ...and a save writes the user's, not a derived one.
+    EXPECT_TRUE(config.promoted_mcp.user_set);
+    // ...and config.json writes no promoted MCP: the user's is the profile's (SessionStore moves it, PM011).
     const Object saved = pbr::ConfigToObject(config, pbr::Config::kConfigVersion);
-    const Object* mcp = saved.getObject("promoted_mcp");
-    ASSERT_NE(mcp, nullptr);
-    EXPECT_EQ(mcp->getString("url").value_or(""), "https://mine.example.test/mcp");
-    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false)) << "written back with the marker";
+    EXPECT_EQ(saved.getObject("promoted_mcp"), nullptr);
   }
 }
 
@@ -454,17 +453,21 @@ TEST_F(BackendTableConfigTest, AMarkedPromotedMcpEntryIsTheUsersOnEveryBackendAn
     EXPECT_EQ(off.promoted_mcp.id, "feeds");
     EXPECT_FALSE(off.promoted_mcp.enabled);
     EXPECT_EQ(off.promoted_mcp.url, "https://prod.example.test/mcp") << "the user's, even if it looks like a seed";
-    const Object saved = pbr::ConfigToObject(off, 1);
-    const Object* mcp = saved.getObject("promoted_mcp");
-    ASSERT_NE(mcp, nullptr);
-    EXPECT_EQ(mcp->getString("id").value_or(""), "feeds");
-    EXPECT_FALSE(mcp->getIf<bool>("enabled").value_or(true));
-    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false));
-    // Round trip: what a save writes reads back as the same entry.
-    pbr::ResetActiveBackendForTest();
-    const pbr::AppConfig again = Load(std::string("mcp_marked_again_") + env, pp::common::DumpJson(saved, 2));
-    EXPECT_EQ(again.promoted_mcp.url, off.promoted_mcp.url);
-    EXPECT_TRUE(again.promoted_mcp.user_set);
+    EXPECT_TRUE(off.promoted_mcp.user_set);
+    // Kept whole by the profile (services.json): what it writes reads back as the same entry, off and all.
+    const std::filesystem::path profile =
+        std::filesystem::temp_directory_path() / ("pp_mcp_profile_" + std::string(env));
+    std::filesystem::remove_all(profile);
+    pbr::ProfileServices services;
+    services.promoted_mcp = off.promoted_mcp;
+    ASSERT_TRUE(static_cast<bool>(pbr::SaveProfileServices(profile.string(), services)));
+    const pbr::ProfileServices back = pbr::LoadProfileServices(profile.string());
+    ASSERT_TRUE(back.promoted_mcp.has_value());
+    EXPECT_EQ(back.promoted_mcp->id, "feeds");
+    EXPECT_FALSE(back.promoted_mcp->enabled);
+    EXPECT_EQ(back.promoted_mcp->url, off.promoted_mcp.url);
+    EXPECT_TRUE(back.promoted_mcp->user_set);
+    std::filesystem::remove_all(profile);
   }
 }
 
@@ -501,11 +504,7 @@ TEST_F(BackendTableConfigTest, AnUnmarkedCommandEntryIsTheUsersAndIsMarkedOnSave
              std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
                  "\" }, \"promoted_mcp\": { \"command\": \"/usr/bin/feeds\", \"args\": [\"--x\"] } }");
     EXPECT_EQ(config.promoted_mcp.command, "/usr/bin/feeds");
-    const Object saved = pbr::ConfigToObject(config, 1);
-    const Object* mcp = saved.getObject("promoted_mcp");
-    ASSERT_NE(mcp, nullptr);
-    EXPECT_EQ(mcp->getString("command").value_or(""), "/usr/bin/feeds");
-    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false));
+    EXPECT_TRUE(config.promoted_mcp.user_set) << "the user's: moved to the profile (PM011)";
   }
 }
 

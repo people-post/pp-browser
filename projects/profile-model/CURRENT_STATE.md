@@ -25,3 +25,23 @@ in-process, `--profile` as a label, the app removing old-format profiles with th
 own data root and network with its old profile converted in place; `machine.json` lost `active_profile_id`. Contract:
 [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles). A custom backend's id is
 PM010's (`CustomBackendId`), so its folder under `backends/` follows the registration URL and the org relay.
+
+**P3 (per-backend state) is built** (local branch `hongwei/profile-model-rest`, #754): `backends/{backend_id}/`
+holds `registration.enc` (the registration slot and the Brief LLM token, out of `identity.enc`), `client_compat.json`
+and `account_locker.json`; the inbox cursor file keeps every relay's cursor by origin. Left: the mesh caches keyed by
+origin (pp-cpp-mesh writes `mesh_directory_nodes.json`).
+
+**P5 (machine-wide settings) is built** (same branch, #756): seed relays from the backend's table, `show_tester_options`
+in `machine.json`. `initiation_floor` stays the config dogfood seed (pricing P001 item 7) until there is a Me screen
+for it.
+
+**P4 (backend switch) is built** (same branch, #755): one pending rule (`BackendSwitchPending`), push unbound on every
+relay, a custom backend's registration URL or org relay edited is a switch (banner, unbind, not applied live).
+
+**P2b is built** (same branch, #753): `services.json` per profile (the user's promoted MCP moved there out of
+`config.json`; directory providers and mesh node source as overrides), the Network page's editor for a custom backend's
+whole table, and the line saying which features it leaves off. Not built: a consumer for the mesh node override.
+
+**P6 (promote) is done** (same branch, #757): the contracts say the built layout, and #751's drift is fixed. Left
+open across the project: the mesh node override's consumer and the mesh caches keyed by origin (pp-cpp-mesh);
+`initiation_floor` stays the config dogfood seed (pricing P001); the home move (PM012) is a possible later feature.

@@ -1,4 +1,5 @@
 #include "feature/settings/NetworkSettingsSection.h"
+#include "foundation/data/BackendProfile.h"
 
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -31,7 +32,7 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.backend_prod_available = BackendAvailable(BackendEnv::Prod);
   state.backend_staging_available = BackendAvailable(BackendEnv::Staging);
   state.backend_dev_available = BackendAvailable(BackendEnv::Dev);
-  state.backend_restart_pending = ParseBackendEnv(state.backend_env) != ActiveBackend();
+  state.backend_restart_pending = BackendSwitchPending(bootstrap.config, bootstrap.backend_key);
   // Prod / staging / dev derive the URLs from the origin; the fields edit the custom ones.
   const BackendConfig& backend = bootstrap.config.backend;
   const bool saved = backend.has_saved_urls;
@@ -39,6 +40,19 @@ void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.relay_base_url = EndpointLinkText(saved ? backend.saved_relay : bootstrap.config.relay);
   state.directory_base_url = saved ? backend.saved_directory.base_url : bootstrap.config.directory.base_url;
   state.registration_base_url = EndpointLinkText(saved ? backend.saved_registration : bootstrap.config.registration);
+  state.service_account_locker = backend.services.account_locker_url;
+  state.service_client_compat = backend.services.client_compat_url;
+  state.service_llm_gateway = backend.services.llm_gateway_url;
+  state.service_llm_token = backend.services.llm_token_url;
+  state.service_crash_intake = backend.services.crash_intake_url;
+  state.service_mesh_nodes = backend.services.mesh_nodes_url;
+  state.service_promoted_mcp = backend.services.promoted_mcp_url;
+  state.backend_services_missing.clear();
+  for (const BackendServiceEntry& entry : state.backend_services) {
+    if (!entry.available && !entry.reason.empty()) {
+      state.backend_services_missing += (state.backend_services_missing.empty() ? "" : " ") + entry.reason;
+    }
+  }
   state.relay_id_missing = !MissingRelayIdSetting(bootstrap.config, kDeveloperRelaysAllowed,
                                                   !OriginEnvOverrideActive() && ActiveBackend() != BackendEnv::Custom)
                                 .empty();
@@ -68,6 +82,13 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const std::string registration = EndpointLinkText(saved ? config.backend.saved_registration : config.registration);
   return (state.backend_env.empty() || state.backend_env == config.backend.env) && state.relay_base_url == relay &&
          state.directory_base_url == directory && state.registration_base_url == registration &&
+         state.service_account_locker == config.backend.services.account_locker_url &&
+         state.service_client_compat == config.backend.services.client_compat_url &&
+         state.service_llm_gateway == config.backend.services.llm_gateway_url &&
+         state.service_llm_token == config.backend.services.llm_token_url &&
+         state.service_crash_intake == config.backend.services.crash_intake_url &&
+         state.service_mesh_nodes == config.backend.services.mesh_nodes_url &&
+         state.service_promoted_mcp == config.backend.services.promoted_mcp_url &&
          node_on == config.mesh.node_enabled && circuit_on == config.mesh.capabilities.circuit_relay &&
          media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
          prefer_contacts == config.mesh.prefer_contacts_for_routing &&
@@ -99,6 +120,13 @@ void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const Sessi
   state.relay_base_url = EndpointLinkText(defaults.relay);
   state.directory_base_url = defaults.directory.base_url;
   state.registration_base_url = EndpointLinkText(defaults.registration);
+  state.service_account_locker.clear();
+  state.service_client_compat.clear();
+  state.service_llm_gateway.clear();
+  state.service_llm_token.clear();
+  state.service_crash_intake.clear();
+  state.service_mesh_nodes.clear();
+  state.service_promoted_mcp.clear();
   state.node_enabled = defaults.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = defaults.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = defaults.mesh.capabilities.media_relay ? "on" : "off";

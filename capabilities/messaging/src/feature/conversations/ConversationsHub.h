@@ -314,6 +314,8 @@ public:
   std::shared_ptr<IClientCompatClient> ClientCompat() const;
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
+  /** `backends/{backend id}/` in the profile (profile-model PM004): what this device keeps of its backend's services. */
+  const std::string& BackendDataDir() const { return backend_data_dir_; }
   /** Last mesh start failure (empty if ok). For Network settings UX. */
   const std::string& LastMeshError() const { return mesh_last_error_; }
 
@@ -735,6 +737,7 @@ private:
   void StopCoordinatorTimers();
 
   std::string data_dir_;
+  std::string backend_data_dir_;
   std::string profile_id_;
   HubSettings config_; // UI (the hub's thread)
   /** The policies in force (from the settings, then Apply). */

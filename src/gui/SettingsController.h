@@ -223,6 +223,14 @@ private:
     ui::String relay_base_url;
     ui::String directory_base_url;
     ui::String registration_base_url;
+    ui::String service_account_locker;
+    ui::String service_client_compat;
+    ui::String service_llm_gateway;
+    ui::String service_llm_token;
+    ui::String service_crash_intake;
+    ui::String service_mesh_nodes;
+    ui::String service_promoted_mcp;
+    ui::String backend_services_missing;
     ui::String node_enabled = "on";
     bool show_node_toggle = true;
     ui::String amp_listen_multiaddr;
@@ -540,6 +548,8 @@ private:
   /** Mobile has no sanctioned programmatic quit: a confirmed environment switch asks the user to reopen the app. */
   bool CanQuit() const;
   void QuitApp();
+  /** The restart banner while a backend switch awaits a restart (BackendSwitchPending); dismissed once it does not. */
+  void ShowRestartBanner(bool pending);
   bool restart_banner_shown_ = false;
   std::function<void()> open_ui_perf_test_;
   std::function<void(const std::string& state)> simulate_chats_link_; // "online" / "connecting" / "offline"

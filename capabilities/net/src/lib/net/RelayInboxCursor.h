@@ -27,10 +27,14 @@ struct RelayInboxReread {
  * fetches that inbox again from its oldest message, which the receive pipeline drops as already seen.
  */
 struct RelayInboxCursors {
+  /**
+   * Read only, from a file an older app wrote (`cursor`): the preferred relay's cursor, kept apart then. This app writes
+   * every relay's cursor in `others` (`relays`), the preferred one's too (profile-model P3).
+   */
   std::string preferred;
   /** The relay `preferred` is the cursor of (RelayOriginKey); empty: a file from before My relays, the preferred's. */
   std::string preferred_relay;
-  /** By relay origin (RelayOriginKey). */
+  /** By relay origin (RelayOriginKey): every relay's. */
   std::map<std::string, std::string> others;
   /**
    * The mailbox each relay's cursor counts in, by relay origin (RelayOriginKey; the preferred relay's too): the

@@ -30,6 +30,16 @@ public:
 
   explicit IdentityStore(std::string data_dir, std::string profile_id = {});
 
+  /** `registration.enc`'s plaintext schema (DATA_LAYOUT; profile-model P3). */
+  static constexpr int kRegistrationSchemaVersion = 1;
+  /**
+   * The backend this identity's registration slot and Brief LLM token belong to (profile-model PM004): they are kept in
+   * `{backend_dir}/registration.enc` under the DEK (AAD purpose "registration", the profile and backend ids), not in
+   * identity.enc. An identity.enc that still holds them (written before) gives them up at its next save. Call before
+   * the first load. Not set (tests, tools): they stay in identity.enc.
+   */
+  void SetBackend(std::string backend_dir, std::string backend_id);
+
   /** Optional master identity seed (≥32 bytes). When set:
    *  - empty identity.enc → mint device/account/KEM from HKDF (pp-node-identity-v1)
    *  - existing identity.enc → fail closed if derived keys ≠ stored keys
@@ -102,6 +112,10 @@ private:
   Roe<void> RequireDek() const;
   std::string StorePath() const;
   std::string OwnCardPath() const;
+  std::string RegistrationPath() const;
+  std::string RegistrationAad() const;
+  /** Over identity_'s registration fields: registration.enc's (when it exists). */
+  Roe<void> LoadRegistration() const;
   /** Reads own_card.enc once per DEK (any account's: OwnCard() compares). */
   Roe<void> EnsureOwnCardLoaded() const;
   void ForgetOwnCardInMemory() const;
@@ -109,6 +123,8 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
+  std::string backend_dir_; // empty: the registration fields stay in identity.enc
+  std::string backend_id_;
   mutable ByteVector dek_;
   mutable ByteVector identity_seed_;
   mutable std::mutex mutex_;

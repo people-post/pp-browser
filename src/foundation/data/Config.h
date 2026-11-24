@@ -33,6 +33,7 @@ struct McpConfig {
   bool user_set = false;
 
   bool IsConfigured() const { return !command.empty() || !url.empty(); }
+  bool operator==(const McpConfig&) const = default;
 };
 
 struct SearchConfig {

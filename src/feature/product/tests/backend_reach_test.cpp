@@ -318,3 +318,30 @@ TEST(BackendReachTest, ATesterBuildReadingAStoreProdFileNeverCallsTheFileMcpAddr
     EXPECT_EQ(url.find("store-prod"), std::string::npos) << url;
   }
 }
+
+// profile-model PM006: the other relays a new profile's list starts with are the backend's seeds — a custom backend's
+// `relay.extra_base_urls`; a built-in backend's own (none), never a value the file kept for another backend.
+TEST(BackendReachTest, ANewProfilesSeedRelaysAreTheBackendsOwn) {
+  const ScopedUnset no_origin("PP_BROWSER_ORIGIN");
+  const auto settings_of = [](const std::string& text) {
+    const pbr::ScopedCompiledOriginsForTest compiled(kCompiled);
+    const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_reach_seeds.json").string();
+    {
+      std::ofstream out(path);
+      out << text;
+    }
+    auto loaded = pbr::Config::LoadFromFile(path, false);
+    std::filesystem::remove(path);
+    EXPECT_TRUE(static_cast<bool>(loaded));
+    return pbr::HubSettingsFrom(*loaded, pbr::ProfilePreferences{});
+  };
+  const std::string extras = R"("extra_base_urls": ["https://second.example.test/api/relay#relay:second"])";
+  const pbr::HubSettings custom = settings_of(
+      R"({ "config_version": 1, "backend": { "env": "custom" }, "relay": { "base_url": "https://custom.example.test/api/relay", "relay_id": "relay:custom", )" +
+      extras + R"( } })");
+  EXPECT_EQ(custom.relay_extra_base_urls,
+            std::vector<std::string>({"https://second.example.test/api/relay#relay:second"}));
+  const pbr::HubSettings prod =
+      settings_of(R"({ "config_version": 1, "backend": { "env": "prod" }, "relay": { )" + extras + R"( } })");
+  EXPECT_TRUE(prod.relay_extra_base_urls.empty()) << "a built-in backend seeds none of the file's";
+}

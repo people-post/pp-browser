@@ -124,6 +124,20 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
     directory.transport = "http";
     SetEndpointFromLinkText(registration, state.registration_base_url.empty() ? EndpointLinkText(defaults.registration)
                                                                               : state.registration_base_url);
+    // The rest of the custom backend's table (profile-model PM002): each one as typed, empty is absent (no fallback).
+    const auto trimmed = [](const std::string& text) {
+      const size_t begin = text.find_first_not_of(" \t");
+      const size_t end = text.find_last_not_of(" \t");
+      return begin == std::string::npos ? std::string() : text.substr(begin, end - begin + 1);
+    };
+    CustomServices& services = config.backend.services;
+    services.account_locker_url = trimmed(state.service_account_locker);
+    services.client_compat_url = trimmed(state.service_client_compat);
+    services.llm_gateway_url = trimmed(state.service_llm_gateway);
+    services.llm_token_url = trimmed(state.service_llm_token);
+    services.crash_intake_url = trimmed(state.service_crash_intake);
+    services.mesh_nodes_url = trimmed(state.service_mesh_nodes);
+    services.promoted_mcp_url = trimmed(state.service_promoted_mcp);
   }
   config.mesh.node_enabled = (state.node_enabled != "off");
   config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
