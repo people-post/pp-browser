@@ -1,23 +1,11 @@
-# Fetch / add people-post/pp-cpp-ui (first-party ui:: engine + FreeType/HarfBuzz/LunaSVG + SDL/GL).
-#
-# Prefer a local sibling checkout when present (ppweb3 workspace layout) — use this
-# when integrating unreleased main before cutting a pp-cpp-ui release tag. Packaged
-# (release) builds never take the sibling.
-# Otherwise pin a release tag from that repo's main line (PP_CPP_UI_GIT_TAG).
+# Add people-post/pp-cpp-ui (first-party ui:: engine + FreeType/HarfBuzz/LunaSVG + SDL/GL), at its pin
+# (cmake/PpPins.cmake; PP_CPP_UI_GIT_TAG, a release tag on that repo's main line), a local checkout
+# (PP_CPP_UI_SOURCE_DIR) or a sibling (PP_SIBLINGS_DIR) — to integrate unreleased main before cutting a pp-cpp-ui
+# release. A ../pp-cpp-ui beside the repo is no longer picked up by itself (CR012: one switch for every library).
 #
 # Include after cmake/dependencies.cmake so FreeType can reuse libp2p zlib;
 # this file exports PP_BROWSER_SDL3_* for platform/media/render.
 # Targets: pp_ui / pp_ui_core / pp_ui_backend / ui::core (paths PP_LIB_UI_*).
-
-include(FetchContent)
-include(PpFetchPin)
-
-set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
-  "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
-set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
-  CACHE STRING "Git remote for pp-cpp-ui")
-pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.6.3"
-  "Release tag on pp-cpp-ui main (not a branch name)")
 
 # UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
 # Enabling UI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
@@ -29,43 +17,15 @@ set(UI_TESTS OFF CACHE BOOL "Build UI engine unit tests" FORCE)
 set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
 set(FT_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
 
-set(_pp_ui_sibling "${CMAKE_SOURCE_DIR}/../pp-cpp-ui")
-if(PP_CPP_UI_SOURCE_DIR)
-  set(_pp_ui_src "${PP_CPP_UI_SOURCE_DIR}")
-elseif(NOT PP_BROWSER_PACKAGED_BUILD AND EXISTS "${_pp_ui_sibling}/CMakeLists.txt")
-  # Development only (PB-001): a release build compiles the pinned tag, whatever sits beside it.
-  set(_pp_ui_src "${_pp_ui_sibling}")
-  message(STATUS "pp-browser: using sibling pp-cpp-ui at ${_pp_ui_src}")
-  # A sibling behind the pin builds an older engine than CI does: tests of newer engine work fail here and
-  # pass there (FontWeightsTest, 2026-11-12: the sibling lacked v0.6.3's fallback by weight).
-  find_package(Git QUIET)
-  if(GIT_FOUND)
-    execute_process(
-      COMMAND "${GIT_EXECUTABLE}" -C "${_pp_ui_sibling}" merge-base --is-ancestor "${PP_CPP_UI_GIT_TAG}" HEAD
-      RESULT_VARIABLE _pp_ui_has_pin OUTPUT_QUIET ERROR_QUIET)
-    if(_pp_ui_has_pin EQUAL 1)
-      message(WARNING "pp-browser: the sibling pp-cpp-ui does not contain the pinned ${PP_CPP_UI_GIT_TAG}; "
-                      "update it (git -C ${_pp_ui_sibling} pull), or this build differs from CI's")
-    elseif(NOT _pp_ui_has_pin EQUAL 0)
-      message(WARNING "pp-browser: cannot tell whether the sibling pp-cpp-ui contains the pinned "
-                      "${PP_CPP_UI_GIT_TAG} (fetch its tags: git -C ${_pp_ui_sibling} fetch --tags)")
-    endif()
-  endif()
-else()
-  set(_pp_ui_src "")
+# The implicit sibling this file used to take (until CR012): say why it is not built any more, once per build tree.
+if(NOT PP_CPP_UI_SOURCE_DIR AND NOT PP_SIBLINGS_DIR AND NOT PP_BROWSER_PACKAGED_BUILD
+   AND EXISTS "${CMAKE_SOURCE_DIR}/../pp-cpp-ui/CMakeLists.txt" AND NOT PP_CPP_UI_SIBLING_NOTICE_SHOWN)
+  message(NOTICE "pp-browser: ../pp-cpp-ui is beside the repo but not built: the pinned ${PP_CPP_UI_GIT_TAG} is. "
+                 "To build the checkout: -DPP_SIBLINGS_DIR=.. (every library) or -DPP_CPP_UI_SOURCE_DIR=<path>")
+  set(PP_CPP_UI_SIBLING_NOTICE_SHOWN ON CACHE INTERNAL "")
 endif()
 
-if(_pp_ui_src)
-  add_subdirectory("${_pp_ui_src}"
-                   "${CMAKE_BINARY_DIR}/_deps/pp_cpp_ui-build" EXCLUDE_FROM_ALL)
-else()
-  FetchContent_Declare(
-    pp_cpp_ui
-    GIT_REPOSITORY ${PP_CPP_UI_GIT_REPOSITORY}
-    GIT_TAG ${PP_CPP_UI_GIT_TAG}
-  )
-  FetchContent_MakeAvailable(pp_cpp_ui)
-endif()
+pp_pin_make_available(pp-cpp-ui)
 
 if(NOT TARGET pp_ui OR NOT TARGET pp_ui_core OR NOT TARGET pp_ui_backend OR NOT TARGET ui::core)
   message(FATAL_ERROR "pp-cpp-ui did not define pp_ui / pp_ui_core / pp_ui_backend / ui::core")
@@ -108,9 +68,6 @@ function(pp_browser_link_rmlui_svg_deps target)
     target_link_libraries(${target} PRIVATE lunasvg::lunasvg)
   endif()
 endfunction()
-
-unset(_pp_ui_sibling)
-unset(_pp_ui_src)
 
 # Android: SDL's Java glue (android/app/src/main/java/org/libsdl/app/, a copy of SDL's
 # android-project sources with pp-browser's few edits) must be the native SDL's version. SDL

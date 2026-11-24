@@ -100,6 +100,8 @@ include(ProductBranding)
 include(Platform)
 include(PpBrowserWarnings)
 include(PpBrowserCapability)
+# The pin list (every library's tag, CR012), then each library with its options, in dependency order.
+include(PpPins)
 include(PpCppCommon)
 include(PpCppCrypto)
 include(PpCppAmp)

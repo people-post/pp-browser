@@ -1,21 +1,78 @@
 {
   "curl": {
+    "path": "third_party/curl",
+    "version": "8.11.1",
+    "license": "curl",
     "repository": "https://github.com/curl/curl.git",
     "tag": "curl-8_11_1",
-    "commit": "75a2079d5c28debb2eaa848ca9430f1fe0d7844c"
+    "commit": "75a2079d5c28debb2eaa848ca9430f1fe0d7844c",
+    "import": "scripts/vendor/vendor_import.sh"
   },
   "sqlite": {
+    "path": "third_party/sqlite",
+    "version": "3.53.3",
+    "license": "Public domain",
     "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3530300.zip",
-    "amalgamation_version": "3530300"
+    "amalgamation_version": "3530300",
+    "import": "scripts/vendor/vendor_import.sh"
   },
   "opus": {
+    "path": "third_party/opus",
+    "version": "1.5.2",
+    "license": "BSD-3-Clause",
     "repository": "https://github.com/xiph/opus.git",
     "tag": "v1.5.2",
-    "commit": "ddbe48383984d56acd9e1ab6a090c54ca6b735a6"
+    "commit": "ddbe48383984d56acd9e1ab6a090c54ca6b735a6",
+    "import": "scripts/vendor/vendor_import.sh"
   },
   "qrcodegen": {
+    "path": "third_party/qrcodegen",
+    "version": "1.8.0",
+    "license": "MIT",
     "repository": "https://github.com/nayuki/QR-Code-generator.git",
     "tag": "v1.8.0",
-    "commit": "720f62bddb7226106071d4728c292cb1df519ceb"
+    "commit": "720f62bddb7226106071d4728c292cb1df519ceb",
+    "import": "scripts/vendor/vendor_import.sh"
+  },
+  "quirc": {
+    "path": "third_party/quirc",
+    "version": "1.2",
+    "license": "ISC",
+    "repository": "https://github.com/dlbeer/quirc.git",
+    "tag": "v1.2",
+    "commit": "542848dd6b9b0eaa9587bbf25b9bc67bd8a71fca",
+    "import": "scripts/vendor/quirc_import.sh"
+  },
+  "zlib": {
+    "path": "third_party/zlib",
+    "version": "1.3.0-p1",
+    "license": "Zlib",
+    "source": "https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz",
+    "tag": "v1.3.0-p1",
+    "import": "scripts/vendor/libp2p_vendor_import.sh"
+  },
+  "asio": {
+    "path": "third_party/asio",
+    "version": "1.34.0",
+    "license": "BSL-1.0",
+    "repository": "https://github.com/chriskohlhoff/asio.git",
+    "tag": "asio-1-34-0",
+    "import": "by hand: asio/include only (third_party/asio/UPSTREAM.txt)"
+  },
+  "googletest": {
+    "path": "third_party/googletest",
+    "version": "1.14.0",
+    "license": "BSD-3-Clause",
+    "source": "https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz",
+    "tag": "v1.14.0",
+    "import": "scripts/vendor/libp2p_vendor_import.sh"
+  },
+  "sdl-android-java": {
+    "path": "android/app/src/main/java/org/libsdl/app",
+    "version": "3.4.16",
+    "license": "Zlib",
+    "source": "pp-cpp-ui's third_party/sdl3/android-project/app/src/main/java/org/libsdl/app/ (SDL's own copy)",
+    "modified": "the lines marked \"pp-browser:\" (SDLSurface: the keyboard in the safe-area insets)",
+    "import": "by hand, with every pp-cpp-ui SDL bump; cmake/PpCppUi.cmake fails an Android configure when the versions differ"
   }
 }
