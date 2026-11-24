@@ -158,7 +158,8 @@ int main(int argc, char** argv) {
                << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
 
   if (!profile_override.empty()) {
-    root.warning << "Using profile override '" << profile_override << "' (multi-profile UI is not shipped yet)";
+    root.warning << "Using profile label '" << profile_override
+                 << "' (dev isolation; multi-profile UI is not shipped yet)";
   }
 
   pbr::BootstrapOptions options;

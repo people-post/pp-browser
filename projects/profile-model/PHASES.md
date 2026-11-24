@@ -13,14 +13,18 @@ a profile of the old layout is not read.
 
 Tracked in [#752](https://github.com/people-post/pp-browser/issues/752).
 
-- [ ] The manifest records `network`; written atomically when the folder is made; a folder without a readable
+- [x] The manifest records `network`; written atomically when the folder is made; a folder without a readable
       manifest, or a newer one, is skipped and logged.
-- [ ] Opaque ids; `profiles.json` keeps one active id per backend; no adoption, no folder named after a key.
-- [ ] Each profile is made with its one `backends/{backend_id}/` folder; a missing pointer finds it by that folder.
-- [ ] The guard reads the network: a tester app never opens `main`, `--profile` included.
-- [ ] Reset my data makes a new profile on the same network and deletes the old folder.
-- [ ] `machine.json` loses `active_profile_id`; pp-node gets its own data root and network.
-- [ ] Tests: #733's three scenarios, reset then switch (INVENTORY § E 1, #738), a tester app given a `main` profile, a
+- [x] Opaque ids; `profiles.json` keeps one active id per backend; no adoption, no folder named after a key.
+- [x] Each profile is made with its one `backends/{backend_id}/` folder; a missing pointer finds it by that folder.
+- [x] The guard reads the network: a tester app never opens `main`, `--profile` included.
+- [x] Reset my data deletes the old folder and makes a new profile on the same backend and network, re-opened
+      in-process.
+- [x] `machine.json` loses `active_profile_id`; pp-node gets its own data root and network, its old profile
+      converted in place (identity kept).
+- [x] `--profile NAME` is a label among the running backend's profiles; the app removes old-format profiles with
+      their keychain items.
+- [x] Tests: #733's three scenarios, reset then switch (INVENTORY § E 1, #738), a tester app given a `main` profile, a
       folder without a manifest.
 - [ ] Closes #733 and #738.
 

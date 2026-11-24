@@ -1,5 +1,7 @@
 #include "app/Bootstrap.h"
 
+#include "foundation/crypto/BiometricUnlock.h"
+#include "foundation/crypto/GraceUnlock.h"
 #include "foundation/crypto/PinResolver.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -9,6 +11,7 @@
 #include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/CallKitDiagnostics.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/OsSecureBlobStore.h"
 #include "lib/media/AudioSession.h"
 #include "foundation/data/ProfileManifest.h"
 #include "feature/product/HubSettingsProjection.h"
@@ -24,11 +27,36 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/product/AppVersion.h"
 #include "lib/net/ClientCompat.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
+
+#include <filesystem>
 
 namespace pbr {
 
 namespace {
+
+// Profiles of the per-backend layout (manifest schema 1) are not read (pre-release clean cutover, RC017): each goes
+// with its keychain items, so no key is left behind for a folder that is gone (profile-model P1). An unreadable or a
+// newer manifest is not the old format and is kept.
+Roe<void> RemoveOldFormatProfiles(ProfileRegistry& registry) {
+  auto log = logging::getLogger("bootstrap");
+  for (const std::string& id : registry.OldFormatProfiles()) {
+    const std::string dir = registry.ProfileDataDir(id);
+    GraceUnlock(OsSecureBlobStore(), dir, id).Forget();
+    BiometricUnlock(OsSecureBlobStore(), dir, id).Disable();
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    if (ec) {
+      return Error("Failed to remove old-format profile " + dir + ": " + ec.message());
+    }
+    log.warning << "Removed profile " << id << " of the old per-backend layout (a clean start, profile-model P1)";
+    if (auto forgotten = registry.ForgetProfile(id); !forgotten) {
+      return forgotten.error();
+    }
+  }
+  return {};
+}
 
 Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets, const SecretText& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
@@ -67,41 +95,39 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!registry) {
     return registry.error();
   }
-
-  if (!options.profile_override.empty()) {
-    registry->SetSessionProfileOverride(options.profile_override);
+  if (auto removed = RemoveOldFormatProfiles(*registry); !removed) {
+    return removed.error();
+  }
+  for (const std::string& id : registry->SkippedProfiles()) {
+    logging::getLogger("bootstrap").warning << "Profile " << id
+                                            << " is left alone: no readable manifest of this version";
   }
 
-  if (auto ensured = registry->EnsureActiveProfile(); !ensured) {
-    return ensured.error();
-  }
-
+  // The profile is the running backend's home profile on its network (profile-model PM001, PM009); a tester build
+  // never opens a `main` one, whichever way it is chosen (`--profile` included): release-compatibility RC022.
   const std::string backend_key = kUiDemoBuild ? std::string("prod") : BackendProfileKey(*config);
-  if (auto selected = registry->SelectProfileForBackend(backend_key); !selected) {
+  const std::string_view network = NetworkOfBackend(backend_key);
+  if (network.empty() || !ProfileNetworkAllowed(network, ThisBuildKind())) {
+    return Error("this build does not open profiles of backend '" + backend_key + "'");
+  }
+  if (auto selected = options.profile_override.empty()
+                          ? registry->SelectProfileForBackend(backend_key, network)
+                          : registry->SelectProfileByLabel(options.profile_override, backend_key, network);
+      !selected) {
     return selected.error();
   }
 
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
-  // A tester build never opens (and so never changes) a store build's profile, whichever way it was named (a
-  // `--profile` override included): release-compatibility RC022.
-  if (const std::string recorded = ReadProfileBackend(profile_data_dir);
-      !ProfileBackendAllowed(recorded, ThisBuildKind())) {
-    return Error("this tester build does not open profile '" + registry->ActiveProfileId() + "' of backend '" +
-                 recorded + "': it belongs to the store app (install the store app to use it)");
+  if (const ProfileManifestRead manifest = ReadProfileManifest(profile_data_dir);
+      manifest.state != ProfileManifestState::kCurrent || manifest.network != network ||
+      !ProfileNetworkAllowed(manifest.network, ThisBuildKind())) {
+    return Error("this build does not open profile '" + registry->ActiveProfileId() + "'");
   }
   AppPaths::EnsureDirs(profile_data_dir);
-
-  if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {
-    return manifest.error();
-  }
 
   auto machine_prefs = UserPreferences::LoadMachine(AppPaths::DataDir());
   if (!machine_prefs) {
     return machine_prefs.error();
-  }
-
-  if (!options.profile_override.empty()) {
-    machine_prefs->active_profile_id = options.profile_override;
   }
 
   auto profile_prefs = UserPreferences::LoadProfile(profile_data_dir);

@@ -40,7 +40,6 @@ TEST_F(UpdatePrefsTest, RoundTripsAndKeepsTheOtherSettings) {
   auto machine = UserPreferences::LoadMachine(dir_.string());
   ASSERT_TRUE(machine);
   machine->collect_run_logs = true;
-  machine->active_profile_id = "qa";
   ASSERT_TRUE(UserPreferences::SaveMachine(dir_.string(), *machine));
   ASSERT_TRUE(UpdatePrefs::Write(dir_.string(), UpdateCardState{"1.2.0", 1, 1700000000000}));
   const UpdateCardState state = UpdatePrefs::Read(dir_.string());
@@ -50,7 +49,6 @@ TEST_F(UpdatePrefsTest, RoundTripsAndKeepsTheOtherSettings) {
   auto back = UserPreferences::LoadMachine(dir_.string());
   ASSERT_TRUE(back);
   EXPECT_TRUE(back->collect_run_logs);
-  EXPECT_EQ(back->active_profile_id, "qa");
   EXPECT_EQ(back->schema_version, MachinePreferences::kSchemaVersion) << "no schema bump";
 }
 
@@ -78,7 +76,6 @@ TEST_F(UpdatePrefsTest, AFileWithTheKeysAndAnUnknownKeyStillReadsEveryOtherField
   MachinePrefsFromObject(*TryParseObject(R"({"schema_version":1,"active_profile_id":"qa","collect_crash_logs":true,
       "update_card_version":"1.2.0","update_card_dismissals":1,"update_card_dismissed_ms":5,"a_future_key":{"x":1}})"),
                          prefs);
-  EXPECT_EQ(prefs.active_profile_id, "qa");
   EXPECT_TRUE(prefs.collect_crash_logs);
   EXPECT_EQ(prefs.schema_version, 1);
   EXPECT_EQ(prefs.update_card_dismissals, 1);
