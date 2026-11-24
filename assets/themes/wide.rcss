@@ -1,0 +1,2819 @@
+/* Wide-screen (desktop and wide iPad) structure and sizes — DEV/DESIGN-desktop-ui.md step 1.
+ *
+ * RULES (checked by src/gui/tests/wide_stylesheet_test.cpp):
+ *   1. Every selector starts with `.shell-body--wide`, which window_shell.rml sets while layout_mode == 'expanded'
+ *      (RCSS has no :not(), so "wide only" needs a wide root of its own). Nothing here can match under the phone's
+ *      `.shell-body--compact`.
+ *   2. No colours. Colours of wide-only things live in colors.rcss.tmpl / theme_tokens.tsv (generated into
+ *      colors-light.rcss / colors-dark.rcss), under the same `.shell-body--wide` root.
+ *   3. Page layouts that differ get their own `<page>_wide.rml`; this file only holds the sizes, the scale and the
+ *      shared wide components (floating menu, result pill) and the base look (soft surfaces).
+ *
+ * Loaded after components.rcss (equal specificity: this file wins) and before the colour files.
+ */
+
+/* ---- Scale (the mockup's style page, sections 1-3). RCSS has no variables, so the scale is a set of classes. ---- */
+
+/* Spacing: 4 / 8 / 12 / 16 / 24 / 32. Gap between flex children, and padding. */
+.shell-body--wide .w-gap-4 { gap: 4dp; }
+.shell-body--wide .w-gap-8 { gap: 8dp; }
+.shell-body--wide .w-gap-12 { gap: 12dp; }
+.shell-body--wide .w-gap-16 { gap: 16dp; }
+.shell-body--wide .w-gap-24 { gap: 24dp; }
+.shell-body--wide .w-gap-32 { gap: 32dp; }
+.shell-body--wide .w-pad-4 { padding: 4dp; }
+.shell-body--wide .w-pad-8 { padding: 8dp; }
+.shell-body--wide .w-pad-12 { padding: 12dp; }
+.shell-body--wide .w-pad-16 { padding: 16dp; }
+.shell-body--wide .w-pad-24 { padding: 24dp; }
+.shell-body--wide .w-pad-32 { padding: 32dp; }
+
+/* Type: six sizes only. */
+.shell-body--wide .w-type-title { font-size: 24dp; font-weight: bold; }
+.shell-body--wide .w-type-heading { font-size: 17dp; font-weight: bold; }
+.shell-body--wide .w-type-row { font-size: 16dp; }
+.shell-body--wide .w-type-body { font-size: 15dp; }
+.shell-body--wide .w-type-secondary { font-size: 14dp; }
+.shell-body--wide .w-type-small { font-size: 12dp; }
+
+/* Nothing clickable is lower than 32dp. */
+.shell-body--wide .w-target { min-height: 32dp; box-sizing: border-box; }
+
+/* ---- Columns: icon rail 64 | list 280..480 (default 320) | conversation >= 420 ----
+   64 + 280 + 420 = 764, so the 768 window keeps two columns. The list column gives way first (flex-shrink), the
+   conversation never goes below its floor. With the auxiliary (Ask-AI) pane open the three-column arithmetic does not
+   fit below ~1100; until step 3 turns that pane into an overlay drawer, such a row keeps the old floors (200 / 240). */
+.shell-body--wide .shell-nav-rail {
+  flex: 0 0 64dp;
+}
+
+.shell-body--wide .shell-pane-secondary {
+  min-width: 280dp;
+}
+
+.shell-body--wide .shell-pane-primary {
+  min-width: 420dp;
+}
+
+.shell-body--wide .shell-pane-row--aux .shell-pane-secondary {
+  min-width: 200dp;
+}
+
+.shell-body--wide .shell-pane-row--aux .shell-pane-primary {
+  min-width: 240dp;
+}
+
+/* ---- Floating menu (right-click / header "more" / pick lists): one style, contents unchanged ---- */
+.shell-body--wide #context-menu-panel {
+  min-width: 190dp;
+  padding: 6dp;
+  border-radius: 16dp;
+}
+
+/* The status bar's pop-over (desktop): the same card. */
+.shell-body--wide .shell-statusbar-popover {
+  border-radius: 16dp;
+}
+
+/* The reaction row above a message: the same card, a pill. */
+.shell-body--wide .context-menu-quick {
+  padding: 4dp;
+  border-radius: 26dp;
+}
+
+/* The destructive row (Delete, Clear chat, Leave) is the one group the phone sheet also sets apart: a thin line and a
+   little air above it. */
+.shell-body--wide #context-menu-panel .context-menu-item--danger {
+  margin-top: 5dp;
+  border-top-width: 0.5dp;
+  border-radius: 0 0 8dp 8dp;
+}
+
+/* Only one line for the group: none above a second destructive row, none when it is the first row. */
+.shell-body--wide #context-menu-panel .context-menu-item--danger + .context-menu-item--danger,
+.shell-body--wide #context-menu-panel .context-menu-item--danger:first-child {
+  margin-top: 0;
+  border-top-width: 0;
+  border-radius: 8dp;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item {
+  min-height: 34dp;
+  gap: 10dp;
+  padding: 0 12dp;
+  border-radius: 8dp;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item-label {
+  font-size: 15dp;
+  white-space: nowrap;
+}
+
+/* The touch text bar of an input field keeps its own shape. */
+.shell-body--wide .context-menu-layer--bar #context-menu-panel {
+  min-width: 0;
+  padding: 4dp;
+  border-radius: 8dp;
+}
+
+.shell-body--wide .context-menu-layer--bar #context-menu-panel .context-menu-item {
+  min-height: 36dp;
+  padding: 6dp 12dp;
+  border-radius: 6dp;
+}
+
+/* ---- Result pill: a white pill at the bottom of the content area, centred, up to 480dp wide, one at a time.
+   ShellHost sets the stack's left (the columns to its left) and bottom (over the status bar and composer). ---- */
+.shell-body--wide .shell-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.shell-body--wide .shell-toast-stack {
+  left: 0;
+  right: 0;
+  top: auto;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-chrome .shell-toast {
+  display: inline-block;
+  max-width: 480dp;
+  border-width: 1dp;
+  padding: 8dp 16dp;
+  margin: 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-toast-text {
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* ---- Base look (the mockup's style page): soft surfaces, large corners, hairlines instead of outlines ----
+   Radius scale from the mockup: 6 menu row, 9-10 buttons / fields / list rows, 12 menus and tabs, 14 cards, 18
+   bubbles, 20-21 the input pill. A line is a 0.5dp hairline; a box is a filled surface, not an outline. Colours: the
+   end of colors.rcss.tmpl (same wide root). Shared rules that draw the heavy outlines (components.rcss, colors) are
+   not edited: these override them under the wide root. */
+
+/* Column frame and dividers: a hairline, not a 1dp line. */
+.shell-body--wide .shell-nav-rail {
+  border-right-width: 0.5dp;
+}
+
+.shell-body--wide .shell-pane-secondary {
+  border-right-width: 0.5dp;
+}
+
+.shell-body--wide .shell-pane-auxiliary {
+  border-left-width: 0.5dp;
+}
+
+.shell-body--wide .shell-statusbar,
+.shell-body--wide .shell-toolbar,
+.shell-body--wide .sidebar-footer,
+.shell-body--wide .surface-chrome {
+  border-top-width: 0.5dp;
+}
+
+.shell-body--wide .shell-nav-tab {
+  border-radius: 12dp;
+}
+
+/* List rows (chats, settings, contacts): no outline; the hover and the selected row are rounded fills. */
+.shell-body--wide .sidebar-session,
+.shell-body--wide .settings-row,
+.shell-body--wide .contacts-row,
+.shell-body--wide .contacts-thread-row {
+  border-width: 0;
+  border-radius: 10dp;
+}
+
+/* Cards and group boxes: a filled surface with a large corner, no outline. */
+.shell-body--wide .card,
+.shell-body--wide .me-profile-card,
+.shell-body--wide .contact-profile-card,
+.shell-body--wide .chat-form,
+.shell-body--wide .chat-empty {
+  border-width: 0;
+  border-radius: 14dp;
+}
+
+/* Fields and search: filled and rounded; the border is kept (transparent, a colour) so focus does not move anything. */
+.shell-body--wide .field,
+.shell-body--wide .chat-form-field {
+  border-radius: 10dp;
+}
+
+.shell-body--wide .chat-search {
+  border-radius: 10dp;
+}
+
+/* The input pill keeps its large corner and gets a hairline. */
+.shell-body--wide .prompt-composer-pill {
+  border-width: 0.5dp;
+  border-radius: 21dp;
+}
+
+/* Chat header: no coloured side bar and tint; a hairline under it. */
+.shell-body--wide .chat-shell--e2e .chat-header,
+.shell-body--wide .chat-shell--ai .chat-header,
+.shell-body--wide .chat-shell--public .chat-header,
+.shell-body--wide .chat-shell--group .chat-header {
+  border-left-width: 0;
+  padding-left: 16dp;
+  border-radius: 0;
+}
+
+/* Menus and the result pill: the same hairline. */
+.shell-body--wide #context-menu-panel,
+.shell-body--wide .shell-chrome .shell-toast {
+  border-width: 0.5dp;
+}
+
+/* ================= The Chat section (design step 2, mockup page 2) ================= */
+
+/* ---- List column: header, search, rows with avatars ---- */
+.shell-body--wide .sidebar-panel {
+  padding: 0;
+}
+
+.shell-body--wide .sidebar-header {
+  margin-bottom: 0;
+  padding: 16dp 16dp 8dp 16dp;
+}
+
+.shell-body--wide .sidebar-header-title {
+  font-size: 24dp;
+  line-height: 30dp;
+}
+
+.shell-body--wide .sidebar-new-chat {
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .chat-search {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  height: 36dp;
+  margin: 4dp 16dp 8dp 16dp;
+  padding: 0 12dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+}
+
+.shell-body--wide .chat-search-input {
+  height: 36dp;
+  padding: 8dp 0 8dp 8dp;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-search-label {
+  left: 36dp;
+  height: 36dp;
+  font-size: 15dp;
+  line-height: 36dp;
+}
+
+.shell-body--wide .sidebar-sessions {
+  overflow-x: hidden;
+  padding: 0 8dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .sidebar-tip,
+.shell-body--wide .sidebar-reconnect-entry,
+.shell-body--wide .sidebar-archived-entry {
+  margin-left: 8dp;
+  margin-right: 8dp;
+}
+
+.shell-body--wide .sidebar-session {
+  min-height: 68dp;
+  margin-bottom: 2dp;
+  padding: 0 12dp;
+  gap: 12dp;
+}
+
+.shell-body--wide .chat-row-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .chat-row-avatar .avatar-photo {
+  width: 48dp;
+  height: 48dp;
+}
+
+.shell-body--wide .sidebar-session-icon,
+.shell-body--wide .sidebar-session-flag--muted {
+  display: none;
+}
+
+.shell-body--wide .chat-row-type,
+.shell-body--wide .chat-row-mute,
+.shell-body--wide .chat-row-blocked {
+  display: block;
+  flex-shrink: 0;
+}
+
+.shell-body--wide .chat-row-type,
+.shell-body--wide .chat-row-blocked {
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-body--wide .chat-row-mute {
+  width: 16dp;
+  height: 16dp;
+}
+
+.shell-body--wide .sidebar-session-body {
+  min-height: 48dp;
+  justify-content: center;
+  gap: 2dp;
+}
+
+.shell-body--wide .sidebar-session-line {
+  min-height: 22dp;
+}
+
+.shell-body--wide .sidebar-session-line + .sidebar-session-line {
+  min-height: 20dp;
+}
+
+.shell-body--wide .sidebar-session-title {
+  font-size: 16dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .sidebar-session-preview,
+.shell-body--wide .sidebar-session-mention {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .sidebar-session-date {
+  font-size: 12dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .sidebar-unread {
+  min-width: 20dp;
+  height: 20dp;
+  padding: 0 6dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 20dp;
+}
+
+/* ---- Conversation: header ---- */
+.shell-body--wide .chat-panel {
+  padding: 0;
+}
+
+.shell-body--wide .chat-header {
+  height: 64dp;
+  margin: 0;
+  padding: 0 16dp;
+  border-radius: 0;
+  border-bottom-width: 0.5dp;
+}
+
+.shell-body--wide .chat-header-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+}
+
+.shell-body--wide .chat-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .chat-header-avatar-hit {
+  display: block;
+  flex-shrink: 0;
+  padding: 2dp;
+  margin: 0 -2dp;
+}
+
+.shell-body--wide .chat-header-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .chat-header-avatar .avatar-photo {
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-body--wide .chat-header-avatar .chat-row-avatar-letter {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .chat-header-avatar .chat-row-avatar-icon {
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-body--wide .chat-header-type-icon {
+  display: none;
+}
+
+.shell-body--wide .chat-header-title {
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .chat-header-meta-row {
+  margin-top: 0;
+}
+
+.shell-body--wide .chat-header-subtitle {
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.shell-body--wide .chat-header-actions {
+  gap: 4dp;
+}
+
+.shell-body--wide .chat-header-call-btn,
+.shell-body--wide .chat-header-more-btn,
+.shell-body--wide .chat-header-search-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 9dp;
+  cursor: pointer;
+}
+
+.shell-body--wide .chat-header-call-btn--join {
+  width: auto;
+  padding: 0 14dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .chat-header-call-btn svg,
+.shell-body--wide .chat-header-more-btn svg,
+.shell-body--wide .chat-header-search-btn svg {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+/* ---- Conversation: messages ---- */
+.shell-body--wide .messages {
+  margin-bottom: 0;
+  padding: 16dp 24dp 12dp 24dp;
+}
+
+.shell-body--wide .message-row {
+  position: relative;
+  margin: 2dp 0 0 0;
+}
+
+.shell-body--wide .message-row-run-start {
+  margin-top: 10dp;
+}
+
+.shell-body--wide .message-row-peer,
+.shell-body--wide .message-row-ai {
+  padding-right: 0;
+}
+
+.shell-body--wide .message-row-user {
+  padding-left: 0;
+}
+
+/* The message BUBBLE under the pointer: a small row at its top (the used reactions, +, reply, more). The hover target is
+   .msg-hover (chat_wide.rml): it holds the message's content and the bar, and is hovered only while the pointer is over a
+   bubble or the bar. The empty row space beside a bubble, the avatar and the name are not under it: the wrapper and the
+   content's own full-width block take no pointer events (a hover still counts for them while a bubble below is under the
+   pointer), everything inside the content takes them again, so a bubble keeps its clicks, selection and right click. */
+.shell-body--wide .msg-hover {
+  position: relative;
+  display: block;
+  pointer-events: none;
+}
+
+.shell-body--wide .msg-hover * {
+  pointer-events: auto;
+}
+
+.shell-body--wide .msg-hover > div {
+  pointer-events: none;
+}
+
+.shell-body--wide .msg-hover .msg-bar {
+  pointer-events: auto;
+}
+
+.shell-body--wide .msg-bar {
+  display: none;
+  position: absolute;
+  top: -14dp;
+  z-index: 6;
+  flex-direction: row;
+  align-items: center;
+  gap: 2dp;
+  padding: 3dp;
+  border-radius: 14dp;
+}
+
+.shell-body--wide .message-row-user .msg-bar {
+  right: 12dp;
+}
+
+.shell-body--wide .message-row-peer .msg-bar,
+.shell-body--wide .message-row-ai .msg-bar {
+  left: 8dp;
+}
+
+.shell-body--wide .msg-hover:hover > .msg-bar {
+  display: flex;
+}
+
+/* While the transcript is scrolled (and for 200 ms after; ChatTranscriptScroller) no bar is drawn: one class on the
+   transcript, nothing per row per scroll event. */
+.shell-body--wide .messages--scrolling .msg-hover:hover > .msg-bar {
+  display: none;
+}
+
+.shell-body--wide .msg-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34dp;
+  height: 28dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7dp;
+  cursor: pointer;
+}
+
+.shell-body--wide .msg-bar-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 28dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7dp;
+  cursor: pointer;
+}
+
+/* The emoji sits in a span of its own, as the message menu's quick row (.context-menu-item-label) does: text straight
+   in the flex button was not drawn. */
+.shell-body--wide .msg-bar-emoji-glyph {
+  flex: 0 0 auto;
+  font-size: 18dp;
+  line-height: 24dp;
+  white-space: nowrap;
+}
+
+.shell-body--wide .msg-bar-sep {
+  width: 1dp;
+  height: 18dp;
+  margin: 0 3dp;
+}
+
+.shell-body--wide .msg-bar-btn svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
+/* ---- Composer ---- */
+.shell-body--wide .shell-composer-mount {
+  padding: 10dp 16dp 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .prompt-composer-row {
+  align-items: center;
+  gap: 6dp;
+}
+
+/* Wide row (composer_wide.rml): the paperclip, emoji, microphone and Send sit on the row's centre line; the microphone
+   (the phone's end key, hidden by default) shows here. */
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-voice-toggle-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-emoji-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-attach-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-send-btn {
+  margin-bottom: 0;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row .prompt-voice-toggle-btn--end {
+  display: flex;
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row > .prompt-attach-btn,
+.shell-body--wide .prompt-composer--wide .prompt-composer-row > .prompt-emoji-btn {
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-pill .prompt-capture-btn {
+  margin-bottom: 0;
+  align-self: center;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-row {
+  margin-right: 16dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-composer-hint {
+  margin: 6dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
+.shell-body--wide .prompt-composer-input {
+  font-size: 15dp;
+}
+
+/* Send: the mockup's round 40dp accent button. (The voice branch's Send in click mode shares the class.) */
+.shell-body--wide .prompt-send-btn,
+.shell-body--wide .prompt-stop-btn {
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-body--wide .prompt-send-btn svg {
+  width: 18dp;
+  height: 18dp;
+}
+
+/* ---- No chat open ---- */
+.shell-body--wide .shell-empty-state {
+  align-items: center;
+  justify-content: center;
+  padding: 0 32dp;
+  text-align: center;
+}
+
+.shell-body--wide .shell-empty-title {
+  margin: 0 0 8dp 0;
+  font-size: 24dp;
+  line-height: 30dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .shell-empty-body {
+  max-width: 420dp;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 22dp;
+}
+
+/* A message that mentions you: a tinted row with a soft corner, no side bar. */
+.shell-body--wide .message-row-mentions-me {
+  border-left-width: 0;
+  border-radius: 12dp;
+}
+
+/* ---- Voice recording in the wide composer: click the microphone (lit while it records), click again to send ---- */
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill {
+  align-items: center;
+  gap: 10dp;
+  padding: 0 16dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill .prompt-voice-timer {
+  min-width: 36dp;
+  font-size: 15dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level {
+  flex: 1;
+  min-width: 40dp;
+  height: 6dp;
+  border-radius: 3dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level-fill {
+  width: 0%;
+  height: 6dp;
+  border-radius: 3dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill .prompt-voice-bar-sending {
+  font-size: 15dp;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-cancel-x {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  min-width: 40dp;
+  height: 40dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20dp;
+  cursor: pointer;
+}
+
+/* BEGIN phone message rules (generated by scripts/ui/gen_wide_phone_rules.py, do not edit) */
+.shell-body--wide .chat-call-row {
+  padding: 9dp 14dp;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .chat-call-row-icon {
+  width: 24dp;
+  height: 24dp;
+  margin: -1dp 8dp -1dp 0;
+}
+
+.shell-body--wide .chat-call-row-time {
+  font-size: 13dp;
+}
+
+.shell-body--wide .bubble.bubble-user--picture {
+  max-width: none;
+  padding: 3dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-body--wide .chat-attachment-video {
+  display: block;
+}
+
+.shell-body--wide .chat-attachment-video-badge {
+  padding: 0;
+}
+
+.shell-body--wide .sender-label {
+  display: none;
+}
+
+.shell-body--wide .chat-date-strip {
+  display: block;
+  margin: 8dp 0;
+  text-align: center;
+}
+
+.shell-body--wide .chat-date-pill,
+.shell-body--wide .chat-system-line p {
+  display: inline-block;
+  margin: 0;
+  padding: 4dp 10dp;
+  max-width: 80%;
+  border-radius: 999dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .chat-group-invite {
+  display: inline-block;
+  width: 72%;
+  max-width: 280dp;
+  margin: 0;
+  padding: 10dp 12dp 0 12dp;
+  border-width: 0;
+  border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-body--wide .chat-group-invite .heading-3 {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .chat-group-invite .text {
+  margin: 2dp 0 4dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-group-invite .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+.shell-body--wide .chat-group-name {
+  display: block;
+  margin: 0 0 2dp 12dp;
+  max-width: 72%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: left;
+}
+
+.shell-body--wide .bubble .chat-group-name {
+  margin: -16dp -14dp -13dp -14dp;
+  padding: 16dp 14dp 15dp 14dp;
+  max-width: none;
+}
+
+.shell-body--wide .chat-row-body--group {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.shell-body--wide .chat-row-avatar-col {
+  display: block;
+  flex-shrink: 0;
+  width: 32dp;
+  margin-right: 6dp;
+  align-self: flex-end;
+}
+
+.shell-body--wide .chat-row-avatar-hit {
+  display: block;
+  margin: -12dp -6dp 0 -6dp;
+  padding: 12dp 6dp 0 6dp;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar .avatar-photo {
+  width: 32dp;
+  height: 32dp;
+}
+
+.shell-body--wide .chat-row-avatar-col-avatar .chat-row-avatar-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-row-body--group .chat-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .bubble {
+  padding: 10dp 14dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .bubble-text,
+.shell-body--wide .bubble-text-peer {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .bubble.bubble-emoji {
+  padding: 0 2dp;
+  border-width: 0;
+  background-color: transparent;
+}
+
+.shell-body--wide .bubble-emoji .bubble-text,
+.shell-body--wide .bubble-emoji .bubble-text-peer {
+  font-size: 28dp;
+  line-height: 36dp;
+}
+
+.shell-body--wide .bubble-emoji--xl .bubble-text,
+.shell-body--wide .bubble-emoji--xl .bubble-text-peer {
+  font-size: 36dp;
+  line-height: 44dp;
+}
+
+.shell-body--wide .bubble-emoji .bubble-time,
+.shell-body--wide .bubble-emoji .bubble-tail {
+  display: none;
+}
+
+.shell-body--wide .bubble-user,
+.shell-body--wide .bubble-assistant {
+  max-width: 72%;
+}
+
+.shell-body--wide .bubble-assistant {
+  border-width: 0;
+}
+
+.shell-body--wide .bubble-time {
+  display: block;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  text-align: right;
+}
+
+.shell-body--wide .bubble-deleted .bubble-time {
+  display: none;
+}
+
+.shell-body--wide .chat-quote {
+  margin-top: 0;
+  padding: 5dp 8dp;
+  border-radius: 6dp;
+}
+
+.shell-body--wide .chat-attachment-card {
+  display: inline-block;
+  min-width: 160dp;
+  max-width: 240dp;
+  padding: 8dp 12dp 0 12dp;
+  border-width: 0;
+  border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-body--wide .chat-attachment-card .heading-3,
+.shell-body--wide .chat-attachment-card .text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .chat-attachment-card .muted {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.shell-body--wide .chat-attachment-card .muted:last-child {
+  margin-bottom: 8dp;
+}
+
+.shell-body--wide .chat-attachment-card.chat-reaction-host .muted:last-child {
+  margin-bottom: 24dp;
+}
+
+.shell-body--wide .chat-attachment-video-frame {
+  max-width: 292dp;
+}
+
+.shell-body--wide .chat-attachment-card--video {
+  min-width: 0;
+  max-width: 298dp;
+  padding: 3dp;
+  border-radius: 12dp;
+}
+
+.shell-body--wide .chat-attachment-card--video .chat-attachment-video-frame {
+  border-radius: 9dp;
+}
+
+.shell-body--wide .chat-audio-card {
+  width: 240dp;
+  min-width: 0;
+  padding-bottom: 10dp;
+}
+
+.shell-body--wide .chat-audio-card .chat-audio-meta .chat-audio-sub,
+.shell-body--wide .chat-audio-card.chat-reaction-host .chat-audio-meta .chat-audio-sub {
+  margin-bottom: 0;
+}
+
+.shell-body--wide .chat-audio-card.chat-reaction-host {
+  padding-bottom: 24dp;
+}
+
+.shell-body--wide .chat-attachment-card .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+.shell-body--wide .chat-attachment-card--image {
+  min-width: 0;
+  max-width: none;
+  padding: 3dp;
+  border-radius: 12dp;
+}
+
+.shell-body--wide .chat-attachment-card--image .chat-attachment-clip {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 292dp;
+  max-height: 360dp;
+  overflow: hidden;
+  border-radius: 9dp;
+}
+
+.shell-body--wide .chat-attachment-card--image .chat-attachment-image {
+  display: block;
+  max-width: 292dp;
+  max-height: none;  /* the base .chat-attachment-image caps at 240dp */
+  margin: 0;
+  border-radius: 9dp;
+}
+
+.shell-body--wide .chat-attachment-card--image .chat-attachment-clip--auto {
+  width: 292dp;
+}
+
+.shell-body--wide .chat-attachment-card--image .chat-attachment-clip--auto .chat-attachment-image {
+  width: 292dp;
+}
+
+.shell-body--wide .chat-attachment-card--image .bubble-tail {
+  z-index: -1;
+}
+
+.shell-body--wide .chat-file-card {
+  min-width: 220dp;
+  max-width: 292dp;
+  padding: 0;
+}
+
+.shell-body--wide .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 24dp;
+}
+
+.shell-body--wide .chat-file-card .chat-file-name {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  max-height: 40dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.shell-body--wide .chat-file-card .chat-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  opacity: 0.8;
+}
+
+.shell-body--wide .bubble-tail-host {
+  position: relative;
+}
+
+.shell-body--wide .bubble-tail-host--in {
+  border-bottom-left-radius: 4dp;
+}
+
+.shell-body--wide .bubble-tail-host--out {
+  border-bottom-right-radius: 4dp;
+}
+
+.shell-body--wide .bubble-tail {
+  position: absolute;
+  bottom: 0;
+  width: 16dp;
+  height: 20dp;
+}
+
+.shell-body--wide .bubble-tail-in {
+  left: -8dp;
+}
+
+.shell-body--wide .bubble-tail-out {
+  right: -8dp;
+}
+
+.shell-body--wide .chat-attachment-clock {
+  display: block;
+  min-height: 14dp;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 14dp;
+  text-align: right;
+}
+
+.shell-body--wide .chat-file-card .chat-attachment-clock {
+  padding: 0 14dp 6dp 14dp;
+  margin-top: -2dp;
+}
+
+.shell-body--wide .chat-audio-card .chat-attachment-clock {
+  margin-top: 4dp;
+}
+
+.shell-body--wide .chat-file-card.chat-reaction-host .chat-file-row {
+  padding-bottom: 8dp;
+}
+
+.shell-body--wide .chat-attachment-foot {
+  min-height: 14dp;
+  padding: 3dp 6dp 3dp 6dp;
+}
+
+.shell-body--wide .chat-foot-time {
+  display: inline;
+}
+/* END phone message rules */
+
+/* BEGIN phone page rules (generated by scripts/ui/gen_wide_phone_rules.py, do not edit) */
+.shell-body--wide .me-invite-qr {
+  display: flex;
+  align-items: center;
+  margin: 20dp 16dp 20dp 16dp;
+}
+
+.shell-body--wide .me-invite-qr .group-foot {
+  margin: 0;
+  text-align: center;
+}
+
+.shell-body--wide .me-profile-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 12dp;
+}
+
+.shell-body--wide .me-profile-avatar-wrap {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-body--wide .me-profile-avatar-wrap .me-profile-avatar-frame {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-body--wide .me-profile-avatar-wrap .me-profile-avatar-image {
+  width: 112dp;
+  height: 112dp;
+}
+
+.shell-body--wide .me-profile-avatar-wrap .avatar-letter {
+  font-size: 44dp;
+}
+
+.shell-body--wide .me-profile-avatar-uploading {
+  width: 112dp;
+  height: 112dp;
+  border-radius: 56dp;
+}
+
+.shell-body--wide .me-profile-avatar-uploading-text {
+  font-size: 15dp;
+}
+
+.shell-body--wide .me-profile-avatar-badge {
+  right: -6dp;
+  bottom: -6dp;
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-body--wide .me-profile-avatar-badge-dot {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .me-profile-avatar-badge svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.shell-body--wide .contacts-row-subtitle--desktop,
+.shell-body--wide .contacts-trust-badge,
+.shell-body--wide .contacts-unread {
+  display: none;
+}
+
+.shell-body--wide .contacts-empty {
+  padding: 0 16dp;
+}
+
+.shell-body--wide .contacts-row-avatar-frame {
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+.shell-body--wide .contacts-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-body--wide .contacts-row-avatar-frame .avatar-letter {
+  font-size: 18dp;
+}
+
+.shell-body--wide .contacts-row-title {
+  margin-bottom: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .contacts-row-title--starred {
+  flex: 0 1 auto;
+}
+
+.shell-body--wide .contacts-row-star {
+  display: block;
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: auto;
+}
+
+.shell-body--wide .contacts-row-subtitle--phone {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .contacts-section-header {
+  display: block;
+}
+
+.shell-body--wide .contacts-index {
+  position: absolute;
+  top: 44dp;
+  right: 0;
+  bottom: 49dp;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  width: 28dp;
+  padding-right: 3dp;
+  box-sizing: border-box;
+  drag: drag;
+  z-index: 2;
+}
+
+.shell-body--wide .contacts-index-letter {
+  display: block;
+  width: 16dp;
+  height: 14dp;
+  margin: 0;
+  font-size: 11dp;
+  line-height: 14dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--wide .contacts-index-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 72dp;
+  height: 72dp;
+  margin: -36dp 0 0 -36dp;
+  border-radius: 14dp;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.shell-body--wide .contacts-index-bubble-letter {
+  margin: 0;
+  font-size: 34dp;
+  line-height: 72dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--wide .contact-detail-panel {
+  display: block;
+  padding: 0 0 32dp 0;
+  overflow-y: auto;
+}
+
+.shell-body--wide .contacts-detail-body,
+.shell-body--wide .contacts-actions,
+.shell-body--wide .contact-detail-panel .contacts-trust-badge,
+.shell-body--wide .contact-detail-panel .contacts-row-subtitle--desktop {
+  display: none;
+}
+
+.shell-body--wide .contacts-detail-header {
+  margin: 0;
+  padding: 16dp 16dp 0 16dp;
+}
+
+.shell-body--wide .contact-detail-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 8dp;
+}
+
+.shell-body--wide .contact-detail-avatar-frame {
+  width: 96dp;
+  height: 96dp;
+  border-radius: 48dp;
+}
+
+.shell-body--wide .contact-detail-avatar-image {
+  width: 96dp;
+  height: 96dp;
+}
+
+.shell-body--wide .contact-detail-avatar-frame .avatar-letter {
+  font-size: 40dp;
+}
+
+.shell-body--wide .contact-detail-title-block {
+  flex: none;
+  align-items: center;
+}
+
+.shell-body--wide .contact-detail-panel .contacts-row-title-line {
+  justify-content: center;
+}
+
+.shell-body--wide .cd-account {
+  display: block;
+  width: 100%;
+  margin: 0;
+  text-align: center;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .cd-phone {
+  display: block;
+}
+
+.shell-body--wide .cd-row--field .cd-row-body {
+  position: relative;
+  padding-bottom: 0;
+}
+
+.shell-body--wide .cd-field {
+  margin: 0 0 10dp 0;
+  padding: 11dp 12dp;
+  border-radius: 10dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .cd-row--field .group-field-hint {
+  bottom: 10dp;
+}
+
+.shell-body--wide .settings-section {
+  margin-top: 0;
+  padding: 0 16dp;
+}
+
+.shell-body--wide .settings-section--grouped {
+  padding: 0;
+}
+
+.shell-body--wide .group-card {
+  margin: 20dp 16dp 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .settings-mock .group-card.storage-danger-zone {
+  margin-top: 40dp;
+}
+
+.shell-body--wide .group-card--top {
+  margin-top: 8dp;
+}
+
+.shell-body--wide .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-body--wide .group-card--pad {
+  padding: 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .group-card-title {
+  margin: 0 0 4dp 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .group-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .group-head {
+  margin: 20dp 32dp 6dp 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .group-foot {
+  margin: 6dp 32dp 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .group-title {
+  margin: 20dp 16dp 0 16dp;
+  font-size: 22dp;
+  line-height: 28dp;
+  text-align: center;
+}
+
+.shell-body--wide .group-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 50dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+  gap: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: LatoLatin;
+}
+
+.shell-body--wide .group-card .group-row {
+  margin-top: -1dp;
+}
+
+.shell-body--wide .group-row-body {
+  gap: 8dp;
+  min-height: 50dp;
+  padding: 0 12dp 0 0;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .group-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  margin: 0 16dp 0 4dp;
+  border-radius: 8dp;
+}
+
+.shell-body--wide .group-icon svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-body--wide .group-row-label {
+  flex: 1;
+  min-width: 0;
+  padding: 10dp 0 10dp 0;
+}
+
+.shell-body--wide .group-row-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .group-row-text.settings-row-sentence {
+  white-space: normal;
+  overflow: visible;
+  padding: 10dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .group-row-label .group-row-text {
+  display: block;
+}
+
+.shell-body--wide .group-row-sub {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .group-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .group-row-label--fit {
+  flex: 0 0 auto;
+}
+
+.shell-body--wide .group-row-value--wrap {
+  flex: 1 1 0;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-align: right;
+}
+
+.shell-body--wide .group-row-value--wrap .group-row-sub {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  margin-top: 2dp;
+  white-space: normal;
+  overflow: visible;
+}
+
+.shell-body--wide .settings-text-btn {
+  flex-shrink: 0;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0 -4dp 0 0;
+  padding: 0 8dp;
+  border: 0;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+}
+
+.shell-body--wide .group-chevron,
+.shell-body--wide .group-row .settings-row-chevron {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+  margin-left: 0;
+}
+
+.shell-body--wide .settings-choice-option .group-row-body {
+  padding-right: 16dp;
+}
+
+.shell-body--wide .settings-choice-check {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.shell-body--wide .group-row .settings-choice-value-text {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .group-row--field .group-row-body {
+  position: relative;
+  display: block;
+  min-height: 0;
+  padding: 10dp 16dp 0 0;
+}
+
+.shell-body--wide .group-row--field .group-row-text {
+  display: block;
+  flex: none;
+  width: auto;
+  margin: 0 0 2dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: left;
+}
+
+.shell-body--wide .group-card .field {
+  display: block;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: 44dp;
+  min-height: 44dp;
+  max-height: 44dp;
+  margin: 0 0 10dp 0;
+  /* A 22dp line between 11dp paddings: text and a line-tall caret in the middle (a 44dp line drew a full-height caret). */
+  padding: 11dp 12dp;
+  border: 0;
+  border-radius: 10dp;
+  box-sizing: border-box;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: left;
+}
+
+.shell-body--wide .group-field-hint {
+  position: absolute;
+  left: 12dp;
+  bottom: 10dp;
+  display: block;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.shell-body--wide .group-row--static {
+  cursor: default;
+}
+
+.shell-body--wide .group-id-row {
+  cursor: default;
+}
+
+.shell-body--wide .group-id-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 8dp 0;
+}
+
+.shell-body--wide .group-id-label {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .group-id-value {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .group-id-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-body--wide .group-row .settings-switch {
+  width: 51dp;
+  height: 31dp;
+  min-width: 51dp;
+}
+
+.shell-body--wide .group-row .settings-switch-knob {
+  width: 27dp;
+  height: 27dp;
+}
+
+.shell-body--wide .group-row .settings-switch--on .settings-switch-knob {
+  transform: translateX(20dp);
+}
+
+.shell-body--wide .me-card-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-right: 8dp;
+}
+
+.shell-body--wide .me-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  margin: 0;
+  padding: 12dp;
+  border: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-body--wide .me-card-avatar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60dp;
+  height: 60dp;
+  border-radius: 30dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .me-card-avatar .avatar-letter {
+  font-size: 24dp;
+}
+
+.shell-body--wide .me-card-avatar-image {
+  width: 60dp;
+  height: 60dp;
+}
+
+.shell-body--wide .me-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .me-card-name {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .me-card-meta {
+  margin: 1dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-body--wide .me-home .group-card,
+.shell-body--wide .settings-mock .group-card {
+  margin: 24dp 16dp 0 16dp;
+  border-radius: 12dp;
+}
+
+.shell-body--wide .settings-mock .group-card:first-child {
+  margin-top: 16dp;
+}
+
+.shell-body--wide .settings-mock .group-row-sub {
+  white-space: normal;
+  overflow: visible;
+  margin-top: 2dp;
+}
+
+.shell-body--wide .settings-mock .group-row--dim {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.shell-body--wide .settings-mock .group-row--q {
+  position: relative;
+}
+
+.shell-body--wide .settings-mock .group-row--q .group-row-tap {
+  justify-content: space-between;
+  padding-right: 12dp;
+}
+
+.shell-body--wide .settings-mock .group-row--off {
+  cursor: default;
+}
+
+.shell-body--wide .settings-mock .settings-device-row {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-body--wide .settings-mock .group-row-tap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-body--wide .settings-mock .group-row--indent {
+  padding-left: 36dp;
+}
+
+.shell-body--wide .settings-mock .me-profile-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 8dp 16dp 0 16dp;
+}
+
+.shell-body--wide .settings-mock .group-row--field .group-row-body--field {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 52dp;
+  padding: 0 16dp 0 0;
+}
+
+.shell-body--wide .settings-mock .group-row--field .group-row-text {
+  flex: 0 0 auto;
+  margin: 0 12dp 0 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .settings-mock .group-row--field .field {
+  flex: 1;
+  width: auto;
+  height: 52dp;
+  min-height: 52dp;
+  max-height: 52dp;
+  margin: 0;
+  padding: 15dp 0;
+  background-color: transparent;
+  text-align: right;
+}
+
+.shell-body--wide .settings-mock .group-row--field .group-field-hint {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  height: 52dp;
+  line-height: 52dp;
+}
+
+.shell-body--wide .settings-mock .group-foot {
+  margin: 8dp 32dp 0 32dp;
+}
+
+.shell-body--wide .settings-transfer-lead {
+  margin: 20dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-body--wide .settings-copied-box {
+  margin: 16dp 16dp 0 16dp;
+  padding: 16dp 18dp 8dp 18dp;
+  border-width: 2dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .settings-copied-title {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .settings-copied-sub {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .settings-copied-again {
+  display: block;
+  margin: 4dp -8dp 0 -8dp;
+  text-align: left;
+}
+
+.shell-body--wide .settings-steps-card {
+  padding: 0 16dp 0 0;
+}
+
+.shell-body--wide .settings-step {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 12dp 0;
+}
+
+.shell-body--wide .settings-step:first-child {
+  border-top-width: 0;
+}
+
+.shell-body--wide .settings-step-num {
+  flex: 0 0 26dp;
+  width: 26dp;
+  height: 26dp;
+  margin: 0 12dp 0 16dp;
+  border-radius: 13dp;
+  font-size: 14dp;
+  line-height: 26dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--wide .settings-step-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .settings-note-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.shell-body--wide .settings-note-row .text {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.shell-body--wide .settings-dev-hero {
+  padding: 28dp 0 0 0;
+  text-align: center;
+}
+
+.shell-body--wide .settings-dev-ill {
+  display: block;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 auto;
+}
+
+.shell-body--wide .settings-dev-sentence-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 10dp 20dp 0 32dp;
+}
+
+.shell-body--wide .settings-dev-sentence {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+}
+
+.shell-body--wide .settings-dev-sub {
+  margin: 2dp 32dp 0 32dp;
+  font-size: 15dp;
+  line-height: 21dp;
+  text-align: center;
+}
+
+.shell-body--wide .settings-dev-note {
+  padding: 14dp 16dp 16dp 16dp;
+}
+
+.shell-body--wide .settings-dev-note-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 23dp;
+}
+
+.shell-body--wide .settings-dev-note-row {
+  margin: 6dp 0 0 0;
+}
+
+.shell-body--wide .settings-dev-note-line {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-card .btn.settings-action-row {
+  display: block;
+  flex: none;
+  width: 100%;
+  height: 50dp;
+  min-height: 50dp;
+  margin: -1dp 0 0 0;
+  padding: 0 16dp;
+  border-radius: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: normal;
+  text-align: left;
+}
+
+.shell-body--wide .settings-section--grouped .group-head {
+  display: none;
+}
+
+.shell-body--wide .settings-section--grouped .group-head + .group-card {
+  margin-top: 20dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-head + .group-foot,
+.shell-body--wide .settings-section--grouped .group-head + .stack > .group-foot:first-child {
+  margin-top: 20dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-head.group-head--field {
+  display: block;
+  margin: 20dp 32dp 4dp 32dp;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-body--wide .me-home .group-row,
+.shell-body--wide .me-home .group-row-body,
+.shell-body--wide .settings-mock .group-row,
+.shell-body--wide .settings-mock .group-row-body {
+  min-height: 52dp;
+}
+
+.shell-body--wide .me-home .me-card-row {
+  min-height: 88dp;
+  padding-right: 0;
+}
+
+.shell-body--wide .me-home .me-card-main {
+  padding: 12dp 4dp 12dp 16dp;
+}
+
+.shell-body--wide .me-home .me-card-avatar,
+.shell-body--wide .me-home .me-card-avatar-image {
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+}
+
+.shell-body--wide .me-home .me-card-avatar .avatar-letter {
+  font-size: 26dp;
+}
+
+.shell-body--wide .me-home .me-card-name {
+  font-size: 20dp;
+  line-height: 26dp;
+}
+
+.shell-body--wide .me-home .me-card-acts {
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: 4dp;
+}
+
+.shell-body--wide .me-home .me-card-act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 50dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-body--wide .me-home .me-card-meta {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-body--wide .me-home .me-card-act:active {
+  opacity: 0.6;
+}
+
+.shell-body--wide .settings-section--grouped .btn {
+  display: block;
+  width: auto;
+  height: 50dp;
+  min-height: 50dp;
+  margin: 16dp 16dp 0 16dp;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--wide .settings-section--grouped .btn-icon {
+  display: flex;
+}
+
+.shell-body--wide .settings-pill-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-body--wide .settings-pill {
+  height: 32dp;
+  padding: 0 16dp;
+  border-radius: 16dp;
+  font-family: LatoLatin;
+  font-size: 15dp;
+  line-height: 32dp;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.shell-body--wide .settings-improve-send:disabled {
+  opacity: 0.5;
+}
+
+.shell-body--wide .settings-section--grouped .settings-action-bar {
+  width: auto;
+}
+
+.shell-body--wide .settings-section--grouped .settings-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-body--wide .settings-section--grouped .me-profile-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-body--wide .settings-section--grouped .group-actions {
+  display: flex;
+  flex-direction: row;
+  /* Not .settings-toggle-row's 100%: with the 16dp margins the row ran 32dp past the screen and cut off its "?". */
+  width: auto;
+  margin: 16dp 16dp 0 16dp;
+  gap: 8dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-card .btn,
+.shell-body--wide .settings-section--grouped .group-actions .btn {
+  flex: 1;
+  height: 36dp;
+  min-height: 36dp;
+  margin: 8dp 8dp 0 0;
+  font-size: 15dp;
+  line-height: 36dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-actions .btn {
+  margin: 0;
+}
+
+.shell-body--wide .me-profile-avatar-row {
+  margin-bottom: 0;
+}
+
+.shell-body--wide .settings-device-actions {
+  gap: 0;
+}
+
+.shell-body--wide .settings-device-title {
+  gap: 8dp;
+}
+
+.shell-body--wide .group-row-body .home-edit-handle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 50dp;
+  margin: 0 -12dp 0 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  drag: drag;
+  cursor: pointer;
+}
+
+.shell-body--wide .home-composer-mount {
+  display: block;
+  padding: 0 40dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer {
+  flex: none;
+  margin: 0 0 8dp 0;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-status {
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill {
+  min-height: 106dp; /* + the box's 1dp border each side = the 108dp card */
+  padding: 0 16dp 48dp 16dp;
+  border-radius: 20dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-input {
+  align-self: stretch;
+  min-height: 36dp;
+  padding: 12dp 0 0 0;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row {
+  position: relative;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-classic,
+.shell-body--wide .home-composer-mount .prompt-icon-v2,
+.shell-body--wide .home-composer-mount .prompt-capture-btn,
+.shell-body--wide .home-composer-mount .prompt-voice-toggle-btn {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-home {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-attach-btn {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill .prompt-home-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  left: 4dp;
+  bottom: 6dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  right: 50dp; /* the tinted circle 10dp before the Send disc (Kenneth 2026-11-10: emoji moved right, next to Send) */
+  bottom: 6dp;
+  z-index: 1;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 6dp;
+  box-sizing: border-box;
+  border-radius: 22dp;
+  background-color: transparent;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
+  display: block;
+  width: 32dp;
+  height: 32dp;
+  padding: 4dp;
+  box-sizing: border-box;
+  border-radius: 16dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  display: flex;
+  position: absolute;
+  right: 10dp;
+  bottom: 10dp;
+  z-index: 1;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-label--thread {
+  display: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-label--home {
+  display: block;
+  position: absolute;
+  top: 12dp;
+  left: 16dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 24dp;
+  pointer-events: none;
+}
+
+.shell-body--wide .storage-section .settings-danger-zone .settings-action-bar {
+  width: auto;
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-body--wide .contacts-index {
+  top: 56dp;
+}
+/* END phone page rules */
+
+/* ================= Contacts (design step 3, page A; contacts_wide.rml, contact_detail_wide.rml) =================
+   Hand rules that follow the generated phone page rules above: the list column's layout, the rounded row, the detail
+   column's width. The look of the avatar, name, star, A-Z strip and the contact page's cards is the phone's (generated). */
+.shell-body--wide .contacts-panel--wide {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.shell-body--wide .contacts-wide-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .contacts-panel--wide .contacts-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 60dp;
+  min-height: 60dp;
+  margin: 0 0 2dp 0;
+  padding: 0 12dp;
+  gap: 12dp;
+  border-width: 0;
+  border-radius: 10dp;
+}
+
+.shell-body--wide .contacts-panel--wide .contacts-row-body {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.shell-body--wide .contacts-panel--wide .contacts-section-header {
+  padding: 8dp 12dp 4dp 12dp;
+}
+
+.shell-body--wide .contacts-panel--wide .contacts-empty {
+  padding: 8dp 12dp;
+}
+
+/* The A-Z strip rides the list's right edge, between the search field and the bottom of the column. */
+.shell-body--wide .contacts-panel--wide .contacts-index {
+  top: 112dp;
+  bottom: 12dp;
+}
+
+/* The selected contact: the phone's page in a centred column, not stretched across the window. */
+.shell-body--wide .contact-detail-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640dp;
+  margin: 0 auto;
+  padding: 24dp 16dp 32dp 16dp;
+  overflow-y: auto;
+}
+
+/* The New chat tiles (New group, Add contact) at the top of the list, as on the phone's New chat page. */
+.shell-body--wide .contacts-panel--wide .nc-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8dp;
+  padding: 4dp 0 8dp 0;
+}
+
+.shell-body--wide .contacts-panel--wide .nc-action {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 10dp;
+  gap: 8dp;
+  border-radius: 14dp;
+}
+
+.shell-body--wide .contacts-panel--wide .nc-action-icon {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 10dp;
+}
+
+.shell-body--wide .contacts-panel--wide .nc-action-label {
+  font-size: 15dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The scan button beside the plus: the phone's Chats bar has it; round, 36dp like the plus. */
+.shell-body--wide .contacts-wide-scan-wrap {
+  display: block;
+  margin-right: 8dp;
+}
+
+.shell-body--wide .contacts-wide-scan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  padding: 0;
+  border: 0;
+  border-radius: 18dp;
+}
+
+/* Hover buttons (the phone's swipe: Voice, Video, More; Info is the click). Out of the way until the pointer is over
+   the row; 44dp targets that take the width from the name, which clips. */
+.shell-body--wide .contacts-row-actions {
+  display: none;
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+}
+
+.shell-body--wide .contacts-row:hover .contacts-row-actions {
+  display: flex;
+}
+
+.shell-body--wide .contacts-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.shell-body--wide .contacts-panel--wide .contacts-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================= Settings (design step 3, page B; settings_wide.rml) =================
+   The list column is the phone's Settings page (card, three groups) under a title like the other lists; the page of the
+   picked row is settings_detail.rml in the right column, as wide as the phone's page, centred. */
+.shell-body--wide .settings-panel--wide {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.shell-body--wide .settings-wide-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 0 24dp 0;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .settings-panel--wide .group-row {
+  border-radius: 10dp;
+}
+
+/* The phone's card puts the name and Copy / Share / QR code on one row (390dp); the list column is narrower, so the
+   three buttons go on a row of their own under the name. */
+.shell-body--wide .settings-panel--wide .me-home .me-card-row {
+  flex-direction: column;
+  align-items: stretch;
+  padding-bottom: 8dp;
+}
+
+.shell-body--wide .settings-panel--wide .me-home .me-card-main {
+  flex: none;
+}
+
+.shell-body--wide .settings-panel--wide .me-home .me-card-acts {
+  justify-content: space-around;
+  margin: 0 8dp;
+}
+
+.shell-body--wide .settings-detail-panel {
+  align-items: center;
+  padding: 0;
+}
+
+.shell-body--wide .settings-detail-panel .settings-detail-header {
+  flex: none;
+  width: 100%;
+  max-width: 640dp;
+  height: 64dp;
+  margin: 0;
+  padding: 0 16dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .settings-detail-panel .settings-header-title {
+  font-size: 22dp;
+  line-height: 28dp;
+}
+
+.shell-body--wide .settings-detail-panel .settings-detail-body {
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 640dp;
+  padding: 0 16dp 32dp 16dp;
+  box-sizing: border-box;
+  gap: 0;
+}
+
+/* Phone-only pieces of a settings page. The phone's pushed pages and pickers (a PIN row that opens a page, ...) need its
+   compact page stack, so the wide layout keeps showing the desktop's inline version of those and hides the phone's:
+   `.group-row`'s own display (above) would otherwise show them. Pieces marked `settings-wide-too` have nothing page-like
+   in them (Appearance: the little assistant's switches, look and size) and show here as on the phone. */
+.shell-body--wide .settings-phone-only {
+  display: none;
+}
+
+.shell-body--wide .settings-wide-too.settings-phone-only {
+  display: block;
+}
+
+.shell-body--wide .ai-look-picker.settings-wide-too.settings-phone-only {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  padding: 12dp 4dp;
+  box-sizing: border-box;
+}
+
+/* The heading of a settings block that has a "?" beside it (Recovery phrase): the phone shows no headings, but without it
+   the "?" would stand alone. */
+.shell-body--wide .settings-q-head {
+  justify-content: flex-start;
+  gap: 4dp;
+}
+
+.shell-body--wide .settings-q-head .group-head {
+  display: block;
+  margin: 20dp 0 6dp 16dp;
+}
+
+.shell-body--wide .settings-section--grouped .group-head.settings-wide-too {
+  display: none;
+}
+
+/* My profile: the phone's rows (nickname that opens its prompt, the account id, the status and Update / Set up) in place
+   of the desktop's field, note and buttons; the card at the top of the list already has Copy / Share / QR code. */
+.shell-body--wide .settings-detail--profile .settings-phone-only {
+  display: block;
+}
+
+.shell-body--wide .settings-detail--profile .group-head.settings-phone-only {
+  display: none;
+}
+
+.shell-body--wide .settings-detail--profile .settings-desktop-only,
+.shell-body--wide .settings-detail--profile .btn.settings-desktop-only {
+  display: none;
+}
+
+/* ================= AI (design step 3, page C; ai_list_wide.rml, the AI home in home.rml) =================
+   The list column is the phone's "Conversation history" drawer; the right column is the AI home (the mascot over the
+   phone's two-line ask-AI card, then the chips) or the picked conversation. The composer card itself is the phone's
+   (generated above). */
+.shell-body--wide .ai-list-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.shell-body--wide .ai-list-sessions {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-body--wide .ai-list-count {
+  flex: none;
+  padding: 8dp 16dp 12dp 16dp;
+  text-align: center;
+}
+
+.shell-body--wide .ai-list-count .ai-drawer-count-text {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* The AI home: no "PP" heading (the phone has none); the mascot, the card, the chips, as a centred column. */
+.shell-body--wide .home-header {
+  display: none;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo {
+  display: block;
+  flex: none;
+  height: 116dp;
+  margin: 0 0 4dp 0;
+  text-align: center;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo img {
+  width: 100dp;
+  height: 100dp;
+  border-radius: 22dp;
+}
+
+.shell-body--wide .home-landing--minimal .home-logo--mascot .home-mascot.ai-dot {
+  position: relative;
+  display: block;
+  width: 96dp;
+  height: 96dp;
+  margin: 10dp auto 0 auto;
+}
+
+.shell-body--wide .home-landing-inner {
+  max-width: 560dp;
+}
+
+.shell-body--wide .home-composer-mount {
+  padding: 0;
+}
+
+/* The AI list's own header is "Conversation history": a little smaller than the other columns' one-word titles. */
+.shell-body--wide .ai-list-header .sidebar-header-title {
+  font-size: 22dp;
+}
+
+/* The tail of a picture card (the last picture of a run): the phone draws it behind the card (z-index -1) so its inner
+   half does not cover the picture's corner; in the wide transcript that put it behind the pane's surface too and no hook
+   showed. The corner it sits on is the card's footer strip (the time under the picture), so the tail is drawn in front. */
+.shell-body--wide .chat-attachment-card--image .bubble-tail {
+  z-index: 0;
+}
+
+/* The full emoji picker (opened by the plus in the reaction row or the hover bar): a raised card centred over the
+   conversation, like the floating menus, in the shell's frame (key emoji_picker). */
+.shell-body--wide .shell-frame--emoji_picker {
+  top: 8%;
+  bottom: 8%;
+  left: 20%;
+  right: 20%;
+  border-radius: 16dp;
+}
+
+/* ---- The send-preview page (picture_send_wide.rml): a card centred over the conversation, in the shell's frame ---- */
+.shell-body--wide .shell-frame--picture_send {
+  top: 6%;
+  bottom: 6%;
+  left: 12%;
+  right: 12%;
+  padding: 0;
+  border-radius: 16dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-top {
+  justify-content: center;
+  padding: 0 56dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-stage {
+  margin: 0 20dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-bottom {
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  padding: 12dp 20dp 20dp 20dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .picture-send--wide .ps-original {
+  flex-shrink: 0;
+  width: auto;
+  min-height: 44dp;
+  padding: 0 4dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel {
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0 18dp;
+  border: 0;
+  border-radius: 22dp;
+  line-height: 44dp;
+  font-size: 16dp;
+  text-align: center;
+  cursor: pointer;
+}
+
+.shell-body--wide .picture-send--wide .ps-send {
+  flex-shrink: 0;
+  width: 140dp;
+  height: 44dp;
+  line-height: 44dp;
+  border-radius: 22dp;
+}

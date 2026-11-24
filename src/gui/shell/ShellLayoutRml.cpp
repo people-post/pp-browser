@@ -114,10 +114,11 @@ std::string ShellLayoutRml::PaneSlot(const std::string& key, const char* extra_c
 std::string ShellLayoutRml::ExpandedBase() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
-  out << "<div class=\"shell-pane-row\">";
+  // `shell-pane-row--aux`: the auxiliary pane is open; wide.rcss keeps the older column floors for such a row.
+  out << "<div class=\"shell-pane-row" << (state_.auxiliary_open ? " shell-pane-row--aux" : "") << "\">";
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
-  if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
-    const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
+  if (ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
+    const char* nav_content = ShellLayout::ExpandedNavContentKey(state_.nav_tab);
     const bool collapsed = state_.sidebar_collapsed;
     out << "<div class=\"shell-pane shell-pane-secondary";
     if (collapsed) {
@@ -139,6 +140,22 @@ std::string ShellLayoutRml::ExpandedBase() const {
     if (const PaneState* pane = FindPane(primary_key.c_str())) {
       out << PaneSlot(pane->spec.key, "shell-pane-primary", pane->spec.provides_composer);
     }
+  } else if (state_.nav_tab == NavTab::Sessions || state_.nav_tab == NavTab::Contacts || state_.nav_tab == NavTab::Me) {
+    // Nothing picked in the list: say what to do, where the page will be.
+    const bool chats = state_.nav_tab == NavTab::Sessions;
+    const bool contacts = state_.nav_tab == NavTab::Contacts;
+    const std::string title = chats      ? Tr("shell.chats.empty_title")
+                              : contacts ? Tr("shell.contacts.empty_title")
+                                         : Tr("shell.settings.empty_title");
+    const std::string body = chats      ? Tr("shell.chats.empty_body")
+                             : contacts ? Tr("shell.contacts.empty_body")
+                                        : Tr("shell.settings.empty_body");
+    out << "<div class=\"shell-pane shell-pane-primary shell-empty-state\" id=\"shell-empty-"
+        << (chats      ? "chat"
+            : contacts ? "contacts"
+                       : "settings")
+        << "\">"
+        << "<p class=\"shell-empty-title\">" << title << "</p><p class=\"shell-empty-body\">" << body << "</p></div>";
   }
   if (state_.auxiliary_open) {
     for (const PaneState& pane : state_.panes) {
@@ -365,7 +382,7 @@ std::string ShellLayoutRml::Overlays() const {
     }
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
-    out << "<div class=\"shell-frame\">";
+    out << "<div class=\"shell-frame shell-frame--" << overlay.key << "\">";
     out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";
     out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
     out << "</button>";

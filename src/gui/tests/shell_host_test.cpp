@@ -4,6 +4,7 @@
 #include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "gui/shell/ShellNavigationPorts.h"
+#include "gui/shell/WindowTitle.h"
 #include "lib/ui/ShellTypes.h"
 #include "gui/tests/run_log_sentinel_capture.h"
 
@@ -12,6 +13,7 @@
 #include "foundation/crypto/LinkHandshake.h"
 #include "foundation/i18n/LocalizationService.h"
 #include <gtest/gtest.h>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -335,6 +337,29 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(titlebar_and_safe.shell_bottom_dp, 34.f);
 }
 
+// iPad window / full screen: a bottom safe-area inset must not leave a black band under the wide layout.
+TEST(ShellHostTest, ExpandedLayoutRunsToTheWindowBottom) {
+  const pbr::ShellConfig config{};
+  pbr::CompactChromeLayout layout = pbr::ShellLayout::ComputeCompactChromeLayout(config, 24, 20);
+  EXPECT_FLOAT_EQ(layout.shell_bottom_dp, 20.f); // the phone-style result: the document would end above the inset
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(layout, 20);
+  EXPECT_FLOAT_EQ(layout.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(layout.content_bottom_inset_dp, 20.f); // #shell-root clears the inset instead
+  EXPECT_FLOAT_EQ(layout.content_top_dp, 24.f);
+
+  // Desktop (no inset): unchanged.
+  pbr::CompactChromeLayout desktop = pbr::ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 38.f);
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(desktop, 0);
+  EXPECT_FLOAT_EQ(desktop.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(desktop.content_bottom_inset_dp, 0.f);
+
+  // Keyboard up: the keyboard inset already lifts #shell-root; it is not added twice.
+  pbr::CompactChromeLayout keyboard = pbr::ShellLayout::ComputeCompactChromeLayout(config, 24, 336);
+  pbr::ShellLayout::ExtendExpandedToWindowBottom(keyboard, 336);
+  EXPECT_FLOAT_EQ(keyboard.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(keyboard.content_bottom_inset_dp, 336.f);
+}
+
 TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   using namespace pbr;
 
@@ -370,10 +395,11 @@ TEST(ShellHostTest, AuxiliaryWidthClamp) {
 TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   using namespace pbr;
 
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(0), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(199), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(200), 200);
-  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(240), 240);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(0), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(240), 280) << "a width saved before the 280 floor is clamped up on load";
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(279), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(280), 280);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(320), 320);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(480), 480);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(481), 480);
   EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(100000), 480);
@@ -388,17 +414,19 @@ TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
   state.sidebar_collapsed = false;
   state.nav_tab = NavTab::Home;
-  EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
+  EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state)) << "AI has its conversation list beside it in the wide layout";
+  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(NavTab::Home), "ai_list");
+  EXPECT_EQ(ShellLayout::NavContentKey(NavTab::Home), nullptr) << "the phone's Home has no list column";
   state.nav_tab = NavTab::Me;
   EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state));
   state.layout_mode = LayoutMode::Compact;
   EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
 
-  // Collapsed lists come back on tabs that have one; Home leaves the flag alone.
+  // Collapsed lists come back on tabs that have one (AI too, since its conversations are a list beside it).
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Sessions));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Contacts));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Me));
-  EXPECT_TRUE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(false, NavTab::Home));
 }
 
@@ -615,6 +643,82 @@ TEST(ShellHostHiddenTabTest, TheDesktopIsUnchangedByTheSettingsSegment) {
   EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
   EXPECT_FALSE(ShellLayout::HiddenTabHasBack(desktop.State()));
   EXPECT_EQ(desktop.BackTarget(), DismissTarget::None);
+}
+
+// The wide layout's AI tab: with a conversation open beside its list, picking AI again goes back to the AI home (the
+// tab is reported as activated, which resets the page); in the phone layout a second tap is the drawer's, untouched.
+TEST(ShellHostHiddenTabTest, ASecondPickOfAiOnTheWideLayoutLeavesTheConversationForTheAiHome) {
+  ShellHost& wide = KeptHost();
+  wide.State().layout_mode = LayoutMode::Expanded;
+  ShellLayout::SyncLayoutModeString(wide.State());
+  wide.SelectNavTab(NavTab::Home);
+  wide.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  std::vector<NavTab> activated;
+  wide.SetOnNavTabChanged([&activated](const NavTab tab) { activated.push_back(tab); });
+  wide.SelectNavTab(NavTab::Home); // nothing open: not a new activation
+  EXPECT_TRUE(activated.empty());
+  wide.SetPrimaryPane("chat");
+  wide.SelectNavTab(NavTab::Home);
+  EXPECT_EQ(activated, std::vector<NavTab>{NavTab::Home}) << "the AI home is activated again";
+  wide.SetPrimaryPane("home");
+  wide.SelectNavTab(NavTab::Home);
+  EXPECT_EQ(activated.size(), 1u) << "already on the AI home";
+
+  ShellHost& phone = PhoneHost(NavTab::Home);
+  std::vector<NavTab> phone_activated;
+  phone.SetOnNavTabChanged([&phone_activated](const NavTab tab) { phone_activated.push_back(tab); });
+  phone.RegisterPane({.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true});
+  phone.SetPrimaryPane("chat");
+  phone.SelectNavTab(NavTab::Home);
+  EXPECT_TRUE(phone_activated.empty());
+}
+
+// Reset my profile on the wide layout (Settings with a section open in the right pane, a page sheet over it): the shell
+// goes to the AI tab with nothing of the old account beside the list, nothing pushed and no layer over the first-run page.
+TEST(ShellHostHiddenTabTest, AProfileResetOnTheWideLayoutLeavesNoPaneOrLayerOfTheOldAccount) {
+  ShellHost& wide = KeptHost();
+  wide.State().layout_mode = LayoutMode::Expanded;
+  ShellLayout::SyncLayoutModeString(wide.State());
+  wide.SelectNavTab(NavTab::Me);
+  wide.RegisterPane({.key = "settings_detail", .rml_path = "views/settings_detail.rml"});
+  wide.SetPrimaryPane("settings_detail");
+  wide.PushLayer({.key = "avatar_view", .full_screen = true});
+  ASSERT_EQ(wide.State().nav_tab, NavTab::Me);
+  ASSERT_FALSE(wide.State().overlay_stack.empty());
+
+  wide.SelectNavTab(NavTab::Home);
+  wide.ClearTabContext();
+  wide.CloseAllLayers();
+
+  EXPECT_EQ(wide.State().nav_tab, NavTab::Home);
+  EXPECT_STREQ(ShellLayout::ExpandedNavContentKey(wide.State().nav_tab), "ai_list")
+      << "the list column is the AI list again";
+  EXPECT_TRUE(wide.State().primary_pane_key.empty()) << "the right pane is closed";
+  EXPECT_FALSE(wide.State().auxiliary_open);
+  EXPECT_TRUE(wide.State().transient_stack.empty());
+  EXPECT_TRUE(wide.State().overlay_stack.empty());
+}
+
+// The desktop title strip: "PP" plain, "PP · name" with a nickname, plain again after a reset; the strip binds the text.
+TEST(ShellHostHiddenTabTest, TheTitleStripReadsPpDotNicknameOnceThereIsAName) {
+  EXPECT_EQ(WindowTitleFor("PP", ""), "PP");
+  EXPECT_EQ(WindowTitleFor("PP", "  \t"), "PP") << "a blank name is no name";
+  EXPECT_EQ(WindowTitleFor("PP", "Ada"), "PP \xC2\xB7 Ada");
+  EXPECT_EQ(WindowTitleFor("PP", " Ada Lovelace "), "PP \xC2\xB7 Ada Lovelace");
+
+  ShellHost& host = KeptHost();
+  host.SetWindowTitle(WindowTitleFor("PP", "Ada"));
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP \xC2\xB7 Ada");
+  host.SetWindowTitle(WindowTitleFor("PP", "Grace")); // the nickname changed
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP \xC2\xB7 Grace");
+  host.SetWindowTitle(WindowTitleFor("PP", "")); // after a reset
+  EXPECT_EQ(std::string(host.State().window_title.c_str()), "PP");
+
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "samples/window_shell.rml");
+  std::stringstream rml;
+  rml << in.rdbuf();
+  EXPECT_NE(rml.str().find("<p class=\"shell-titlebar-title\">{{window_title}}</p>"), std::string::npos)
+      << "the strip shows the bound text";
 }
 
 // A tab switch closes the pushed pages one by one, each reported to its owner (ContactsController's open flags follow).

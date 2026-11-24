@@ -40,10 +40,10 @@ struct At {
   int minute;
 };
 
-enum class Who { Them, Me };
-/** An attachment line: a picture, or (group chat only) a file card / a video card carrying the landscape picture's
- *  bytes under another type, so the cards can be looked at without more bundled assets. */
-enum class Pic { None, Landscape, Portrait, File, Video };
+enum class Who { Them, Me, System };
+/** An attachment line: a picture, or (group chat only) a file card / a video card / a voice message carrying the landscape
+ *  picture's bytes under another type, so the cards can be looked at without more bundled assets. */
+enum class Pic { None, Landscape, Portrait, File, Video, Voice };
 
 struct Line {
   Who who;
@@ -211,6 +211,9 @@ const std::vector<DemoGroup>& Groups() {
            {Who::Them, "Amazing view 😍", {1, 19, 10}, Pic::None, 2},
            {Who::Me, "路线图和装备清单.pdf", {1, 19, 20}, Pic::File},
            {Who::Them, "下山.mp4", {1, 19, 30}, Pic::Video, 3},
+           {Who::System, "Calls from people you do not know were blocked", {1, 19, 35}},
+           {Who::Them, "voice-12000.ogg", {1, 19, 40}, Pic::Voice, 2},
+           {Who::Me, "voice-7000.ogg", {1, 19, 45}, Pic::Voice},
            {Who::Them, "我是小明的同事，也想一起去，可以吗？", {0, 8, 5}, Pic::None, 0, nullptr, "demo-acct-guest-01"},
            {Who::Me, "欢迎！周六九点见", {0, 8, 7}},
        },
@@ -218,10 +221,10 @@ const std::vector<DemoGroup>& Groups() {
         {7, 3, "😍"},
         {6, 2, "👍"},
         {9, 1, "🙏"},
-        {12, 2, "👍"},
-        {12, 3, "👍"},
-        {12, 1, "🎉"},
-        {13, 1, "❤️"},
+        {15, 2, "👍"},
+        {15, 3, "👍"},
+        {15, 1, "🎉"},
+        {16, 1, "❤️"},
         {10, 2, "👍"}},
        {"demo-acct-guest-01"}},
       {"demo-thread-group-2",
@@ -372,8 +375,8 @@ ChatAttachmentFields FieldsOf(const Line& line, const Picture& landscape, const 
     return portrait.fields;
   }
   ChatAttachmentFields fields = landscape.fields;
-  if (line.pic == Pic::File || line.pic == Pic::Video) {
-    fields.mime = line.pic == Pic::File ? "application/pdf" : "video/mp4";
+  if (line.pic == Pic::File || line.pic == Pic::Video || line.pic == Pic::Voice) {
+    fields.mime = line.pic == Pic::File ? "application/pdf" : line.pic == Pic::Video ? "video/mp4" : "audio/ogg";
     fields.filename = line.text;
   }
   return fields;
@@ -425,6 +428,21 @@ Roe<void> PutMessages(const DemoSeedDeps& deps, const std::string& thread_id, co
     message.transport = MessageTransport::Relay;
     // Never Pending: nothing here is waiting to be sent. Our own lines are relay_visible=false (no outbox row).
     message.delivery = MessageDelivery::Relayed;
+    if (line.who == Who::System) {
+      // A local note line (a blocked-call line's shape: MakeCallFunctionalPorts), to look at the system-line pill.
+      message.sender_contact_id = kLocalSelfContactId;
+      message.relay_visible = false;
+      message.content_type = ChatContentType::System;
+      message.delivery = MessageDelivery::Local;
+      message.payload_json =
+          "{\"control_type\":\"call_blocked\",\"detail\":\"{\\\"count\\\":1,\\\"setting\\\":\\\"contacts\\\",\\\"call_"
+          "ids\\\":[]}\"}";
+      message.text = line.text;
+      if (auto put = deps.threads.UpsertMessage(message); !put) {
+        return put.error();
+      }
+      continue;
+    }
     if (line.who == Who::Me) {
       message.sender_contact_id = kLocalSelfContactId;
       message.relay_visible = false;

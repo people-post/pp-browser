@@ -38,14 +38,19 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
   static const std::unordered_map<std::string, std::string> keys = {
       {"sidebar", "views/sidebar.rml"},
       {"chat", "views/chat.rml"},
+      {"chat_wide", "views/chat_wide.rml"},
       {"home", "views/home.rml"},
+      {"ai_list_wide", "views/ai_list_wide.rml"},
       {"ai_drawer", "views/ai_drawer.rml"},
       {"preview", "views/preview.rml"},
       {"dialog", "views/dialog.rml"},
       {"composer", "views/composer.rml"},
+      {"composer_wide", "views/composer_wide.rml"},
       {"nav_rail", "views/nav_rail.rml"},
       {"contacts", "views/contacts.rml"},
+      {"contacts_wide", "views/contacts_wide.rml"},
       {"contact_detail", "views/contact_detail.rml"},
+      {"contact_detail_wide", "views/contact_detail_wide.rml"},
       {"new_chat", "views/new_chat.rml"},
       {"add_contact", "views/add_contact.rml"},
       {"my_qr", "views/my_qr.rml"},
@@ -63,9 +68,11 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"avatar_crop", "views/avatar_crop.rml"},
       {"avatar_view", "views/avatar_view.rml"},
       {"picture_send", "views/picture_send.rml"},
+      {"picture_send_wide", "views/picture_send_wide.rml"},
       {"onboarding", "views/onboarding.rml"},
       {"emoji_picker", "views/emoji_picker.rml"},
       {"settings", "views/settings.rml"},
+      {"settings_wide", "views/settings_wide.rml"},
       {"settings_detail", "views/settings_detail.rml"},
       {"settings_sections", "views/settings_sections.rml"},
       {"settings_section_profile", "views/settings_section_profile.rml"},
@@ -137,6 +144,14 @@ std::vector<std::string> ViewCatalog::KnownViewPaths() {
     out.push_back(path);
   }
   return out;
+}
+
+std::string ViewCatalog::KeyForLayout(const std::string& key, const bool wide) {
+  if (!wide) {
+    return key;
+  }
+  const std::string wide_key = key + "_wide";
+  return KnownKeys().count(wide_key) != 0 ? wide_key : key;
 }
 
 std::string ViewCatalog::ResolvePath(const std::string& key_or_path) {

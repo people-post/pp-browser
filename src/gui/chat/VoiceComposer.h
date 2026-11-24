@@ -103,6 +103,8 @@ public:
   /** The pointer moved / was released while a press is followed (what the document listener forwards). Pixels. */
   void OnMove(float x_px, float y_px);
   void OnRelease(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+  /** The wide layout's microphone: a click starts a recording, the next click stops it and sends it (no hold, no bar). */
+  void OnToggleButton();
   /** The Send / Cancel buttons of a desktop recording. */
   void OnSendButton();
   void OnCancelButton();

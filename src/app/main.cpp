@@ -20,6 +20,7 @@
 #include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
+#include "foundation/platform/os/OsRestart.h"
 #include "foundation/product/AppVersion.h"
 #include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
@@ -29,6 +30,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -59,6 +61,7 @@ const char* LevelName(pbr::logging::Level level) {
 } // namespace
 
 int main(int argc, char** argv) {
+  pbr::os::CaptureStartArguments(argc, argv); // a profile reset starts the app again with exactly these
   bool debug_mode = false;
   bool startup_timing = EnvTruthy("PP_BROWSER_STARTUP_TIMING");
   std::string profile_override;
@@ -209,5 +212,14 @@ int main(int argc, char** argv) {
   pbr::StartupMark("enter_Application::Run");
   app.Run();
   app.Shutdown();
+  // Reset my profile on a desktop: the app has quit in order (stores closed, threads joined); it starts again now, on the
+  // same profile (same arguments, same environment), where the fresh profile shows the first-run page.
+  if (const auto restart = app.TakeRestartPlan()) {
+    std::string error;
+    if (!pbr::os::RestartProcess(*restart, error)) {
+      // Past the shutdown there is no way back into this run: the profile is already empty, the next start is the fresh one.
+      root.warning << "restart after the profile reset failed: " << error;
+    }
+  }
   return 0;
 }

@@ -123,6 +123,10 @@
 #include "gui/SupportDiscoveryPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/DeferredStartup.h"
+#include "gui/shell/WindowTitle.h"
+#include "gui/ProfileResetFollowUp.h"
+#include "foundation/platform/os/OsExecutablePath.h"
+#include "foundation/platform/os/OsRestart.h"
 #include "gui/FlowCoordinator.h"
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -626,16 +630,56 @@ Roe<void> Application::ResetActiveProfile() {
   ApplyAccountSyncView();
   chat_->OnProfileDataReset();
   contacts_->Refresh();
+  // Desktop: the whole process starts again on the empty profile (main does it after the normal shutdown), so nothing of
+  // the old account can be left in memory or on screen. A plan that cannot be made now (no program file, no arguments)
+  // keeps the app running: it cannot come back after its shutdown, so that is decided here, before it quits.
+  const os::RestartPlan restart_plan = os::PlanRestart(os::ExecutablePathImpl().string(), os::StartArguments());
+  if (ChooseResetFollowUp(/*reset_succeeded=*/true, os::RestartSupported(), restart_plan.Ready()) ==
+          ResetFollowUp::RestartProcess &&
+      !restart_plan_) {
+    log().warning << "profile reset: restarting the app on the empty profile";
+    restart_plan_ = restart_plan;
+    Backend::RequestExit();
+    return {};
+  }
+  if (os::RestartSupported()) {
+    log().warning << "profile reset: cannot restart the app (no program file or arguments); clearing in place";
+  }
   // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
   // over it, and nothing of the old account on the Me card (the lists read the empty stores above).
+  // The old account's Me card, open contact and unsaved edits go first, so leaving the Me tab below flushes nothing of
+  // them into the new profile (the desktop's name field is edited in place).
+  settings_->OnProfileReset();
+  contacts_->OnProfileReset();
   shell_->SelectNavTab(NavTab::Home);
   shell_->ClearTabContext();
-  settings_->OnProfileReset();
+  shell_->CloseAllLayers();
+  RefreshWindowTitle(); // no account any more: plain PP until the new one has a name
   // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
   // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
   // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
   unlock_gate_->EnsureUnlocked(nullptr);
   return {};
+}
+
+std::optional<os::RestartPlan> Application::TakeRestartPlan() {
+  std::optional<os::RestartPlan> plan = std::move(restart_plan_);
+  restart_plan_.reset();
+  return plan;
+}
+
+void Application::RefreshWindowTitle() {
+  if (!shell_) {
+    return;
+  }
+  std::string nickname;
+  if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
+    const ProfileIdentityView view = messaging_facade_->LoadProfileIdentityView();
+    if (view.ready) {
+      nickname = view.nickname;
+    }
+  }
+  shell_->SetWindowTitle(WindowTitleFor(Tr("app.name"), nickname));
 }
 
 Roe<void> Application::ResetChatData() {
@@ -978,8 +1022,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
-  settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
-    return facade.SaveProfileNickname(nickname);
+  settings_commands.save_profile_nickname = [this, &facade](const std::string& nickname) {
+    auto saved = facade.SaveProfileNickname(nickname);
+    if (saved) {
+      RefreshWindowTitle();
+    }
+    return saved;
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
     // iOS: a large photo takes seconds to copy out of the library; the pill says so until the crop page is opened
@@ -2089,6 +2137,9 @@ void Application::WireUnlockPinAndFlow() {
       if (result && chat_) {
         chat_->ReloadAgentConfig();
       }
+      if (result) {
+        RefreshWindowTitle();
+      }
       return result;
     };
     onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
@@ -2747,6 +2798,7 @@ void Application::WireHubCallbacks() {
       call_->OnMessagingReady();
     }
     contacts_->Refresh();
+    RefreshWindowTitle(); // an account was opened (start, new account, link, restore): its name is in the title strip
     // A chat database too old to upgrade was reset when it opened (D105): say so once.
     if (TakeChatStoreResetNotice(store_.Snapshot().profile_data_dir)) {
       UserFeedback::Note(Tr("settings.storage.chats_reset_too_old"));
@@ -2905,6 +2957,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
 
   shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top, bootstrap.machine_prefs.safe_area.bottom);
   shell_->RefreshSafeAreaInsets(context);
+  RefreshWindowTitle(); // plain PP until an account with a name is open
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
   shell_->SetSidebarPrefs(bootstrap.profile_prefs.sidebar_width_dp, bootstrap.profile_prefs.sidebar_collapsed);

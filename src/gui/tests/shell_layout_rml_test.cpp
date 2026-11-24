@@ -48,6 +48,45 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
+// Contacts and Settings in the wide layout (design step 3): the list is the left column, and with nothing picked the
+// right column says what to do, as the Chats one does. Picking something replaces it.
+TEST(ShellLayoutRmlTest, AWideContactsAndSettingsPageSayWhatToDoUntilSomethingIsPicked) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  for (const NavTab tab : {NavTab::Contacts, NavTab::Me}) {
+    ShellState state;
+    state.layout_mode = LayoutMode::Expanded;
+    state.nav_tab = tab;
+    const std::string empty = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(empty, "shell-nav-content-mount")) << "the list column";
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"pane-body-contacts\"" : "id=\"pane-body-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"shell-empty-contacts\"" : "id=\"shell-empty-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "Choose a contact" : "Choose a setting"));
+
+    state.panes.push_back({.spec = {.key = tab == NavTab::Contacts ? "contact_detail" : "settings_detail",
+                                    .rml_path = "views/contact_detail.rml"},
+                           .id = 1});
+    state.primary_pane_key = state.panes.back().spec.key.c_str();
+    const std::string picked = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_FALSE(Has(picked, "shell-empty-state"));
+  }
+}
+
+// The wide layout's left rail keeps AI, Chats, Contacts and Settings: no scan entry (scanning is on the Contacts page and
+// in Add contact, where the phone has it).
+TEST(ShellLayoutRmlTest, TheRailHasTheFourSectionsAndNoScanEntry) {
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  for (const char* tab :
+       {"select_nav_tab('home')", "select_nav_tab('sessions')", "select_nav_tab('contacts')", "select_nav_tab('me')"}) {
+    EXPECT_TRUE(Has(rail, tab)) << tab;
+  }
+  EXPECT_FALSE(Has(rail, "open_scan_qr")) << "the rail has no scan entry";
+  EXPECT_FALSE(Has(rail, "qr-code.svg"));
+  EXPECT_FALSE(Has(rail, "scan.title"));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts_wide.rml"), "open_scan_qr()")) << "the Contacts page keeps its scan button";
+  EXPECT_TRUE(Has(ReadAsset("views/sidebar.rml"), "open_scan_qr()")) << "the phone's Chats bar is untouched";
+}
+
 TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndSettingsIsItsThirdSegment) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;

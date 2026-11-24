@@ -396,6 +396,58 @@ TEST_F(AgentTurnBusyTest, AnImageQuestionTheSessionDidNotTakeComesBack) {
   EXPECT_EQ(host_.put_back.size(), 1u);
 }
 
+// The wide layout's AI tab shows an open conversation as the right column (primary pane "chat"), never as the phone's
+// overlay (compact_chat_open stays false). A send from that composer goes into the open conversation; only the AI home
+// (primary pane "home", nothing picked) starts a new one, and it stays on the AI page.
+TEST(AgentTurnHomeSendTest, OnTheWideAiTabAnOpenConversationKeepsTheSendAndTheAiHomeStartsANewOne) {
+  ShellChromeSnapshot chrome;
+  chrome.layout_mode = LayoutMode::Expanded;
+  chrome.nav_tab = NavTab::Home;
+  chrome.primary_pane_key = "home";
+  EXPECT_FALSE(AiConversationOpenBesideList(chrome));
+  EXPECT_TRUE(SendStartsHomeConversation(chrome)) << "the AI home's composer starts a conversation";
+  chrome.primary_pane_key = "chat";
+  EXPECT_TRUE(AiConversationOpenBesideList(chrome));
+  EXPECT_FALSE(SendStartsHomeConversation(chrome)) << "an open AI conversation: the message goes into it";
+  // Other tabs and the phone are as they were.
+  chrome.nav_tab = NavTab::Sessions;
+  EXPECT_FALSE(AiConversationOpenBesideList(chrome));
+  EXPECT_FALSE(SendStartsHomeConversation(chrome));
+  chrome.layout_mode = LayoutMode::Compact;
+  chrome.nav_tab = NavTab::Home;
+  chrome.primary_pane_key = "chat";
+  chrome.compact_chat_open = false;
+  EXPECT_TRUE(SendStartsHomeConversation(chrome)) << "phone: the AI page's list composer, unchanged";
+  chrome.compact_chat_open = true;
+  EXPECT_FALSE(SendStartsHomeConversation(chrome)) << "phone: the overlay sends into its conversation, unchanged";
+  EXPECT_FALSE(AiConversationOpenBesideList(chrome));
+}
+
+// The open conversation keeps its own draft, and a first send from the AI home stays on the AI page.
+TEST(AgentTurnHomeSendTest, TheWideAiConversationHasItsOwnDraftAndAFirstSendStaysOnTheAiPage) {
+  ShellChromeSnapshot chrome;
+  chrome.layout_mode = LayoutMode::Expanded;
+  chrome.nav_tab = NavTab::Home;
+  chrome.primary_pane_key = "chat";
+  // The controller keys its draft and its busy checks on the same helper, and a first send from the AI home stays on
+  // the AI page instead of jumping to the Chats list (read from the source: the controller needs a live facade).
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  std::stringstream source;
+  source << in.rdbuf();
+  const std::string text = source.str();
+  const size_t key = text.find("std::string ChatController::CurrentDraftKey() const {");
+  ASSERT_NE(key, std::string::npos);
+  EXPECT_NE(text.substr(key, 600).find("!AiConversationOpenBesideList(chrome)"), std::string::npos);
+  const size_t ensure = text.find("bool ChatController::EnsureHomeOutboundSession(");
+  ASSERT_NE(ensure, std::string::npos);
+  const std::string body = text.substr(ensure, text.find("\n}\n", ensure) - ensure);
+  EXPECT_EQ(body.find("ShellSelectNavTab(NavTab::Sessions)"), std::string::npos) << "no jump to the chat list";
+  EXPECT_NE(body.find("ShellSetPrimaryPane(\"chat\")"), std::string::npos);
+  const size_t allowed = text.find("bool ChatController::ComposerSendAllowed(");
+  ASSERT_NE(allowed, std::string::npos);
+  EXPECT_NE(text.substr(allowed, 500).find("AiConversationOpenBesideList(ChromeSnapshot())"), std::string::npos);
+}
+
 // Kenneth 2026-11-07 (round 11): a picture asked in an AI conversation opened from the drawer went to a brand-new
 // "新对话". SendImageQuestion started a Home conversation whenever the AI page (Home) was the tab, while the text path
 // already left an open conversation alone. Both now share SendStartsHomeConversation.

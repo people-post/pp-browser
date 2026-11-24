@@ -88,6 +88,10 @@ NavTab NavTabFromString(const ui::String& value) {
 
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = ShellLayout::kImeLatchMinDp;
+/** Wide layout: the icon rail's width (wide.rcss .shell-nav-rail) and the result pill's distance above the status bar. */
+constexpr float kWideRailDp = 64.f;
+constexpr float kWideToastBottomDp = 96.f;
+
 /** Page push / back slide (DESIGN-pp-ui §7); keep equal to the 0.3s in components.rcss. */
 constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
@@ -153,6 +157,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
+    ctor.Bind("window_title", &host.state_.window_title);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
     ctor.Bind("dialog_title", &host.state_.dialog.title);
@@ -518,6 +523,7 @@ void ShellHost::Initialize(ui::Context* context) {
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
   state_.titlebar_visible = DesktopWindowChrome::Enabled();
+  state_.window_title = Tr("app.name").c_str();
   state_.titlebar_traffic_lights = DesktopWindowChrome::ControlsLeading();
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
@@ -679,12 +685,16 @@ void ShellHost::SelectNavTab(NavTab tab) {
     // The new root page opens at its top, large title showing.
     SetLargeTitleCollapsed(false);
   }
+  // The wide layout's AI tab with a conversation open: picking AI again goes back to the AI home (the phone's second tap
+  // on AI opens its conversation drawer; here the list is always beside the page, so the tap leaves the conversation).
+  const bool back_to_ai_home = !tab_changed && tab == NavTab::Home && state_.layout_mode == LayoutMode::Expanded &&
+                               !state_.primary_pane_key.empty() && state_.primary_pane_key != "home";
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
   // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
   state_.nav_bar_tab_str = ShellLayout::NavTabString(tab == NavTab::Contacts ? tab_before_hidden_ : tab);
   DataModelHost::Instance().Dirty("window", "nav_bar_tab");
-  if (tab_changed && on_nav_tab_changed_) {
+  if ((tab_changed || back_to_ai_home) && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
   if (chat_shown_again && on_compact_chat_shown_again_) {
@@ -966,7 +976,7 @@ void ShellHost::NotifySidebarChanged() {
 }
 
 void ShellHost::ToggleSidebarCollapsed() {
-  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::TabHasSecondary(state_.nav_tab)) {
+  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
     return;
   }
   state_.sidebar_collapsed = !state_.sidebar_collapsed;
@@ -1079,6 +1089,20 @@ void ShellHost::CloseLayer(int layer_id) {
     }
   }
   RequestSyncLayout(true);
+}
+
+void ShellHost::SetWindowTitle(const std::string& title) {
+  if (state_.window_title == title.c_str()) {
+    return;
+  }
+  state_.window_title = title.c_str();
+  DataModelHost::Instance().Dirty("window", "window_title");
+}
+
+void ShellHost::CloseAllLayers() {
+  while (!state_.overlay_stack.empty()) {
+    CloseLayer(-1);
+  }
 }
 
 void ShellHost::WatchLayerClosed(const int layer_id, std::function<void()> closed) {
@@ -2150,6 +2174,11 @@ void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
     }
   }
 
+  if (IsIpadDevice() &&
+      safe_area_settle_.Observe(std::chrono::steady_clock::now(), sdl.window_w, sdl.window_h, sdl.top_dp)) {
+    // The window controls' inset settles after the first frames and raises no event: read it again on the next frame.
+    Backend::RequestForceFrame();
+  }
   const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
   int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
   if (bottom_chrome_open_) {
@@ -2240,8 +2269,11 @@ void ShellHost::ApplySafeAreaLayout() {
                      : state_.compact_chat_open ? CompactBottomSurface::Composer
                                                 : CompactBottomSurface::TabBar;
   }
-  const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
+  CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    ShellLayout::ExtendExpandedToWindowBottom(layout, layout_bottom);
+  }
   ui::ElementDocument* doc = context_->GetDocument(0);
   // The layers under a full-screen phone call page: from the call page now, every time the shell is synced or the call
   // remounted (never toggled on events).
@@ -2298,10 +2330,24 @@ void ShellHost::ApplySafeAreaLayout() {
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).
+      toasts->RemoveProperty("left"); // the wide layout's offset, left over after a resize across the breakpoint
       toasts->SetProperty("top", "auto");
       set_dp(toasts, "bottom", layout.toast_bottom_dp);
+    } else if (state_.layout_mode == LayoutMode::Expanded) {
+      // Wide: a centred pill at the bottom of the content area (wide.rcss), over the status bar and the composer.
+      // The columns to its left (icon rail, list) move its left edge so it centres on the conversation.
+      float left_dp = kWideRailDp;
+      if (ShellLayout::SecondaryPaneShown(state_)) {
+        ui::Element* list = doc->GetElementById("shell-nav-content-mount");
+        const float list_dp = list ? list->GetOffsetWidth() / context_->GetDensityIndependentPixelRatio() : 0.f;
+        left_dp += list_dp > 0.f ? list_dp : static_cast<float>(state_.sidebar_width_dp);
+      }
+      toasts->SetProperty("top", "auto");
+      set_dp(toasts, "left", left_dp);
+      set_dp(toasts, "bottom", statusbar_dp + kWideToastBottomDp + layout.content_bottom_inset_dp);
     } else {
       // Absolute toast stack is positioned from the chrome top edge (ignores padding).
+      toasts->RemoveProperty("left");
       toasts->RemoveProperty("bottom");
       set_dp(toasts, "top", 8.f + layout.content_top_dp);
     }
@@ -2664,7 +2710,8 @@ ShellLayoutRml ShellHost::Rml() const {
 }
 
 const char* ShellHost::NavContentKey() const {
-  return ShellLayout::NavContentKey(state_.nav_tab);
+  return state_.layout_mode == LayoutMode::Expanded ? ShellLayout::ExpandedNavContentKey(state_.nav_tab)
+                                                    : ShellLayout::NavContentKey(state_.nav_tab);
 }
 
 void ShellHost::MountNavRail() {
@@ -2693,7 +2740,8 @@ void ShellHost::MountNavContent() {
   if (!target) {
     return;
   }
-  const std::string body = ViewCatalog::LoadBody(key);
+  const std::string body =
+      ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
   if (!body.empty()) {
     RmlMount::MountInner(target, body);
   }
@@ -2708,9 +2756,13 @@ void ShellHost::MountComposer() {
   if (body.empty()) {
     return;
   }
+  // A pane in the wide layout gets the desktop composer; the Home landing keeps the shared one.
+  const std::string wide_body = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("composer", true));
 
   // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
-  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
+  // In the wide layout an AI conversation opened from the AI list is the primary pane; its composer is that pane's.
+  const bool wide_ai_chat_open = state_.layout_mode == LayoutMode::Expanded && state_.primary_pane_key == "chat";
+  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open && !wide_ai_chat_open) {
     if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
     }
@@ -2732,7 +2784,7 @@ void ShellHost::MountComposer() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     ui::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
     if (target) {
-      RmlMount::MountInner(target, body);
+      RmlMount::MountInner(target, wide_body);
     }
     return;
   }
@@ -2893,7 +2945,8 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       return;
     }
-    const std::string body = ViewCatalog::LoadBody(key);
+    const std::string body =
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
     if (body.empty()) {
       // Avoid silent blank panes (common when packaged asset reads fail).
       ui::Log::Message(ui::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
@@ -2956,7 +3009,11 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       continue;
     }
-    const std::string body = ViewCatalog::LoadBody(overlay.rml_path);
+    // The send-preview page has its own layout for the wide window (a centred card); same model, same events.
+    const std::string body = ViewCatalog::LoadBody(
+        overlay.key == "picture_send"
+            ? ViewCatalog::KeyForLayout(overlay.rml_path, state_.layout_mode == LayoutMode::Expanded)
+            : overlay.rml_path);
     if (!body.empty()) {
       RmlMount::MountInner(target, body);
     }

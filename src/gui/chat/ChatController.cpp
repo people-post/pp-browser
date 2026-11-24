@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
+#include "feature/presenters/QuickReactions.h"
 #include "gui/chat/ChatController.h"
 #include "gui/RecoveryReminder.h"
 #include "gui/UpdateCard.h"
@@ -15,6 +16,7 @@
 
 #include "gui/chat/ActionNoticeText.h"
 #include "gui/chat/AiDrawerCount.h"
+#include "gui/chat/MessageMenuSlots.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -2695,7 +2697,7 @@ ui::Element* ChatController::AiSessionListElement() const {
     return nullptr;
   }
   ui::ElementDocument* doc = context_->GetDocument(0);
-  for (const char* id : {"ai-drawer-sessions", "home-ai-sessions"}) {
+  for (const char* id : {"ai-drawer-sessions", "ai-list-sessions", "home-ai-sessions"}) {
     if (ui::Element* el = doc->GetElementById(id); el && el->GetClientHeight() > 0.5f) {
       return el; // the one laid out (the desktop list stays in the DOM, hidden, on a phone)
     }
@@ -2782,6 +2784,7 @@ void ChatController::OnLockPublicToThisDevice() {
 
 void ChatController::UpdateThreadChrome() {
   chrome_.Update();
+  RefreshBarEmojis();
   RefreshPendingAttachmentChip(/*force=*/false);
   if (const std::string thread_id = ActiveThreadId(); thread_id != voice_thread_) {
     // Another chat is open: a recording in the one before can no longer be followed, and a clip is not its bubble's.
@@ -3148,6 +3151,23 @@ void ChatController::OnAttachFile(ui::Event* ev) {
             });
         return;
       }
+      if (!Platform::IsMobile()) {
+        // The computer: the system dialog, several at once, into the same send-preview page the phone uses.
+        picks_.EndCurrent(); // the page takes over from the pick's wait
+        RefreshPickOverlay();
+        ShowOpenPhotoLibraryDialog(
+            Backend::GetWindow(),
+            [this, thread_id](std::vector<std::string> paths) {
+              AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
+                if (paths.empty() || thread_id != ActiveThreadId()) {
+                  return; // cancelled, or its chat is no longer the open one
+                }
+                OpenPictureSendWithPaths(std::move(paths));
+              });
+            },
+            nullptr, static_cast<int>(PictureSendQueue::kMaxItems));
+        return;
+      }
       ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial), [this, serial](const std::string& name) {
         AppRuntime::PostUI([this, serial, name]() {
           if (!picks_.IsCurrent(serial)) {
@@ -3175,6 +3195,21 @@ void ChatController::OnAttachFile(ui::Event* ev) {
         AgentTurnController::HomeAttachActions([this]() { OnAttachCapture(nullptr); }, pick_photo_or_video(),
                                                pick_file()),
         {}, /*above=*/true);
+    return;
+  }
+  // The wide layout (a computer, an iPad window): the same "+" and the same choices as the phone's card, those that apply
+  // here: the camera only where the composer offers one (ShowCaptureEntry), Photos and videos, File.
+  if (ev && ChromeSnapshot().layout_mode == LayoutMode::Expanded) {
+    std::vector<ContextMenuAction> wide_actions;
+    if (chat_.show_capture) {
+      wide_actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr,
+                              [this]() { OnAttachCapture(nullptr); }, "../icons/v2/camera.svg"});
+    }
+    wide_actions.push_back(
+        {"home_attach_photo", Tr("home.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
+    wide_actions.push_back({"home_attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
+    ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(ev->GetCurrentElement(), std::move(wide_actions), {},
+                                                              /*above=*/true);
     return;
   }
   // A phone keeps photos and files apart; the desktop dialog shows both at once, so there a picture and a file
@@ -4006,6 +4041,28 @@ void ChatController::OnPhotoBatchItem(const uint64_t pick_serial, const size_t /
   SettlePictureQueue();
 }
 
+void ChatController::OpenPictureSendWithPaths(std::vector<std::string> paths) {
+  if (!messaging_ready_ || !facade_ || paths.empty() || chat_.composer_input_disabled || AttachmentBusy() ||
+      chat_.editing_message) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty() || InAiComposerContext()) {
+    return;
+  }
+  if (paths.size() > PictureSendQueue::kMaxItems) {
+    paths.resize(PictureSendQueue::kMaxItems);
+  }
+  const uint64_t serial = ArmPick();
+  photo_batch_ = PhotoBatch{.pick_serial = serial, .thread_id = thread_id, .session = messaging_session_};
+  picture_picker_done_ms_ = 0;
+  const size_t total = paths.size();
+  for (size_t index = 0; index < total; ++index) {
+    OnPhotoBatchItem(serial, index, total, std::move(paths[index]));
+  }
+  OnPhotoBatchDone(serial);
+}
+
 void ChatController::OnPhotoBatchDone(const uint64_t pick_serial) {
   if (!photo_batch_ || photo_batch_->pick_serial != pick_serial) {
     return;
@@ -4538,6 +4595,22 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   TranscriptFacts facts = facade_->TranscriptFactsFor();
   facts.voice_supported = VoiceMessagesSupported();
   facts.thread_is_group = chat_.thread_is_group;
+  // The menu offers Edit when the message can be edited and no edit is going on (ChatMenus::ForRequest).
+  facts.can_edit = [this](const std::string& message_id) {
+    return !chat_.editing_message && CanEditMessage(message_id);
+  };
+  // The hover bar offers what the menu does (MessageMenuSlots.h): the reaction row only in a conversation that takes
+  // reactions, Reply only for a message with words (and not while one is being edited).
+  facts.bar_offer = [this, thread_id](const std::string& message_id) {
+    TranscriptFacts::MessageBarOffer offer;
+    auto thread = facade_->GetThread(thread_id);
+    const bool takes_reactions = thread && *thread && ThreadTakesReactions((*thread)->kind);
+    const MessageMenuSlots slots = DecideMessageMenuSlots(takes_reactions, !MessagePlainText(message_id).empty(),
+                                                          /*can_edit_now=*/false, chat_.editing_message);
+    offer.react = slots.react;
+    offer.reply = slots.reply;
+    return offer;
+  };
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
   facts.audio_files_play = voice_playback_->PlaysFiles();
@@ -5709,7 +5782,8 @@ void ChatController::RegisterMentionPickerKeys() {
 }
 
 bool ChatController::ComposerSendAllowed(const std::string& text) {
-  if (!messaging_ready_ || !facade_ || !facade_->HasRouter() || ChromeSnapshot().nav_tab == NavTab::Home) {
+  if (!messaging_ready_ || !facade_ || !facade_->HasRouter() ||
+      (ChromeSnapshot().nav_tab == NavTab::Home && !AiConversationOpenBesideList(ChromeSnapshot()))) {
     return true; // a Home question opens its own thread; SendUserText decides there
   }
   const std::string thread_id = ActiveThreadId();
@@ -5768,10 +5842,15 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
   if (!messaging_ready_) {
     return;
   }
+  // No reactions where there is nobody to send them to (an AI conversation): the menus and the bar do not offer them;
+  // a stray call does nothing, quietly.
+  if (auto open_thread = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no chat"));
+      open_thread && !ThreadTakesReactions(open_thread->kind)) {
+    return;
+  }
   if (auto sent = presenter_.ToggleReaction(message_id, emoji); !sent) {
-    if (shell_feedback_.show_toast) {
-      shell_feedback_.show_toast(sent.error().message, ToastDuration::Short);
-    }
+    // The reason is a protocol-level sentence ("Not a direct thread"), not words for the user: logged, not shown.
+    log().warning << "reaction not sent: " << sent.error().message;
     return;
   }
   SyncDisplayFromThread();
@@ -5794,6 +5873,30 @@ void ChatController::RememberEmoji(const std::string& emoji) {
   }
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   (void)session_store_->SaveProfilePrefs(prefs);
+  RefreshBarEmojis();
+}
+
+void ChatController::RefreshBarEmojis() {
+  // Exactly five: the first of the quick row (recent first), then "+".
+  constexpr size_t kBarEmojiCount = 5;
+  std::vector<std::string> row = QuickReactions(RecentEmojis());
+  if (row.size() > kBarEmojiCount) {
+    row.resize(kBarEmojiCount);
+  }
+  bool same = row.size() == chat_.bar_emojis.size();
+  for (size_t i = 0; same && i < row.size(); ++i) {
+    same = row[i] == std::string(chat_.bar_emojis[i].emoji);
+  }
+  if (same) {
+    return;
+  }
+  chat_.bar_emojis.clear();
+  for (const std::string& emoji : row) {
+    BarEmojiRow entry;
+    entry.emoji = emoji.c_str();
+    chat_.bar_emojis.push_back(std::move(entry));
+  }
+  DataModelHost::Instance().Dirty("chat", "bar_emojis");
 }
 
 void ChatController::DeleteMessageForMe(const std::string& message_id) {
@@ -6233,10 +6336,10 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
-  // The phone keeps the new AI conversation on the AI 助手 page (Home): the chat overlay opens over it and Back
-  // returns to the AI list. The desktop shows the chat in its panes, so it still moves to the Chats surface.
-  if (ChromeSnapshot().layout_mode != LayoutMode::Compact) {
-    ShellSelectNavTab(NavTab::Sessions);
+  // The AI conversation stays on the AI page (Home): on the phone the chat overlay opens over it and Back returns to the
+  // AI list; in the wide layout it opens in the right column beside the AI list. Neither goes to the Chats list.
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact && ChromeSnapshot().nav_tab != NavTab::Home) {
+    ShellSelectNavTab(NavTab::Home);
   }
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
@@ -6533,7 +6636,10 @@ void ChatController::PutBackDraft(const std::string& thread_id, const std::strin
 }
 
 std::string ChatController::CurrentDraftKey() const {
-  return ChromeSnapshot().nav_tab == NavTab::Home ? std::string(ThreadDrafts::kHome) : ActiveThreadId();
+  // The AI page's own composer has Home's draft; an AI conversation open beside the AI list (wide layout) has its own.
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
+  return chrome.nav_tab == NavTab::Home && !AiConversationOpenBesideList(chrome) ? std::string(ThreadDrafts::kHome)
+                                                                                 : ActiveThreadId();
 }
 
 void ChatController::PutTextBack(const std::string& key, const std::string& text, const DraftPutBack mode) {
@@ -6973,6 +7079,29 @@ bool ChatController::Setup(ui::Context* context) {
   };
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
+  // The send-preview page on the wide layout: Enter in its text sends the pictures, Shift+Enter is a new line (a phone's
+  // Enter key stays a new line there).
+  for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
+    if (!input_) {
+      break;
+    }
+    input_->Register(KeyBinding{
+        .key = key,
+        .forbidden_modifiers = ui::Input::KM_SHIFT,
+        .when =
+            [this](ui::Context* ctx) {
+              ui::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+              return focus && focus->GetId() == "ps-text" && picture_send_.IsOpen() &&
+                     ChromeSnapshot().layout_mode == LayoutMode::Expanded;
+            },
+        .action =
+            [this]() {
+              picture_send_.OnSend();
+              return false;
+            },
+        .priority = 50,
+    });
+  }
   RegisterMentionPickerKeys();
   // Enter in the chat's search box: the next older hit (the query just typed is searched first).
   for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
@@ -7035,6 +7164,24 @@ bool ChatController::Setup(ui::Context* context) {
                                                         }
                                                         ToggleReaction(message_id, emoji);
                                                       }));
+        ctor.BindEventCallback("msg_bar_emoji", DataEvent<std::string, std::string>(
+                                                    [this](const std::string& message_id, const std::string& emoji) {
+                                                      if (IsPendingUploadRowId(message_id)) {
+                                                        return;
+                                                      }
+                                                      ToggleReaction(message_id, emoji);
+                                                      RememberEmoji(emoji);
+                                                    }));
+        ctor.BindEventCallback("msg_bar_edit", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (IsPendingUploadRowId(message_id)) {
+                                   return;
+                                 }
+                                 if (!CanEditMessage(message_id)) {
+                                   ShowToast(Tr("chat.edit.too_late")); // the window closed while the bar was up
+                                   return;
+                                 }
+                                 StartEditMessage(message_id); // the menu's Edit
+                               }));
         ctor.BindEventCallback("open_reactors", DataEvent<std::string>([this](const std::string& message_id) {
                                  if (IsPendingUploadRowId(message_id)) {
                                    return;
@@ -7076,6 +7223,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) {
                                  if (!RefuseSendWhileHeld(ActiveThreadId())) {
                                    voice_->OnClick(ev);
+                                 }
+                               }));
+        // The wide layout's microphone. B236: a held chat starts no recording; the second click (stop and send) always
+        // reaches the recording already running.
+        ctor.BindEventCallback("voice_toggle", DataEvent([this] {
+                                 if (voice_->Active() || !RefuseSendWhileHeld(ActiveThreadId())) {
+                                   voice_->OnToggleButton();
                                  }
                                }));
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
@@ -7187,6 +7341,15 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_thread_actions_menu",
                                DataEventAt([this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("msg_bar_reply", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::Reply);
+                               }));
+        ctor.BindEventCallback("msg_bar_react", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::React);
+                               }));
+        ctor.BindEventCallback("msg_bar_more", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::More);
+                               }));
         ctor.BindEventCallback("call_back",
                                DataEvent<std::string>([this](const std::string& video) { menus_.CallBack(video); }));
         ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
@@ -7464,7 +7627,8 @@ void ChatController::Update() {
     }
   }
 
-  agent_.Tick();    // the streamed row, a held send, the agent's events
+  scroller_.TickScrolling(std::chrono::steady_clock::now()); // the hover bar is back 200 ms after the last scroll
+  agent_.Tick();                                             // the streamed row, a held send, the agent's events
   DrawNewsStream(); // a news read's text that came within the reader's last redraw interval
   ask_ai_.Tick();   // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
@@ -8475,7 +8639,10 @@ void ChatController::ShowThreadInChat(const std::string& thread_id) {
     log().warning << "Ask AI: could not open the AI chat: " << opened.error().message;
     return;
   }
-  ShellSelectNavTab(NavTab::Sessions);
+  // An AI conversation belongs to the AI page; on the phone it opens over the Chats list as before.
+  const auto opened_thread = facade_->GetThread(thread_id);
+  const bool is_ai = opened_thread && *opened_thread && (*opened_thread)->kind == ThreadKind::Ai;
+  ShellSelectNavTab(is_ai && ChromeSnapshot().layout_mode != LayoutMode::Compact ? NavTab::Home : NavTab::Sessions);
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
   NotifySurfaceChanged();

@@ -322,6 +322,14 @@ void VoiceComposer::Apply(const VoiceGesture::Action action) {
   }
 }
 
+void VoiceComposer::OnToggleButton() {
+  if (gesture_.Recording()) {
+    OnSendButton(); // the second click: stop and send (a too-short one says so, as every other end does)
+    return;
+  }
+  BeginAt(0.f, 0.f, nullptr, /*hold=*/false);
+}
+
 void VoiceComposer::OnSendButton() {
   Apply(gesture_.SendNow());
 }
@@ -508,11 +516,13 @@ void VoiceComposer::ShowRecording(const bool on) {
   state_.voice_bubble = on && hold_mode_;
   if (on) {
     state_.voice_timer = ElapsedText(0).c_str();
+    state_.voice_level_width = "0%";
     for (ui::String& bar : state_.voice_lv) {
       bar = Dp(kBarMinDp).c_str();
     }
     UpdateBubble();
   } else {
+    state_.voice_level_width = "0%";
     state_.voice_cancel_zone = false;
     state_.voice_countdown = false;
     state_.voice_limit = false;
@@ -595,6 +605,10 @@ void VoiceComposer::OnProgress(const int generation, const int64_t elapsed_ms, c
       state_.voice_lv[i] = Dp(kBarMinDp + levels_[i] * (kBarMaxDp - kBarMinDp)).c_str();
     }
     DirtyBubble();
+  } else if (!user_ended_) {
+    // The wide layout's click recording: one level meter in the bar, as wide as the last stretch was loud.
+    const int percent = std::clamp(static_cast<int>(level * 100.f + 0.5f), 0, 100);
+    state_.voice_level_width = (std::to_string(percent) + "%").c_str();
   }
   state_.voice_timer = ElapsedText(elapsed_ms).c_str();
   state_.voice_countdown = static_cast<int64_t>(max_seconds_) * 1000 - elapsed_ms <= kCountdownMs;

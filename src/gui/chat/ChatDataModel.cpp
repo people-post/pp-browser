@@ -31,6 +31,11 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
     reactor_handle.RegisterMember("is_self", &ReactorDisplayRow::is_self);
   }
   ctor.RegisterArray<std::vector<ReactorDisplayRow>>();
+  if (auto bar_handle = ctor.RegisterStruct<BarEmojiRow>()) {
+    bar_handle.RegisterMember("emoji", &BarEmojiRow::emoji);
+  }
+  ctor.RegisterArray<std::vector<BarEmojiRow>>();
+  ctor.Bind("bar_emojis", &state.bar_emojis);
   ctor.Bind("reactor_rows", &state.reactor_rows);
   ctor.Bind("news_reader_title", &state.news_reader_title);
   ctor.Bind("news_reader_translated", &state.news_reader_translated);
@@ -105,6 +110,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("voice_countdown", &state.voice_countdown);
   ctor.Bind("voice_timer", &state.voice_timer);
   ctor.Bind("voice_hint", &state.voice_hint);
+  ctor.Bind("voice_level_width", &state.voice_level_width);
   ctor.Bind("voice_title", &state.voice_title);
   ctor.Bind("voice_bubble", &state.voice_bubble);
   ctor.Bind("voice_bubble_left", &state.voice_bubble_left);
@@ -320,6 +326,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "voice_countdown");
   DataModelHost::Instance().Dirty("chat", "voice_timer");
   DataModelHost::Instance().Dirty("chat", "voice_hint");
+  DataModelHost::Instance().Dirty("chat", "voice_level_width");
   DataModelHost::Instance().Dirty("chat", "voice_title");
   DataModelHost::Instance().Dirty("chat", "voice_bubble");
   DataModelHost::Instance().Dirty("chat", "voice_bubble_left");

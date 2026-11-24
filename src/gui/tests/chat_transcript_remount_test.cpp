@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -215,6 +216,36 @@ TEST_F(ChatTranscriptRemountTest, AScrollToTheLatestQueuedWhileHiddenReachesTheB
   EXPECT_GT(max_top, 2000.f);
   EXPECT_NEAR(Messages()->GetScrollTop(), max_top, 1.f);
   ShellBaseHide::Apply(context, document, false);
+}
+
+// The wide layout's hover bar is hidden while the transcript scrolls: one class on the transcript from the first scroll
+// event until 200 ms of quiet, set once per scroll (not per event), and never on the phone's transcript.
+TEST_F(ChatTranscriptRemountTest, AScrollMarksTheTranscriptForTheHoverBarOnlyInTheWideLayoutAndClearsAfter200Ms) {
+  MakeScroller();
+  ui::Element* messages = Messages();
+  ASSERT_NE(messages, nullptr);
+  messages->SetScrollTop(500.f);
+  context->Update();
+  scroller->OnMessagesScroll();
+  EXPECT_FALSE(messages->IsClassSet("messages--scrolling")) << "the phone's transcript is left as it was";
+
+  // The wide root: the window's body gets shell-body--wide.
+  ui::Element* root = messages;
+  while (root->GetParentNode() != nullptr && root->GetParentNode() != document) {
+    root = root->GetParentNode();
+  }
+  root->SetClass("shell-body--wide", true);
+  const auto t0 = std::chrono::steady_clock::now();
+  scroller->OnMessagesScroll();
+  EXPECT_TRUE(messages->IsClassSet("messages--scrolling"));
+  scroller->TickScrolling(t0 + std::chrono::milliseconds(100));
+  EXPECT_TRUE(messages->IsClassSet("messages--scrolling")) << "still scrolling a moment ago";
+  scroller->OnMessagesScroll(); // another event moves the deadline on
+  scroller->TickScrolling(t0 + std::chrono::milliseconds(150));
+  EXPECT_TRUE(messages->IsClassSet("messages--scrolling"));
+  scroller->TickScrolling(std::chrono::steady_clock::now() + ChatTranscriptScroller::kScrollQuiet +
+                          std::chrono::milliseconds(50));
+  EXPECT_FALSE(messages->IsClassSet("messages--scrolling")) << "quiet for 200 ms: the bar may come back";
 }
 
 } // namespace

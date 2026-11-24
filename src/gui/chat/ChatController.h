@@ -474,6 +474,12 @@ private:
   void OnPhotoBatchItem(uint64_t pick_serial, size_t index, size_t total, std::string path);
   /** The library has handed over every picture of the pick (or none: it was cancelled). */
   void OnPhotoBatchDone(uint64_t pick_serial);
+  /**
+   * Pictures and videos that are already files (the computer's picker, and later files dropped on the window): opens
+   * the send-preview page with them, up to PictureSendQueue::kMaxItems, the same way the phone's library pick does.
+   * UI thread; `paths` are the user's own files (never deleted).
+   */
+  void OpenPictureSendWithPaths(std::vector<std::string> paths);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
   void ShowPictureProgress();
   /** How the queue ended: the pill's last word, and the metrics line. */
@@ -684,6 +690,8 @@ private:
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
+  /** The hover bar's reactions follow the recently used emoji (the same row the message menu opens with). */
+  void RefreshBarEmojis();
   void ResetChatPanelState();
   std::string failed_record_id_;
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */

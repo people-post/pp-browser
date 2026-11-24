@@ -642,7 +642,7 @@ struct ShellState {
   bool transient_active = false;
 
   /** Expanded layout only: secondary pane width (dp, clamped by ShellLayout) and user collapse. */
-  int sidebar_width_dp = 240;
+  int sidebar_width_dp = 320;
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
@@ -656,6 +656,8 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** The desktop title strip's text (WindowTitleFor): the product name, and the account's nickname once it has one. */
+  ui::String window_title;
   /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */
   float banner_expires_at_ms = 0.f;
   std::vector<ToastEntry> toasts;

@@ -139,6 +139,49 @@ TEST(PendingUploadRowsTest, SentLeavesOnlyTheRealRowInTheSameRebuild) {
   EXPECT_FALSE(t.pending.Row());
 }
 
+// The send stores its message (and the transcript is redrawn for it) a moment BEFORE its callback takes the bubble off
+// the queue: in that redraw the picture must be one row, the real one, not the bubble and the real row together. The
+// row count of the message stays 1 across the whole refresh sequence.
+TEST(PendingUploadRowsTest, TheBubbleBecomesTheSentRowWithoutAFrameShowingBoth) {
+  Transcript t;
+  t.store = {Text("a", "contact-1", util::NowUnixMs() - 3 * kMinute, 1)};
+  t.StartPicture();
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "pending-upload-1"})) << "uploading: the bubble is the one row";
+  // The message is stored; the messages-changed redraw runs before the send's callback.
+  t.store.push_back(SentPicture(2));
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "sent-1"})) << "one row for the picture: the real one";
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "sent-1"}));
+  // Then the callback: the item leaves the queue and the one display sync follows.
+  EXPECT_TRUE(t.pending.Apply(OnUploadSendFinished(t.pending.Upload(), UploadSendOutcome::Sent)));
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"a", "sent-1"}));
+  EXPECT_FALSE(t.pending.Row());
+}
+
+// Not every real attachment is "the" bubble: a failed bubble (kept for Retry) and an older message do not match, and two
+// pictures in a batch match one real row each, in order.
+TEST(PendingUploadRowsTest, OnlyAnUploadingBubbleIsMatchedToARealRowStoredAfterIt) {
+  Transcript t;
+  TranscriptRow older = SentPicture(1);
+  older.message.id = "older";
+  older.message.timestamp = util::NowUnixMs() - 5 * kMinute;
+  t.store = {older};
+  t.StartPicture();
+  t.Sync();
+  EXPECT_EQ(t.Ids(), (std::vector<std::string>{"older", "pending-upload-1"})) << "an older picture is not this one";
+  // A failed bubble stays, whatever else is stored.
+  PendingUpload failed = t.pending.Upload();
+  failed.state = PendingUploadState::Failed;
+  t.pending.Apply({failed, {}});
+  t.store.push_back(SentPicture(2));
+  t.Sync();
+  EXPECT_NE(t.Find("pending-upload-1"), nullptr) << "a failed bubble stays for Retry";
+  EXPECT_NE(t.Find("sent-1"), nullptr);
+}
+
 // Text typed and sent while the picture uploads (the input stays on with a bubble): it lands above the bubble, which
 // stays last until its own send ends.
 TEST(PendingUploadRowsTest, TextSentWhileThePictureUploadsLandsAboveTheBubble) {

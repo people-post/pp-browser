@@ -267,6 +267,20 @@ void SettingsController::OnProfileReset() {
   ui_state_.profile_avatar_tone = fresh.profile_avatar_tone;
   // The name field's baseline too, so the next load (the new account's) is not taken for an edit of the old name.
   UiEditSession::Instance().OnLoaded(kUiFieldProfileNickname, "");
+  // The wide layout's right pane (a section such as Storage) and what was waiting to be saved belong to the old account
+  // too: nothing is flushed into the new profile, and the next visit to Me opens on the list.
+  dirty_sections_.clear();
+  quiet_sections_.clear();
+  debounce_deadline_ms_ = 0;
+  show_detail_ = false;
+  selected_id_.clear();
+  selected_title_.clear();
+  status_ = "";
+  ResetSecurityPage();
+  storage_manager_.Reset();
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
   PushUiStateToBindings();
   DirtyAll(/*include_profile_nickname=*/true);
 }

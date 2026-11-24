@@ -34,8 +34,17 @@ struct ShellChromeSnapshot {
  * A send from the AI page's own composer (the PP 助手 list, no conversation open over it) starts a new AI
  * conversation; once one is open over that page, the same tab sends into it (text and pictures alike).
  */
+/**
+ * The wide layout's AI tab with a conversation open in the right column, beside the AI list (there is no phone-style
+ * overlay: `compact_chat_open` is never set there; the open conversation is the primary pane "chat").
+ */
+inline bool AiConversationOpenBesideList(const ShellChromeSnapshot& chrome) {
+  return chrome.layout_mode == LayoutMode::Expanded && chrome.nav_tab == NavTab::Home &&
+         chrome.primary_pane_key == "chat";
+}
+
 inline bool SendStartsHomeConversation(const ShellChromeSnapshot& chrome) {
-  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open;
+  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open && !AiConversationOpenBesideList(chrome);
 }
 
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
