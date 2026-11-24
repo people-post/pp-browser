@@ -6,9 +6,8 @@ a profile of the old layout is not read.
 ## P0 — Design
 
 - [x] Inventory of what is on disk and every service ([INVENTORY.md](INVENTORY.md)).
-- [x] Decisions PM001–PM009 accepted.
-- [ ] Open question 1 answered (what makes a custom backend the same backend); 2–3 are defaults, 4–6 wait for
-      several backends per profile ([DESIGN § Open questions](DESIGN.md#open-questions)).
+- [x] Decisions PM001–PM010 accepted; open questions 2–3 are defaults, 4–6 wait for several backends per profile
+      ([DESIGN § Open questions](DESIGN.md#open-questions)).
 
 ## P1 — Networks and opaque profiles (PM001, PM003, PM007, PM008, PM009)
 
@@ -23,7 +22,7 @@ a profile of the old layout is not read.
       folder without a manifest.
 - [ ] Closes #733 and #738.
 
-## P2 — Backends as service tables (PM002)
+## P2 — Backends as service tables (PM002, PM010)
 
 - [ ] A backend type: id, network, one URL (and relay id where it applies) per service.
 - [ ] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL.
@@ -39,7 +38,7 @@ a profile of the old layout is not read.
 ## P4 — Backend switch (PM005 as narrowed by PM009)
 
 - [ ] Every switch opens the new backend's profile (PM009); editing a custom backend's registration URL or org relay is
-      a switch (open question 1, #745).
+      a switch (PM010, #745).
 - [ ] Push unbound on every relay with a binding; binding ids kept on disk.
 - [ ] One "switch pending" rule for the banner and push.
 

@@ -1,6 +1,6 @@
 # Profile model: design
 
-**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM009](DECISIONS.md#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)); nothing built. **Release 1 builds this whole layout with one backend per profile** (PM009); a profile using several backends of its network comes later, without a layout change. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
+**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM010](DECISIONS.md#pm010--a-custom-backend-is-identified-by-its-registration-url-and-its-org-relay)); nothing built. **Release 1 builds this whole layout with one backend per profile** (PM009); a profile using several backends of its network comes later, without a layout change. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
 
 ## Why
 
@@ -48,7 +48,7 @@ which profiles may use it.
 
 ```
 backend
-  id         prod | staging | dev | custom-<opaque>
+  id         prod | staging | dev | custom-<hash> | test-custom-<hash>   (PM010)
   network    main | staging | dev | test-custom
   services
     org_relay        url, relay_id
@@ -95,6 +95,24 @@ backend
           account_locker.json
 ```
 
+For example, a phone with the store app on prod, a custom backend, and a tester build on staging:
+
+```
+profiles/
+  7c1e9a04/                    # manifest {network: main}         backends/prod/
+  e2b85f1d/                    # manifest {network: main}         backends/custom-3fa0c19b22d1/
+  a90d33c6/                    # manifest {network: staging}      backends/staging/
+```
+
+```json
+// profiles.json
+{
+  "schema_version": 2,
+  "profiles": [{ "id": "7c1e9a04", "label": "" }, { "id": "e2b85f1d", "label": "" }, { "id": "a90d33c6", "label": "" }],
+  "active": { "prod": "7c1e9a04", "custom-3fa0c19b22d1": "e2b85f1d", "staging": "a90d33c6" }
+}
+```
+
 The manifest is the only record of a profile's network; `profiles.json` holds pointers and labels, never the network,
 so the two cannot disagree. At startup the registry reads `profiles/*/manifest.json`.
 
@@ -128,12 +146,10 @@ device).
 
 ## Open questions
 
-**Needed for release 1:**
+**Answered:**
 
-1. **What makes a custom backend the same backend.** Its table has many URLs; its id (`custom-<hash>`, also the
-   `backends/` folder name and part of an AAD) is a hash of some of them. Proposed: the registration URL and the org
-   relay (origin and relay id), where the account lives. Changing either is a switch (a confirm, push unbound, the
-   other backend's profile on the next start, #745); changing any other service applies in place.
+1. **What makes a custom backend the same backend:** its registration URL and org relay
+   ([PM010](DECISIONS.md#pm010--a-custom-backend-is-identified-by-its-registration-url-and-its-org-relay)).
 
 **Defaults for release 1, unless changed:**
 

@@ -164,3 +164,19 @@ layout are expected to be the final version upfront"). Not built. Narrows PM005 
   deployment without the user asking.
 **Alternatives rejected:** keep the per-backend files where they are now and move them later (a migration after release
 1 for a layout we already know).
+
+## PM010 — A custom backend is identified by its registration URL and its org relay
+
+**Date:** 2026-11-23
+**Status:** Accepted (Hongwei, 2026-11-23). Not built. Answers DESIGN open question 1.
+**Decision:**
+- A custom backend's id is `custom-<hash>` (`test-custom-<hash>` in a tester app) over its registration URL and its org
+  relay's origin and relay id, normalized. The id names its `backends/` folder and is in the AAD of that folder's
+  sealed files.
+- Changing the registration URL or the org relay is a backend switch: a confirm, push unbound, and that backend's
+  profile on the next start.
+- Changing any other service of the table (directory, LLM, MCP, crash intake, …) keeps the backend and its profile and
+  applies in place.
+**Rationale:** The account lives at the registration URL and the org relay: its registration, its token and the relay
+it seeds the list with. The other services can move without touching the account. Today an edit of the registration
+URL makes a new profile on the next start without saying so (#745).
