@@ -1546,7 +1546,11 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (directory_.Configured() && mesh_owner_) {
     // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
     // the hub's work is ours — hop to UI.
-    mesh_owner_->StartDirectoryCache(directory_, data_dir_, [this]() {
+    // Its source is the primary directory's address: a list another directory gave is not loaded for this one.
+    const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(settings.directory);
+    const std::string source =
+        providers.empty() ? std::string() : NormalizeRegistrationBackend(providers.front().base_url);
+    mesh_owner_->StartDirectoryCache(directory_, data_dir_, source, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;

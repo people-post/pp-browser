@@ -54,7 +54,7 @@ public:
   void SetLanDiscoveryAllowed(bool allowed);
   void StopLanDiscovery() override;
   void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
-                           std::function<void()> on_updated) override;
+                           const std::string& source, std::function<void()> on_updated) override;
   bool HasDirectoryCache() const override { return directory_cache_ != nullptr; }
   std::vector<mesh::MeshDirectoryNode> DirectoryNodesSnapshot() const override;
   void RefreshDirectory() override;
