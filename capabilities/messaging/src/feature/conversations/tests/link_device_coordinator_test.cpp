@@ -4,6 +4,7 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/LinkDeviceCoordinator.h"
+#include "lib/people/LinkOffer.h"
 
 #include "common/Utilities.h"
 
@@ -49,21 +50,20 @@ protected:
   std::unique_ptr<InMemoryPeerSessions> old_psks_;
 };
 
-TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessions) {
-  const ByteVector shared = MakeDek();
+TEST_F(LinkDeviceCoordinatorTest, TheReplySealsTheSeedAloneNoSessionsAndTheNewDeviceKeepsItsOwnDek) {
+  const ByteVector main_dek = MakeDek();
   old_threads_ = std::make_unique<InMemoryDeliveryStore>();
   ASSERT_TRUE(old_threads_->ListThreads());
   old_psks_ = std::make_unique<InMemoryPeerSessions>(*old_threads_);
-  ASSERT_TRUE(old_psks_->SetDek(shared));
+  ASSERT_TRUE(old_psks_->SetDek(main_dek));
 
   IdentityStore old_identity(old_dir_.string(), "old");
-  ASSERT_TRUE(old_identity.SetDek(shared));
+  ASSERT_TRUE(old_identity.SetDek(main_dek));
   auto old_id = old_identity.LoadOrCreate();
   ASSERT_TRUE(old_id);
   LocalIdentity seeded = *old_id;
   seeded.registered = true;
   seeded.nickname = "alice";
-  seeded.registered = true;
   auto saved = old_identity.Update(seeded);
   ASSERT_TRUE(saved);
 
@@ -83,33 +83,27 @@ TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessi
   public_row.master_psk_b64 = Base64Encode(*public_psk);
   ASSERT_TRUE(old_psks_->Save(public_row));
 
-  DataKeyVault old_vault(DataKeyVault::VaultPathForProfile(old_dir_.string()), "old");
-  ASSERT_TRUE(old_vault.CreateWithDek("old-pin", shared));
   constexpr int64_t kNow = 1'700'000'000'000;
-  const std::string card = R"({"card_version":4})";
-  EXPECT_FALSE(LinkDeviceCoordinator::ExportJson(old_identity, old_vault, "", kNow)) << "no card, no link";
-  auto json = LinkDeviceCoordinator::ExportJson(old_identity, old_vault, card, kNow);
-  ASSERT_TRUE(json) << json.error().message;
-  EXPECT_EQ(json->find(*public_row.master_psk_b64), std::string::npos) << "the session stays on the old device";
+  LinkOffer offer;
+  const ByteVector offer_bytes = offer.Begin(kNow).value().offer;
+  auto reply = LinkDeviceCoordinator::SealReply(old_identity, offer_bytes, std::nullopt, kNow);
+  ASSERT_TRUE(reply) << reply.error().message;
+  auto bundle = offer.Open(*reply, kNow + 1000);
+  ASSERT_TRUE(bundle) << bundle.error().message;
+  EXPECT_EQ(Base64Encode(bundle->seed), saved->recovery_seed_b64.Reveal()) << "the seed, and nothing of the sessions";
+  EXPECT_FALSE(bundle->relay.has_value());
 
-  ByteVector local_dek(kDataEncryptionKeySize, 0x44);
   IdentityStore new_identity(new_dir_.string(), "new");
-  ASSERT_TRUE(new_identity.SetDek(local_dek));
-  auto new_id = new_identity.LoadOrCreate();
-  ASSERT_TRUE(new_id);
-  const std::string new_peer = new_id->peer_id;
   DataKeyVault new_vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
-  ASSERT_TRUE(new_vault.CreateWithDek("device-pin", local_dek));
-
-  auto imported = LinkDeviceCoordinator::Import(new_identity, new_vault, nullptr, *json, "device-pin", kNow + 1000);
+  auto imported = LinkDeviceCoordinator::ImportAccount(new_identity, new_vault, nullptr, bundle->seed, kCardIntentJoin,
+                                                       "", "device-pin");
   ASSERT_TRUE(imported) << imported.error().message;
-  EXPECT_EQ(imported->identity.account_id, saved->account_id);
-  EXPECT_EQ(imported->identity.peer_id, new_peer);
-  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
-  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
-  EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
-  EXPECT_EQ(imported->account_card_json, std::optional<std::string>(card)) << "the new device signs itself in";
-  EXPECT_EQ(*new_vault.Dek(), shared) << "the shared DEK, wrapped under this device's PIN";
+  EXPECT_EQ(imported->account_id, saved->account_id);
+  EXPECT_NE(imported->peer_id, saved->peer_id);
+  EXPECT_EQ(imported->kem_public_key_b64, saved->kem_public_key_b64);
+  EXPECT_EQ(imported->kem_private_key_b64, saved->kem_private_key_b64);
+  EXPECT_EQ(imported->card_intent, kCardIntentJoin);
+  EXPECT_NE(*new_vault.Dek(), main_dek) << "a DEK of its own, wrapped under this device's PIN";
 }
 
 } // namespace

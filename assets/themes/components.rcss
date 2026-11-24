@@ -7624,6 +7624,32 @@ input.checkbox {
   margin-top: 12dp;
 }
 
+/* The link page (M027): the new device's offer, a dense QR code (version 29) the main device's camera reads from this
+   screen, so as large as the card allows; dark on white whatever the theme. */
+.shell-pin-gate-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6dp;
+  margin-bottom: 10dp;
+}
+
+.shell-pin-gate-qr {
+  width: 260dp;
+  height: 260dp;
+  /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
+  image-color: #ffffff;
+}
+
+.shell-pin-gate-code {
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-pin-gate-scan {
+  margin-bottom: 8dp;
+}
+
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
 .shell-note-line {
   display: flex;
@@ -14019,8 +14045,8 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
-/* Me > Devices & transfer > Move to a new device (phones): lead line, the 50dp copy button (the grouped-page .btn), the
-   framed "copied" box with its small "again" button, then the numbered steps and the reset note. */
+/* Me > Devices & transfer > Link a new device (phones): lead line, the 50dp scan and paste buttons (the grouped-page
+   .btn), the framed reply box with its QR code and small "copy" button, then the numbered steps and the reset note. */
 .shell-layer-compact .settings-transfer-lead {
   margin: 20dp 32dp 0 32dp;
   font-size: 15dp;
@@ -14053,6 +14079,27 @@ textarea:composing ~ .prompt-composer-label,
   display: block;
   margin: 4dp -8dp 0 -8dp;
   text-align: left;
+}
+
+/* The link reply (M027): a dense QR code (version 29 or 30) for the new device's camera, as large as the box allows;
+   dark on white whatever the theme. */
+.settings-link-reply {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6dp;
+}
+
+.settings-link-qr {
+  width: 280dp;
+  height: 280dp;
+  margin: 8dp 0;
+  /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
+  image-color: #ffffff;
+}
+
+.shell-layer-compact .settings-link-reply {
+  align-items: center;
 }
 
 .shell-layer-compact .settings-steps-card {

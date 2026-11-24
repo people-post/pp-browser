@@ -14,7 +14,6 @@
 #include "lib/messaging/EditMessage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 
-#include "lib/people/RecoveryBundle.h"
 #include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -2676,12 +2675,9 @@ Roe<void> ConversationsHub::RestoreFromRecoveryPhrase(const SecretText& phrase, 
     return Error("No account was found for this recovery phrase");
   }
   AccountLockerState& state = (*fetched)->state;
-  const int64_t now_ms = util::NowUnixMs();
-  auto bundle = BuildRecoveryBundleJson(*seed, state.nickname, now_ms);
-  if (!bundle) {
-    return Error("Account restore failed: " + bundle.error().message);
-  }
-  if (auto imported = LinkDeviceCoordinator::Import(Identity(), *Secrets()->Vault(), Secrets(), *bundle, pin, now_ms);
+  // The account from its seed, as a link brings it, on a fresh list of this device's (M021 §8, M023 §8).
+  if (auto imported = LinkDeviceCoordinator::ImportAccount(Identity(), *Secrets()->Vault(), Secrets(), *seed,
+                                                           kCardIntentFresh, state.nickname, pin);
       !imported) {
     return Error("Account restore failed: " + imported.error().message);
   }
@@ -4933,38 +4929,143 @@ void ConversationsHub::ExpectDeviceJoin(const int64_t until_ms) {
   }
 }
 
-std::optional<std::string> ConversationsHub::OwnAccountCardJson() {
-  if (!mesh_messaging_) {
-    return std::nullopt;
-  }
-  auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs());
-  if (!card) {
-    log().warning << "own account card unavailable: " << card.error().message;
-    return std::nullopt;
-  }
-  return DumpJson(AccountCardToJson(*card));
+Roe<LinkOffer::Shown> ConversationsHub::BeginLinkOffer() {
+  return link_offer_.Begin(util::NowUnixMs());
 }
 
-Roe<void> ConversationsHub::LearnLinkedAccountCard(const std::string& card_json) {
-  auto learned = KeepLinkedAccountCard(card_json);
-  if (!learned) {
-    log().warning << "link import: account card not kept: " << learned.error().message;
-  }
-  return learned;
+void ConversationsHub::ForgetLinkOffer() {
+  link_offer_.Forget();
 }
 
-Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) {
-  auto json = TryParseObject(card_json);
-  if (!json) {
-    return Error("link bundle: account card is not JSON");
+Roe<void> ConversationsHub::CheckCanLinkDevice() {
+  if (!IsMessagingReady() || !mesh_messaging_) {
+    return Error("Messaging is not ready");
   }
-  auto card = AccountCardFromJson(*json);
-  if (!card) {
-    return card.error();
+  // M021 d4: only the main device adds a device to the list; the new device appends itself to its card.
+  auto devices = OwnDevices();
+  if (!devices) {
+    return devices.error();
+  }
+  if (devices->signed_out) {
+    return Error(kSignedOutMessage);
+  }
+  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
+    return Error("Only your main device can add a device");
+  }
+  // The new device fetches the card from our relays (M027): this device must have one, registered with them.
+  if (auto card = mesh_messaging_->OwnAccountCards().Card(util::NowUnixMs()); !card) {
+    return Error("This device has no account card yet: " + card.error().message);
+  }
+  auto identity = Identity().Get();
+  if (!identity) {
+    return identity.error();
+  }
+  if (!identity->registered) {
+    return Error("Local account not registered on the relay");
+  }
+  return {};
+}
+
+Roe<std::string> ConversationsHub::LinkOfferCode(const std::string& scanned_or_pasted) {
+  if (auto can = CheckCanLinkDevice(); !can) {
+    return can.error();
+  }
+  std::optional<ByteVector> offer = FindLinkPayload(kLinkOfferTextPrefix, scanned_or_pasted);
+  if (!offer) {
+    return MakeLinkError(LinkError::Unreadable, "link: no new device's code in what was given");
+  }
+  if (auto read = ReadLinkOffer(*offer); !read) {
+    return read.error();
+  }
+  return LinkConfirmationCode(*offer);
+}
+
+Roe<ByteVector> ConversationsHub::SealLinkReply(const std::string& scanned_or_pasted) {
+  if (auto can = CheckCanLinkDevice(); !can) {
+    return can.error();
+  }
+  std::optional<ByteVector> offer = FindLinkPayload(kLinkOfferTextPrefix, scanned_or_pasted);
+  if (!offer) {
+    return MakeLinkError(LinkError::Unreadable, "link: no new device's code in what was given");
+  }
+  const int64_t now = util::NowUnixMs();
+  auto reply = LinkDeviceCoordinator::SealReply(Identity(), *offer, LinkRelayHint(), now);
+  if (!reply) {
+    return reply.error();
+  }
+  ExpectDeviceJoin(now + kLinkWindowMs);
+  log().info << "Link: sealed a reply for a new device (code " << LinkConfirmationCode(*offer) << ")";
+  return reply;
+}
+
+std::optional<RelayAddress> ConversationsHub::LinkRelayHint() const {
+  if (!our_relays_) {
+    return std::nullopt;
+  }
+  const OurRelaysList list = our_relays_->List();
+  if (list.relays.empty()) {
+    return std::nullopt;
+  }
+  const OurRelayEntry& preferred = list.relays.front();
+  if (preferred.relay_id.empty() || SameRelay(preferred.origin, clients_.OrgRelay()) ||
+      !IsCardRelayOrigin(preferred.origin)) {
+    return std::nullopt; // the deployment's relay (the new device has it), or one a card could not carry either
+  }
+  return RelayAddress{.origin = preferred.origin, .relay_id = preferred.relay_id};
+}
+
+Roe<void> ConversationsHub::ImportLinkReply(const std::string& scanned_or_pasted, const SecretText& pin) {
+  if (!IsInitialized() || Secrets() == nullptr || Secrets()->Vault() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  std::optional<ByteVector> reply = FindLinkPayload(kLinkReplyTextPrefix, scanned_or_pasted);
+  if (!reply) {
+    return MakeLinkError(LinkError::Unreadable, "link: no main device's reply in what was given");
+  }
+  auto bundle = link_offer_.Open(*reply, util::NowUnixMs());
+  if (!bundle) {
+    return bundle.error();
+  }
+  auto imported = LinkDeviceCoordinator::ImportAccount(Identity(), *Secrets()->Vault(), Secrets(), bundle->seed,
+                                                       kCardIntentJoin, "", pin);
+  if (!imported) {
+    return imported.error();
+  }
+  link_offer_.Forget(); // the account is here: the one-time key has done its job
+  if (bundle->relay && IsCardRelayOrigin(bundle->relay->origin)) {
+    if (const auto workflow = MyRelays()) {
+      workflow->Restore({*bundle->relay}); // the account's preferred relay: asked first for our card, registered on
+    }
+  }
+  // Our card, as our relays keep it: it lists the main device, and this device appends itself on its first card. Not
+  // reached now, OwnCards asks again once messaging is up (a device without its card waits for it).
+  const int64_t now = util::NowUnixMs();
+  if (std::optional<AccountCard> card = OwnCardAmong(*imported, AskOurRelaysForOwnCard(imported->account_id), now,
+                                                     [this](const std::string& why) { log().warning << why; })) {
+    if (auto kept = KeepLinkedAccountCard(*card); !kept) {
+      log().warning << "link: our card not kept now (asked again later): " << kept.error().message;
+    }
+  } else {
+    log().info << "link: our card not got from our relays yet: asked again once messaging is up";
+  }
+  log().info << "Link: this device joined its account from the main device's reply";
+  return {};
+}
+
+Roe<void> ConversationsHub::KeepLinkedAccountCard(const AccountCard& card) {
+  // The account's nickname and floor are the card's (the link carries neither): this device's from now on.
+  if (auto named = Identity().Modify([&card](LocalIdentity& identity) {
+        const bool changed = identity.nickname != card.nickname || identity.initiation_floor != card.initiation_floor;
+        identity.nickname = card.nickname;
+        identity.initiation_floor = card.initiation_floor;
+        return changed;
+      });
+      !named) {
+    return named.error();
   }
   const int64_t now = util::NowUnixMs();
   if (mesh_messaging_) {
-    auto learned = mesh_messaging_->OwnAccountCards().Learn(*card, now);
+    auto learned = mesh_messaging_->OwnAccountCards().Learn(card, now);
     if (!learned) {
       return learned.error();
     }
@@ -4973,8 +5074,8 @@ Roe<void> ConversationsHub::KeepLinkedAccountCard(const std::string& card_json) 
   if (!account_keys_) {
     return Error("Messaging is not ready");
   }
-  // Kept now; this device signs itself into it once its own card is first asked for (OwnCards::Card).
-  auto kept = account_keys_->AddAccountCard(*card, now, "sibling");
+  // Kept now (as OwnCards takes a card our relays keep); this device signs itself into it on its first card.
+  auto kept = account_keys_->AddAccountCard(card, std::max(now, card.issued_at), kOwnCardRecoveredSource);
   if (!kept) {
     return kept.error();
   }

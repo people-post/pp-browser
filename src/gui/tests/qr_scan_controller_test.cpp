@@ -214,6 +214,33 @@ TEST_F(QrScanPermissionTest, ARealTripToTheBackgroundStillClosesAnOpenScanner) {
   EXPECT_EQ(delivered, 0);
 }
 
+// The link page under the PIN gate (M027) steps aside for the camera and must come back when nothing is read: the
+// request says so once — cancelled, refused, or replaced by a newer tap — and never after a text.
+TEST_F(QrScanPermissionTest, ARequestThatEndsWithoutATextSaysSoOnce) {
+  camera.state = CameraPermission::Granted;
+  int ended = 0;
+  scan.Open([this](std::string) { ++delivered; }, [&ended]() { ++ended; });
+  ASSERT_TRUE(scan.IsOpen());
+  scan.Close(); // Cancel
+  EXPECT_EQ(ended, 1);
+  scan.Close();
+  EXPECT_EQ(ended, 1) << "once";
+
+  int first = 0;
+  int second = 0;
+  scan.Open([this](std::string) { ++delivered; }, [&first]() { ++first; });
+  scan.Open([this](std::string) { ++delivered; }, [&second]() { ++second; });
+  EXPECT_EQ(first, 1) << "a newer tap ends the one before";
+  EXPECT_EQ(second, 0);
+
+  camera.state = CameraPermission::Denied;
+  int refused = 0;
+  scan.Open([this](std::string) { ++delivered; }, [&refused]() { ++refused; });
+  EXPECT_EQ(refused, 1) << "the camera refused: nothing will be read";
+  EXPECT_EQ(second, 1);
+  EXPECT_EQ(delivered, 0);
+}
+
 TEST(QrScanControllerTest, CancelClosesItsLayerAndNeverDeliversAResult) {
   MediaDeviceArbiter devices(CreateNullMediaDeviceBackend());
   QrScanController scan(devices);

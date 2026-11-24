@@ -6,6 +6,8 @@
 #include "gui/SettingsSecurityActions.h"
 #include "gui/UserFeedback.h"
 
+#include "common/runtime/AppRuntime.h"
+
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -212,10 +214,13 @@ class TransferCodePinTest : public SecuritySettingsGraceTest {
 protected:
   void SetUp() override {
     SecuritySettingsGraceTest::SetUp();
-    commands_.export_link_device = [this]() -> Roe<std::string> {
+    AppRuntime::Initialize(); // the code's digits are read on a worker
+    commands_.scan_link_offer = [this](std::function<void(std::string)> done) {
       ++exports_;
-      return std::string("code");
+      done("offer");
     };
+    commands_.link_offer_code = [](const std::string&) -> Roe<std::string> { return std::string("1234"); };
+    commands_.seal_link_reply = [](const std::string&) -> Roe<std::vector<uint8_t>> { return std::vector<uint8_t>{1}; };
     commands_.verify_pin = [](const SecretText&) -> Roe<void> { return {}; };
     commands_.change_pin = [this](const SecretText& old_pin, const SecretText& new_pin) -> Roe<void> {
       changed_.emplace_back(old_pin.Reveal(), new_pin.Reveal());
@@ -235,6 +240,11 @@ protected:
     };
   }
 
+  void TearDown() override {
+    AppRuntime::Shutdown();
+    SecuritySettingsGraceTest::TearDown();
+  }
+
   ShellFeedbackPorts feedback_;
   UnlockEnsurePorts unlock_;
   PinPromptPorts pin_prompt_;
@@ -248,27 +258,32 @@ protected:
   int exports_ = 0;
 };
 
-TEST_F(TransferCodePinTest, AnOwnPinIsAskedForBeforeTheCode) {
+TEST_F(TransferCodePinTest, AnOwnPinIsAskedForBeforeTheNewDevicesCodeIsRead) {
   FakeSettingsHost host(store_);
   SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
-  actions.ExportLinkDevice();
-  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::ExportTransferCode}) << "the PIN gate first";
+  actions.LinkDevice(/*scan=*/true);
+  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::LinkDevice}) << "the PIN gate first";
   EXPECT_EQ(confirms_, 0);
   EXPECT_EQ(exports_, 0);
 
   ASSERT_TRUE(on_ok_);
   on_ok_(); // the gate took the PIN and closed
-  EXPECT_EQ(confirms_, 1);
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(exports_, 1) << "then the camera";
+  EXPECT_EQ(confirms_, 1) << "then the digits to check";
   EXPECT_EQ(host.failures, 0);
 }
 
-TEST_F(TransferCodePinTest, TheAppDefaultPinOnlyConfirmsAsBefore) {
+TEST_F(TransferCodePinTest, TheAppDefaultPinGoesStraightToTheCode) {
   SetPinIsDefault(true);
   FakeSettingsHost host(store_);
   SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
-  actions.ExportLinkDevice();
+  actions.LinkDevice(/*scan=*/true);
+  AppRuntime::DrainWorkersThenUI();
+  AppRuntime::RunUITasks();
   EXPECT_TRUE(purposes_.empty());
   EXPECT_EQ(confirms_, 1);
   EXPECT_EQ(host.failures, 0);

@@ -3,24 +3,21 @@
 
 namespace pbr {
 
-Roe<std::string> LinkDeviceCoordinator::ExportJson(IdentityStore& identity, DataKeyVault& vault,
-                                                   std::string account_card_json, const int64_t now_ms,
-                                                   const int64_t ttl_ms) {
+Roe<ByteVector> LinkDeviceCoordinator::SealReply(IdentityStore& identity, const std::span<const uint8_t> offer,
+                                                 std::optional<RelayAddress> relay, const int64_t now_ms,
+                                                 const int64_t ttl_ms) {
   auto loaded = identity.Get();
   if (!loaded) {
     return loaded.error();
   }
-  auto dek = vault.Dek();
-  if (!dek) {
-    return dek.error();
-  }
-  return LinkDeviceExchange::ExportJson(*loaded, *dek, std::move(account_card_json), now_ms, ttl_ms);
+  return LinkDeviceExchange::SealReply(*loaded, offer, std::move(relay), now_ms, ttl_ms);
 }
 
-Roe<LinkDeviceImportResult> LinkDeviceCoordinator::Import(IdentityStore& identity, DataKeyVault& vault,
-                                                          ProfileSecretsEngine* secrets, const std::string& bundle_json,
-                                                          const SecretText& pin, const int64_t now_ms) {
-  auto imported = LinkDeviceExchange::Import(identity, vault, bundle_json, pin, now_ms);
+Roe<LocalIdentity> LinkDeviceCoordinator::ImportAccount(IdentityStore& identity, DataKeyVault& vault,
+                                                        ProfileSecretsEngine* secrets, const ByteVector& seed,
+                                                        const std::string_view card_intent, const std::string& nickname,
+                                                        const SecretText& pin) {
+  auto imported = LinkDeviceExchange::ImportAccount(identity, vault, seed, card_intent, nickname, pin);
   if (!imported) {
     return imported.error();
   }

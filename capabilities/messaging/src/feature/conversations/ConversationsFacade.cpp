@@ -1,4 +1,7 @@
 #include "feature/conversations/ConversationsFacade.h"
+
+#include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/GroupMentions.h"
 #include "domain/attachments/AttachmentMetrics.h"
 #include "common/chat/MessagingLimits.h"
@@ -15,7 +18,6 @@
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
-#include "lib/people/LinkDeviceCoordinator.h"
 #include "foundation/crypto/RecoveryPhrase.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -127,48 +129,24 @@ bool ConversationsFacade::HasRecoveryPhrase() {
   return seed && seed->has_value();
 }
 
-Roe<std::string> ConversationsFacade::ExportLinkDevice() {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  // M021 d4: the master's transfer code is its consent — the new device appends itself to the master's list.
-  auto devices = hub_.OwnDevices();
-  if (!devices) {
-    return devices.error();
-  }
-  if (devices->signed_out) {
-    return Error(kSignedOutMessage);
-  }
-  if (!devices->devices.empty() && devices->devices.front().peer_id != devices->self_peer_id) {
-    return Error("Only your main device can add a device");
-  }
-  std::optional<std::string> card = hub_.OwnAccountCardJson();
-  if (!card) {
-    return Error("This device has no account card yet");
-  }
-  const int64_t now = util::NowUnixMs();
-  auto bundle = LinkDeviceCoordinator::ExportJson(hub_.Identity(), *hub_.Secrets()->Vault(), std::move(*card), now);
-  if (bundle) {
-    hub_.ExpectDeviceJoin(now + kLinkDeviceDefaultTtlMs);
-  }
-  return bundle;
+Roe<LinkOffer::Shown> ConversationsFacade::BeginLinkOffer() {
+  return hub_.BeginLinkOffer();
 }
 
-Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, const SecretText& pin) {
-  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
-    return Error("Messaging is not ready");
-  }
-  auto imported = LinkDeviceCoordinator::Import(hub_.Identity(), *hub_.Secrets()->Vault(), hub_.Secrets(), bundle_json,
-                                                pin, util::NowUnixMs());
-  if (!imported) {
-    return imported.error();
-  }
-  if (imported->account_card_json) {
-    // The account's device list as the linking device knows it; a failure (logged) leaves this device to
-    // start a list of its own (its siblings learn it from its card later), not a failed link.
-    (void)hub_.LearnLinkedAccountCard(*imported->account_card_json);
-  }
-  return {};
+void ConversationsFacade::ForgetLinkOffer() {
+  hub_.ForgetLinkOffer();
+}
+
+Roe<std::string> ConversationsFacade::LinkOfferCode(const std::string& scanned_or_pasted) {
+  return hub_.LinkOfferCode(scanned_or_pasted);
+}
+
+Roe<ByteVector> ConversationsFacade::SealLinkReply(const std::string& scanned_or_pasted) {
+  return hub_.SealLinkReply(scanned_or_pasted);
+}
+
+Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& reply_scanned_or_pasted, const SecretText& pin) {
+  return hub_.ImportLinkReply(reply_scanned_or_pasted, pin);
 }
 
 Roe<void> ConversationsFacade::RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,

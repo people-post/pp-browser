@@ -226,8 +226,18 @@ struct PinGateState {
   bool identity_fork_mode = false;
   bool chooser_mode = false;
   bool create_mode = false;
-  /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */
+  /**
+   * After choosing a PIN on this device: link it to the main device (M027) — this page shows the new device's offer,
+   * then takes the main device's reply (scanned or pasted) — or, with `phrase_flow`, the recovery phrase.
+   */
   bool link_paste_mode = false;
+  /** The link page: the offer as a QR code (SVG content; "" none) and its 4 digits to compare. */
+  ui::String link_offer_qr;
+  ui::String link_offer_code;
+  /** The same offer as text, for "Copy as text" only: never bound to an element (it is over a kilobyte, B166). */
+  ui::String link_offer_text;
+  /** The link page can read the main device's reply with the camera. */
+  bool link_can_scan = false;
   /** The paste page asks for a recovery phrase (multi-device M023) instead of a transfer code. */
   bool phrase_flow = false;
   /** On the phrase page: the saved copy picked to restore from as well (its file name; empty: none). */

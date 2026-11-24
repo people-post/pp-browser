@@ -66,8 +66,11 @@ struct ProfileUnlockPorts {
 
   std::function<bool()> pin_is_default;
   std::function<void(bool is_default)> set_pin_is_default;
-  /** Empty-vault link-device: wrap shared DEK with `pin` and apply the bundle. */
-  std::function<Roe<void>(const SecretText& pin, const std::string& bundle_json)> import_link_device;
+  /**
+   * Link this device (multi-device M027): the main device's reply, scanned or pasted, opened with this device's
+   * one-time key; the account comes from its seed under a DEK of this device's, wrapped with `pin`.
+   */
+  std::function<Roe<void>(const SecretText& pin, const std::string& reply)> import_link_device;
   /** Fresh install: the account back from its recovery phrase (M023) under `pin` for this device. */
   /** `saved_copies`: saved copies of the account the user picked (exported locker files' text). */
   std::function<Roe<void>(const SecretText& pin, const SecretText& phrase,
@@ -159,8 +162,8 @@ public:
   void CompleteWithPin(const SecretText& pin, bool create_mode);
   /** UI: chooser "use default PIN" (async when run_heavy is set). */
   void CompleteWithDefaultPin();
-  /** UI: first-run "I already have an account" after PIN + paste. */
-  void CompleteLinkDevice(const SecretText& pin, const std::string& bundle_json, bool set_default_pin);
+  /** UI: first-run "I already have an account" after the PIN and the main device's reply (scanned or pasted). */
+  void CompleteLinkDevice(const SecretText& pin, const std::string& reply, bool set_default_pin);
   /** "Restore with my recovery phrase": restore under `pin`, then unlock — no first-run wizard, as after a link. */
   void CompletePhraseRestore(const SecretText& pin, const SecretText& phrase, bool set_default_pin,
                              std::vector<std::string> saved_copies = {});

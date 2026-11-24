@@ -10,7 +10,7 @@
 namespace pbr {
 
 /** Why settings asks for the PIN (the gate's words follow; DEV/PLAN-pin-gate-redesign.md B2). */
-enum class PinVerifyPurpose { ExportTransferCode, ShowRecoveryPhrase, EnableBiometric, RemovePin };
+enum class PinVerifyPurpose { LinkDevice, ShowRecoveryPhrase, EnableBiometric, RemovePin };
 
 /**
  * Checks `pin` (off the UI thread if it must) and calls `done` on the UI thread: ok → the gate goes on; a wrong PIN →

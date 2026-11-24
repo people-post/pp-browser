@@ -21,7 +21,7 @@ class DataModelConstructor;
 namespace pbr {
 
 /**
- * Me → Security and Storage's destructive actions: change the PIN, copy a link-device bundle, clear old undelivered messages, forget tool permissions, reset the profile
+ * Me → Security and Storage's destructive actions: change the PIN, link a new device, clear old undelivered messages, forget tool permissions, reset the profile
  * or the chats. Each asks first; the PIN-guarded ones unlock first. The PIN itself is asked on the PIN gate
  * (PinPromptPorts: its number pad for a digit PIN, DEV/PLAN-pin-gate-redesign.md B2), never in a field of this page.
  *
@@ -60,14 +60,18 @@ public:
     return words;
   }
   /**
-   * Me → Security → Copy transfer code (the button's event). With an own PIN the PIN comes first, on the PIN gate
-   * (plan #21 ⑧); the app default PIN only confirms.
+   * Me → Security → Link a new device (multi-device M027): the new device's code, read by the camera (`scan`) or from
+   * the clipboard; with an own PIN the PIN comes first, on the PIN gate (plan #21 ⑧). Then the person checks that the
+   * new device shows the same 4 digits — only then is the account's seed sealed to it — and the reply is shown as a QR
+   * code (and text to copy) for the new device.
    */
-  void ExportLinkDevice();
-  /** Phones' transfer page: the "code copied" box shows (set by the success path of ExportLinkDevice only). */
-  bool TransferCodeCopied() const { return transfer_code_copied_; }
-  /** Clears the "copied" state and re-reads the page's two validity lines (on opening and on leaving the page). */
-  void ClearTransferCopied();
+  void LinkDevice(bool scan);
+  /** The reply is on the page (set by the sealing only), with its QR code. */
+  bool LinkReplyShown() const { return link_reply_shown_; }
+  /** The reply's QR code (SVG content) while it is shown, else "". */
+  std::string LinkReplyQrForTest() const { return link_reply_qr_rml_.c_str(); }
+  /** Drops the reply and re-reads the page's lines (on opening and on leaving the page, and its "Done"). */
+  void ClearLinkReply();
   /**
    * Me → Security → Change PIN: the PIN gate's three steps (current, new, again), then the engine's change. On the app
    * default PIN the current-PIN step is skipped (that PIN is public): new, again.
@@ -91,10 +95,18 @@ private:
    * PIN) when the PIN became the default, and tells the app.
    */
   Roe<void> RecordPinChanged(const SecretText& new_pin, bool to_default);
-  /** The "copy transfer code?" confirm, then the code to the clipboard. */
-  void ConfirmExportLinkDevice();
-  /** The transfer page's lead and "copied" lines, with the code's validity in minutes (from the code's own TTL). */
+  /** The new device's code, read now (after the PIN): from the camera or the clipboard. */
+  void ReadLinkOffer(bool scan);
+  /** The digits of `offer` (a worker), then the person's check against the new device's. */
+  void CheckLinkCode(std::string offer);
+  /** The digits matched: the reply sealed (a worker) and shown. */
+  void SealLinkReply(std::string offer);
+  /** The reply's "Copy as text": the reply to the clipboard (safe: only the new device opens it). */
+  void CopyLinkReply();
+  /** The page's lead and validity lines, with the link's window in minutes (kLinkWindowMs). */
   void SetTransferLabels();
+  /** A link step failed: its words (LinkErrorText), else the error's own. */
+  void ReportLinkFailure(const Error& error);
   /** The words and the shown flag redrawn. */
   void DirtyRecoveryWords();
   void ClearRecoverySecret();
@@ -150,7 +162,14 @@ private:
   static constexpr size_t kRecoveryWordCount = 24;
   int64_t recovery_shown_ms_ = kRecoveryPhraseShownMs;
 
-  bool transfer_code_copied_ = false;
+  /** The sealed reply while it is shown: its QR code (bound) and the same as text (copy only, never bound: B166). */
+  bool link_reply_shown_ = false;
+  /** The page offers the camera for the new device's code. */
+  bool link_can_scan_ = false;
+  ui::String link_reply_qr_rml_;
+  std::string link_reply_text_;
+  /** Bumped by ClearLinkReply: a check or seal still running for an older visit shows nothing. */
+  uint64_t link_request_ = 0;
   ui::String move_lead_label_;
   ui::String move_valid_label_;
 

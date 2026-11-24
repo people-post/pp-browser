@@ -494,10 +494,20 @@ std::string ShellLayoutRml::PinGate() const {
       << "</button>";
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back") << "</button>";
   out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow "
-         "&& !pin_gate_payload_hidden\" "
-         "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
-      << Tr("pin.link_paste_placeholder") << "\"></textarea>";
+  // The link page (M027): this device's one-time offer as a QR code for the main device to scan, its 4 digits to
+  // compare, and the same offer as text; then the main device's reply, scanned or pasted (no field: it is over a
+  // kilobyte, B166/B167, and nobody types it).
+  out << "<div class=\"shell-pin-gate-link stack\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
+         "pin_gate_link_offer_qr_rml != ''\">";
+  out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+  out << "<p class=\"text shell-pin-gate-code\">" << Tr("pin.link_offer_code") << " {{pin_gate_link_offer_code}}</p>";
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_copy_offer()\">" << Tr("pin.link_copy_offer")
+      << "</button>";
+  out << "</div>";
+  out << "<button class=\"btn btn-secondary shell-pin-gate-scan\" data-if=\"pin_gate_link_paste_mode && "
+         "!pin_gate_phrase_flow && pin_gate_link_can_scan && !pin_gate_payload_hidden\" "
+         "data-event-click=\"pin_gate_scan_reply()\">"
+      << Tr("pin.link_scan_reply") << "</button>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""

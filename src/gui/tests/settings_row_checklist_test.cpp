@@ -462,13 +462,11 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
        2, 0},
       // No list of ours found on our relays: the one way to start a new one (it asks first: SettingsOwnDevicesTest).
       {"devices", "start_new_device_list()", "own_list_missing", 1, 1},
-      // Here the phone's button and "Copy again" sit in the transfer block's desktop wrapper (hidden): only the desktop
-      // button shows. Their own page is checked in the next test.
-      {"devices", "export_link_device()",
-       "security_can_export_link && !own_devices_not_main@@security_can_export_link && "
-       "!own_devices_not_main;;!transfer_code_copied@@security_can_export_link && "
-       "!own_devices_not_main;;transfer_code_copied",
-       0, 1},
+      // Here the transfer block sits in the devices section's desktop wrapper: its scan and paste buttons (M027) show
+      // on the desktop only. Their own page is checked in the next test.
+      {"devices", "link_scan_offer()",
+       "security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan", 0, 1},
+      {"devices", "link_paste_offer()", "security_can_export_link && !own_devices_not_main && !link_reply_shown", 0, 1},
       // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
       // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
@@ -506,29 +504,29 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
   }
 }
 
-TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageFiresTheOneExportEventUnderTheOldGate) {
-  // settings.rml includes the same file for the phone's own transfer page. The phone has the primary button and, in the
-  // "copied" box, "Copy again": both fire export_link_device() under the old gate (the box only adds the view flag);
-  // the desktop keeps its one button.
+TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageReadsTheNewDevicesCodeUnderTheOldGate) {
+  // settings.rml includes the same file for the phone's own transfer page (M027): scan (when the camera is there) and
+  // paste, each once, under the old gate and only while no reply is shown; the reply's copy only with the reply.
   const std::string rml = ReadAsset("views/settings_security_transfer.rml");
-  const std::string gate = "security_can_export_link && !own_devices_not_main";
-  size_t phone = 0;
-  size_t desktop = 0;
+  const std::string gate = "security_can_export_link && !own_devices_not_main && !link_reply_shown";
+  int scan = 0;
+  int paste = 0;
+  int copy = 0;
   for (const Occurrence& o : Scan(rml)) {
-    if (o.token == "data-event-click=\"export_link_device()\"") {
-      EXPECT_EQ(o.gates.rfind(gate, 0), 0u) << "the old gate comes first: " << o.gates;
-      if (o.layouts == "desktop") {
-        EXPECT_EQ(o.gates, gate);
-      } else {
-        EXPECT_TRUE(o.gates == gate + ";;!transfer_code_copied" || o.gates == gate + ";;transfer_code_copied")
-            << o.gates;
-      }
-      phone += (o.layouts == "phone" || o.layouts == "both") ? 1 : 0;
-      desktop += (o.layouts == "desktop" || o.layouts == "both") ? 1 : 0;
+    if (o.token == "data-event-click=\"link_scan_offer()\"") {
+      EXPECT_EQ(o.gates, gate + ";;link_can_scan");
+      ++scan;
+    } else if (o.token == "data-event-click=\"link_paste_offer()\"") {
+      EXPECT_EQ(o.gates, gate);
+      ++paste;
+    } else if (o.token == "data-event-click=\"copy_link_reply()\"") {
+      EXPECT_EQ(o.gates, "link_reply_shown");
+      ++copy;
     }
   }
-  EXPECT_EQ(phone, 2u);
-  EXPECT_EQ(desktop, 1u);
+  EXPECT_EQ(scan, 1);
+  EXPECT_EQ(paste, 1);
+  EXPECT_EQ(copy, 1);
 }
 
 TEST(SettingsSensitiveActionsTest, NoHelpButtonSitsInsideAnotherButton) {

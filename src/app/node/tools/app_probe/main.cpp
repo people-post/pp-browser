@@ -152,6 +152,7 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactClock.h"
 #include "foundation/crypto/RecoveryPhrase.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -753,16 +754,45 @@ public:
             return remove ? facade_->RemoveOwnDevice(peer_id) : facade_->MakeMainDevice(peer_id);
           },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
-    } else if (cmd == "link_export") {
-      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
-          WorkerLane::Normal, [this]() { return facade_->ExportLinkDevice(); },
-          [id](Roe<std::string> bundle) {
-            if (!bundle) {
-              ReplyError(id, bundle.error().message);
+    } else if (cmd == "link_offer") {
+      // The new device's link page (M027): a fresh one-time offer, as text (the QR code's bytes), and its digits.
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<LinkOffer::Shown>>(
+          WorkerLane::Normal, [this]() { return facade_->BeginLinkOffer(); },
+          [id](Roe<LinkOffer::Shown> shown) {
+            if (!shown) {
+              ReplyError(id, shown.error().message);
               return;
             }
             Object out = Reply(id, true);
-            out.set("bundle", *bundle);
+            out.set("offer", shown->text);
+            out.set("code", shown->code);
+            Emit(out);
+          });
+    } else if (cmd == "link_reply") {
+      // The main device (M027): the new device's offer read, its digits (the lab compares them, as the person does),
+      // then the sealed reply as text.
+      const std::string offer = request->getString("offer").value_or("");
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<std::pair<std::string, ByteVector>>>(
+          WorkerLane::Normal,
+          [this, offer]() -> Roe<std::pair<std::string, ByteVector>> {
+            auto code = facade_->LinkOfferCode(offer);
+            if (!code) {
+              return code.error();
+            }
+            auto reply = facade_->SealLinkReply(offer);
+            if (!reply) {
+              return reply.error();
+            }
+            return std::make_pair(std::move(*code), std::move(*reply));
+          },
+          [id](Roe<std::pair<std::string, ByteVector>> sealed) {
+            if (!sealed) {
+              ReplyError(id, sealed.error().message);
+              return;
+            }
+            Object out = Reply(id, true);
+            out.set("code", sealed->first);
+            out.set("reply", LinkPayloadText(kLinkReplyTextPrefix, sealed->second));
             Emit(out);
           });
     } else if (cmd == "recovery_phrase") {
@@ -891,10 +921,11 @@ public:
             Emit(out);
           });
     } else if (cmd == "link_import") {
-      const std::string bundle = request->getString("bundle").value_or("");
+      // The new device takes the main device's reply (M027), opened with the key of its last link_offer.
+      const std::string reply = request->getString("reply").value_or("");
       const std::string pin = request->getString("pin").value_or("");
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-          WorkerLane::Normal, [this, bundle, pin]() { return facade_->ImportLinkDevice(bundle, pin); },
+          WorkerLane::Normal, [this, reply, pin]() { return facade_->ImportLinkDevice(reply, pin); },
           [id](Roe<void> done) { done ? Emit(Reply(id, true)) : ReplyError(id, done.error().message); });
     } else if (cmd == "open_chat") {
       OpenChat(id, request->getString("account").value_or(""));

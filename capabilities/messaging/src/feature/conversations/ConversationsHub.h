@@ -13,6 +13,8 @@
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
+#include "lib/people/AccountCard.h"
+#include "lib/people/LinkOffer.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/people/ProfileIdentityView.h"
 #include "common/Module.h"
@@ -212,10 +214,33 @@ public:
   /** Unread mentions of this account per thread (G015); null until the stores open. */
   IThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
-  /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
-  std::optional<std::string> OwnAccountCardJson();
-  /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
-  Roe<void> LearnLinkedAccountCard(const std::string& card_json);
+  /**
+   * Linking a device by the sealed QR handshake (multi-device M027; docs/contracts/LINK_DEVICE.md). New device: a fresh
+   * one-time key and the offer it shows (LinkOffer::Begin; the one before is wiped). Held in memory only.
+   */
+  Roe<LinkOffer::Shown> BeginLinkOffer();
+  /** New device: the person left the link page — the one-time key is wiped. */
+  void ForgetLinkOffer();
+  /**
+   * Main device: whether it may link a device now (M021 d4: the main device, not signed out, with a card our relays
+   * keep for the new device to fetch). Messaging up.
+   */
+  Roe<void> CheckCanLinkDevice();
+  /** Main device: the 4 digits of the offer scanned or pasted (FindLinkPayload, ReadLinkOffer), once it may link. */
+  Roe<std::string> LinkOfferCode(const std::string& scanned_or_pasted);
+  /**
+   * Main device, once the person saw the same digits on both: the reply sealing the account's seed to the offer, with
+   * our preferred relay when it is not the deployment's. A device joining is expected for the link's window (OwnCards).
+   */
+  Roe<ByteVector> SealLinkReply(const std::string& scanned_or_pasted);
+  /**
+   * New device, before unlocking: the reply scanned or pasted, opened with the kept key; the account comes here from
+   * its seed with a DEK of this device's (LinkDeviceCoordinator::ImportAccount, intent join), the bundle's relay becomes
+   * ours, and our card is asked of our relays (it lists the main device: this device appends itself on its first card;
+   * the nickname is the card's). A relay that does not answer now leaves the card to OwnCards' own asking. The key is
+   * wiped once the account is here.
+   */
+  Roe<void> ImportLinkReply(const std::string& scanned_or_pasted, const SecretText& pin);
   GroupMembershipWorkflow& Groups();
   /** G021: invite links (making, answering joins, joining); null until messaging is up. */
   GroupInviteLinkWorkflow* GroupLinksOrNull() { return group_links_.get(); }
@@ -327,8 +352,8 @@ public:
   Roe<void> SaveProfileNickname(const std::string& nickname);
   /**
    * Fresh install, before unlocking: the account back from its recovery phrase (multi-device M023 §8) — its locker
-   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), imported as a link bundle
-   * the phrase reconstructs (a fresh DEK under `pin`), the contacts put back; groups, card floors and the announce
+   * fetched by the phrase's keys (it holds the relay binding, so no locker: no restore), the account imported from the
+   * seed as a link does (a fresh DEK under `pin`, a fresh device list), the contacts put back; groups, card floors and the announce
    * to contacts follow once messaging is up, as for any restore. `saved_copies`: exported locker files' text — the
    * newest valid copy among them and the provider's is used (M023 §6 amendment).
    */
@@ -941,7 +966,12 @@ private:
   std::shared_ptr<CasStore> content_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
-  Roe<void> KeepLinkedAccountCard(const std::string& card_json);
+  /** Our card as our relays keep it, for a device just linked: kept, its nickname and floor this device's (M027). */
+  Roe<void> KeepLinkedAccountCard(const AccountCard& card);
+  /** Our preferred relay, for a link reply: none when it is the deployment's (the new device knows that one). */
+  std::optional<RelayAddress> LinkRelayHint() const;
+  /** The new device's one-time link key while it waits for the reply (M027). */
+  LinkOffer link_offer_;
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
   std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;

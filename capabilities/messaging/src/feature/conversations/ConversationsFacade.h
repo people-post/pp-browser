@@ -92,7 +92,13 @@ public:
   Roe<void> SyncPushDevices();
   /** Whether the saved backend differs from the running one: push is unbound from the running backend meanwhile. */
   void SetBackendSwitchPending(bool pending);
-  Roe<std::string> ExportLinkDevice();
+  /** Linking a device (M027; ConversationsHub::BeginLinkOffer and the rest): the new device's offer, kept in memory. */
+  Roe<LinkOffer::Shown> BeginLinkOffer();
+  void ForgetLinkOffer();
+  /** Main device: the 4 digits of a new device's offer, scanned or pasted. */
+  Roe<std::string> LinkOfferCode(const std::string& scanned_or_pasted);
+  /** Main device, after the digits matched: the sealed reply's bytes (its QR code; LinkPayloadText for the text). */
+  Roe<ByteVector> SealLinkReply(const std::string& scanned_or_pasted);
   /**
    * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the
    * account has no recovery seed (minted before M023). A wrong PIN is a Pin-category error.
@@ -100,7 +106,8 @@ public:
   Roe<std::optional<SecretText>> RecoveryPhrase(const SecretText& pin);
   /** Whether the account has a recovery phrase to show (needs the vault unlocked; false otherwise). */
   bool HasRecoveryPhrase();
-  Roe<void> ImportLinkDevice(const std::string& bundle_json, const SecretText& pin);
+  /** New device: the main device's reply, scanned or pasted; the account comes here (ConversationsHub::ImportLinkReply). */
+  Roe<void> ImportLinkDevice(const std::string& reply_scanned_or_pasted, const SecretText& pin);
   /** Fresh install: the account back from its recovery phrase (M023; ConversationsHub::RestoreFromRecoveryPhrase). */
   Roe<void> RestoreFromRecoveryPhrase(const SecretText& phrase, const SecretText& pin,
                                       const std::vector<std::string>& saved_copies = {});

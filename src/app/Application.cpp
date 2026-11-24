@@ -127,6 +127,8 @@
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/UnlockGateCompletePorts.h"
+#include "gui/LinkDeviceText.h"
+#include "lib/ui/QrSvg.h"
 #include "gui/contacts/PeoplePickerController.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerController.h"
@@ -1226,7 +1228,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return {};
   };
   settings_commands.on_pin_mode_changed = [this](const bool is_default) { OnPinModeChanged(is_default); };
-  settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  // Linking a device (multi-device M027): the new device's code read here, its digits checked, the reply sealed.
+  settings_commands.link_offer_code = [&facade](const std::string& offer) { return facade.LinkOfferCode(offer); };
+  settings_commands.seal_link_reply = [&facade](const std::string& offer) -> Roe<std::vector<uint8_t>> {
+    return facade.SealLinkReply(offer);
+  };
+  settings_commands.scan_link_offer = [this](std::function<void(std::string)> done) {
+    qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md): binary, as the code shows it
+  };
   // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
   settings_commands.set_grace_minutes = [this](const int minutes) {
@@ -1805,9 +1814,25 @@ void Application::WireUnlockPinAndFlow() {
       unlock_gate_->CompleteWithPin(pin, create_mode);
     };
     gate_complete.complete_with_default_pin = [this]() { unlock_gate_->CompleteWithDefaultPin(); };
-    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle_json,
+    gate_complete.complete_link_device = [this](const SecretText& pin, const std::string& reply,
                                                 const bool set_default_pin) {
-      unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
+      unlock_gate_->CompleteLinkDevice(pin, reply, set_default_pin);
+    };
+    // The new device's link page (M027): its one-time offer as a QR code, the reply read by the camera.
+    gate_complete.begin_link_offer = [&facade]() -> Roe<LinkOfferDisplay> {
+      auto shown = facade.BeginLinkOffer();
+      if (!shown) {
+        return shown.error();
+      }
+      auto qr = QrSvgContentBinary(shown->offer);
+      if (!qr) {
+        return qr.error();
+      }
+      return LinkOfferDisplay{.qr_svg = std::move(*qr), .text = std::move(shown->text), .code = std::move(shown->code)};
+    };
+    gate_complete.forget_link_offer = [&facade]() { facade.ForgetLinkOffer(); };
+    gate_complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
+      qr_scan_->Open(std::move(done), std::move(closed));
     };
     gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
@@ -1927,10 +1952,18 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() { UserFeedback::Ok(Tr("pin.default_provisioned_toast")); };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).
-  unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
-                                                    const std::string& bundle_json) -> Roe<void> {
-    auto imported = facade.ImportLinkDevice(bundle_json, pin);
-    if (imported && secrets_) {
+  unlock_ports.import_link_device = [this, &facade](const SecretText& pin, const std::string& reply) -> Roe<void> {
+    auto imported = facade.ImportLinkDevice(reply, pin);
+    if (!imported) {
+      // The gate shows the message: the link's own words for what went wrong with the reply (M027).
+      if (const std::string words = LinkErrorText(imported.error(), /*on_new_device=*/true); !words.empty()) {
+        Error shown = imported.error();
+        shown.message = words;
+        return shown;
+      }
+      return imported;
+    }
+    if (secrets_) {
       secrets_->DisableBiometric();
     }
     return imported;
@@ -2107,7 +2140,7 @@ void Application::WireUnlockPinAndFlow() {
     unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
     chat_->BindUnlockEnsure(unlock_ensure);
     settings_->BindUnlockEnsure(unlock_ensure);
-    // B2: the transfer code, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
+    // B2: linking a device, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
     PinPromptPorts pin_prompt;
     pin_prompt.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
       pin_gate_->ShowVerify(purpose, std::move(check), std::move(on_ok));
