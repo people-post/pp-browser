@@ -70,64 +70,71 @@ protected:
 // tester build.
 TEST(SharedRootFileVersionsTest, EachRootFilesVersionIsPinned) {
   EXPECT_EQ(pbr::Config::kConfigVersion, 1) << "config.json config_version";
-  EXPECT_EQ(pbr::ProfileRegistry::kSchemaVersion, 1) << "profiles.json schema_version";
+  // 2: the network layout (profile-model P1), bumped before release 1, when no store build existed (#752).
+  EXPECT_EQ(pbr::ProfileRegistry::kSchemaVersion, 2) << "profiles.json schema_version";
   EXPECT_EQ(pbr::MachinePreferences::kSchemaVersion, 1) << "machine.json schema_version";
 }
 
-// A tester build made its profiles (staging, dev, test-custom-…) in the shared profiles.json and left one active; the
-// store build reads that file, goes back to its own prod profile, keeps every entry, and changes no tester profile.
+// A tester build made its profiles (staging, dev, test-custom-…) in the shared profiles.json; the store build reads
+// that file, goes back to its own prod profile, keeps every entry and pointer, and changes no tester profile.
 TEST_F(SharedRootFilesTest, AStoreBuildReadsAProfilesFileATesterBuildWrote) {
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(ProfileDir("default"), "prod")));
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(ProfileDir("staging"), "staging")));
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(ProfileDir("dev"), "dev")));
-  const std::string tester_custom = pbr::CustomProfileKey("https://custom.example.test", pbr::BuildKind::Tester);
-  ASSERT_TRUE(static_cast<bool>(pbr::EnsureProfileManifest(ProfileDir(tester_custom), tester_custom)));
-  WriteText((std::filesystem::path(data_dir_) / "profiles.json").string(),
-            R"({"schema_version": 1, "active_profile_id": ")" + tester_custom + R"(",
-                "profiles": [{"id": "default", "label": "user"}, {"id": "staging", "label": "staging"},
-                             {"id": "dev", "label": "dev"},
-                             {"id": ")" +
-                tester_custom + R"(", "label": ")" + tester_custom + R"("}]})");
+  const std::string tester_custom = pbr::CustomBackendId("https://custom.example.test", "", "", pbr::BuildKind::Tester);
+  std::string store_prod;
+  {
+    auto store = pbr::ProfileRegistry::Load(data_dir_);
+    ASSERT_TRUE(static_cast<bool>(store));
+    ASSERT_TRUE(static_cast<bool>(store->SelectProfileForBackend("prod", pbr::profile_network::kMain)));
+    store_prod = store->ActiveProfileId();
+  }
+  std::string tester_staging;
+  {
+    auto tester = pbr::ProfileRegistry::Load(data_dir_);
+    ASSERT_TRUE(static_cast<bool>(tester));
+    ASSERT_TRUE(static_cast<bool>(tester->SelectProfileForBackend("dev", pbr::profile_network::kDev)));
+    ASSERT_TRUE(static_cast<bool>(tester->SelectProfileForBackend(tester_custom, pbr::profile_network::kTestCustom)));
+    ASSERT_TRUE(static_cast<bool>(tester->SelectProfileForBackend("staging", pbr::profile_network::kStaging)));
+    tester_staging = tester->ActiveProfileId();
+  }
+  const std::string staging_manifest =
+      ReadText((std::filesystem::path(ProfileDir(tester_staging)) / "manifest.json").string());
 
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
   EXPECT_EQ(registry->Profiles().size(), 4u);
-  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
-  EXPECT_EQ(registry->ActiveProfileId(), "default") << "the store build's own profile";
-  EXPECT_TRUE(
-      pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), pbr::BuildKind::Store));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod", pbr::profile_network::kMain)));
+  EXPECT_EQ(registry->ActiveProfileId(), store_prod) << "the store build's own profile";
 
   auto reloaded = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(reloaded));
-  EXPECT_EQ(reloaded->ActiveProfileId(), "default");
   EXPECT_EQ(reloaded->Profiles().size(), 4u) << "the tester build's entries are kept";
-  EXPECT_EQ(pbr::ReadProfileBackend(ProfileDir("staging")), "staging");
-  EXPECT_EQ(pbr::ReadProfileBackend(ProfileDir(tester_custom)), tester_custom);
+  EXPECT_EQ(reloaded->BackendPointers().at("staging"), tester_staging) << "and its pointers";
+  EXPECT_EQ(ReadText((std::filesystem::path(ProfileDir(tester_staging)) / "manifest.json").string()), staging_manifest);
 
-  // A store build's custom backend at the same URL is a profile of its own, not the tester build's.
-  ASSERT_TRUE(static_cast<bool>(
-      reloaded->SelectProfileForBackend(pbr::CustomProfileKey("https://custom.example.test", pbr::BuildKind::Store))));
-  EXPECT_NE(reloaded->ActiveProfileId(), tester_custom);
+  // A store build's custom backend at the same URL is a profile of its own, on main, not the tester build's.
+  ASSERT_TRUE(static_cast<bool>(reloaded->SelectProfileForBackend(
+      pbr::CustomBackendId("https://custom.example.test", "", "", pbr::BuildKind::Store),
+      pbr::profile_network::kMain)));
+  EXPECT_NE(reloaded->ActiveProfileId(), reloaded->BackendPointers().at(tester_custom));
   EXPECT_EQ(reloaded->Profiles().size(), 5u);
 }
 
-// The other way round: a tester build on a device with the store build's prod profile makes its own and leaves prod's
-// manifest as it was.
+// The other way round: a tester build on a device with the store build's prod profile makes its own on its network and
+// leaves prod's manifest as it was; prod's profile is on main, which a tester build never opens.
 TEST_F(SharedRootFilesTest, ATesterBuildMakesItsOwnProfileBesideTheStoreBuilds) {
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));
-  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod")));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend("prod", pbr::profile_network::kMain)));
   const std::string prod_dir = registry->ActiveProfileDataDir();
   const std::string prod_manifest = ReadText((std::filesystem::path(prod_dir) / "manifest.json").string());
 
   constexpr pbr::CompiledOrigins kTester{.staging = "https://staging.example.test", .kind = pbr::BuildKind::Tester};
-  const std::string key = pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kTester); // a saved prod
+  const std::string key = pbr::BackendIdFor(pbr::BackendEnv::Prod, "", "", "", kTester); // a saved prod
   ASSERT_EQ(key, "staging");
-  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend(key)));
-  EXPECT_EQ(registry->ActiveProfileId(), "staging");
-  EXPECT_TRUE(
-      pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(registry->ActiveProfileDataDir()), pbr::BuildKind::Tester));
-  EXPECT_FALSE(pbr::ProfileBackendAllowed(pbr::ReadProfileBackend(prod_dir), pbr::BuildKind::Tester));
+  const std::string_view network = pbr::NetworkOfBackend(key);
+  ASSERT_TRUE(pbr::ProfileNetworkAllowed(network, pbr::BuildKind::Tester));
+  ASSERT_TRUE(static_cast<bool>(registry->SelectProfileForBackend(key, network)));
+  EXPECT_NE(registry->ActiveProfileDataDir(), prod_dir);
+  EXPECT_FALSE(pbr::ProfileNetworkAllowed(pbr::ReadProfileManifest(prod_dir).network, pbr::BuildKind::Tester));
   EXPECT_EQ(ReadText((std::filesystem::path(prod_dir) / "manifest.json").string()), prod_manifest) << "untouched";
 }
 

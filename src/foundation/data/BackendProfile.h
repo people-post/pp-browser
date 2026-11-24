@@ -13,44 +13,46 @@ namespace pbr {
 std::string NormalizeBackendUrl(const std::string& url);
 
 /**
- * A custom backend's profile key: `custom-<12 hex>` in a store build, `test-custom-<12 hex>` in a tester build (the same
- * FNV-1a 64 of the normalized `url`), so a tester build never opens a store user's custom profile.
- */
-std::string CustomProfileKey(const std::string& url, BuildKind kind);
-
-/**
  * A custom backend's id by profile-model PM010: `custom-<12 hex>` (`test-custom-<12 hex>` in a tester build) over the
  * normalized registration URL, the org relay's normalized origin and its relay id — and nothing else, so editing the
- * locker, client-compat, LLM, crash intake, directory or MCP address keeps the id. **Not used yet:** profile selection
- * keeps BackendProfileKey / CustomProfileKey (which hash the registration URL alone) until the profile-model P1a switch;
- * the two give different ids for the same backend.
+ * locker, client-compat, LLM, crash intake, directory or MCP address keeps the id. The prefix names the network: a
+ * tester build's never names a store build's profile (release-compatibility RC022). The id names the backend's folder
+ * under a profile's `backends/` (profile-model PM009).
  */
 std::string CustomBackendId(const std::string& registration_url, const std::string& org_relay_url,
                             const std::string& org_relay_id, BuildKind kind);
-/** `table.id` for a built-in table, CustomBackendId of a custom one. Not used for profile selection yet (see above). */
+/** `table.id` for a built-in table, CustomBackendId of a custom one. */
 std::string BackendTableId(const BackendTable& table, BuildKind kind);
 
 /**
- * The profile key of backend `env` in a build with `compiled` (`registration_url` names a custom one). `env` is first
- * resolved as the latch does (ResolveLatchedBackend), so a tester build never yields `prod`: `prod`, `staging`, `dev`,
- * CustomProfileKey.
+ * The id of backend `env` in a build with `compiled` (a custom one named by its registration URL and org relay). `env` is
+ * first resolved as the latch does (ResolveLatchedBackend), so a tester build never yields `prod`: `prod`, `staging`,
+ * `dev`, CustomBackendId.
  */
-std::string BackendProfileKeyFor(BackendEnv env, const std::string& registration_url, const CompiledOrigins& compiled);
+std::string BackendIdFor(BackendEnv env, const std::string& registration_url, const std::string& org_relay_url,
+                         const std::string& org_relay_id, const CompiledOrigins& compiled);
 
 /**
- * Whether a build of `kind` may open a profile whose manifest records `recorded_backend` (ReadProfileBackend; "" for
- * none): a store build any; a tester build none of a store build's — `prod`, `custom-…` — so the store app's data on
- * the same device is never opened or changed by it (release-compatibility RC022).
+ * The network a backend id's profiles are on (profile-model PM001): `prod` and a store build's `custom-…` on `main`,
+ * `staging`, `dev`, a tester build's `test-custom-…` on `test-custom`, `node` (pp-node) on `node`; empty for anything
+ * else.
  */
-bool ProfileBackendAllowed(std::string_view recorded_backend, BuildKind kind);
+std::string_view NetworkOfBackend(std::string_view backend_id);
 
 /**
- * Filesystem-safe key naming the backend this process runs against, also the profile id created for it:
- * BackendProfileKeyFor the running backend, or CustomProfileKey of the origin when PP_BROWSER_ORIGIN is set.
+ * Whether a build of `kind` may open a profile on `network`: a store build `main`, `staging` and `dev`; a tester build
+ * `staging`, `dev` and `test-custom`, never `main`, so the store app's data on the same device is never opened or
+ * changed by it (release-compatibility RC022, profile-model PM001). `node` is pp-node's alone.
+ */
+bool ProfileNetworkAllowed(std::string_view network, BuildKind kind);
+
+/**
+ * The id of the backend this process runs against, the folder of its home profile's `backends/` (profile-model PM009):
+ * BackendIdFor the running backend, or the PP_BROWSER_ORIGIN table's id when that is set.
  */
 std::string BackendProfileKey(const AppConfig& config);
 
-/** The key of the backend a saved config selects: differs from the running one once a switch awaits restart. */
+/** The id of the backend a saved config selects: differs from the running one once a switch awaits restart. */
 std::string SavedBackendKey(const AppConfig& config);
 
 } // namespace pbr

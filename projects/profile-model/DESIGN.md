@@ -128,8 +128,9 @@ so the two cannot disagree. At startup the registry reads `profiles/*/manifest.j
 1. Load `config.json`; resolve the active backend (or this build's fallback) and its network.
 2. Refuse a network this build may not open (the guard; a `--profile` override is checked the same way).
 3. Read the manifests. Take the backend's pointer from `profiles.json`; if it is missing, or names a profile that is
-   gone or on another network, take the profile on the backend's network that holds `backends/{backend_id}/`; if there
-   is none, make one (with that folder).
+   gone or on another network, take an unlabelled profile on the backend's network that holds `backends/{backend_id}/`
+   (a labelled one is `--profile`'s); if there is none, make one (with that folder). A pointer at an unreadable or
+   newer profile is an error and is not moved.
 4. Open `backends/{backend_id}/` in it.
 
 A folder without a readable manifest, or with a newer one, is logged and left alone. Nothing is ever claimed or
@@ -137,9 +138,11 @@ renamed.
 
 ## Reset my data
 
-Make a new profile on the same network (the first-start path), point the network at it, then delete the old folder
-with its keychain items. The remote steps before it stay as today (unbind push, revoke the registrations of an only
-device).
+Delete the old folder with its keychain items, then make a new profile (a new id) for the same backend and network
+through the first-start path, point the backend at it, and re-open secrets, hub and preferences on it in the running
+app (as built in P1, Hongwei 2026-11-24; a restart-based reset may come later). Stopped between the two, the next start
+finds the pointer at a folder that is gone and makes the new profile then. The remote steps before it stay as today
+(unbind push, revoke the registrations of an only device).
 
 ## Backend switch
 

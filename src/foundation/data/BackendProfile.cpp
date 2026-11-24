@@ -1,5 +1,6 @@
 #include "foundation/data/BackendProfile.h"
 
+#include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/DeploymentProfile.h"
 
 #include <cctype>
@@ -58,10 +59,6 @@ std::string TrimmedId(const std::string& id) {
 
 } // namespace
 
-std::string CustomProfileKey(const std::string& url, const BuildKind kind) {
-  return HashedKey(CustomPrefix(kind), NormalizeBackendUrl(url));
-}
-
 std::string CustomBackendId(const std::string& registration_url, const std::string& org_relay_url,
                             const std::string& org_relay_id, const BuildKind kind) {
   // One field per line: a URL holds no newline, so two different triples never share a text.
@@ -76,26 +73,47 @@ std::string BackendTableId(const BackendTable& table, const BuildKind kind) {
   return CustomBackendId(table.registration_url, table.org_relay_url, table.org_relay_id, kind);
 }
 
-std::string BackendProfileKeyFor(const BackendEnv env, const std::string& registration_url,
-                                 const CompiledOrigins& compiled) {
+std::string BackendIdFor(const BackendEnv env, const std::string& registration_url, const std::string& org_relay_url,
+                         const std::string& org_relay_id, const CompiledOrigins& compiled) {
   switch (ResolveLatchedBackend(env, compiled)) {
     case BackendEnv::Staging:
       return "staging"; // a new environment (release-compatibility RC009 as amended): no profile made for qa is reused
     case BackendEnv::Dev:
       return "dev";
     case BackendEnv::Custom:
-      return CustomProfileKey(registration_url, compiled.kind);
+      return CustomBackendId(registration_url, org_relay_url, org_relay_id, compiled.kind);
     case BackendEnv::Prod:
       break;
   }
   return "prod"; // a store build's only: a tester build never resolves to Prod
 }
 
-bool ProfileBackendAllowed(const std::string_view recorded_backend, const BuildKind kind) {
-  if (kind == BuildKind::Store) {
+std::string_view NetworkOfBackend(const std::string_view backend_id) {
+  if (backend_id == "prod" || (backend_id.substr(0, kStoreCustomPrefix.size()) == kStoreCustomPrefix &&
+                               backend_id.size() > kStoreCustomPrefix.size())) {
+    return profile_network::kMain;
+  }
+  if (backend_id == "staging") {
+    return profile_network::kStaging;
+  }
+  if (backend_id == "dev") {
+    return profile_network::kDev;
+  }
+  if (backend_id.substr(0, kTesterCustomPrefix.size()) == kTesterCustomPrefix &&
+      backend_id.size() > kTesterCustomPrefix.size()) {
+    return profile_network::kTestCustom;
+  }
+  if (backend_id == profile_network::kNode) {
+    return profile_network::kNode;
+  }
+  return {};
+}
+
+bool ProfileNetworkAllowed(const std::string_view network, const BuildKind kind) {
+  if (network == profile_network::kStaging || network == profile_network::kDev) {
     return true;
   }
-  return recorded_backend != "prod" && recorded_backend.substr(0, kStoreCustomPrefix.size()) != kStoreCustomPrefix;
+  return kind == BuildKind::Store ? network == profile_network::kMain : network == profile_network::kTestCustom;
 }
 
 std::string NormalizeBackendUrl(const std::string& url) {
@@ -117,42 +135,25 @@ std::string NormalizeBackendUrl(const std::string& url) {
   return out;
 }
 
-namespace {
-
-/**
- * The registration URL a custom backend's key is made of. A file with none used to be filled in from the defaults — the
- * fallback environment's relay (prod's in a store build) — before the key was made, so such an install's profile folder is
- * `custom-<hash of that URL>`; the tables no longer fill it in, and the key must not move with them. Kept for the KEY ONLY,
- * until profile-model P1a replaces the key (this PR must not change which folder any install opens).
- */
-std::string KeyRegistrationUrl(const std::string& registration_url, const CompiledOrigins& compiled) {
-  if (!registration_url.empty()) {
-    return registration_url;
-  }
-  return BriefRelayBaseUrlFor(CompiledOriginFor(FallbackBackendIn(compiled), compiled));
-}
-
-} // namespace
-
 std::string BackendProfileKey(const AppConfig& config) {
   const CompiledOrigins compiled = BuildCompiledOrigins();
   if (OriginEnvOverrideActive()) {
-    return CustomProfileKey(BriefOrigin(), compiled.kind);
+    return BackendTableId(ActiveBackendTable(), compiled.kind);
   }
-  return BackendProfileKeyFor(ActiveBackend(), KeyRegistrationUrl(config.registration.base_url, compiled), compiled);
+  return BackendIdFor(ActiveBackend(), config.registration.base_url, config.relay.base_url, config.relay.relay_id,
+                      compiled);
 }
 
 std::string SavedBackendKey(const AppConfig& config) {
-  const CompiledOrigins compiled = BuildCompiledOrigins();
   if (OriginEnvOverrideActive()) {
-    return CustomProfileKey(BriefOrigin(), compiled.kind);
+    return BackendProfileKey(config);
   }
-  return BackendProfileKeyFor(
-      ParseBackendEnv(config.backend.env),
-      KeyRegistrationUrl(
-          config.backend.has_saved_urls ? config.backend.saved_registration.base_url : config.registration.base_url,
-          compiled),
-      compiled);
+  // Under a built-in backend the loaded URLs are its own; the saved copies are the custom backend's.
+  const bool saved = config.backend.has_saved_urls;
+  const ServiceEndpointConfig& registration = saved ? config.backend.saved_registration : config.registration;
+  const ServiceEndpointConfig& relay = saved ? config.backend.saved_relay : config.relay;
+  return BackendIdFor(ParseBackendEnv(config.backend.env), registration.base_url, relay.base_url, relay.relay_id,
+                      BuildCompiledOrigins());
 }
 
 } // namespace pbr

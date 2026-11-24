@@ -74,7 +74,7 @@ void PrintUsage(const char* argv0) {
             << "                        or PP_NODE_LEDGER_ROLE)\n"
             << "  --ledger-dir <path>   Its work directory: config.json, keys, data (or PP_NODE_LEDGER_DIR;\n"
             << "                        default <profile data dir>/ledger)\n"
-            << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
+            << "  --profile <label>     Profile label (or PP_NODE_PROFILE)\n"
             << "  --log-level <level>   debug|info|warning|error (or PP_NODE_LOG_LEVEL; default info)\n"
             << "  --debug               Verbose logging (--log-level debug)\n"
             << "  --help                Show this help\n"

@@ -37,7 +37,7 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/ProfileManifest.h"
+#include "foundation/data/ProfileRegistry.h"
 #include "foundation/platform/OsSecureBlobStore.h"
 #include "foundation/platform/os/OsProtectedData.h"
 #include "foundation/platform/os/OsDebugFlag.h"
@@ -583,19 +583,26 @@ Roe<void> Application::ResetActiveProfile() {
     return AppError::Storage(Err::Storage::Failed, "Failed to delete profile data: " + ec.message());
   }
 
-  AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = EnsureProfileManifest(profile_dir); !manifest) {
-    return manifest.error();
+  // A new profile (a new id) takes the old one's place for this backend (profile-model PM003): nothing rewrites a
+  // manifest, and nothing is left for another build to claim. Stopping between the removal above and this leaves the
+  // backend's pointer at a folder that is gone: the next start makes the new profile then.
+  ProfileRegistry& registry = store_.Mutable().profile_registry;
+  if (auto replaced = registry.ReplaceActiveProfile(); !replaced) {
+    return AppError::Storage(Err::Storage::Failed, "Failed to make a new profile: " + replaced.error().message);
   }
+  const std::string new_profile_dir = registry.ActiveProfileDataDir();
+  store_.Mutable().profile_data_dir = new_profile_dir;
+  log().info << "New profile " << registry.ActiveProfileId() << " for backend " << registry.ActiveBackendId();
+  AppPaths::EnsureDirs(new_profile_dir);
 
-  if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
+  if (auto secrets = secrets_->Initialize(new_profile_dir); !secrets) {
     return secrets.error();
   }
   AttachGrace();
   AttachBiometric();
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
-  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, new_profile_dir), new_profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();

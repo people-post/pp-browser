@@ -5,9 +5,7 @@
 P0: inventory written ([INVENTORY.md](INVENTORY.md)); PM001–PM012 accepted by Hongwei (2026-11-23). Release 1 builds the
 whole layout; a profile has exactly one home backend (PM009, PM012). In [DESIGN § Open questions](DESIGN.md#open-questions), 2–3 are
 defaults and 4–6 are closed by PM012 (one home backend per profile, permanently); P0 is done.
-Nothing is built: the app still keeps one profile per backend
-([DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles)), and #733 stays open
-until P1. The issues found in the inventory are #738–#751; the phases are tracked in #752–#757.
+The issues found in the inventory are #738–#751; the phases are tracked in #752–#757.
 
 **P2a (backend tables) is built** (PR D, `kenneth/pm-backend-tables`; nothing else of P2): the backend type
 (`BackendTable`), the built-in tables compiled from `CompiledOrigins`, a custom table read from `config.json` with optional
@@ -19,3 +17,11 @@ Integrations field editing a per-profile setting) is P2b. Not done in P2a: `serv
 the page binding of the service list (P2b); no consumer yet reads `mesh_nodes` or `seed_relays`; the `/api/relay` mount in
 `HttpBlobClient` / `RelayFileUrl` / `RelayOrigins`, `HttpClient`'s `kUiBlockRoutes` and `CrashReportEnvelope` do not take
 addresses from the table (they parse relay-list addresses, labels, or a caller's URL).
+
+**P1 (networks and opaque profiles) is built** (branch `hongwei/profile-model-p1`, #752; merges after #758 and #760):
+opaque profile ids, a manifest of schema 2 recording the network, `profiles.json` schema 2 with one pointer per backend,
+each profile made with its one `backends/{backend_id}/` folder, the network guard, Reset my data making a new profile
+in-process, `--profile` as a label, the app removing old-format profiles with their keychain items, pp-node on its
+own data root and network with its old profile converted in place; `machine.json` lost `active_profile_id`. Contract:
+[DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles). A custom backend's id is
+PM010's (`CustomBackendId`), so its folder under `backends/` follows the registration URL and the org relay.

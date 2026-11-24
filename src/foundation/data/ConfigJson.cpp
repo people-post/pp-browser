@@ -867,7 +867,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
 Object MachinePrefsToObject(const MachinePreferences& prefs) {
   Object object;
   object.set("schema_version", static_cast<int64_t>(prefs.schema_version));
-  object.set("active_profile_id", prefs.active_profile_id);
   object.set("window", WindowPrefsToObject(prefs.window));
   object.set("safe_area", SafeAreaToObject(prefs.safe_area));
   object.set("display", DisplayPrefsToObject(prefs.display));
@@ -884,9 +883,6 @@ Object MachinePrefsToObject(const MachinePreferences& prefs) {
 void MachinePrefsFromObject(const Object& object, MachinePreferences& prefs) {
   if (auto schema_version = ReadI64(object, "schema_version")) {
     prefs.schema_version = static_cast<int>(*schema_version);
-  }
-  if (auto active_profile_id = object.getString("active_profile_id")) {
-    prefs.active_profile_id = *active_profile_id;
   }
   if (const Object* window = object.getObject("window")) {
     WindowPrefsFromObject(*window, prefs.window);

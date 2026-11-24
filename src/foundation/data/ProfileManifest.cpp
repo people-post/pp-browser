@@ -3,7 +3,6 @@
 #include "common/AtomicFileWrite.h"
 #include "common/BoundedRead.h"
 #include "common/PlatformLimits.h"
-#include "common/SchemaVersion.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -15,7 +14,11 @@ namespace pbr {
 
 namespace {
 
-std::optional<Object> ReadManifest(const std::filesystem::path& path) {
+std::filesystem::path ManifestPath(const std::string& profile_data_dir) {
+  return std::filesystem::path(profile_data_dir) / "manifest.json";
+}
+
+std::optional<Object> ReadManifestObject(const std::filesystem::path& path) {
   std::ifstream in(path);
   if (!in) {
     return std::nullopt;
@@ -27,85 +30,72 @@ std::optional<Object> ReadManifest(const std::filesystem::path& path) {
   return TryParseObject(*text);
 }
 
-} // namespace
-
-Roe<void> EnsureProfileManifest(const std::string& profile_data_dir, const std::string& backend_key) {
-  const std::filesystem::path profile_dir(profile_data_dir);
-  const std::filesystem::path manifest_path = profile_dir / "manifest.json";
-  std::error_code ec;
-  std::filesystem::create_directories(profile_dir, ec);
-  if (ec) {
-    return Roe<void>::error(Error("Failed to create profile data directory"));
-  }
-
-  if (!std::filesystem::exists(manifest_path, ec)) {
-    if (ec) {
-      return Roe<void>::error(Error("Failed to check profile manifest"));
-    }
-    Object root;
-    root.set("schema_version", static_cast<int64_t>(SchemaVersion::kCurrentSchemaVersion));
-    if (!backend_key.empty()) {
-      root.set("backend", backend_key);
-    }
-    if (auto written = AtomicFileWrite::Write(manifest_path.string(), DumpJson(root, 2)); !written) {
-      return Roe<void>::error(Error(written.error().message));
-    }
-    return {};
-  }
-
-  std::ifstream in(manifest_path);
-  if (!in) {
-    return Roe<void>::error(Error("Failed to open profile manifest"));
-  }
-  auto text = ReadBounded(in, kMaxProfileJsonFileBytes);
-  if (!text) {
-    return Roe<void>::error(Error("Failed to read profile manifest: " + text.error().message));
-  }
-  auto root = TryParseObject(*text);
-  if (!root) {
-    return Roe<void>::error(Error("Failed to parse profile manifest"));
-  }
-
-  if (auto validated = SchemaVersion::Validate(*root, SchemaVersion::kCurrentSchemaVersion, "manifest.json");
-      !validated) {
-    return Roe<void>::error(Error(validated.error().message));
-  }
-
-  if (auto migrated =
-          SchemaVersion::RunForwardMigrators(manifest_path.string(), *root, SchemaVersion::kCurrentSchemaVersion);
-      !migrated) {
-    return Roe<void>::error(Error(migrated.error().message));
-  }
-
-  return {};
-}
-
-std::string ReadProfileBackend(const std::string& profile_data_dir) {
-  const auto root = ReadManifest(std::filesystem::path(profile_data_dir) / "manifest.json");
-  if (!root) {
-    return {};
-  }
-  return root->getString("backend").value_or(std::string());
-}
-
-Roe<void> AdoptProfileBackend(const std::string& profile_data_dir, const std::string& backend_key) {
-  const std::filesystem::path path = std::filesystem::path(profile_data_dir) / "manifest.json";
-  auto root = ReadManifest(path);
-  if (!root) {
-    return Roe<void>::error(Error("Failed to read profile manifest"));
-  }
-  if (auto validated = SchemaVersion::Validate(*root, SchemaVersion::kCurrentSchemaVersion, "manifest.json");
-      !validated) {
-    return Roe<void>::error(Error(validated.error().message)); // a newer manifest is never written here
-  }
-  if (root->getString("backend").has_value()) {
-    return {};
-  }
-  root->set("backend", backend_key);
-  if (auto written = AtomicFileWrite::Write(path.string(), DumpJson(*root, 2)); !written) {
+Roe<void> WriteManifest(const std::filesystem::path& path, std::string_view network) {
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(kProfileManifestSchemaVersion));
+  root.set("network", std::string(network));
+  if (auto written = AtomicFileWrite::Write(path.string(), DumpJson(root, 2)); !written) {
     return Roe<void>::error(Error(written.error().message));
   }
   return {};
+}
+
+} // namespace
+
+bool IsKnownProfileNetwork(const std::string_view network) {
+  return network == profile_network::kMain || network == profile_network::kStaging ||
+         network == profile_network::kDev || network == profile_network::kTestCustom ||
+         network == profile_network::kNode;
+}
+
+ProfileManifestRead ReadProfileManifest(const std::string& profile_data_dir) {
+  const std::filesystem::path path = ManifestPath(profile_data_dir);
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) && !ec) {
+    return {ProfileManifestState::kMissing, {}};
+  }
+  const auto root = ReadManifestObject(path);
+  if (!root) {
+    return {ProfileManifestState::kUnreadable, {}};
+  }
+  const auto version = root->getNonNegInt("schema_version");
+  if (!version) {
+    return {ProfileManifestState::kUnreadable, {}};
+  }
+  if (*version > static_cast<uint64_t>(kProfileManifestSchemaVersion)) {
+    return {ProfileManifestState::kNewer, {}};
+  }
+  if (*version < static_cast<uint64_t>(kProfileManifestSchemaVersion)) {
+    return {ProfileManifestState::kOldFormat, {}};
+  }
+  std::string network = root->getString("network").value_or(std::string());
+  if (!IsKnownProfileNetwork(network)) {
+    return {ProfileManifestState::kUnreadable, {}};
+  }
+  return {ProfileManifestState::kCurrent, std::move(network)};
+}
+
+Roe<void> WriteNewProfileManifest(const std::string& profile_data_dir, const std::string_view network) {
+  if (!IsKnownProfileNetwork(network)) {
+    return Roe<void>::error(Error("unknown profile network: " + std::string(network)));
+  }
+  const std::filesystem::path path = ManifestPath(profile_data_dir);
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  if (ec) {
+    return Roe<void>::error(Error("Failed to create profile data directory"));
+  }
+  if (std::filesystem::exists(path, ec) || ec) {
+    return Roe<void>::error(Error("profile manifest already exists: " + path.string()));
+  }
+  return WriteManifest(path, network);
+}
+
+Roe<void> ConvertOldProfileManifestToNode(const std::string& profile_data_dir) {
+  if (ReadProfileManifest(profile_data_dir).state != ProfileManifestState::kOldFormat) {
+    return Roe<void>::error(Error("not an old-format profile manifest: " + profile_data_dir));
+  }
+  return WriteManifest(ManifestPath(profile_data_dir), profile_network::kNode);
 }
 
 } // namespace pbr

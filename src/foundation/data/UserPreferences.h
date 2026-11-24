@@ -30,7 +30,6 @@ struct MachinePreferences {
   static constexpr int kSchemaVersion = 1;
 
   int schema_version = kSchemaVersion;
-  std::string active_profile_id = "default";
   WindowPrefs window;
   SafeAreaInsets safe_area;
   DisplayPrefs display;

@@ -363,27 +363,26 @@ TEST(BackendIdTest, ACustomBackendIdChangesWithTheRegistrationUrlOrTheOrgRelay) 
   const std::string tester = pbr::CustomBackendId(
       "https://reg.example.test/api/relay", "https://org.example.test/api/relay", "relay:org", pbr::BuildKind::Tester);
   EXPECT_EQ(tester.rfind("test-custom-", 0), 0U);
-  EXPECT_NE(tester, id) << "the prefix names the network, as CustomProfileKey's does";
+  EXPECT_NE(tester, id) << "the prefix names the network";
   // Built-in tables keep their own ids.
   EXPECT_EQ(pbr::BackendTableId(pbr::BuiltInBackendTable(pbr::BackendEnv::Staging, kCompiled), pbr::BuildKind::Store),
             "staging");
 }
 
-// Not enabled: the profile folder an install opens is still named by BackendProfileKey / CustomProfileKey (the
-// registration URL alone). The PM010 id is another text for the same backend, so using it would move every custom install.
-TEST_F(BackendTableConfigTest, TheProfileSelectionKeyIsStillTheRegistrationUrlHashNotThePm010Id) {
+// The id profile selection uses (profile-model P1): a custom backend's is PM010's, so an edit of a service outside it
+// keeps the backend's home profile.
+TEST_F(BackendTableConfigTest, TheProfileSelectionKeyIsThePm010Id) {
   const pbr::AppConfig config = Load("selection_key", CustomFile());
   const std::string key = pbr::BackendProfileKey(config);
-  EXPECT_EQ(key, pbr::CustomProfileKey("https://custom.example.test/api/relay", pbr::ThisBuildKind()));
-  const std::string pm010 = pbr::BackendTableId(pbr::ActiveBackendTable(), pbr::ThisBuildKind());
-  EXPECT_EQ(pm010, pbr::CustomBackendId("https://custom.example.test/api/relay",
-                                        "https://custom.example.test/api/relay", "relay:custom", pbr::ThisBuildKind()));
-  EXPECT_NE(key, pm010) << "different inputs, different text: the selection must not have moved to it";
-  // The same config, edited in a service that is not part of either id, keeps the selection key.
+  EXPECT_EQ(key, pbr::BackendTableId(pbr::ActiveBackendTable(), pbr::ThisBuildKind()));
+  EXPECT_EQ(key, pbr::CustomBackendId("https://custom.example.test/api/relay", "https://custom.example.test/api/relay",
+                                      "relay:custom", pbr::ThisBuildKind()));
+  EXPECT_EQ(pbr::SavedBackendKey(config), key);
+  // The same config, edited in a service that is not part of the id, keeps it.
   pbr::ResetActiveBackendForTest();
   const pbr::AppConfig edited = Load("selection_key_edited", CustomFile("crash_intake"));
   EXPECT_EQ(pbr::BackendProfileKey(edited), key);
-  // Built-in backends keep their plain keys.
+  // Built-in backends keep their plain ids.
   pbr::ResetActiveBackendForTest();
   const pbr::AppConfig prod = Load("selection_prod", R"({ "config_version": 1, "backend": { "env": "prod" } })");
   EXPECT_EQ(pbr::BackendProfileKey(prod), "prod");
@@ -521,20 +520,21 @@ TEST(BackendTableMcpSeedTest, UnknownKeysInThePromotedMcpObjectAreIgnored) {
   EXPECT_FALSE(mcp.user_set);
 }
 
-// ---- Profile folders do not move (this PR must not change which profile any install opens) ----------------------------
-// A custom backend whose file names no registration URL used to get the fallback environment's relay filled in before the
-// key was made: `custom-<hash of prod's /api/relay>` in a store build. The recorded value of the old behaviour.
-TEST_F(BackendTableConfigTest, ACustomInstallWithNoRegistrationUrlKeepsTheProfileFolderItOpenedBefore) {
+// ---- A custom backend with nothing named --------------------------------------------------------------------------
+// No registration URL is filled in from another backend any more (PM002): the id is PM010's over what the file names.
+TEST_F(BackendTableConfigTest, ACustomInstallWithNoRegistrationUrlIsNamedByWhatItsFileNames) {
   const pbr::AppConfig config =
       Load("key_no_registration", R"({ "config_version": 1, "backend": { "env": "custom" } })");
   EXPECT_TRUE(config.registration.base_url.empty());
-  const std::string before = pbr::CustomProfileKey("https://prod.example.test/api/relay", pbr::BuildKind::Store);
-  EXPECT_EQ(pbr::BackendProfileKey(config), before);
-  EXPECT_EQ(pbr::SavedBackendKey(config), before);
-  EXPECT_NE(before, pbr::CustomProfileKey("", pbr::BuildKind::Store)) << "not the empty URL's hash";
+  const std::string key = pbr::CustomBackendId("", config.relay.base_url, config.relay.relay_id, pbr::ThisBuildKind());
+  EXPECT_EQ(pbr::BackendProfileKey(config), key);
+  EXPECT_EQ(pbr::SavedBackendKey(config), key);
+  EXPECT_NE(key, pbr::CustomBackendId("https://prod.example.test/api/relay", "https://prod.example.test/api/relay", "",
+                                      pbr::ThisBuildKind()))
+      << "not prod's relay";
 }
 
-TEST(BackendProfileKeyTest, ATesterBuildsCustomInstallWithNoRegistrationUrlUsesTheTesterEnvironmentsRelay) {
+TEST(BackendProfileKeyTest, ATesterBuildsCustomInstallWithNoRegistrationUrlIsATesterCustomBackend) {
   const ScopedEnv no_origin("PP_BROWSER_ORIGIN", nullptr);
   constexpr pbr::CompiledOrigins tester{
       .staging = "https://staging.example.test", .staging_relay_id = "relay:staging", .kind = pbr::BuildKind::Tester};
@@ -547,6 +547,11 @@ TEST(BackendProfileKeyTest, ATesterBuildsCustomInstallWithNoRegistrationUrlUsesT
   auto loaded = pbr::Config::LoadFromFile(path, false);
   std::filesystem::remove(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
-  EXPECT_EQ(pbr::BackendProfileKey(*loaded),
-            pbr::CustomProfileKey("https://staging.example.test/api/relay", pbr::BuildKind::Tester));
+  const std::string key = pbr::BackendProfileKey(*loaded);
+  EXPECT_EQ(key, pbr::CustomBackendId("", loaded->relay.base_url, loaded->relay.relay_id, pbr::BuildKind::Tester));
+  EXPECT_EQ(key.rfind("test-custom-", 0), 0u);
+  EXPECT_NE(key,
+            pbr::CustomBackendId("https://staging.example.test/api/relay", "https://staging.example.test/api/relay",
+                                 "relay:staging", pbr::BuildKind::Tester))
+      << "not the tester environment's relay";
 }
