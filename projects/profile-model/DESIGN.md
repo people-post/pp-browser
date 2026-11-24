@@ -1,6 +1,6 @@
 # Profile model: design
 
-**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM010](DECISIONS.md#pm010--a-custom-backend-is-identified-by-its-registration-url-and-its-org-relay)); nothing built. **Release 1 builds this whole layout with one backend per profile** (PM009); a profile using several backends of its network comes later, without a layout change. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
+**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM011](DECISIONS.md#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it)); nothing built. **Release 1 builds this whole layout with one backend per profile** (PM009); a profile using several backends of its network comes later, without a layout change. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
 
 ## Why
 
@@ -26,7 +26,7 @@ Four layers, each belonging to exactly one above it:
 | **Network** | `main`, `staging`, `dev`, `test-custom`, `node`: worlds whose accounts never meet (PM001) | The profile's manifest |
 | **Account** | The user's identity: account ML-DSA and KEM keys, Account ID, recovery seed, own account card, initiation floor, relay list. Spans the account's devices | `identity.enc` (account part), `own_card.enc`, `our_relays.json` (list) |
 | **Device profile** | This install in that account: device key, the vault's wrap of the account's DEK, chats, contacts, preferences, caches | `profiles/{id}/` |
-| **Backend and relay state** | What this device knows of one backend's services, or one relay | `profiles/{id}/backends/{backend_id}/` (PM004); per-relay records keyed by relay |
+| **Backend and relay state** | What this device knows of one backend's services, or one relay | `profiles/{id}/backends/{backend_id}/` (PM004); per-relay records keyed by relay; the profile's own service settings in `services.json` (PM011) |
 
 The **tester-app guard** is at the top: a tester app never opens a `main` profile, whatever it is asked to open
 (`--profile` included).
@@ -46,23 +46,26 @@ which profiles may use it.
 
 ## Backends
 
+A backend is the operator the account is registered with: only the services that need that registration, or are the
+operator's own ([PM011](DECISIONS.md#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it)).
+
 ```
 backend
   id         prod | staging | dev | custom-<hash> | test-custom-<hash>   (PM010)
   network    main | staging | dev | test-custom
   services
-    org_relay        url, relay_id
-    directory        url (and failover providers)
-    registration     url, relay_id
+    org_relay        url, relay_id      ┐ identity (PM010)
+    registration     url, relay_id      ┘
     account_locker   url
-    client_compat    url
+    llm_token        url                  Brief LLM: the token and the gateway that takes it
     llm_gateway      url
-    llm_token        url
-    promoted_mcp     url
+    client_compat    url                  support, relay certificate, switches
     crash_intake     url
-    mesh_nodes       url
-    support          (from client-compat today)
-  seed_relays        the extra relays a new profile's list starts with
+  seeds                                   read only when a profile is made
+    relays           the extra relays the profile's list starts with
+    directory        the directory providers
+    mesh_nodes       the mesh node list source
+    promoted_mcp     the feed tools
 ```
 
 - Built-in tables come from the build (today's `CompiledOrigins`, one per environment, filled in from the one origin).
@@ -70,6 +73,10 @@ backend
   needs it is off (no fallback to a built-in backend's URL).
 - The active backend is one id in `config.json`; the network comes from the backend. A build that cannot run the saved
   backend runs its fallback and keeps the saved choice (as today, RC022).
+
+**Profile settings, not backend services:** the directory providers, the mesh node list source and the promoted MCP
+live in the profile's `services.json`, seeded from the backend and then the user's, as the relay list is. A user's own
+LLM endpoint is a device preference. No service is ever taken from another backend.
 
 ## On disk
 
@@ -85,13 +92,13 @@ backend
       own_card.enc, vault.bin, grace.bin, biometric.bin, secrets.enc
       our_relays.json          # the account's relay list + per-relay registration records
       relay_pins.json, relay_inbox_cursor.json   # per relay; the cursor's "preferred" slot goes
+      services.json            # directory providers, mesh node list source, promoted MCP: seeded from the backend (PM011)
+      mesh_directory_nodes.json, mesh_node_reputation.json, home_brief.json   # follow services.json; keyed by origin
       contacts.json, preferences.json, threads/, cas/, cache/, …   # device data, unchanged
       backends/
         {backend_id}/          # release 1: exactly one per profile (PM009)
           registration.enc     # the org registration slot + Brief LLM token, sealed, AAD names profile and backend
           client_compat.json
-          mesh_directory_nodes.json, mesh_node_reputation.json
-          home_brief.json
           account_locker.json
 ```
 

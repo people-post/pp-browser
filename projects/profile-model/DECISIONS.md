@@ -28,7 +28,9 @@ guard reads the profile's network, not its backend key.
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23: "a group of services provided by remote servers, each service can be on a
-different server with different url"). Not built.
+different server with different url"). Not built. Narrowed by
+[PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the table
+holds only the operator's services; directory, mesh node list and promoted MCP are profile settings it seeds.
 **Decision:**
 - A **backend** has an id, a network (PM001) and a table of services, each with its own URL and, where the service is
   a relay, the relay id it must prove: org relay, directory, registration, account locker, client-compat, LLM gateway,
@@ -71,7 +73,9 @@ the key (fixes one route, leaves adoption and the name clash).
 
 **Date:** 2026-11-23
 **Status:** Accepted (Hongwei, 2026-11-23). Not built. Built before release 1, with one backend per profile
-([PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)).
+([PM009](#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)). Narrowed by
+[PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the mesh
+node list, its reputation and the Home feed follow profile settings and stay at the profile's top level.
 **Decision:**
 - What the device knows about one backend's services goes in `profiles/{id}/backends/{backend_id}/`: the org
   registration slot and the Brief LLM token (moved out of `identity.enc`, sealed under the DEK with the backend id in
@@ -104,7 +108,9 @@ keep pushing to a device that has left (INVENTORY § E 8).
 ## PM006 — Machine-wide config holds only machine-wide settings
 
 **Date:** 2026-11-23
-**Status:** Accepted (Hongwei, 2026-11-23). Not built.
+**Status:** Accepted (Hongwei, 2026-11-23). Not built. Amended by
+[PM011](#pm011--a-backend-holds-only-the-operators-services-the-rest-are-profile-settings-seeded-from-it): the
+promoted-MCP URL and `directory.providers` are profile settings.
 **Decision:**
 - `relay.extra_base_urls` belongs to the backend (it seeds a new profile's relay list from that backend's table).
 - `initiation_floor` belongs to the account (it is already a field of the account card).
@@ -175,8 +181,33 @@ layout are expected to be the final version upfront"). Not built. Narrows PM005 
   sealed files.
 - Changing the registration URL or the org relay is a backend switch: a confirm, push unbound, and that backend's
   profile on the next start.
-- Changing any other service of the table (directory, LLM, MCP, crash intake, …) keeps the backend and its profile and
-  applies in place.
+- Changing any other service of the table (account locker, client-compat, LLM, crash intake) keeps the backend and its
+  profile and applies in place.
 **Rationale:** The account lives at the registration URL and the org relay: its registration, its token and the relay
 it seeds the list with. The other services can move without touching the account. Today an edit of the registration
 URL makes a new profile on the next start without saying so (#745).
+
+## PM011 — A backend holds only the operator's services; the rest are profile settings seeded from it
+
+**Date:** 2026-11-23
+**Status:** Accepted (Hongwei, 2026-11-23: "shrink backend definitions … so that it only holds services that are no
+longer split"). Not built. Narrows PM002, PM004 and PM006.
+**Decision:**
+- A backend's services are only those that need the account's registration there, or are the operator's own:
+  registration and org relay (its identity, PM010), account locker, the Brief LLM token and the gateway that takes it,
+  client-compat (support, relay certificate, switches), crash intake.
+- The directory providers, the mesh node list source and the promoted MCP are **profile settings** in
+  `profiles/{id}/services.json`: seeded from the backend's defaults when the profile is made, the user's after that —
+  as the relay list is (`our_relays.json`, seeded from the org relay and the seed relays).
+- A user's own LLM endpoint stays a device preference.
+- So no service is ever taken from another backend: there is nothing to compose. A backend's table also carries the
+  seeds (relays, directory providers, mesh node list, promoted MCP), which only a new profile reads.
+- State that follows a profile setting stays at the profile's top level, keyed by the service's origin where it caches
+  an answer: `mesh_directory_nodes.json`, `mesh_node_reputation.json`, `home_brief.json`.
+**Rationale:**
+- The services an account does not depend on can be anyone's: cards verify against the Account ID, the node list and
+  the feed tools are public. Making them the user's own settings removes the need to mix backends, which PM002 would
+  otherwise have needed.
+- `config.json` (shared by every build) and the profile's files freeze at release 1, so the split is made now.
+**Alternatives rejected:** custom tables that take a service `from` another backend of the same network (more rules —
+same network only, custom only, explicit — for what profile settings give without them).

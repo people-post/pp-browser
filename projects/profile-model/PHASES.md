@@ -6,7 +6,7 @@ a profile of the old layout is not read.
 ## P0 — Design
 
 - [x] Inventory of what is on disk and every service ([INVENTORY.md](INVENTORY.md)).
-- [x] Decisions PM001–PM010 accepted; open questions 2–3 are defaults, 4–6 wait for several backends per profile
+- [x] Decisions PM001–PM011 accepted; open questions 2–3 are defaults, 4–6 wait for several backends per profile
       ([DESIGN § Open questions](DESIGN.md#open-questions)).
 
 ## P1 — Networks and opaque profiles (PM001, PM003, PM007, PM008, PM009)
@@ -24,11 +24,14 @@ Tracked in [#752](https://github.com/people-post/pp-browser/issues/752).
       folder without a manifest.
 - [ ] Closes #733 and #738.
 
-## P2 — Backends as service tables (PM002, PM010)
+## P2 — Backends as service tables (PM002, PM010, PM011)
 
 Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 
-- [ ] A backend type: id, network, one URL (and relay id where it applies) per service.
+- [ ] A backend type: id, network, one URL (and relay id where it applies) per operator service, and the seeds
+      (PM011).
+- [ ] `profiles/{id}/services.json`: directory providers, mesh node list source, promoted MCP, seeded from the
+      backend when the profile is made; `directory.providers` and `promoted_mcp` leave `config.json`.
 - [ ] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL.
 - [ ] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list).
 - [ ] The Network page edits a custom backend's whole table.
@@ -38,7 +41,8 @@ Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 Tracked in [#754](https://github.com/people-post/pp-browser/issues/754).
 
 - [ ] `backends/{backend_id}/`: the registration slot and Brief LLM token out of `identity.enc` into
-      `registration.enc`; client-compat, mesh node list and reputation, Home feed, locker state moved.
+      `registration.enc`; client-compat and locker state moved. The mesh node list, its reputation and the Home feed
+      stay at the profile's top level, keyed by origin (PM011).
 - [ ] The inbox cursor's "preferred" slot goes; per-relay records stay keyed by relay.
 
 ## P4 — Backend switch (PM005 as narrowed by PM009)
@@ -54,7 +58,7 @@ Tracked in [#755](https://github.com/people-post/pp-browser/issues/755).
 
 Tracked in [#756](https://github.com/people-post/pp-browser/issues/756).
 
-- [ ] `relay.extra_base_urls` and the LLM / MCP URLs into the backend table; `initiation_floor` to the account;
+- [ ] `relay.extra_base_urls` into the backend's seeds and the LLM URLs into its table; `initiation_floor` to the account;
       `show_tester_options` to `machine.json`.
 
 ## P6 — Promote
