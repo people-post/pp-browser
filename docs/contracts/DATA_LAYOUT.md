@@ -72,6 +72,10 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext; the registration slot and the Brief LLM token are in backends/{backend id}/registration.enc)
+  services.json             # the profile's own service choices (profile-model PM011): {schema_version: 1, promoted_mcp?: {id?, url?, command?, args?, enabled?}
+                            # (Integrations), directory_providers?: [base_url] (first primary), mesh_nodes?: base_url}; a key absent is the backend's
+                            # (its table, followed as the build changes it — never copied in); none set: no file; a newer one is read as none and never written over.
+                            # The user's promoted MCP lives here, not in config.json (one a config.json still holds moves here once)
   own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
                             # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
                             # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file

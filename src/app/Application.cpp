@@ -612,6 +612,10 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto prefs = store_.ReloadProfilePrefs(); !prefs) {
     return prefs.error();
   }
+  // The old profile's own service choices (services.json) went with it: the config runs on the backend's again.
+  if (auto reloaded = store_.ReloadConfig(); !reloaded) {
+    return reloaded.error();
+  }
 
   // The old account's pending first sync is gone with its preferences: a new account starts with none.
   // Timers armed for the old account (the 60-second "still syncing", a retry) are stale from here on.

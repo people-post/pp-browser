@@ -45,6 +45,16 @@ struct SettingsUiState {
   std::string relay_base_url;
   std::string directory_base_url;
   std::string registration_base_url;
+  /** A custom backend's other services (profile-model PM002, `backend.services`): its table, edited whole. */
+  std::string service_account_locker;
+  std::string service_client_compat;
+  std::string service_llm_gateway;
+  std::string service_llm_token;
+  std::string service_crash_intake;
+  std::string service_mesh_nodes;
+  std::string service_promoted_mcp;
+  /** The features the active table leaves off, with why, one sentence each (BackendServiceEntries); "" none. */
+  std::string backend_services_missing;
   /** The backend's relay names no relay ID, so a release build does not use it (MissingRelayIdSetting; MR008). */
   bool relay_id_missing = false;
   /** The last save was refused: a custom backend needs an account server URL (an empty one would name another account). */

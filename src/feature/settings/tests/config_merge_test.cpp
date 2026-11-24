@@ -257,3 +257,28 @@ TEST(ConfigMergeTest, AReleaseBuildsCustomRelayWithoutItsIdIsNamedAsMissing) {
   config.registration.relay_id = "relay:AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE";
   EXPECT_EQ(pbr::MissingRelayIdSetting(config, false, false), "");
 }
+
+// profile-model P2b (#753): the Network page edits a custom backend's whole table, each service by its own address; an
+// empty one is absent. A built-in backend's page writes none of them.
+TEST(ConfigMergeTest, TheCustomPageWritesTheWholeTableEmptyIsAbsent) {
+  pbr::AppConfig base = pbr::Config::DefaultAppConfig();
+  base.backend.env = "custom";
+  pbr::SettingsUiState state;
+  state.backend_env = "custom";
+  state.relay_base_url = "https://custom.example.test/api/relay";
+  state.registration_base_url = "https://custom.example.test/api/relay";
+  state.service_account_locker = " https://locker.example.test/api/relay ";
+  state.service_llm_gateway = "https://llm.example.test/api/llm/v1";
+  state.service_crash_intake = "";
+  const pbr::AppConfig saved = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(saved.backend.services.account_locker_url, "https://locker.example.test/api/relay") << "trimmed";
+  EXPECT_EQ(saved.backend.services.llm_gateway_url, "https://llm.example.test/api/llm/v1");
+  EXPECT_TRUE(saved.backend.services.crash_intake_url.empty()) << "absent: no fallback";
+  EXPECT_TRUE(saved.backend.services.client_compat_url.empty());
+
+  pbr::SettingsUiState prod = state;
+  prod.backend_env = "prod";
+  base.backend.env = "prod";
+  EXPECT_TRUE(pbr::ApplyNetworkSettingsDraft(base, prod).backend.services.account_locker_url.empty())
+      << "a built-in backend's page leaves the custom table alone";
+}

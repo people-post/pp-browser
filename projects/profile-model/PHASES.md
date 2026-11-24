@@ -34,11 +34,16 @@ Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 
 - [x] A backend type: id, network, one URL (and relay id where it applies) per operator service, and the seeds
       (PM011). (P2a: `BackendTable`.)
-- [ ] `profiles/{id}/services.json`: directory providers, mesh node list source, promoted MCP, seeded from the
-      backend when the profile is made; `directory.providers` and `promoted_mcp` leave `config.json`.
+- [x] `profiles/{id}/services.json` (P2b): the profile's own promoted MCP, directory providers and mesh node list source.
+      A key absent is the backend's, followed as the build changes it (not copied in at creation, so a built-in
+      backend's moved address never goes stale). The user's promoted MCP left `config.json` (moved once);
+      `directory.providers` stays only as part of a custom backend's table. The directory override reaches the hub; the
+      mesh node override has no consumer yet (no UI sets it; with one home backend the backend's directory is right).
 - [x] Built-in tables from the build; a custom table from `config.json`; no fallback to another backend's URL. (P2a.)
 - [x] Every caller takes its URL from the table (INVENTORY § Services, the one-origin list). P2a did the operator services' callers (`DeploymentProfile`, `Config`, `PlatformDefaults`, the hub's clients, token renew, the LLM mint / renew, the crash upload). The rest pick no backend address and stay as they are (Hongwei, 2026-11-24): the `/api/relay` mount in `HttpBlobClient` / `RelayFileUrl` / `RelayOrigins` parses relay-list addresses, `HttpClient` `kUiBlockRoutes` are labels, `CrashReportEnvelope` takes its caller's URL. `mesh_nodes` and `seed_relays` get their consumers in P2b / P5.
-- [ ] The Network page edits a custom backend's whole table.
+- [x] The Network page edits a custom backend's whole table (P2b: account backup, updates and help, AI, AI key, crash
+      reports, mesh node list, feeds); empty is absent; the features the table leaves off are listed with why. A field
+      outside the backend's id takes effect at the next start (the table is read once per run).
 
 ## P3 — Per-backend state (PM004)
 

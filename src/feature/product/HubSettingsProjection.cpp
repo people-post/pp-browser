@@ -56,7 +56,23 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
 
 HubSettings HubSettingsFor(const AppConfig& config, const std::string& profile_data_dir) {
   auto prefs = UserPreferences::LoadProfile(profile_data_dir);
-  return HubSettingsFrom(config, prefs ? *prefs : ProfilePreferences{});
+  HubSettings settings = HubSettingsFrom(config, prefs ? *prefs : ProfilePreferences{});
+  ApplyProfileServices(settings, LoadProfileServices(profile_data_dir));
+  return settings;
+}
+
+void ApplyProfileServices(HubSettings& settings, const ProfileServices& services) {
+  if (!services.directory_providers || services.directory_providers->empty()) {
+    return;
+  }
+  settings.directory.providers.clear();
+  for (const std::string& url : *services.directory_providers) {
+    ServiceEndpointConfig provider;
+    provider.base_url = url;
+    provider.transport = "http";
+    settings.directory.providers.push_back(std::move(provider));
+  }
+  settings.directory.base_url = services.directory_providers->front();
 }
 
 ConversationsHub::NetworkConfig ProjectNetwork(const AppConfig& config) {

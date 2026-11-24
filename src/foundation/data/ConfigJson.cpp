@@ -775,11 +775,8 @@ Object AppConfigToObject(const AppConfig& config) {
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
   }
-  // Only the user's own entry is written (it carries `set_by_user`). The backend's derived seed is never written back
-  // (#744), so a later switch to another backend does not carry it along as if the user had typed it.
-  if (config.promoted_mcp.IsConfigured() && config.promoted_mcp.user_set) {
-    object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
-  }
+  // `promoted_mcp` is not written: the user's own is the profile's (services.json, profile-model PM011; SessionStore
+  // keeps it there), and the backend's seed is never written back (#744). One a file still holds is read (and moved).
   if (!config.mcp_servers.empty()) {
     std::vector<Value> servers;
     servers.reserve(config.mcp_servers.size());

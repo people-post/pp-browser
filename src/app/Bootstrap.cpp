@@ -161,7 +161,9 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   if (auto hub = [&]() -> Roe<void> {
         StartupPhase phase("Bootstrap::ConversationsHub::Initialize");
-        return messaging.Initialize(HubSettingsFrom(*config, *profile_prefs), profile_data_dir);
+        HubSettings settings = HubSettingsFrom(*config, *profile_prefs);
+        ApplyProfileServices(settings, LoadProfileServices(profile_data_dir));
+        return messaging.Initialize(settings, profile_data_dir);
       }();
       !hub) {
     return hub.error();

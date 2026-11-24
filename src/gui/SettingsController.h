@@ -223,6 +223,14 @@ private:
     ui::String relay_base_url;
     ui::String directory_base_url;
     ui::String registration_base_url;
+    ui::String service_account_locker;
+    ui::String service_client_compat;
+    ui::String service_llm_gateway;
+    ui::String service_llm_token;
+    ui::String service_crash_intake;
+    ui::String service_mesh_nodes;
+    ui::String service_promoted_mcp;
+    ui::String backend_services_missing;
     ui::String node_enabled = "on";
     bool show_node_toggle = true;
     ui::String amp_listen_multiaddr;
