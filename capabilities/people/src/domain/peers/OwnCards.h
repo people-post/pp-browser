@@ -55,6 +55,13 @@ struct OwnCardAnswers {
   size_t unreached = 0;
 };
 
+/**
+ * Our newest card among `answers`: one carrying our Account ID and account keys (`identity`'s), signed by our account
+ * key and verifying at `now_ms`; anything else is refused (`warn`, when set, says why). nullopt when none is ours.
+ */
+std::optional<AccountCard> OwnCardAmong(const LocalIdentity& identity, const OwnCardAnswers& answers, int64_t now_ms,
+                                        const std::function<void(const std::string&)>& warn = {});
+
 /** The account's devices as this device knows them (M021 d4): the newest card's list; its first is the master. */
 struct OwnDeviceList {
   std::vector<AccountCardDevice> devices;
@@ -182,8 +189,16 @@ private:
     std::string nickname;
     std::vector<AccountCardRelay> relays;
     int64_t initiation_floor = 0;
+    /**
+     * The account the caller read the identity of ("": the identity's now). Nothing is issued when the identity holds
+     * another account by the time the card is signed (a link or restore swapped it meanwhile, M027).
+     */
+    std::string account_id;
   };
-  /** The card saying `content`: `base` when it says it all (and verifies), else a new one (`issued` set). */
+  /**
+   * The card saying `content`: `base` when it says it all (and verifies), else a new one (`issued` set). Refused when
+   * `base` or `content.account_id` is another account than the identity's keys now.
+   */
   Roe<AccountCard> IssueLocked(const std::optional<AccountCard>& base, CardContent content, int64_t now_ms,
                                bool& issued);
   /** `base` was signed by the account for what it says; checked once per signature. */

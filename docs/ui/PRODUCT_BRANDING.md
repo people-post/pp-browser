@@ -85,7 +85,7 @@ Exploratory alternates live under [`design/branding/icon-candidates/`](../../des
 | Surface | Example |
 |---------|---------|
 | Firewall help | “Allow PP (pp-browser) in your OS firewall…” |
-| Wire / paste formats | `pp-browser-psk-bundle-v1`, `pp-browser-link-device-v1` |
+| Wire / paste formats | `pp-browser-psk-bundle-v1`, `pp-browser-link-offer:` / `pp-browser-link-reply:` (LINK_DEVICE.md) |
 | Process name (Task Manager / `ps`) | `pp-browser` / `pp-browser.exe` |
 | Config paths | `~/.config/pp-browser`, … |
 

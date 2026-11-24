@@ -177,6 +177,12 @@ Roe<AccountCard> OwnCards::IssueLocked(const std::optional<AccountCard>& base, C
   if (!keys) {
     return keys.error();
   }
+  // The identity can change account under us (a link or restore on a running install, M027): a card of the account
+  // read before must never be the base of, or the list for, the account's keys now.
+  if ((base && base->keys.account_id != keys->account_id) ||
+      (!content.account_id.empty() && content.account_id != keys->account_id)) {
+    return Error("own card: the account changed while its card was being issued");
+  }
   if (content.devices.size() > kMaxAccountCardDevices) {
     return Error("This account already has " + std::to_string(kMaxAccountCardDevices) + " devices");
   }
@@ -222,6 +228,7 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
   }
   bool issued = false;
   bool intent_done = false;
+  bool joined = false;
   bool ask = false;
   bool recovery_changed = false;
   Roe<AccountCard> card = [&]() -> Roe<AccountCard> {
@@ -254,6 +261,7 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     } else if (identity->card_intent == kCardIntentJoin) {
       devices = (*newest)->devices; // linked: at the end of the master's list
       devices.push_back(*self);
+      joined = true;
     } else {
       return Error(kSignedOutMessage);
     }
@@ -276,12 +284,16 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     intent_done = !identity->card_intent.empty();
     // The stepped card's relays went with the step: this device's own (pinned) relays take their place.
     std::vector<AccountCardRelay> relays = stepped ? relays_ : RelaysLocked(devices, self->peer_id, *newest);
-    return IssueLocked(*newest,
-                       CardContent{.devices = std::move(devices),
-                                   .nickname = identity->nickname,
-                                   .relays = std::move(relays),
-                                   .initiation_floor = identity->initiation_floor},
-                       now_ms, issued);
+    // A device joining takes the account's nickname and floor from the list it joins (the link carries neither,
+    // M027); any other device's are its identity's (kept up to date from the newest card, Learn).
+    return IssueLocked(
+        *newest,
+        CardContent{.devices = std::move(devices),
+                    .nickname = joined ? (*newest)->nickname : identity->nickname,
+                    .relays = std::move(relays),
+                    .initiation_floor = joined ? (*newest)->initiation_floor : identity->initiation_floor,
+                    .account_id = identity->account_id},
+        now_ms, issued);
   }();
   if (recovery_changed) {
     NotifyRecoveryChanged();
@@ -290,9 +302,19 @@ Roe<AccountCard> OwnCards::Card(const int64_t now_ms) {
     StartRecovery(identity->account_id);
   }
   if (card && intent_done) {
-    LocalIdentity done = *identity;
-    done.card_intent.clear();
-    if (auto updated = identity_.Update(done); !updated) {
+    // Only what this card settled, and only on the identity it was issued for (never a stale copy written back).
+    auto updated = identity_.Modify([&](LocalIdentity& now) {
+      if (now.account_id != card->keys.account_id || now.card_intent != identity->card_intent) {
+        return false;
+      }
+      now.card_intent.clear();
+      if (joined) {
+        now.nickname = card->nickname;
+        now.initiation_floor = card->initiation_floor;
+      }
+      return true;
+    });
+    if (!updated) {
       return updated.error();
     }
   }
@@ -388,33 +410,35 @@ void OwnCards::StartRecovery(const std::string& account_id) {
   });
 }
 
-std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, const int64_t now_ms) {
-  auto identity = identity_.Get();
-  if (!identity) {
-    return std::nullopt;
-  }
-  auto signing = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity->account_signing_public_key_b64);
-  auto kem = TypedKeyB64(pp::BlobKind::kKemPublicKey, identity->kem_public_key_b64);
+std::optional<AccountCard> OwnCardAmong(const LocalIdentity& identity, const OwnCardAnswers& answers,
+                                        const int64_t now_ms, const std::function<void(const std::string&)>& warn) {
+  const auto say = [&warn](const std::string& why) {
+    if (warn) {
+      warn(why);
+    }
+  };
+  auto signing = TypedKeyB64(pp::BlobKind::kSignaturePublicKey, identity.account_signing_public_key_b64);
+  auto kem = TypedKeyB64(pp::BlobKind::kKemPublicKey, identity.kem_public_key_b64);
   if (!signing || !kem) {
     return std::nullopt;
   }
-  const KeyCard ours{.account_id = identity->account_id,
+  const KeyCard ours{.account_id = identity.account_id,
                      .signing_public_key_b64 = std::move(*signing),
                      .kem_public_key_b64 = std::move(*kem)};
   std::optional<AccountCard> best;
   for (const Object& json : answers.cards) {
     auto card = AccountCardFromJson(json);
     if (!card) {
-      log().warning << "a relay's card of ours does not read: " << card.error().message;
+      say("a relay's card of ours does not read: " + card.error().message);
       continue;
     }
     // Ours: our Account ID and our account keys, signed by our account key. Anything else is refused.
     if (!SameKeys(card->keys, ours)) {
-      log().warning << "a relay served a card of another account (or other keys) as ours: refused";
+      say("a relay served a card of another account (or other keys) as ours: refused");
       continue;
     }
     if (auto checked = VerifyAccountCard(*card, now_ms); !checked) {
-      log().warning << "a relay's card of ours does not verify: " << checked.error().message;
+      say("a relay's card of ours does not verify: " + checked.error().message);
       continue;
     }
     if (!best || card->issued_at > best->issued_at) {
@@ -422,6 +446,14 @@ std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, co
     }
   }
   return best;
+}
+
+std::optional<AccountCard> OwnCards::OursAmong(const OwnCardAnswers& answers, const int64_t now_ms) {
+  auto identity = identity_.Get();
+  if (!identity) {
+    return std::nullopt;
+  }
+  return OwnCardAmong(*identity, answers, now_ms, [this](const std::string& why) { log().warning << why; });
 }
 
 void OwnCards::OnRecoveryAnswers(const OwnCardAnswers& answers, const int64_t now_ms) {
@@ -528,17 +560,23 @@ Roe<AccountCard> OwnCards::Learn(const AccountCard& card, const int64_t now_ms) 
                        CardContent{.devices = std::move(devices),
                                    .nickname = newest_card.nickname,
                                    .relays = newest_card.relays,
-                                   .initiation_floor = newest_card.initiation_floor},
+                                   .initiation_floor = newest_card.initiation_floor,
+                                   .account_id = identity->account_id},
                        now_ms, issued);
   }();
   if (!result) {
     return result;
   }
   if (identity->nickname != result->nickname || identity->initiation_floor != result->initiation_floor) {
-    LocalIdentity renamed = *identity;
-    renamed.nickname = result->nickname;
-    renamed.initiation_floor = result->initiation_floor;
-    if (auto updated = identity_.Update(renamed); !updated) {
+    auto updated = identity_.Modify([&result](LocalIdentity& now) {
+      if (now.account_id != result->keys.account_id) {
+        return false; // the identity moved to another account meanwhile: this card is not its word
+      }
+      now.nickname = result->nickname;
+      now.initiation_floor = result->initiation_floor;
+      return true;
+    });
+    if (!updated) {
       return updated.error();
     }
   }

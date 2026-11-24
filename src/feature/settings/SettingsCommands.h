@@ -121,11 +121,18 @@ struct SettingsCommands {
   std::function<Roe<void>(const SecretText& pin)> enable_biometric;
   /** Deletes both pieces; no PIN (off only makes the profile safer). */
   std::function<void()> disable_biometric;
-  /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
-  std::function<Roe<std::string>()> export_link_device;
+  /**
+   * Me → Security → Link a new device (multi-device M027), on the main device: the 4 digits of the new device's code
+   * as scanned or pasted (an error when it is not one, or this device may not link one). Blocks: a worker.
+   */
+  std::function<Roe<std::string>(const std::string& offer)> link_offer_code;
+  /** Once the person saw the same digits on both: the reply sealing the account's seed to that code. Blocks: a worker. */
+  std::function<Roe<std::vector<uint8_t>>(const std::string& offer)> seal_link_reply;
+  /** The in-app camera reads the new device's code: `done(text)` once, on the UI thread (nothing when cancelled). */
+  std::function<void(std::function<void(std::string text)> done)> scan_link_offer;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
-  /** Whether `pin` opens the vault again (the transfer code's own PIN); works on accounts without a phrase. */
+  /** Whether `pin` opens the vault again (linking a device asks it first); works on accounts without a phrase. */
   std::function<Roe<void>(const SecretText& pin)> verify_pin;
   /** Whether the account has a recovery phrase (vault unlocked). */
   std::function<bool()> has_recovery_phrase;

@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -37,6 +38,12 @@ int QrPhoneDisplayDp(float page_width_dp, float page_height_dp);
  * white whatever the theme, which every scanner reads. `shape`, when given, is filled from the same encode.
  */
 Roe<std::string> QrSvgContent(const std::string& text, QrShape* shape = nullptr);
+
+/**
+ * A QR code of binary `bytes` (byte mode, error correction M, with its quiet zone) as the same SVG content: the link
+ * handshake's offer and reply (foundation/crypto/LinkHandshake.h), which no text form would fit as well.
+ */
+Roe<std::string> QrSvgContentBinary(std::span<const uint8_t> bytes, QrShape* shape = nullptr);
 
 /** The longest edge, in pixels, QrPngBytes aims for. */
 inline constexpr int kQrPngTargetPx = 1024;

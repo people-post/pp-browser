@@ -1,7 +1,15 @@
+// Linking a device by the sealed QR handshake (multi-device M027) and restoring from the phrase (M023 §8): the main
+// device seals its seed to the new device's one-time key; the new device opens it, derives the account from the seed,
+// keeps its own device keys and makes its own DEK, and joins the list (a restore starts a fresh one).
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/DataKeyVault.h"
+#include "foundation/crypto/LinkHandshake.h"
+#include "foundation/crypto/MlDsa.h"
+#include "foundation/crypto/RecoverySeed.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/LinkDeviceExchange.h"
+#include "lib/people/LinkOffer.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -10,12 +18,12 @@
 namespace pbr {
 namespace {
 
-constexpr const char kCard[] = R"({"card_version":1})";
+constexpr int64_t kNow = 1'700'000'000'000;
 
-ByteVector MakeDek() {
+ByteVector MakeDek(const uint8_t base = 0x31) {
   ByteVector dek(kDataEncryptionKeySize);
   for (size_t i = 0; i < dek.size(); ++i) {
-    dek[i] = static_cast<uint8_t>(0x31 + i);
+    dek[i] = static_cast<uint8_t>(base + i);
   }
   return dek;
 }
@@ -38,117 +46,142 @@ protected:
     std::filesystem::remove_all(new_dir_);
   }
 
+  /** The main device: a registered account whose keys derive from its recovery seed (as every new account's). */
+  LocalIdentity MainDevice(IdentityStore& store) {
+    EXPECT_TRUE(store.SetDek(MakeDek()));
+    LocalIdentity identity = store.LoadOrCreate().value();
+    identity.registered = true;
+    identity.nickname = "alice";
+    return store.Update(identity).value();
+  }
+
   std::filesystem::path old_dir_;
   std::filesystem::path new_dir_;
 };
 
-TEST_F(LinkDeviceExchangeTest, ImportKeepsDeviceKeysReplacesAccount) {
-  const ByteVector dek = MakeDek();
+TEST_F(LinkDeviceExchangeTest, TheSealedSeedBringsTheAccountWithThisDevicesOwnKeysAndDek) {
   IdentityStore old_store(old_dir_.string(), "old");
-  ASSERT_TRUE(old_store.SetDek(dek));
-  auto old_id = old_store.LoadOrCreate();
-  ASSERT_TRUE(old_id);
-  LocalIdentity seeded = *old_id;
-  seeded.registered = true;
-  seeded.nickname = "alice";
-  seeded.registered = true;
-  auto saved = old_store.Update(seeded);
-  ASSERT_TRUE(saved);
+  const LocalIdentity main = MainDevice(old_store);
+  ASSERT_FALSE(main.recovery_seed_b64.empty());
 
-  const std::string old_account = saved->account_id;
-  const std::string old_peer = saved->peer_id;
-  constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceExchange::ExportJson(*saved, dek, kCard, kNow);
-  ASSERT_TRUE(json) << json.error().message;
+  LinkOffer offer;
+  auto shown = offer.Begin(kNow);
+  ASSERT_TRUE(shown) << shown.error().message;
+  auto reply = LinkDeviceExchange::SealReply(main, shown->offer, std::nullopt, kNow);
+  ASSERT_TRUE(reply) << reply.error().message;
+  auto bundle = offer.Open(*reply, kNow + 1000);
+  ASSERT_TRUE(bundle) << bundle.error().message;
+  EXPECT_EQ(bundle->intent, LinkIntent::Join);
+  EXPECT_EQ(bundle->expires_at_ms, kNow + kLinkWindowMs);
 
   IdentityStore new_store(new_dir_.string(), "new");
   DataKeyVault new_vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
-  auto imported = LinkDeviceExchange::Import(new_store, new_vault, *json, "link-pin-1234", kNow + 1000);
+  auto imported =
+      LinkDeviceExchange::ImportAccount(new_store, new_vault, bundle->seed, kCardIntentJoin, "", "link-pin-1234");
   ASSERT_TRUE(imported) << imported.error().message;
-  EXPECT_EQ(imported->identity.account_id, old_account);
-  EXPECT_TRUE(imported->identity.registered);
-  EXPECT_NE(imported->identity.peer_id, old_peer);
-  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
-  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
-  EXPECT_TRUE(imported->identity.registered);
-  EXPECT_EQ(imported->account_card_json, std::optional<std::string>(kCard)) << "the new device signs itself in";
-  EXPECT_TRUE(new_vault.Exists());
+  EXPECT_EQ(imported->account_id, main.account_id) << "the seed alone names the account";
+  EXPECT_EQ(imported->account_signing_public_key_b64, main.account_signing_public_key_b64);
+  EXPECT_EQ(imported->account_signing_private_key_b64, main.account_signing_private_key_b64);
+  EXPECT_EQ(imported->kem_public_key_b64, main.kem_public_key_b64);
+  EXPECT_EQ(imported->kem_private_key_b64, main.kem_private_key_b64);
+  EXPECT_EQ(imported->recovery_seed_b64, main.recovery_seed_b64) << "the new device can show the same phrase";
+  EXPECT_NE(imported->peer_id, main.peer_id) << "a device of its own";
+  EXPECT_NE(imported->device_kem_public_key_b64, main.device_kem_public_key_b64);
+  EXPECT_TRUE(imported->registered);
+  EXPECT_EQ(imported->card_intent, kCardIntentJoin) << "it appends itself to the main device's list";
+  EXPECT_EQ(imported->nickname, "user") << "no nickname rides: the card brings the account's";
 
   DataKeyVault reopen(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
   ASSERT_TRUE(reopen.Unlock("link-pin-1234"));
-  auto round_dek = reopen.Dek();
-  ASSERT_TRUE(round_dek);
-  EXPECT_EQ(*round_dek, dek);
+  EXPECT_NE(*reopen.Dek(), MakeDek()) << "its own DEK: nothing sealed under the main device's crosses";
 }
 
-TEST_F(LinkDeviceExchangeTest, ImportOntoExistingVaultKeepsNewDevicePeerId) {
-  const ByteVector shared = MakeDek();
-  IdentityStore old_store(old_dir_.string(), "old");
-  ASSERT_TRUE(old_store.SetDek(shared));
-  auto old_id = old_store.LoadOrCreate();
-  ASSERT_TRUE(old_id);
-  LocalIdentity seeded = *old_id;
-  seeded.registered = true;
-  seeded.nickname = "alice";
-  seeded.registered = true;
-  auto saved = old_store.Update(seeded);
-  ASSERT_TRUE(saved);
-  constexpr int64_t kNow = 1'700'000'000'000;
-  auto json = LinkDeviceExchange::ExportJson(*saved, shared, kCard, kNow);
-  ASSERT_TRUE(json) << json.error().message;
+TEST_F(LinkDeviceExchangeTest, ARestoreFromThePhraseIsTheSameImportOnAFreshList) {
+  const ByteVector seed = GenerateRecoverySeed();
+  IdentityStore store(new_dir_.string(), "new");
+  DataKeyVault vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
+  auto restored = LinkDeviceExchange::ImportAccount(store, vault, seed, kCardIntentFresh, "alice", "pin-1234");
+  ASSERT_TRUE(restored) << restored.error().message;
+  const auto signing = MlDsa::GenerateKeyPairFromSeed(DeriveRecoveryKeys(seed)->account_ml_dsa_seed).value();
+  EXPECT_EQ(restored->account_id, AccountIdFromMlDsaPublicKey(signing.public_key).value());
+  EXPECT_EQ(restored->card_intent, kCardIntentFresh) << "the restored install signs a fresh device list";
+  EXPECT_EQ(restored->nickname, "alice") << "the locker's nickname";
+  EXPECT_EQ(restored->recovery_seed_b64.Reveal(), Base64Encode(seed));
+}
 
-  ByteVector local_dek(kDataEncryptionKeySize);
-  for (size_t i = 0; i < local_dek.size(); ++i) {
-    local_dek[i] = static_cast<uint8_t>(0x90 + i);
-  }
+TEST_F(LinkDeviceExchangeTest, AnExistingVaultKeepsItsDekAndThisDevicesPeerId) {
+  IdentityStore old_store(old_dir_.string(), "old");
+  const LocalIdentity main = MainDevice(old_store);
+  const ByteVector local_dek = MakeDek(0x90);
   IdentityStore new_store(new_dir_.string(), "new");
   ASSERT_TRUE(new_store.SetDek(local_dek));
-  auto new_id = new_store.LoadOrCreate();
-  ASSERT_TRUE(new_id);
-  const std::string new_peer = new_id->peer_id;
-  EXPECT_NE(new_peer, saved->peer_id);
-
+  const LocalIdentity before = new_store.LoadOrCreate().value();
   DataKeyVault new_vault(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
   ASSERT_TRUE(new_vault.CreateWithDek("device-pin", local_dek));
-  auto imported = LinkDeviceExchange::Import(new_store, new_vault, *json, "device-pin", kNow + 1000);
+
+  auto seed = Base64Decode(main.recovery_seed_b64.Reveal()).value();
+  auto imported = LinkDeviceExchange::ImportAccount(new_store, new_vault, seed, kCardIntentJoin, "", "ignored");
   ASSERT_TRUE(imported) << imported.error().message;
-  EXPECT_EQ(imported->identity.account_id, saved->account_id);
-  EXPECT_EQ(imported->identity.peer_id, new_peer);
-  EXPECT_EQ(imported->identity.kem_public_key_b64, saved->kem_public_key_b64);
-  EXPECT_EQ(imported->identity.kem_private_key_b64, saved->kem_private_key_b64);
-  EXPECT_NE(imported->identity.kem_public_key_b64, new_id->kem_public_key_b64);
-  EXPECT_TRUE(imported->identity.registered);
-
+  EXPECT_EQ(imported->account_id, main.account_id);
+  EXPECT_EQ(imported->peer_id, before.peer_id);
   DataKeyVault reopen(DataKeyVault::VaultPathForProfile(new_dir_.string()), "new");
-  ASSERT_TRUE(reopen.Unlock("device-pin"));
-  EXPECT_EQ(*reopen.Dek(), shared);
-
-  ASSERT_TRUE(new_store.SetDek(shared));
-  auto reloaded = new_store.Get();
-  ASSERT_TRUE(reloaded);
-  EXPECT_EQ(reloaded->account_id, saved->account_id);
-  EXPECT_EQ(reloaded->peer_id, new_peer);
+  ASSERT_TRUE(reopen.Unlock("device-pin")) << "the vault's PIN stays";
+  EXPECT_EQ(*reopen.Dek(), local_dek) << "and its DEK";
 }
 
-TEST_F(LinkDeviceExchangeTest, ExportNeedsAnAccountCard) {
-  IdentityStore store(old_dir_.string(), "old");
-  ASSERT_TRUE(store.SetDek(MakeDek()));
-  LocalIdentity identity = store.LoadOrCreate().value();
-  identity.registered = true;
-  auto json = LinkDeviceExchange::ExportJson(identity, MakeDek(), "", 1'700'000'000'000);
-  ASSERT_FALSE(json) << "the new device has no device list to sign itself into";
-  EXPECT_NE(json.error().message.find("account card"), std::string::npos);
+TEST_F(LinkDeviceExchangeTest, OnlyARegisteredAccountWithItsSeedSealsAReply) {
+  IdentityStore old_store(old_dir_.string(), "old");
+  const LocalIdentity main = MainDevice(old_store);
+  LinkOffer offer;
+  const ByteVector bytes = offer.Begin(kNow).value().offer;
+
+  LocalIdentity unregistered = main;
+  unregistered.registered = false;
+  EXPECT_FALSE(LinkDeviceExchange::SealReply(unregistered, bytes, std::nullopt, kNow));
+
+  LocalIdentity no_seed = main;
+  no_seed.recovery_seed_b64 = SecretText();
+  auto refused = LinkDeviceExchange::SealReply(no_seed, bytes, std::nullopt, kNow);
+  ASSERT_FALSE(refused) << "an account minted before M023 s1 has nothing a link could carry";
+  EXPECT_NE(refused.error().message.find("recovery phrase"), std::string::npos);
+
+  LocalIdentity other_seed = main;
+  other_seed.recovery_seed_b64 = Base64Encode(GenerateRecoverySeed());
+  EXPECT_FALSE(LinkDeviceExchange::SealReply(other_seed, bytes, std::nullopt, kNow))
+      << "a seed that derives another account would link the new device to it";
 }
 
-TEST_F(LinkDeviceExchangeTest, CaptureRejectsMissingAccountKem) {
-  LocalIdentity identity;
-  identity.account_id = "account:x";
-  identity.account_signing_public_key_b64 = "pk";
-  identity.account_signing_private_key_b64 = "sk";
-  identity.registered = true;
-  auto captured = LinkDeviceExchange::Capture(identity, MakeDek(), 1);
-  ASSERT_FALSE(captured);
-  EXPECT_NE(captured.error().message.find("account KEM"), std::string::npos);
+TEST(LinkOfferTest, TheOneTimeKeyIsGoneOnceForgottenOrItsWindowPassed) {
+  LinkOffer offer;
+  const auto first = offer.Begin(kNow).value();
+  EXPECT_EQ(first.code, LinkConfirmationCode(first.offer));
+  EXPECT_EQ(FindLinkPayload(kLinkOfferTextPrefix, first.text), first.offer);
+  ASSERT_TRUE(offer.Current(kNow + 1));
+
+  LinkBundle bundle;
+  bundle.seed = GenerateRecoverySeed();
+  bundle.expires_at_ms = kNow + kLinkWindowMs;
+  const ByteVector reply = SealLinkReply(first.offer, bundle).value();
+
+  // A newer offer replaces the first: a reply to the first no longer opens.
+  const auto second = offer.Begin(kNow + 2).value();
+  EXPECT_NE(second.offer, first.offer);
+  auto stale = offer.Open(reply, kNow + 3);
+  ASSERT_FALSE(stale);
+  EXPECT_TRUE(IsLinkError(stale.error(), LinkError::NotForThisDevice));
+  EXPECT_TRUE(offer.Current(kNow + 3)) << "a reply that does not open keeps the key for the right one";
+
+  const ByteVector right = SealLinkReply(second.offer, bundle).value();
+  EXPECT_FALSE(offer.Open(right, kNow + 2 + kLinkWindowMs)) << "15 minutes later";
+  EXPECT_FALSE(offer.Current(kNow + 3)) << "the key was wiped then";
+  auto gone = offer.Open(right, kNow + 4);
+  ASSERT_FALSE(gone);
+  EXPECT_TRUE(IsLinkError(gone.error(), LinkError::Expired));
+
+  const auto third = offer.Begin(kNow + 5).value();
+  offer.Forget();
+  EXPECT_FALSE(offer.Current(kNow + 6));
+  EXPECT_FALSE(offer.Open(SealLinkReply(third.offer, bundle).value(), kNow + 6));
 }
 
 } // namespace

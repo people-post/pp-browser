@@ -349,7 +349,9 @@ private:
   void PinGateNoteToggle();
   void PinGateSubmit();
   void PinGatePaste(); // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
-  void PinGateClearPayload(); // clear a pasted transfer code so the textarea comes back (B166)
+  void PinGateClearPayload();
+  /** The link page's "Copy as text": the offer to the clipboard (M027). */
+  void PinGateCopyOffer(); // clear a pasted transfer code so the textarea comes back (B166)
   void PinGateCancel();
   void PinGateSetPin();
   void PinGateUseDefault();

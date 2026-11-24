@@ -65,6 +65,7 @@
 ## A010 — Shared DEK; per-device vault wrap (multi-device)
 
 **Date:** 2026-08-11  
+**Superseded:** §1 and §3 by [multi-device-account M027](../../multi-device-account/DECISIONS.md#m027--a-device-links-by-a-sealed-qr-handshake-the-seed-rides-sealed-each-device-its-own-dek) (2026-11-24) — each device makes its own DEK; a link seals the recovery seed, not a DEK.  
 **Amends:** README “multi-device vault sync” out-of-scope — **shared DEK + link seal** is now in scope under [multi-device-account](../../multi-device-account/) (not a second vault product).  
 **Canonical:** [multi-device-account M004](../../multi-device-account/DECISIONS.md#m004--shared-dek-per-device-vault-wrap).  
 **Cross-project:** [D099](../../chat-storage-and-memory/DECISIONS.md#d099--account-id-amends-d096-multi-device), [e2e E025](../../e2e-message-crypto/DECISIONS.md#e025--account-envelope-signing--private-psk-not-auto-synced).

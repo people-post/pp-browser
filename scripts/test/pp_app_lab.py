@@ -609,17 +609,23 @@ class Lab:
                      "%s: registered on each of its relays" % u.name)
         return u
 
-    def linked_device(self, of, name, bundle=None):
-        """Another device of `of`'s account (M021): a fresh install that takes `of`'s link bundle (Me →
-        Security → Copy link payload), then starts on it — the same account, a device of its own. `bundle`: one
-        exported earlier (`of` may be gone by now)."""
-        if bundle is None:
-            bundle = of.cmd("link_export")["bundle"]
+    def linked_device(self, of, name, then=None):
+        """Another device of `of`'s account (M021, M027): a fresh install shows its one-time link offer, `of` (the
+        main device) reads it, the two show the same 4 digits, and `of` seals its reply; the new device opens it and
+        starts on it — the same account, a device of its own. `then(u)`: runs after `of` sealed the reply and before
+        the new device takes it (`of` may be stopped there)."""
         u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), of.container)
         self.users.append(u)
         u.start()
         u.wait_ready()
-        u.cmd("link_import", bundle=bundle, pin=PIN, timeout=60)
+        offer = u.cmd("link_offer")
+        sealed = of.cmd("link_reply", offer=offer["offer"])
+        if sealed["code"] != offer["code"]:
+            raise ProbeError("%s: the main device shows %s, the new device %s" % (u.name, sealed["code"],
+                                                                                   offer["code"]))
+        if then is not None:
+            then(u)
+        u.cmd("link_import", reply=sealed["reply"], pin=PIN, timeout=60)
         u.restart()
         u.account = u.cmd("whoami")["account"]
         if u.account != of.account:
@@ -2760,7 +2766,7 @@ def assert_signed_out(u, thread):
 
 def scenario_main_device_signs_a_device_out(lab):
     """Alice's phone is her main device (M021 d4); her laptop, linked to it, joins at the end of the list and
-    cannot give out a transfer code. The phone hands the main role to the laptop, which then takes the phone off
+    cannot seal a link reply. The phone hands the main role to the laptop, which then takes the phone off
     the account: the phone is signed out and can no longer send; Bob learns the shorter list, and he and the
     laptop keep talking."""
     a, a_thread, b, b_thread = open_pair(lab)
@@ -2772,8 +2778,9 @@ def scenario_main_device_signs_a_device_out(lab):
              "phone: the laptop at the end of the list")
     if laptop.cmd("devices")["main"] != phone_id:
         raise ProbeError("laptop: main device %s, not the phone" % laptop.cmd("devices"))
-    if laptop.cmd("link_export", check=False).get("ok"):
-        raise ProbeError("laptop: gave out a transfer code though it is not the main device")
+    offer = a.cmd("link_offer")["offer"]  # any offer: the laptop must refuse to answer one
+    if laptop.cmd("link_reply", offer=offer, check=False).get("ok"):
+        raise ProbeError("laptop: sealed a link reply though it is not the main device")
     a.cmd("make_main", peer_id=laptop_id)
     wait_for(lambda: laptop.cmd("devices")["main"] == laptop_id or None, 40, "laptop: the main device")
     laptop.cmd("remove_device", peer_id=phone_id)
@@ -3470,7 +3477,7 @@ def scenario_group_call_guest(lab):
 
 
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
-    """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
+    """A copy missing for a device is asked for (M021 §9): Alice's phone seals a link reply and goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
     only. The laptop sees it in her mailbox, asks Bob's device for its own (its card going with the ask), and
     Bob's device seals it one: the message shows on the laptop."""
@@ -3479,9 +3486,7 @@ def scenario_a_device_asks_for_a_copy_it_missed(lab):
     wait_for(lambda: transcript_row(b, b_thread, hello), 30, "bob: alice's hello")
     if len(b.cmd("kept_card", account=a.account)["devices"]) != 1:
         raise ProbeError("bob: alice's card does not list her phone alone")
-    bundle = a.cmd("link_export")["bundle"]
-    a.quit()
-    laptop = lab.linked_device(a, "alice-laptop", bundle=bundle)
+    laptop = lab.linked_device(a, "alice-laptop", then=lambda _: a.quit())
     laptop.wait_mesh()
     m = b.cmd("send", thread=b_thread, text="for every one of alice's devices")["message_id"]
     l_thread = wait_for(lambda: thread_with(laptop, b.account), 90, "laptop: a chat with bob")

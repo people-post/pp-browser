@@ -19,6 +19,8 @@ struct PinGateActionPorts {
   std::function<void()> on_identity_phrase;
   /** The phrase page's "Use a saved copy…". */
   std::function<void()> on_use_saved_copy;
+  /** The link page's "Scan" (M027): the camera reads the main device's reply. */
+  std::function<void()> on_scan_reply;
   std::function<void()> on_forgot_toggle;
   /** The "?" after the default-PIN line opens / closes its note. */
   std::function<void()> on_note_toggle;

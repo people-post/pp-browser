@@ -42,7 +42,7 @@ struct Device {
     own = std::make_unique<OwnCards>(identity, *keys);
   }
 
-  /** Becomes a linked device of `other`'s account (the link bundle's account keys; its own device keys stay). */
+  /** Becomes a linked device of `other`'s account (the account keys its seed derives; its own device keys stay). */
   void LinkTo(Device& other) { TakeAccountOf(other, kCardIntentJoin); }
   /** Becomes `other`'s account restored from its recovery phrase: a fresh list, this device its master. */
   void RestoreAs(Device& other) { TakeAccountOf(other, kCardIntentFresh); }
@@ -155,7 +155,7 @@ TEST_F(OwnCardsTest, TheCardListsThisDeviceAndIsReissuedOnlyWhenItChanges) {
 AccountCard LinkLaptop(Device& phone, Device& laptop, const int64_t now) {
   laptop.LinkTo(phone);
   const AccountCard phones = phone.own->Card(now).value();
-  EXPECT_TRUE(laptop.own->Learn(phones, now + 10)); // the link bundle's card
+  EXPECT_TRUE(laptop.own->Learn(phones, now + 10)); // the card it got from our relays (M027)
   const AccountCard joined = laptop.own->Card(now + 20).value();
   EXPECT_TRUE(phone.own->Learn(joined, now + 30)); // the laptop's notice through the shared mailbox
   return joined;
@@ -484,6 +484,37 @@ TEST_F(OwnCardsTest, ALinkedDeviceTakesTheMainDevicesNewerCardFromTheRelaysInste
   (void)laptop.own->Card(kNow + 100);
   const AccountCard taken = laptop.own->Card(kNow + 110).value();
   EXPECT_EQ(taken, mains) << "the main device's card, its relays";
+}
+
+// M027: a link carries no card and no nickname. The new device asks our relays for the main device's card, appends
+// itself to that list under the account's nickname and floor (not the "user" a fresh install starts with), and takes
+// them as its own.
+TEST_F(OwnCardsTest, ALinkedDeviceGetsTheMainDevicesCardFromTheRelaysAndJoinsUnderTheAccountsName) {
+  Device phone(dir_ / "phone");
+  Device laptop(dir_ / "laptop");
+  phone.Rename("alice");
+  phone.SetFloor(25);
+  const AccountCard mains = phone.own->Card(kNow).value();
+  laptop.LinkTo(phone);
+  laptop.Rename("user");
+  laptop.SetFloor(0);
+  FakeRelays relays;
+  relays.cards = {AccountCardToJson(mains)};
+  relays.answered = 1;
+  laptop.own->SetOwnCardLookup(relays.Lookup());
+
+  (void)laptop.own->Card(kNow + 100); // no card yet: asks, and the answer is taken in at once here
+  EXPECT_EQ(relays.asked, 1);
+  const AccountCard joined = laptop.own->Card(kNow + 110).value();
+  ASSERT_EQ(joined.devices.size(), 2u);
+  EXPECT_EQ(joined.devices.front().peer_id, phone.PeerId()) << "the main device stays first";
+  EXPECT_EQ(joined.devices.back().peer_id, laptop.PeerId());
+  EXPECT_EQ(joined.nickname, "alice");
+  EXPECT_EQ(joined.initiation_floor, 25);
+  const LocalIdentity after = laptop.identity.Get().value();
+  EXPECT_EQ(after.nickname, "alice");
+  EXPECT_EQ(after.initiation_floor, 25);
+  EXPECT_TRUE(after.card_intent.empty()) << "joined once";
 }
 
 // A relay not reached may keep the main device's newer card: the linked device asks again later, issuing nothing.

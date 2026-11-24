@@ -162,9 +162,9 @@ nothing prunes them yet.
 
 ## Restore
 
-On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the link bundle the seed
-reconstructs (`RecoveryBundle`: derived account keys, the seed, a fresh DEK, the locker's
-nickname; the account counts as registered) imported under the PIN the user chooses → contacts written → our relays
+On a fresh install, a typed phrase → seed → locker (fetched by id alone) → the account brought over from the seed as a
+link brings it (`LinkDeviceExchange::ImportAccount`, [LINK_DEVICE.md](LINK_DEVICE.md): derived account keys, the seed,
+a fresh DEK, the locker's nickname, intent fresh; the account counts as registered) under the PIN the user chooses → contacts written → our relays
 (`relays`) become My relays, before the restored device issues its first card → once messaging is up: card floors
 before anything is received, groups recreated (tombstones skipped) and checking their members, the grants taken (each
 checked, before the announce, so its sends carry them), the device announced, the locker synced.

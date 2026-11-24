@@ -70,7 +70,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # (chats cleared or deleted before removed_messages existed do not come back; a record with no created_at is taken in); no floor — the file
                             # time unreadable, in the future or extreme — takes everything. Never delivers less than keeping the cursor; the keys go when it ends;
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
-  vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
+  vault.bin                 # PIN-wrapped DEK (created on first secrets unlock; each device its own DEK, also when linked or restored — M027)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext; the registration slot and the Brief LLM token are in backends/{backend id}/registration.enc)
@@ -80,8 +80,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # The user's promoted MCP lives here, not in config.json (one a config.json still holds moves here once)
   own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
                             # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
-                            # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
-                            # with the old DEK). Absent until our first card; profile reset removes it with the rest; a newer schema_version is refused and
+                            # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore onto a profile
+                            # that held another account: written over by the new account's first card; each device has its own DEK, M027). Absent until our first card; profile reset removes it with the rest; a newer schema_version is refused and
                             # never written over (the card is read from peer_cards meanwhile) — AT_REST_ENCRYPTION § Own card plaintext, ACCOUNT_CARD § Main device
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; `{schema_version: 2, peers: {account → row}}`; 2 is also its floor: an older, unversioned or flat file is refused; a file not read (that, a newer one, not JSON) is never written over: that run's rows live in memory; additive relay_floor_minor / relay_floor_card_issued_at: a relay's payment_required floor and the kept card it came after — SERVICE_ENDPOINTS § The stranger's price)

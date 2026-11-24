@@ -9,25 +9,28 @@
 
 #include "common/Error.h"
 
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** Export / import `pp-browser-link-device-v1` (M012) over the profile's identity and vault. */
+/** Linking a device and restoring from the phrase (M027, M023 §8) over the profile's identity and vault. */
 class LinkDeviceCoordinator {
 public:
-  /**
-   * A bundle for a new device (M021): the account and this device's account card, which the new device signs
-   * itself into. No sessions ride: the new device opens its own. `ttl_ms`: 15 min for a pasted transfer code.
-   */
-  static Roe<std::string> ExportJson(IdentityStore& identity, DataKeyVault& vault, std::string account_card_json,
-                                     int64_t now_ms, int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
+  /** The main device's sealed reply to `offer` (LinkDeviceExchange::SealReply over the loaded identity). */
+  static Roe<ByteVector> SealReply(IdentityStore& identity, std::span<const uint8_t> offer,
+                                   std::optional<RelayAddress> relay, int64_t now_ms, int64_t ttl_ms = kLinkWindowMs);
 
-  /** Vault + account import, then the DEK fan-out (`secrets` may be null in tests). */
-  static Roe<LinkDeviceImportResult> Import(IdentityStore& identity, DataKeyVault& vault, ProfileSecretsEngine* secrets,
-                                            const std::string& bundle_json, const SecretText& pin, int64_t now_ms);
+  /**
+   * The account of `seed` onto this install (LinkDeviceExchange::ImportAccount), then the DEK to every store
+   * (`secrets` may be null in tests).
+   */
+  static Roe<LocalIdentity> ImportAccount(IdentityStore& identity, DataKeyVault& vault, ProfileSecretsEngine* secrets,
+                                          const ByteVector& seed, std::string_view card_intent,
+                                          const std::string& nickname, const SecretText& pin);
 };
 
 } // namespace pbr

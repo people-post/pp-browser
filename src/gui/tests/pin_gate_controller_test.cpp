@@ -1,5 +1,6 @@
-// The fresh-install PIN gate's paths that bring an existing account (multi-device M023): the transfer code and the
-// recovery phrase share the PIN steps, then go to their own completion.
+// The fresh-install PIN gate's paths that bring an existing account (multi-device M023, M027): linking to the main
+// device (this device's offer as a QR code, the main device's reply scanned or pasted) and the recovery phrase share the
+// PIN steps, then go to their own completion.
 #include "gui/PinGateController.h"
 
 #include "foundation/crypto/PinDefaults.h"
@@ -64,6 +65,15 @@ protected:
     complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle, bool is_default) {
       link_ = std::make_tuple(pin.Reveal(), bundle, is_default);
     };
+    complete.begin_link_offer = [this]() -> Roe<LinkOfferDisplay> {
+      ++offers_;
+      return LinkOfferDisplay{.qr_svg = "<rect/>", .text = "pp-browser-link-offer:AQ", .code = "0427"};
+    };
+    complete.forget_link_offer = [this]() { ++forgotten_; };
+    complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
+      scan_done_ = std::move(done);
+      scan_closed_ = std::move(closed);
+    };
     complete.complete_with_pin = [this](const SecretText& pin, const bool create_mode) {
       typed_pin_ = pin.Reveal();
       typed_create_ = create_mode;
@@ -85,6 +95,10 @@ protected:
   std::string hidden_full_;
   std::optional<std::tuple<std::string, std::string, bool>> phrase_restore_;
   std::optional<std::tuple<std::string, std::string, bool>> link_;
+  int offers_ = 0;
+  int forgotten_ = 0;
+  std::function<void(std::string)> scan_done_;
+  std::function<void()> scan_closed_;
   std::vector<std::string> saved_copies_;
   std::string pick_name_;
   std::optional<std::string> pick_text_;
@@ -208,7 +222,7 @@ TEST_F(PinGateControllerTest, ASavedCopyPickedOnThePhrasePageRidesWithTheWords) 
   EXPECT_EQ(saved_copies_, std::vector<std::string>{*pick_text_});
 }
 
-TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
+TEST_F(PinGateControllerTest, TheLinkPathTakesTheMainDevicesReply) {
   controller_.ShowIdentityFork();
   controller_.OnIdentityPhrase();
   controller_.OnCancel(); // no gate bound: stays; back to the fork the way the app does
@@ -217,14 +231,56 @@ TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
   controller_.OnUseDefaultPin();
   ASSERT_TRUE(shown_.link_paste_mode);
   EXPECT_FALSE(shown_.phrase_flow) << "leaving the phrase path forgot it";
-  typed_payload_ = "{\"format\":\"pp-browser-link-device-v1\"}";
+  typed_payload_ = "pp-browser-link-reply:AQ";
   controller_.OnSubmit();
   ASSERT_TRUE(link_);
   EXPECT_FALSE(phrase_restore_);
 }
 
+// M027: the link page shows this device's one-time offer (QR code and digits); "Scan" steps the gate aside for the
+// camera and imports what it reads; nothing read brings the gate back; leaving the page wipes the key.
+TEST_F(PinGateControllerTest, TheLinkPageShowsTheOfferAndScansTheReply) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  ASSERT_TRUE(shown_.link_paste_mode);
+  EXPECT_EQ(offers_, 1);
+  EXPECT_EQ(std::string(shown_.link_offer_qr.c_str()), "<rect/>");
+  EXPECT_EQ(std::string(shown_.link_offer_code.c_str()), "0427");
+  EXPECT_TRUE(shown_.link_can_scan);
+
+  controller_.OnScanReply();
+  ASSERT_TRUE(scan_closed_);
+  EXPECT_FALSE(shown_.active) << "the camera's page, not the gate";
+  scan_closed_(); // cancelled: the gate as it was
+  EXPECT_TRUE(shown_.active);
+  EXPECT_TRUE(shown_.link_paste_mode);
+  EXPECT_FALSE(link_);
+
+  controller_.OnScanReply();
+  ASSERT_TRUE(scan_done_);
+  scan_done_(std::string("\x01reply", 6));
+  ASSERT_TRUE(link_) << "what the camera read is imported at once";
+  EXPECT_EQ(std::get<1>(*link_), std::string("\x01reply", 6));
+  EXPECT_TRUE(shown_.active);
+
+  EXPECT_EQ(forgotten_, 0);
+  controller_.ShowIdentityFork(); // back to the start
+  EXPECT_EQ(forgotten_, 1) << "the one-time key goes with the page";
+}
+
+TEST_F(PinGateControllerTest, ThePhrasePageMakesNoOffer) {
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityPhrase();
+  controller_.OnUseDefaultPin();
+  EXPECT_EQ(offers_, 0);
+  EXPECT_TRUE(std::string(shown_.link_offer_qr.c_str()).empty());
+  controller_.ShowIdentityFork();
+  EXPECT_EQ(forgotten_, 0);
+}
+
 TEST_F(PinGateControllerTest, AnOverLongTransferCodeSubmitsFromTheHiddenFullValue) {
-  // B166/B167: a transfer code is a multi-KB blob kept out of the rendered link_payload (it froze the app). Submit
+  // B166/B167: the reply is a 1.6 KB blob kept out of the rendered link_payload (it froze the app). Submit
   // must still send the real value, which lives in link_payload_full while payload_hidden.
   controller_.ShowIdentityFork();
   controller_.OnIdentityLink();
@@ -233,7 +289,7 @@ TEST_F(PinGateControllerTest, AnOverLongTransferCodeSubmitsFromTheHiddenFullValu
   // The box renders nothing (the big code was hidden), but the full value is carried alongside.
   typed_payload_ = "";
   payload_hidden_ = true;
-  hidden_full_ = "{\"format\":\"pp-browser-link-device-v1\",\"big\":\"" + std::string(20000, 'A') + "\"}";
+  hidden_full_ = "pp-browser-link-reply:" + std::string(1700, 'A');
   controller_.OnSubmit();
   ASSERT_TRUE(link_) << "the hidden full value is what gets sent";
   EXPECT_EQ(std::get<1>(*link_), hidden_full_);
@@ -497,7 +553,7 @@ TEST_F(PinGateControllerTest, UnlockTextSwitchToKeypadWhenDigitsKnown) {
 
 TEST_F(PinGateControllerTest, VerifyKeypadAutoSubmitsAndCallsBack) {
   pin_digits_ = 4;
-  controller_.ShowVerify(PinVerifyPurpose::ExportTransferCode, Check(), [this]() { ++verified_ok_; });
+  controller_.ShowVerify(PinVerifyPurpose::LinkDevice, Check(), [this]() { ++verified_ok_; });
   ASSERT_TRUE(shown_.verify_mode);
   ASSERT_TRUE(shown_.keypad);
   EXPECT_EQ(Message(), Tr("pin.verify_export_message"));
@@ -529,7 +585,7 @@ TEST_F(PinGateControllerTest, VerifyWrongPinStays) {
 
 TEST_F(PinGateControllerTest, VerifyCancelReturns) {
   pin_digits_ = 4;
-  controller_.ShowVerify(PinVerifyPurpose::ExportTransferCode, Check(), [this]() { ++verified_ok_; });
+  controller_.ShowVerify(PinVerifyPurpose::LinkDevice, Check(), [this]() { ++verified_ok_; });
   Keys("2468");
   controller_.OnCancel(); // while the check runs
   EXPECT_FALSE(shown_.active) << "back to settings";

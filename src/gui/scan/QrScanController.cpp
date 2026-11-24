@@ -97,30 +97,39 @@ bool QrScanController::RegisterModel(ui::Context* context) {
   });
 }
 
-void QrScanController::Open(QrScanResultCallback on_result) {
+void QrScanController::Open(QrScanResultCallback on_result, std::function<void()> on_closed) {
   Close();
+  const auto ignored = [&on_closed](const char* why) {
+    ScanLog().warning << "Open ignored: " << why;
+    if (on_closed) {
+      on_closed(); // this request ends here; one still waiting (the permission prompt) keeps its own
+    }
+  };
   if (!navigation_.push_layer) {
-    ScanLog().warning << "Open ignored: push_layer is not bound";
+    ignored("push_layer is not bound");
     return;
   }
   if (!on_result) {
-    ScanLog().warning << "Open ignored: empty result callback";
+    ignored("empty result callback");
     return;
   }
   if (!AppLifecycle::IsForeground()) {
-    ScanLog().warning << "Open ignored: app is not in the foreground";
+    ignored("app is not in the foreground");
     return;
   }
   // A newer tap takes over: whatever an older tap left waiting (a late permission answer, a stored "when the app is
   // active again") belongs to an abandoned request and must not run after this one.
   awaiting_permission_ = nullptr;
   on_foreground_ = nullptr;
+  EndWithoutResult();
+  on_closed_ = std::move(on_closed);
   switch (camera_.state()) {
     case CameraPermission::Granted:
       Present(std::move(on_result));
       return;
     case CameraPermission::Denied:
       UserFeedback::Fail(Tr("scan.camera_denied"));
+      EndWithoutResult();
       return;
     case CameraPermission::NotDetermined:
       break;
@@ -151,7 +160,10 @@ void QrScanController::OnCameraAnswer(const bool granted) {
   if (granted) {
     next = [this, on_result = std::move(on_result)]() mutable { Present(std::move(on_result)); };
   } else {
-    next = []() { UserFeedback::Fail(Tr("scan.camera_denied")); };
+    next = [this]() {
+      UserFeedback::Fail(Tr("scan.camera_denied"));
+      EndWithoutResult();
+    };
   }
   // The answer may land before the app is active again (iOS hands it over while its prompt is going away): the page
   // then opens on the next foreground transition rather than being dropped.
@@ -163,8 +175,9 @@ void QrScanController::OnCameraAnswer(const bool granted) {
 }
 
 void QrScanController::Present(QrScanResultCallback on_result) {
-  Close();
+  CloseSurface();
   if (!navigation_.push_layer) {
+    EndWithoutResult();
     return;
   }
   PaneSpec spec;
@@ -175,6 +188,7 @@ void QrScanController::Present(QrScanResultCallback on_result) {
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
     ScanLog().warning << "Open ignored: push_layer returned no layer";
+    EndWithoutResult();
     return;
   }
   on_result_ = std::move(on_result);
@@ -207,13 +221,31 @@ const char* ScanErrorTextKey(const QrScanner::ErrorKind kind) {
 }
 
 void QrScanController::OnDismissed() {
+  const bool pending = static_cast<bool>(on_result_);
   preview_ = nullptr;
   layer_id_ = -1;
   scanner_.Stop();
   on_result_ = nullptr;
+  if (pending) {
+    EndWithoutResult();
+  }
 }
 
 void QrScanController::Close() {
+  const bool pending = static_cast<bool>(on_result_);
+  CloseSurface();
+  if (pending) {
+    EndWithoutResult();
+  }
+}
+
+void QrScanController::EndWithoutResult() {
+  if (auto closed = std::exchange(on_closed_, nullptr)) {
+    closed();
+  }
+}
+
+void QrScanController::CloseSurface() {
   preview_ = nullptr;
   scanner_.Stop();
   on_result_ = nullptr;
@@ -249,6 +281,8 @@ void QrScanController::Tick() {
   }
   if (update.text) {
     auto done = std::move(on_result_);
+    on_result_ = nullptr;
+    on_closed_ = nullptr; // a text came: this request is answered
     Close();
     if (done) {
       done(std::move(*update.text));
@@ -301,6 +335,7 @@ void QrScanController::Dirty() {
 void QrScanController::Shutdown() {
   awaiting_permission_ = nullptr;
   on_foreground_ = nullptr;
+  on_closed_ = nullptr; // the callers are going too: nothing is told
   Close();
   scanner_.Shutdown();
 }

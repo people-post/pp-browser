@@ -12,8 +12,8 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   IdentityStore.cpp
   LinkDeviceCoordinator.cpp
   LinkDeviceExchange.cpp
+  LinkOffer.cpp
   AccountLocker.cpp
-  RecoveryBundle.cpp
   ContactClock.cpp
   RetiredKeychainBackup.cpp
   MeshHopPolicy.cpp

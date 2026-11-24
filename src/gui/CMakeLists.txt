@@ -12,6 +12,7 @@ pp_browser_add_feature_library(pp_gui
     BadgeAggregator.cpp
     QrBrightness.cpp
     QrDisplay.cpp
+    LinkDeviceText.cpp
     CallChromeSync.cpp
     CallController.cpp
     CallDemoScenes.cpp
