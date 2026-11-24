@@ -462,7 +462,8 @@ class Lab:
             "config_version": 1,
             "data_dir": data_dir,
             # The lab relay is a backend of its own: say so (a config without `backend` is on the default one).
-            "backend": {"env": "custom"},
+            # A custom backend has only the services it lists: the account locker is the relay's, as on a built-in one.
+            "backend": {"env": "custom", "services": {"account_locker": self.user_relay}},
             # As deployed builds set it (PP_RELAY_CONTENT_SHA256): the relay's CDN refuses a POST without it.
             # Its address carries its relay id (MR008: a custom backend names it, as a release build ships the org's).
             "relay": {"base_url": self.user_relay, "content_sha256": True, "relay_id": self.relay_id("a")},
@@ -489,6 +490,7 @@ class Lab:
         config["relay"] = {"base_url": origins[0], "relay_id": first, "content_sha256": True,
                            "extra_base_urls": [self.relay_link(r) for r in relays[1:]]}  # relay links (MR008)
         config["registration"] = {"base_url": origins[0], "relay_id": first}
+        config["backend"]["services"]["account_locker"] = origins[0]
         found = [self.tls_relays[r]["origin"] for r in directories]
         config["directory"] = {"base_url": found[0],
                                "providers": [{"base_url": o, "transport": "http"} for o in found]}
