@@ -44,10 +44,14 @@ Tracked in [#753](https://github.com/people-post/pp-browser/issues/753).
 
 Tracked in [#754](https://github.com/people-post/pp-browser/issues/754).
 
-- [ ] `backends/{backend_id}/`: the registration slot and Brief LLM token out of `identity.enc` into
-      `registration.enc`; client-compat and locker state moved. The mesh node list, its reputation and the Home feed
-      stay at the profile's top level, keyed by origin (PM011).
-- [ ] The inbox cursor's "preferred" slot goes; per-relay records stay keyed by relay.
+- [x] `backends/{backend_id}/`: the registration slot and Brief LLM token out of `identity.enc` into
+      `registration.enc` (AAD names profile and backend; an older identity.enc gives them up at its next save);
+      `client_compat.json` and `account_locker.json` moved (once, at the first start after P3). The mesh node list, its
+      reputation and the Home feed stay at the profile's top level (PM011).
+- [ ] Their caches keyed by origin: `mesh_directory_nodes.json` is written by pp-cpp-mesh (`MeshDirectoryCache`), so
+      it waits for a mesh change; with one home backend per profile (PM012) it holds one source's list anyway.
+- [x] The inbox cursor's "preferred" slot goes: every relay's cursor is written by its origin; an older file's
+      `cursor` / `cursor_relay` are read once.
 
 ## P4 — Backend switch (PM005 as narrowed by PM009)
 

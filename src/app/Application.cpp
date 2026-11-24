@@ -592,6 +592,8 @@ Roe<void> Application::ResetActiveProfile() {
   }
   const std::string new_profile_dir = registry.ActiveProfileDataDir();
   store_.Mutable().profile_data_dir = new_profile_dir;
+  store_.Mutable().backend_data_dir =
+      (std::filesystem::path(new_profile_dir) / "backends" / registry.ActiveBackendId()).string();
   log().info << "New profile " << registry.ActiveProfileId() << " for backend " << registry.ActiveBackendId();
   AppPaths::EnsureDirs(new_profile_dir);
 

@@ -72,7 +72,7 @@ protected:
     controller_.BindCompatPorts(MessagingCompatPorts{
         .messaging_initialized = []() { return true; },
         .client_compat = [this]() { return std::shared_ptr<IClientCompatClient>(relay_); },
-        .profile_data_dir = [this]() { return dir_.string(); },
+        .backend_data_dir = [this]() { return dir_.string(); },
         .watch_upgrade_required = [this](std::function<void()> hook) { upgrade_hook_ = std::move(hook); },
     });
   }

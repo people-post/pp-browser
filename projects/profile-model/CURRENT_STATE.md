@@ -25,3 +25,8 @@ in-process, `--profile` as a label, the app removing old-format profiles with th
 own data root and network with its old profile converted in place; `machine.json` lost `active_profile_id`. Contract:
 [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles). A custom backend's id is
 PM010's (`CustomBackendId`), so its folder under `backends/` follows the registration URL and the org relay.
+
+**P3 (per-backend state) is built** (local branch `hongwei/profile-model-rest`, #754): `backends/{backend_id}/`
+holds `registration.enc` (the registration slot and the Brief LLM token, out of `identity.enc`), `client_compat.json`
+and `account_locker.json`; the inbox cursor file keeps every relay's cursor by origin. Left: the mesh caches keyed by
+origin (pp-cpp-mesh writes `mesh_directory_nodes.json`).

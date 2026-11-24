@@ -95,6 +95,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   auto identity = std::make_unique<IdentityStore>(profile_data_dir, registry->ActiveProfileId());
+  // Its registration slot is its backend's (profile-model PM004): moved out of identity.enc at the next save.
+  identity->SetBackend((std::filesystem::path(profile_data_dir) / "backends" / backend_id).string(), backend_id);
   secrets->RegisterDekConsumer(identity.get());
 
   if (auto unlocked = secrets->Unlock(*pin); !unlocked) {

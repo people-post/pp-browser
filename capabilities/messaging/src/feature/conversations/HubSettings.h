@@ -33,6 +33,11 @@ struct HubSettings {
   int64_t initiation_floor = 0;
   /** The app's data directory (machine-level files: the mesh directory cache). */
   std::string app_data_dir;
+  /**
+   * The backend this profile is the home profile of (profile-model PM009): what the device keeps of it lives in the
+   * profile's `backends/{backend_id}/` (registration.enc, account_locker.json). Empty: kept at the profile's top level.
+   */
+  std::string backend_id;
   /** The profile's policies as they stand at start (later changes arrive through Apply). */
   HubPolicyPrefs policy;
   /** The system's name for this device, read once at startup on the main thread (empty: unknown). */

@@ -16,6 +16,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <sodium.h>
 #include "common/PbrCompat.h"
@@ -282,6 +283,49 @@ Object IdentityToJson(const LocalIdentity& identity) {
   return root;
 }
 
+/** The fields a backend's registration.enc keeps (profile-model PM004): what this device holds of one backend. */
+constexpr const char* kRegistrationKeys[] = {
+    "brief_llm_api_key",       "brief_llm_token_expires_at", "brief_llm_guest_api_key",   "registered",
+    "registration_expires_at", "registered_backend_url",     "registered_card_issued_at", "registration_id",
+    "kem_binding_published",
+};
+
+bool HasRegistrationKeys(const Object& root) {
+  for (const char* key : kRegistrationKeys) {
+    if (root.contains(key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** registration.enc's plaintext: the registration fields of IdentityToJson, under their own schema. */
+Object RegistrationToJson(const LocalIdentity& identity) {
+  const Object all = IdentityToJson(identity);
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(IdentityStore::kRegistrationSchemaVersion));
+  for (const char* key : kRegistrationKeys) {
+    if (const auto found = all.fields().tryGet(key)) {
+      root.set(key, found->get());
+    }
+  }
+  return root;
+}
+
+/** Sets `identity`'s registration fields from registration.enc's `root` (a field absent: its default). */
+void ApplyRegistrationJson(const Object& root, LocalIdentity& identity) {
+  const LocalIdentity from = IdentityFromJson(root);
+  identity.brief_llm_api_key = from.brief_llm_api_key;
+  identity.brief_llm_token_expires_at = from.brief_llm_token_expires_at;
+  identity.brief_llm_guest_api_key = from.brief_llm_guest_api_key;
+  identity.registered = from.registered;
+  identity.registration_expires_at = from.registration_expires_at;
+  identity.registered_backend_url = from.registered_backend_url;
+  identity.registered_card_issued_at = from.registered_card_issued_at;
+  identity.registration_id = from.registration_id;
+  identity.kem_binding_published = from.kem_binding_published;
+}
+
 } // namespace
 
 IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
@@ -293,6 +337,49 @@ IdentityStore::IdentityStore(std::string data_dir, std::string profile_id)
       profile_id_ = "default";
     }
   }
+}
+
+void IdentityStore::SetBackend(std::string backend_dir, std::string backend_id) {
+  std::lock_guard lock(mutex_);
+  backend_dir_ = std::move(backend_dir);
+  backend_id_ = std::move(backend_id);
+}
+
+std::string IdentityStore::RegistrationPath() const {
+  return (std::filesystem::path(backend_dir_) / "registration.enc").string();
+}
+
+std::string IdentityStore::RegistrationAad() const {
+  return FileCipher::BuildAad("registration", ProfileId() + "/" + backend_id_);
+}
+
+Roe<void> IdentityStore::LoadRegistration() const {
+  std::error_code ec;
+  if (!std::filesystem::exists(RegistrationPath(), ec)) {
+    return {};
+  }
+  const auto file_size = std::filesystem::file_size(RegistrationPath(), ec);
+  if (ec || file_size > kMaxProfileJsonFileBytes) {
+    return Error("registration.enc is unreadable or too large");
+  }
+  std::ifstream in(RegistrationPath(), std::ios::binary);
+  ByteVector blob((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  if (!in && !in.eof()) {
+    return Error("Failed to read registration.enc");
+  }
+  auto plaintext = FileCipher::Decrypt(dek_, blob, RegistrationAad());
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  auto root = TryParseObject(std::string(plaintext->begin(), plaintext->end()));
+  if (!root) {
+    return Error("Failed to parse decrypted registration");
+  }
+  if (auto checked = SchemaVersion::Validate(*root, kRegistrationSchemaVersion, "registration.enc"); !checked) {
+    return checked.error();
+  }
+  ApplyRegistrationJson(*root, identity_);
+  return {};
 }
 
 Roe<void> IdentityStore::SetIdentitySeed(ByteVector master_seed) {
@@ -497,6 +584,18 @@ Roe<void> IdentityStore::EnsureLoaded() const {
   }
 
   identity_ = IdentityFromJson(*root);
+  bool moves_registration = false;
+  if (!backend_dir_.empty()) {
+    std::error_code reg_ec;
+    if (std::filesystem::exists(RegistrationPath(), reg_ec)) {
+      if (auto registration = LoadRegistration(); !registration) {
+        return registration.error();
+      }
+    }
+    // An identity.enc that still holds the registration fields (written before they moved): kept in memory, moved out
+    // at the next save. registration.enc, when there is one, has the last word.
+    moves_registration = HasRegistrationKeys(*root);
+  }
   auto private_key = Base64Decode(identity_.private_key_b64.Reveal());
   if (!private_key) {
     return private_key.error();
@@ -524,7 +623,7 @@ Roe<void> IdentityStore::EnsureLoaded() const {
     }
   }
   loaded_ = true;
-  dirty_ = false;
+  dirty_ = moves_registration;
   return {};
 }
 
@@ -536,7 +635,25 @@ Roe<void> IdentityStore::SaveIdentity(const LocalIdentity& identity) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
   }
-  const std::string json = DumpJson(IdentityToJson(identity), 2);
+  Object identity_json = IdentityToJson(identity);
+  if (!backend_dir_.empty()) {
+    // The backend's part first: a stop between the two writes leaves both files holding it, and registration.enc wins.
+    const std::string registration_json = DumpJson(RegistrationToJson(identity), 2);
+    const ByteVector registration_plaintext(registration_json.begin(), registration_json.end());
+    auto sealed = FileCipher::Encrypt(dek_, registration_plaintext, RegistrationAad());
+    if (!sealed) {
+      return sealed.error();
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(backend_dir_, ec);
+    if (auto written = AtomicFileWrite::Write(RegistrationPath(), *sealed); !written) {
+      return written;
+    }
+    for (const char* key : kRegistrationKeys) {
+      identity_json.erase(key);
+    }
+  }
+  const std::string json = DumpJson(identity_json, 2);
   const ByteVector plaintext(json.begin(), json.end());
   const std::string aad = FileCipher::BuildAad("identity", ProfileId());
   auto ciphertext = FileCipher::Encrypt(dek_, plaintext, aad);

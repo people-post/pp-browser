@@ -291,14 +291,8 @@ void RelayInboxCoordinator::SaveCursorsLocked() {
   RelayInboxCursors file;
   file.registrations = mailboxes_;
   file.rereads = rereads_;
-  for (const auto& [relay, cursor] : cursors_) {
-    if (!inboxes_.empty() && relay == RelayOriginKey(inboxes_.front()->relay.origin)) {
-      file.preferred = cursor;
-      file.preferred_relay = relay;
-    } else {
-      file.others[relay] = cursor;
-    }
-  }
+  // Every relay's cursor by its origin, the preferred one's too (profile-model P3: no slot names a "preferred" relay).
+  file.others = cursors_;
   SaveRelayInboxCursors(profile_data_dir_, cursors_account_, file);
 }
 

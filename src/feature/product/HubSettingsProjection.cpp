@@ -1,6 +1,7 @@
 #include "feature/product/HubSettingsProjection.h"
 
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/platform/os/OsDeviceName.h"
 #include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -28,6 +29,7 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   settings.llm_token_url = table.llm_token_url;
   settings.initiation_floor = config.initiation_floor;
   settings.app_data_dir = AppPaths::DataDir(config.data_dir);
+  settings.backend_id = kUiDemoBuild ? std::string("prod") : BackendProfileKey(config); // as Bootstrap selects it
   settings.policy = ProjectPolicy(prefs);
   settings.system_device_name = StartupSystemDeviceName();
   settings.developer_relays = kDeveloperRelaysAllowed;

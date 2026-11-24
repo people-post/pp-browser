@@ -58,6 +58,20 @@ Roe<void> RemoveOldFormatProfiles(ProfileRegistry& registry) {
   return {};
 }
 
+// What the device keeps of its backend lives in the profile's backends/{id}/ (profile-model PM004); a profile made
+// before that kept these two at its top level: moved once, so the locker's versions and the compat cache carry over.
+void MoveBackendFilesIntoPlace(const std::string& profile_data_dir, const std::string& backend_data_dir) {
+  for (const char* name : {"account_locker.json", "client_compat.json"}) {
+    const std::filesystem::path from = std::filesystem::path(profile_data_dir) / name;
+    const std::filesystem::path to = std::filesystem::path(backend_data_dir) / name;
+    std::error_code ec;
+    if (std::filesystem::exists(from, ec) && !std::filesystem::exists(to, ec)) {
+      std::filesystem::create_directories(to.parent_path(), ec);
+      std::filesystem::rename(from, to, ec);
+    }
+  }
+}
+
 Roe<void> UnlockProfileForBootstrap(ConversationsHub& messaging, ProfileSecretsEngine& secrets, const SecretText& pin) {
   StartupPhase phase("Bootstrap::Unlock+EnsureMessagingReady");
   return UnlockProfileSecretsAndReady(secrets, pin, [&messaging]() { return messaging.EnsureMessagingReady(); });
@@ -124,6 +138,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return Error("this build does not open profile '" + registry->ActiveProfileId() + "'");
   }
   AppPaths::EnsureDirs(profile_data_dir);
+  MoveBackendFilesIntoPlace(profile_data_dir,
+                            (std::filesystem::path(profile_data_dir) / "backends" / backend_key).string());
 
   auto machine_prefs = UserPreferences::LoadMachine(AppPaths::DataDir());
   if (!machine_prefs) {
@@ -174,6 +190,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;
   result.backend_key = backend_key;
+  result.backend_data_dir = (std::filesystem::path(profile_data_dir) / "backends" / backend_key).string();
   result.config_path = Config::DiscoverConfigPath(options.argc, options.argv);
   if (result.config_path.empty()) {
     result.config_path = AppPaths::ConfigFilePath();

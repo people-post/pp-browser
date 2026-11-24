@@ -36,7 +36,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/                # {id}: opaque (16 hex), fixed for the profile's life — every sealed file's AAD and the keychain items name it
   manifest.json             # schema_version 2; network = main | staging | dev | test-custom | node — written first, never changed (see Per-backend profiles)
-  backends/{backend id}/    # the backend this is the home profile of (exactly one); empty until profile-model P3 moves the per-backend files in
+  backends/{backend id}/    # the backend this is the home profile of (exactly one): what this device keeps of that backend (profile-model PM004)
+    registration.enc        # the registration slot and the Brief LLM token under DEK AEAD (AAD registration|{profile_id}/{backend id}|1; plaintext schema_version 1:
+                            # registered, registration_expires_at, registered_backend_url, registration_id, registered_card_issued_at, kem_binding_published,
+                            # brief_llm_api_key, brief_llm_token_expires_at, brief_llm_guest_api_key); an identity.enc that still holds them gives them up at its next save
+    account_locker.json     # (below) moved here from the profile's top level at the first start after P3
+    client_compat.json      # (below) likewise
   mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1; optional amp_wire / node_version / features, N032); per profile, so per backend
   mesh_node_reputation.json # mesh nodes and operators this profile demoted for a contradicted claim (N032; schema_version 1; demoted_until_ms / last_strike_ms / strikes); local only, never sent
   mesh_last_good_relays.json # relays that last carried this device's circuits (call-path-resilience K015; schema_version 1; relays: ≤3 PeerIds, most recent first);
@@ -50,7 +55,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the relay id each relay origin of ours must prove, and the highest certificate per relay id (SIGNED_FORMATS § 3, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}, reread_phase?: {origin: drain|backfill}, reread_floor_ms?: {origin: unix_ms}}:
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, relays?: {origin: cursor} — every relay's, the preferred one's too (an older file's cursor / cursor_relay are read once), registrations?: {origin: registration_id}, reread_phase?: {origin: drain|backfill}, reread_floor_ms?: {origin: unix_ms}}:
                             # the preferred relay's (cursor_relay names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
                             # registrations (additive, 2026-11-22, schema stays 1 (INVENTORY S3); always written, empty too; an older app ignores it and drops it when it writes): the
                             # registration each relay's cursor counts in — a fresh registration is a new mailbox numbered from the start, so a cursor kept for another one,
@@ -66,7 +71,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
-  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional registered_card_issued_at — the account card the relay last answered for at register/finish, SERVICE_ENDPOINTS; optional registration_id — the preferred relay's registration a revoke names, MR007, additive; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
+  identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 4, also its floor: an older or unversioned file is an unlock error, wipe the profile; device ML-DSA-65 + account ML-DSA + account KEM; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext; the registration slot and the Brief LLM token are in backends/{backend id}/registration.enc)
   own_card.enc              # our account's newest account card under DEK AEAD (AAD purpose "own-card", plaintext schema_version 1: {schema_version, card}; IdentityStore):
                             # the copy that outlives Reset chats, the start-up recovery's reset and a profile.db too old to upgrade (all of which remove threads/
                             # with its peer_cards); only a newer card of ours replaces it; a card of another account is ignored (a link or restore deletes the file
@@ -77,14 +82,14 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   payment_promises.json     # payment promise receipts (pricing P002 / P003; plaintext, the signed promises as received): {schema_version: 2, promises: [...],
                             # pending_inbound?: [...] — inbound receipts staged until Accept or Ignore}; 2 is also its floor: another version, or none, is refused,
                             # and a file not read is never written over (that run's receipts live in memory); optional
-  account_locker.json       # account locker sync state: schema_version 1, highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md
+  account_locker.json       # (in backends/{backend id}/) account locker sync state: schema_version 1, highest_version_by_locker, contact_clock, device_names (plaintext; ACCOUNT_LOCKER.md
                             # § On disk); no schema_version (a file from before it): 1; a newer one is not read and never written over (that run keeps it in memory)
   attachment_suppressions.json # attachments the person deleted here, not fetched again (R020): {schema_version: 1, threads: {thread_id: [content hash hex]}};
                             # plaintext, written atomically; no schema_version (a file from before it): 1; a newer one, or one not read, refuses every change; optional
   contacts.json             # address book (schema_version 3: local + remote + overrides{}); another version, or none, is refused; optional
                             # remote.locator_relay: a QR locator's preferred relay address {origin, relay_id} (multi-relay R4, MR008, SIGNED_FORMATS § 3.3), its relay list
                             # until a card (additive; one without a relay id of the `relay:` form, a `peer_id` one included, is read as none)
-  client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
+  client_compat.json        # (in backends/{backend id}/) cached GET /v1/client-compat (TTL 6h; optional): {schema_version: 1, fetched_at_unix, document} with every field the
                             # reader knows (SERVICE_ENDPOINTS § Client compatibility: ranges, node floor, switches, the org relay's certificate); no schema_version (a file from
                             # before it): read as it is; a newer one is no cache and never written over
   cache/icons/{key}/        # profile photos (ProfileIconCache): key `self` (ours: written when this device uploads it, and on a device that did not, fetched after an account-locker sync from our own directory entry by Account ID) or an Account ID with `/ \ :` made `_`; meta.json {url, blob_id, kind,

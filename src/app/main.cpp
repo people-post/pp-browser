@@ -199,10 +199,10 @@ int main(int argc, char** argv) {
   {
     const auto& snapshot = app.Store().Snapshot();
     pbr::RunIfUploadAllowed(pbr::kUiDemoBuild, [&snapshot] {
-      pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
+      pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, backend_data_dir = snapshot.backend_data_dir,
                                              enabled = snapshot.profile_prefs.crash_reports_enabled,
                                              base_url = pbr::ActiveBackendTable().crash_intake_url]() {
-        pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+        pbr::MaybeUploadPendingCrashReport(data_dir, backend_data_dir, enabled, base_url);
       });
     });
   }
