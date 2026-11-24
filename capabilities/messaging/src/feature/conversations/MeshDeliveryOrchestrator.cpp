@@ -693,7 +693,7 @@ bool MeshDeliveryOrchestrator::LinkedTo(const std::string& peer_id) const {
 
 Roe<EnvelopeSender> MeshDeliveryOrchestrator::OwnSender(const LocalIdentity& identity) {
   if (own_cards_.SignedOut()) {
-    return Error(kSignedOutMessage); // M021 d4: the account's newest list leaves this device out
+    return SignedOutSendError(); // M021 d4: the account's newest list leaves this device out
   }
   auto device = own_cards_.DevicePeerId();
   if (!device) {
@@ -758,6 +758,17 @@ void MeshDeliveryOrchestrator::SetInboxReady(std::function<bool(const std::strin
 bool MeshDeliveryOrchestrator::InboxReady(const std::string& origin) const {
   std::lock_guard lock(inbox_ready_mu_);
   return !inbox_ready_ || inbox_ready_(origin);
+}
+
+void MeshDeliveryOrchestrator::SetInboxMailbox(
+    std::function<std::string(const std::string& origin, bool preferred)> mailbox) {
+  std::lock_guard lock(inbox_ready_mu_);
+  inbox_mailbox_ = std::move(mailbox);
+}
+
+std::string MeshDeliveryOrchestrator::InboxMailbox(const std::string& origin, const bool preferred) const {
+  std::lock_guard lock(inbox_ready_mu_);
+  return inbox_mailbox_ ? inbox_mailbox_(origin, preferred) : std::string();
 }
 
 void MeshDeliveryOrchestrator::SetInitiationBillingStore(InitiationBillingStore* store) {
@@ -1023,7 +1034,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
 
 void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id) {
   auto identity = identity_.Get();
-  if (!identity) {
+  if (!identity || RemovedHere(envelope)) {
     return;
   }
   const RelayReceiveOutcome outcome =
@@ -2335,6 +2346,7 @@ RelayInboxCoordinator::Ports MeshDeliveryOrchestrator::InboxPorts() {
     }
   };
   ports.ready = [this](const std::string& origin) { return InboxReady(origin); };
+  ports.mailbox = [this](const std::string& origin, const bool preferred) { return InboxMailbox(origin, preferred); };
   return ports;
 }
 
@@ -2353,6 +2365,9 @@ void MeshDeliveryOrchestrator::TakeRelayBatch(const RelayInboxCoordinator::Batch
 
 void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                                    RelayIngestNotes& notes) {
+  if (RemovedHere(envelope)) {
+    return;
+  }
   const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
   NoteVerifiedSender(envelope, outcome.sender_verified);
   FollowUpMembershipAfterIngest(groups_, outcome);
@@ -2409,6 +2424,15 @@ void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope
   if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
     notes.background_notices.push_back(std::move(*notice));
   }
+}
+
+bool MeshDeliveryOrchestrator::RemovedHere(const RelayEnvelope& envelope) const {
+  auto removed = store_.WasMessageRemoved(envelope.message_id);
+  if (!removed || !*removed) {
+    return false;
+  }
+  log().info << "drop message_id=" << envelope.message_id << ": its chat was cleared or deleted here";
+  return true;
 }
 
 void MeshDeliveryOrchestrator::PostRelayIngestNotes(RelayIngestNotes notes) {

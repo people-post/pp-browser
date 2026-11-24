@@ -192,6 +192,11 @@ public:
   void SetRelayClients(RelayClients clients);
   /** Whether another relay of ours may be polled now (we are registered there); none: always. Any thread. */
   void SetInboxReady(std::function<bool(const std::string& origin)> ready);
+  /**
+   * The registration we hold at an inbox's relay now (RelayInboxCoordinator::Ports::mailbox: a cursor counts in that
+   * mailbox); none, or empty: unknown. Any thread.
+   */
+  void SetInboxMailbox(std::function<std::string(const std::string& origin, bool preferred)> mailbox);
   /** Each poll of an inbox of ours (`ok`: it answered), on the poll lane (My relays' reachability). */
   void SetOnInboxPolled(std::function<void(const std::string& origin, bool ok)> polled);
   /** Our account card changed here (issued, or a sibling's newer one taken), outside any lock (My relays follow). */
@@ -506,9 +511,15 @@ private:
   /** A poll's batch from one of our relays, through the receive pipeline (the critical worker). */
   void TakeRelayBatch(const RelayInboxCoordinator::Batch& batch, const std::string& local_account_id);
   void IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id, RelayIngestNotes& notes);
+  /**
+   * A message of a chat cleared or deleted here, come again (IThreadTranscript::WasMessageRemoved: a mailbox read
+   * from its start, a copy sent again): dropped before the receive pipeline — no chat made, no unread, no notice.
+   */
+  bool RemovedHere(const RelayEnvelope& envelope) const;
   void PostRelayIngestNotes(RelayIngestNotes notes);
   RelayInboxCoordinator::Ports InboxPorts();
   bool InboxReady(const std::string& origin) const;
+  std::string InboxMailbox(const std::string& origin, bool preferred) const;
   std::optional<BackgroundNotice> BackgroundNoticeFor(const RelayReceiveOutcome& outcome,
                                                       const std::string& local_account);
   /**
@@ -607,6 +618,7 @@ private:
   std::function<void(BriefRelayHealthState)> on_brief_relay_health_changed_;
   mutable std::mutex inbox_ready_mu_;
   std::function<bool(const std::string&)> inbox_ready_;
+  std::function<std::string(const std::string&, bool)> inbox_mailbox_; // guarded by inbox_ready_mu_
   /** One relay batch through the pipeline at a time (two relays may carry the same message). */
   std::mutex relay_ingest_mu_;
   /** Our relay inboxes, polled (last: its posted polls capture this, and it reads the members above). */

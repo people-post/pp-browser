@@ -72,6 +72,11 @@ enum class Auth : int32_t {
    * names the code.
    */
   AccountCardRefused = 13,
+  /**
+   * Not a relay's answer: the account's newest device list leaves this device out (M021 d4), so it sends nothing
+   * (`errors.auth.device_signed_out`: link it again).
+   */
+  DeviceSignedOut = 14,
 };
 
 enum class Network : int32_t {

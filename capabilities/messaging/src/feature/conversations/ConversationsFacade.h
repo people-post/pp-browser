@@ -120,6 +120,8 @@ public:
   Roe<void> StartNewDeviceList();
   /** Our device list changed, or where getting it back stands (read OwnDevices again); runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /** The same change, to the Chats page's removed-device notice (ConversationsHub::SetDeviceRemovedWatch). */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
   /** Me → My relays (multi-relay R3): ours with their state; the changes block (call on a worker). */
   Roe<OurRelaysStatus> OurRelays();
   /** Adds the relay a relay link names (MR008: `https://host#<PeerId>`). */
@@ -506,8 +508,14 @@ public:
   Roe<LocalIdentity> ModifyLocalIdentity(const std::function<bool(LocalIdentity& identity)>& change);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
-  /** #328: take this account off the directory (profile reset / delete account). */
-  Roe<void> RevokeRegistration();
+  /**
+   * A profile reset leaves our relays (#328). On the account's only device (OwnCards::OnlyDevice) the account's
+   * registration goes — off the directory, with every push binding; its mailbox is gone. While another device is on
+   * the account (or that cannot be told) the registration stays, for the others: only this device's push bindings go
+   * (M019 phase 1). It stays on the account's device list until the main device takes it off (no device can take
+   * itself off, OwnCards::RemoveDevice).
+   */
+  Roe<void> LeaveRelaysOnReset();
 
   /**
    * Escape hatch for lifecycle / bridges that legitimately need the hub

@@ -49,8 +49,18 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # cursors (the card already names these relays); written atomically on every change and every registration answer
   preferences.json
   relay_pins.json           # the relay id each relay origin of ours must prove, and the highest certificate per relay id (SIGNED_FORMATS § 3, § relay_pins.json below); plaintext, written atomically
-  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}}: the preferred relay's (cursor_relay
-                            # names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
+  relay_inbox_cursor.json   # poll watermarks {schema_version: 1, account_id, cursor, cursor_relay?, relays?: {origin: cursor}, registrations?: {origin: registration_id}, reread_phase?: {origin: drain|backfill}, reread_floor_ms?: {origin: unix_ms}}:
+                            # the preferred relay's (cursor_relay names it, additive; absent: the preferred one's), then our others'; a relay leaving My relays loses its cursor;
+                            # registrations (additive, 2026-11-22, schema stays 1 (INVENTORY S3); always written, empty too; an older app ignores it and drops it when it writes): the
+                            # registration each relay's cursor counts in — a fresh registration is a new mailbox numbered from the start, so a cursor kept for another one,
+                            # or while it was not known, is dropped and that inbox read from its start (RelayInboxCoordinator; the receive pipeline drops what it took already);
+                            # a file without the key (an older app's) is read again once per relay with a cursor, in two phases kept in reread_phase / reread_floor_ms
+                            # (additive, 2026-11-23, schema stays 1; an older app ignores both and drops them when it writes — the next run then starts over, safely):
+                            # `drain` polls on from the kept cursor unfiltered, as the older app would, until an empty page with no cursor (a page of unreadable records
+                            # alone carries one and goes on); `backfill` then reads the inbox from its
+                            # start until an empty page, skipping records the relay stored (created_at) before reread_floor_ms = the file's last write less 10 min
+                            # (chats cleared or deleted before removed_messages existed do not come back; a record with no created_at is taken in); no floor — the file
+                            # time unreadable, in the future or extreme — takes everything. Never delivers less than keeping the cursor; the keys go when it ends;
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
@@ -86,6 +96,12 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 9, floor 9 — § Schema
                             # versions; restart_pending: a public session kept through a chat reset — Reset chats, or a profile.db below its floor — starts its next epoch on the next send);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
+                            # removed_messages (message_id PRIMARY KEY, removed_at unix ms) — the ids of the messages of a 1:1 or group
+                            # chat cleared or deleted here (rows newer than 120 days), written before the rows go; a copy that comes
+                            # again (a relay mailbox read from its start, a sibling's sent copy, a peer's history) is dropped before the
+                            # receive pipeline and never stored again. Ids only, plaintext like the other metadata; pruned 91 days after
+                            # removed_at (the relay keeps a record 90 days). Device-only; created on open (additive, no version step);
+                            # gone with Reset chats and Reset my profile. Delete-for-me / for-everyone keep their row as a tombstone instead
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
                             # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's

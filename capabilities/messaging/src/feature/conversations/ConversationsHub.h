@@ -344,6 +344,8 @@ public:
   Roe<void> RemoveOwnDevice(const std::string& peer_id);
   /** On the master: hand the role to another device of the account and tell siblings and contacts. */
   Roe<void> MakeMainDevice(const std::string& peer_id);
+  /** This device is the account's only one (OwnCards::OnlyDevice); false before messaging is up. */
+  bool OnlyDeviceOnAccount();
   /**
    * The person chose a new device list (no card of ours was found on our relays, OwnCards::StartFreshList): this
    * device's card holds only itself, as the master, and goes to our contacts and relays — the account's other devices
@@ -352,6 +354,11 @@ public:
   Roe<void> StartNewDeviceList();
   /** Our device list, or where getting it back stands, changed: read OwnDevices again. Runs on any thread. */
   void SetOnOwnDevicesChanged(std::function<void()> callback);
+  /**
+   * A second listener to the same change, for the Chats page's notice that this device was taken off its account
+   * (Me → My devices keeps the first while it is open). Runs on any thread; null clears it.
+   */
+  void SetDeviceRemovedWatch(std::function<void()> callback);
   /**
    * The address book changed (a contact added, renamed, removed, blocked, or refreshed from its card or the
    * directory), whoever changed it: lists of people read it again. Runs on the thread that changed it.
@@ -856,6 +863,7 @@ private:
   void NotifyOwnDevicesChanged();
   std::mutex own_devices_changed_mu_;
   std::function<void()> on_own_devices_changed_;
+  std::function<void()> device_removed_watch_;
   std::mutex contacts_changed_mu_;
   std::function<void()> on_contacts_changed_;
   std::mutex our_relays_changed_mu_;

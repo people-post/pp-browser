@@ -554,10 +554,11 @@ Roe<void> Application::ResetActiveProfile() {
   log().info << "Resetting profile data at " << profile_dir;
 
   // #328: take the registration off the directory before the local wipe, so the name does not
-  // linger in search until it expires. Best effort — a reset must still work offline.
+  // linger in search until it expires — only on the account's last device; a linked one drops its push bindings only
+  // (LeaveRelaysOnReset). Best effort — a reset must still work offline.
   if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
-    if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
-      log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
+    if (auto left = messaging_facade_->LeaveRelaysOnReset(); !left) {
+      log().warning << "Leaving the relays failed, continuing with the local reset: " << left.error().message;
     }
   }
 
@@ -1632,6 +1633,21 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .open_url = [](const std::string& url) { PlatformOpenUrl(url); },
   });
   client_compat_->BindSoftUpdateChanged([this]() { chat_->RefreshUpdateCard(); });
+  // The Chats page's "this device is no longer on your account" notice: the device list says, Me → Storage resets.
+  chat_->BindDeviceRemovedNotice(DeviceRemovedNoticePorts{
+      .signed_out =
+          [&facade]() {
+            if (!facade.IsInitialized() || !facade.IsMessagingReady()) {
+              return false;
+            }
+            auto list = facade.OwnDevices();
+            return list && list->signed_out;
+          },
+      .watch = [&facade](std::function<void()> changed) { facade.SetDeviceRemovedWatch(std::move(changed)); },
+      .relink = [this]() { settings_->StartResetProfile(); },
+      .post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); },
+      .post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); },
+  });
   badges_->BindShellNavigation(shell_navigation);
   badges_->BindAppBadge([](const int count) { SetAppBadgeCount(count); });
   badges_->BindSource([this, &facade, &shell]() {

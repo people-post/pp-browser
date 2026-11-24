@@ -96,6 +96,9 @@ Thread InMemoryDeliveryStore::UpsertThreadLocked(const Thread& thread) {
 }
 
 Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessage& message) {
+  if (removed_.count(message.id) > 0) {
+    return Error("Message was removed here with its chat");
+  }
   std::vector<ThreadMessage>& rows = messages_[message.thread_id];
   for (const ThreadMessage& row : rows) {
     if (row.id == message.id) {
@@ -157,6 +160,7 @@ Roe<Thread> InMemoryDeliveryStore::UpsertThread(const Thread& thread) {
 
 Roe<bool> InMemoryDeliveryStore::DeleteThread(const std::string& thread_id) {
   std::lock_guard lock(mutex_);
+  RememberRemovedLocked(thread_id);
   const bool existed = threads_.erase(thread_id) > 0;
   messages_.erase(thread_id);
   std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
@@ -357,8 +361,36 @@ Roe<bool> InMemoryDeliveryStore::HasMessageId(const std::string& thread_id, cons
   return false;
 }
 
+Roe<bool> InMemoryDeliveryStore::WasMessageRemoved(const std::string& message_id) const {
+  std::lock_guard lock(mutex_);
+  return removed_.count(message_id) > 0;
+}
+
+void InMemoryDeliveryStore::ForgetRemovedIds() {
+  std::lock_guard lock(mutex_);
+  removed_.clear();
+}
+
+void InMemoryDeliveryStore::RememberRemovedLocked(const std::string& thread_id) {
+  const auto thread = threads_.find(thread_id);
+  if (thread == threads_.end()) {
+    return;
+  }
+  const bool from_others = thread->second.kind == ThreadKind::Group ||
+                           (thread->second.kind == ThreadKind::Direct && ThreadChannelIsE2e(thread->second.channel));
+  if (!from_others) {
+    return;
+  }
+  if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
+    for (const ThreadMessage& row : rows->second) {
+      removed_.insert(row.id);
+    }
+  }
+}
+
 Roe<void> InMemoryDeliveryStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
   std::lock_guard lock(mutex_);
+  RememberRemovedLocked(thread_id);
   messages_.erase(thread_id);
   std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
   if (options.forget_memory) {
