@@ -1278,5 +1278,42 @@ TEST_F(OutboxOrderTest, ALaterMessageSentWhileTheFirstIsOnItsWayGoesRightAfterIt
   EXPECT_EQ(relay.Accepted(), Ids("m", 3));
 }
 
+// Pre-PR review 3: a cancel (a deleted message) ends the one the chat's later messages waited behind; they go at once,
+// not at the next inbox sync.
+TEST_F(OutboxOrderTest, ACancelOfTheQueuedFirstSendsTheWaitingOnesAtOnce) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Refuse("m1", 100, AppError::Auth(Err::Auth::StrangerQuota, "stranger_quota_exceeded"));
+  for (const std::string& id : Ids("m", 3)) {
+    outbox->Send(ToRelay("t1", id));
+  }
+  Drain();
+  ASSERT_EQ(relay.Sent(), (std::vector<std::string>{"m1"})) << "m2, m3 wait behind it, untried";
+  outbox->Cancel("m1"); // the probe deleted
+  Drain();
+  EXPECT_EQ(relay.Accepted(), (std::vector<std::string>{"m2", "m3"})) << "no Retry() was needed";
+  EXPECT_FALSE(outbox->SendStartedMs("m2"));
+  EXPECT_FALSE(outbox->SendStartedMs("m3"));
+}
+
+TEST_F(OutboxOrderTest, ACancelWhileTheFirstIsOnItsWaySendsTheWaitingOnesWhenItEnds) {
+  ScriptedRelay relay;
+  auto outbox = MakeOrderedOutbox(relay);
+  relay.Hold(true);
+  relay.Refuse("m1", 1, Error("relay unreachable")); // retryable: it would be queued again
+  outbox->Send(ToRelay("t1", "m1"));
+  ASSERT_TRUE(WaitFor([&] { return relay.Sent().size() == 1u; }, std::chrono::seconds(5)));
+  outbox->Send(ToRelay("t1", "m2"));
+  outbox->Send(ToRelay("t1", "m3"));
+  outbox->Cancel("m1"); // on its way: it goes no further
+  relay.Hold(false);
+  ASSERT_TRUE(WaitFor([&] { return relay.Accepted().size() == 2u; }, std::chrono::seconds(5)))
+      << "m1's end (cancelled, not queued again) lets them go without a Retry()";
+  EXPECT_EQ(relay.Accepted(), (std::vector<std::string>{"m2", "m3"}));
+  Drain();
+  EXPECT_FALSE(outbox->SendStartedMs("m1"));
+  EXPECT_EQ(relay.Sent().size(), 3u) << "m1 not sent again";
+}
+
 } // namespace
 } // namespace pbr

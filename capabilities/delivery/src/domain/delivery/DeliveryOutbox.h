@@ -186,6 +186,13 @@ private:
   bool CancelledLocked(const std::string& thread_id, const std::string& message_id, uint64_t serial) const;
   /** Before an attempt: true (and the request ended, nothing reported) when it was cancelled. */
   bool EndIfCancelled(const std::string& thread_id, const std::string& message_id, uint64_t serial);
+  /**
+   * `thread_id`'s 1:1 messages that wait, untried, behind an earlier one, and nothing of the chat still on its way
+   * outside the queue (whose end wakes them, Finish): they may go now. Holds `mutex_`.
+   */
+  bool FollowersFreeLocked(const std::string& thread_id) const;
+  /** A request of `thread_id` ended without an outcome (cancelled): its waiting followers go now (FollowersFreeLocked). */
+  void WakeFollowers(const std::vector<std::string>& thread_ids);
   /** Queued for a retry; false (and the request ended, nothing reported) when it was cancelled. */
   bool Enqueue(Pending pending);
   bool EnqueueLocked(Pending pending);

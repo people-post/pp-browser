@@ -132,13 +132,42 @@ bool DeliveryOutbox::CancelledLocked(const std::string& thread_id, const std::st
 
 bool DeliveryOutbox::EndIfCancelled(const std::string& thread_id, const std::string& message_id,
                                     const uint64_t serial) {
-  std::lock_guard lock(mutex_);
-  if (!CancelledLocked(thread_id, message_id, serial)) {
+  bool wake = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (!CancelledLocked(thread_id, message_id, serial)) {
+      return false;
+    }
+    log().info << "send cancelled message_id=" << message_id << " (no further attempt)";
+    EndActiveLocked(message_id);
+    wake = FollowersFreeLocked(thread_id);
+  }
+  if (wake) {
+    WakeFollowers({thread_id});
+  }
+  return true;
+}
+
+bool DeliveryOutbox::FollowersFreeLocked(const std::string& thread_id) const {
+  if (thread_id.empty()) {
     return false;
   }
-  log().info << "send cancelled message_id=" << message_id << " (no further attempt)";
-  EndActiveLocked(message_id);
-  return true;
+  const auto queued = [&](const std::string& message_id) {
+    return std::any_of(queue_.begin(), queue_.end(),
+                       [&](const Pending& item) { return item.message_id == message_id; });
+  };
+  const bool waiting = std::any_of(queue_.begin(), queue_.end(), [&](const Pending& item) {
+    return item.thread_id == thread_id && item.group_member.empty() && item.attempt_count == 0;
+  });
+  return waiting && std::none_of(active_.begin(), active_.end(), [&](const auto& entry) {
+           return !entry.second.group && entry.second.thread_id == thread_id && !queued(entry.first);
+         });
+}
+
+void DeliveryOutbox::WakeFollowers(const std::vector<std::string>& thread_ids) {
+  for (const std::string& thread_id : thread_ids) {
+    AppRuntime::PostWorkerNormal(lifetime_.Bind([this, thread_id]() { Retry(thread_id); }));
+  }
 }
 
 std::optional<int64_t> DeliveryOutbox::SendStartedMs(const std::string& message_id) const {
@@ -151,8 +180,19 @@ std::optional<int64_t> DeliveryOutbox::SendStartedMs(const std::string& message_
 }
 
 bool DeliveryOutbox::Enqueue(Pending pending) {
-  std::lock_guard lock(mutex_);
-  return EnqueueLocked(std::move(pending));
+  const std::string thread_id = pending.thread_id;
+  bool wake = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (EnqueueLocked(std::move(pending))) {
+      return true;
+    }
+    wake = FollowersFreeLocked(thread_id); // cancelled on its way: what waited behind it goes
+  }
+  if (wake) {
+    WakeFollowers({thread_id});
+  }
+  return false;
 }
 
 bool DeliveryOutbox::EnqueueLocked(Pending pending) {
@@ -479,17 +519,27 @@ void DeliveryOutbox::RetryControlNow(Pending item) {
 
 void DeliveryOutbox::Cancel(const std::string& message_id) {
   std::vector<uint64_t> timers;
+  std::vector<std::string> wake; // chats whose later messages waited behind this one, untried (B236)
   {
     std::lock_guard lock(mutex_);
+    std::vector<std::string> threads;
     std::erase_if(queue_, [&](const Pending& pending) {
       if (pending.message_id != message_id) {
         return false;
       }
       if (!pending.thread_id.empty()) {
         EndActiveLocked(pending.message_id);
+        if (std::find(threads.begin(), threads.end(), pending.thread_id) == threads.end()) {
+          threads.push_back(pending.thread_id);
+        }
       }
       return true;
     });
+    for (const std::string& thread_id : threads) {
+      if (FollowersFreeLocked(thread_id)) {
+        wake.push_back(thread_id);
+      }
+    }
     if (active_.contains(message_id)) {
       cancelled_[message_id] = next_serial_; // what is still on its way (or held by a Retry) goes no further
     }
@@ -504,6 +554,7 @@ void DeliveryOutbox::Cancel(const std::string& message_id) {
   for (const uint64_t timer : timers) {
     AppRuntime::CancelCoordinatorTimer(timer);
   }
+  WakeFollowers(wake);
 }
 
 void DeliveryOutbox::PurgeThread(const std::string& thread_id) {
