@@ -14,7 +14,7 @@ Branding and the PP vs pp-browser naming rule: [docs/ui/PRODUCT_BRANDING.md](doc
 
 ## Build
 
-See [docs/ops/BUILD.md](docs/ops/BUILD.md). Documentation map: [docs/README.md](docs/README.md).
+See [docs/ops/BUILD.md](docs/ops/BUILD.md). Documentation map: [docs/README.md](docs/README.md); which repository holds which doc: [§ Where docs live](docs/README.md#where-docs-live).
 
 ## Third-party notice
 

@@ -28,6 +28,8 @@ public:
    * `ai_drawer` view into #shell-ai-drawer-mount. Never on the desktop.
    */
   std::string AiDrawer() const;
+  /** The phone hold-to-talk bubble (a child of the chat overlay, on the "chat" model); tests mount it on its own. */
+  static std::string VoiceBubbleRml();
   /** True when a Cancel + OK pair would not fit side by side in the phone alert card: the buttons stack instead. */
   static bool DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label);
   /** The PIN gate's field (field mode), focused when the gate is mounted. */

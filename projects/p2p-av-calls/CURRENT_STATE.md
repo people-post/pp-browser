@@ -28,7 +28,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V047 HopMigrate no-friend** | **Landed (hm)** — Workflow owns race clusters + ports/Ops; Topology refs + TopologyOps; no friend — [DECISIONS V047](DECISIONS.md#v047--callhopmigrateworkflow-owns-clusters-no-friend); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
-| Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
+| Hop reachability | Program in [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
 | **Call phase projection** | **V052:** `LiveCall::Phase` projects call state + per-call media progress (V037 State+Status); intents on `CallSessionManager::Apply`; `media_cancel_gen` on `LiveCalls`; N025 from "a call is shown"; gtest `call_lifecycle_test` |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp/realtime/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |

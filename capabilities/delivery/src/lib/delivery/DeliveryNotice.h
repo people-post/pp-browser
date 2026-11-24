@@ -50,6 +50,8 @@ enum class SendFailure {
    * since multi-relay R1 takes a send from an account it does not know (as a foreign sender's), so no send fails so.
    */
   SenderNotRegistered,
+  /** The peer's app speaks another version of the mesh's link: one of the two needs an update (DirectSendErr). */
+  VersionMismatch,
 };
 
 /** `failure` as a word for a shareable line (common/Diag.h). */

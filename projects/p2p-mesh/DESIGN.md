@@ -37,7 +37,7 @@ flowchart TB
 | Layer | Owns |
 |-------|------|
 | **p2p-mesh (this doc)** | Role, capabilities, config, Me → Network UI, relay **policy** (who, scope, quotes, settle), `pp-node` packaging |
-| **[media-hop-reachability](../media-hop-reachability/)** | In-stack **dialability**: addr book, ch0 ads, dial-back/UPnP, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
+| **[media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability)** | In-stack **dialability**: addr book, ch0 ads, dial-back/UPnP, Amp Coordinated Punch, circuit evolution, `IsPeerDialable` |
 | **[RELAY_SCOPE.md](RELAY_SCOPE.md)** | Scope tags, escalation, bridge score, provider caps |
 | **[p2p-av-calls](../p2p-av-calls/)** | Call lifecycle; SoftMigrate **consumes** ranked hops |
 | **HTTP Brief** | Message inbox durability when peer paths fail |
@@ -222,7 +222,7 @@ Kademlia-style peer and content routing. Useful for discovery later; seed + circ
 
 Custom protocol `/pp-mesh/circuit/1.0.0` — stream bridge for NATed peers. Checkbox under Node; org seed typically enables it. Pricing optional (often volunteer).
 
-**Today:** single-hop (one relay must direct-dial target). **Planned:** multi-hop v2 — see [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md).
+**Today:** single-hop (one relay must direct-dial target). **Planned:** multi-hop v2 — see [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md).
 
 Contact-first preference applies: `ConversationsHub::RequestCircuitBridgePreferred`, `OrderCircuitHops`.
 
@@ -278,9 +278,9 @@ Do **not** show scary “You are behind a firewall” as a hard fact. Infer soft
 | Seed dial | Can we reach bootstrap? |
 | Inbound seen | Has any remote connected inbound? |
 | Dial-back | Seed / probe peer dial-back (“can you open a stream to me?”) — `pp-node` feature |
-| Later | AutoNAT-style observed addrs; **Amp Coordinated Punch** ([HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md)); circuit-relay when stuck outbound-only |
+| Later | AutoNAT-style observed addrs; **Amp Coordinated Punch** ([HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md)); circuit-relay when stuck outbound-only |
 
-Stack implementation details: [media-hop-reachability](../media-hop-reachability/DESIGN.md).
+Stack implementation details: [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DESIGN.md).
 
 ### Making inbound easier
 
@@ -334,7 +334,7 @@ flowchart TB
 
 Circuit hops may keep a simpler contacts→seed preference. Message path: HTTP Brief fallback; peer `message_relay` optional later.
 
-**Scope and domains:** Human “local / country / global” maps to nested **connectivity domains** and machine **relay scope** tags — full spec in [RELAY_SCOPE.md](RELAY_SCOPE.md). Consumers escalate narrow→wide; providers auto-cap scope from reachability. **Dialability** (can we open a path?) remains [media-hop-reachability](../media-hop-reachability/).
+**Scope and domains:** Human “local / country / global” maps to nested **connectivity domains** and machine **relay scope** tags — full spec in [RELAY_SCOPE.md](RELAY_SCOPE.md). Consumers escalate narrow→wide; providers auto-cap scope from reachability. **Dialability** (can we open a path?) remains [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability).
 
 ---
 
@@ -473,7 +473,7 @@ HTTP Brief relay remains message offline fallback. Peer `message_relay` is optio
 
 ### A/V calls
 
-[p2p-av-calls](../p2p-av-calls/) consumes blind **`media_relay`** for SoftMigrate and group paths. Hop pick uses contacts ∪ org seed with scope escalation ([RELAY_SCOPE.md](RELAY_SCOPE.md)). Call layer selects hops and opens `media_relay`; reachability is a stack precondition ([media-hop-reachability](../media-hop-reachability/)).
+[p2p-av-calls](../p2p-av-calls/) consumes blind **`media_relay`** for SoftMigrate and group paths. Hop pick uses contacts ∪ org seed with scope escalation ([RELAY_SCOPE.md](RELAY_SCOPE.md)). Call layer selects hops and opens `media_relay`; reachability is a stack precondition ([media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability)).
 
 Code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md). Networking doctrine: [docs/architecture/NETWORKING.md](../../docs/architecture/NETWORKING.md).
 
@@ -493,9 +493,9 @@ Code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md). Networ
 | **Reuse `media_relay` for non-A/V** | Same framing/QoS; optional rename `datagram_relay` |
 | **Same PeerId for ops** | Org GUI profile and `pp-node` may share identity |
 | **Contribution UX** | Light thanks/stats for volunteer nodes |
-| **Multi-hop circuit v2** | [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) |
+| **Multi-hop circuit v2** | [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md) |
 | **DHT** | Later than circuit/reachability for most UX paths |
-| **Hole punch** | Amp Coordinated Punch — [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) (H009); parallel to multi-hop |
+| **Hole punch** | Amp Coordinated Punch — [HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md) (H009); parallel to multi-hop |
 
 ---
 

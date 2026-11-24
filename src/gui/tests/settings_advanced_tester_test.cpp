@@ -726,7 +726,10 @@ TEST_F(SettingsRealViewTest, PickingAnotherServiceAsksToConfirmThenSavesAndQuits
   LatchActiveBackend(BackendEnv::Prod); // the service this "run" is on: prod, or a tester build's staging / dev (RC022)
   const std::string running = BackendEnvName(ActiveBackend());
   ASSERT_NE(running, "custom") << "this test needs a compiled environment to switch away from";
-  host().UiState().backend_prod_available = BackendAvailable(BackendEnv::Prod); // this build's row
+  // This build's row (NetworkSettingsSection fills it so): a tester build lists no prod, nor a staging / dev it cannot use.
+  host().UiState().backend_prod_available = BackendAvailable(BackendEnv::Prod);
+  host().UiState().backend_staging_available = BackendAvailable(BackendEnv::Staging);
+  host().UiState().backend_dev_available = BackendAvailable(BackendEnv::Dev);
   host().PushToView(false);
   struct Confirm {
     std::string title, message, ok;

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <set>
+#include <sstream>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -135,6 +136,37 @@ std::vector<std::string> SignedBy(const std::vector<GroupChange>& held, const st
       ids.push_back(group_change::Id(c));
     }
   }
+  return ids;
+}
+
+/**
+ * The adds a leave or a removal names: the held adds of `member`, then every id the held statement folded, newest
+ * fold first (an add of `member` may be among them: a receiver that missed that statement still holds the add, and
+ * R1 / R2 undo only an add the change names; ids of other changes are ignored there). At most kMaxNamedChanges: the
+ * held adds go in first, then the folded ids by descending base epoch (ties by id). Sorted.
+ */
+std::vector<std::string> NamedAdds(const std::vector<GroupChange>& held, const std::string& member,
+                                   const std::optional<GroupRosterStatement>& statement) {
+  std::vector<std::string> ids = AddsOf(held, member);
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+  std::set<std::string> named(ids.begin(), ids.end());
+  std::vector<GroupFoldedChange> folded = statement ? statement->folded : std::vector<GroupFoldedChange>{};
+  std::sort(folded.begin(), folded.end(), [](const GroupFoldedChange& a, const GroupFoldedChange& b) {
+    return a.base_epoch != b.base_epoch ? a.base_epoch > b.base_epoch : a.id < b.id;
+  });
+  for (const GroupFoldedChange& f : folded) {
+    if (ids.size() >= group_change::kMaxNamedChanges) {
+      break;
+    }
+    if (!f.id.empty() && named.insert(f.id).second) {
+      ids.push_back(f.id);
+    }
+  }
+  if (ids.size() > group_change::kMaxNamedChanges) {
+    ids.resize(group_change::kMaxNamedChanges); // more held adds of one member than a change may name
+  }
+  std::sort(ids.begin(), ids.end());
   return ids;
 }
 
@@ -404,9 +436,8 @@ Roe<GroupChange> DraftLeave(IGroupRosterStore& roster, const std::string& group_
     return Error("Owner must transfer ownership before leaving");
   }
   const std::vector<GroupChange> held = HeldChanges(roster, group_id);
-  change->adds = AddsOf(held, local_identity);
+  change->adds = NamedAdds(held, local_identity, Held(*metadata));
   change->keeps = SignedBy(held, local_identity);
-  Bound(change->adds);
   Bound(change->keeps);
   return change;
 }
@@ -437,11 +468,32 @@ Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group
   }
   const std::vector<GroupChange> held = HeldChanges(roster, group_id);
   change->member = member;
-  change->adds = AddsOf(held, member);
+  change->adds = NamedAdds(held, member, Held(*metadata));
   change->keeps = SignedBy(held, member);
-  Bound(change->adds);
   Bound(change->keeps);
   return change;
+}
+
+std::string VerdictLine(const GroupChange& change, const std::optional<GroupRosterView>& view) {
+  std::ostringstream out;
+  out << "kind=" << group_change::KindToString(change.kind) << " group_id=" << change.group_id;
+  if (!view) {
+    out << " view=none (no statement, or one older than the roster's)";
+    return out.str();
+  }
+  const GroupChangeVerdict* verdict = view->Verdict(group_change::Id(change));
+  if (!verdict) {
+    out << " verdict=none";
+    return out.str();
+  }
+  const std::string& about = change.kind == GroupChangeKind::Leave ? change.signer : change.member;
+  out << " status=" << GroupChangeStatusToString(verdict->status)
+      << " reason=" << GroupChangeReasonToString(verdict->reason) << " statement_epoch=" << view->statement_epoch
+      << " base_epoch=" << change.base_epoch << " names_adds=" << change.adds.size();
+  if (!about.empty()) {
+    out << (view->Lists(about) ? " listed=1" : " listed=0");
+  }
+  return out.str();
 }
 
 std::optional<GroupRosterView> CurrentView(IGroupRosterStore& roster, const std::string& group_id,

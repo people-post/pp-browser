@@ -34,7 +34,7 @@ Ordering only. Ladder detail: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)
 
 ## h4 — Wave 4 multi-hop (blocked on L3.5)
 
-Depends on [media-hop-reachability L3.5](../media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2) / mesh ns3.
+Depends on [media-hop-reachability L3.5](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/PHASES.md#l35--multi-hop-circuit-v2) / mesh ns3.
 
 - [ ] Loopback multi-host protocol green first (prefer before Docker)
 - [ ] **N-HARD-MHOP-PATH**, **B-HARD-MHOP-CALL**

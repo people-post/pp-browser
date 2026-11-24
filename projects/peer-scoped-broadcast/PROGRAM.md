@@ -39,7 +39,7 @@ If a task cannot name which **spine exit** it advances, it waits.
 
 | | |
 |--|--|
-| **Owners** | [p2p-av-calls](../p2p-av-calls/), [p2p-mesh](../p2p-mesh/), [media-hop-reachability](../media-hop-reachability/) |
+| **Owners** | [p2p-av-calls](../p2p-av-calls/), [p2p-mesh](../p2p-mesh/), [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) |
 | **Exit** | Group / N≥3 SoftMigrate + `media_relay` dogfood stable; attach tokens + A↑/A↓ quotas understood |
 | **Why first** | `help_media` and live broadcast reuse this path |
 

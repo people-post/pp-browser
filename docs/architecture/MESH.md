@@ -91,7 +91,7 @@ Feature must **not** `#include "amp/link/*"` in headers. Implementation `.cpp` f
 Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–11](https://github.com/people-post/pp-cpp-amp/blob/main/docs/ADR_LINK_PLANE.md), keepalive v2 in [KEEPALIVE.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/KEEPALIVE.md)).
 
 - **Events:** `MeshRuntime::AddLinkEventListener` posts `Connected` / `Dropped` (+ `LinkDropReason`) / `PathChanged` off the strand. `host/MeshLinkEventLog` logs them under `MeshLink` with `path=direct|punched|carrier`, the remote endpoint and RX age — INFO for connects and path changes, WARNING for the drop of a connected link, DEBUG for failed attempts.
-- **Per-link, not per-peer:** a direct (ADP) link and a nested relay-carrier link to one PeerId coexist ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)); drops, waits and lookups key on `LinkHandle`, and `PeerLinkManager::FindConnectedLinkByPeerId(peer, TransportClass)` picks exactly one class. Call media binds a path to one handle and never follows an alias to "whatever now carries the peer" ([AMP-CHANNEL.md § Call-media bundle](../contracts/AMP-CHANNEL.md#call-media-bundle)).
+- **Per-link, not per-peer:** a direct (ADP) link and a nested relay-carrier link to one PeerId coexist ([A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)); drops, waits and lookups key on `LinkHandle`, and `PeerLinkManager::FindConnectedLinkByPeerId(peer, TransportClass)` picks exactly one class. Call media binds a path to one handle and never follows an alias to "whatever now carries the peer" ([AMP-CHANNEL.md § Call-media bundle](../contracts/AMP-CHANNEL.md#call-media-bundle)).
 - **Dual dial:** two associations to one PeerId of the same class (a simultaneous punch, a crossed dial) are elected down to one after both were Connected (`dual-dial-lost`). Consumers bound to the loser see an ordinary drop; call media rebinds quietly ([K011](../../projects/call-path-resilience/DECISIONS.md)).
 - **Hygiene** (pp-cpp-amp v2.4.0): carrier-closed and failed-inbound links are dropped; only fresh authenticated packets move the path or prove liveness; OS-unreachable sends drop the link at once. Keepalive tiers: product **hot 10 s** (relay reservations, standby paths, a call's paths while its control channel is open), **warm 25 s** (peers called or chatted with in the last 10 min — [P2P_MESSAGING.md § Warm peers](P2P_MESSAGING.md)), cold otherwise: 5 s of silence ends the link (`AmpLinkConfig.h`). A nested (carrier-backed) link sends no keepalives; since pp-cpp-amp v5.5.0 the link carrying it keeps its tier, so a relay link under a warm peer's or a call's carrier stays up (amp `docs/KEEPALIVE.md`, #577).
 
@@ -111,7 +111,7 @@ Hard lab: hard-w5 Phase-11 FLIP (peer-a changes address mid-call → reconnected
 
 ## pp-node
 
-Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [projects/adp/STACK.md](../../projects/adp/STACK.md).
+Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [pp-cpp-amp STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md).
 
 **Ledger role** (pp-ledger platform-integration pi4): with `--ledger-role relay|miner`, pp-node runs
 one pp-ledger role on its mesh runtime (`domain/node/NodeLedgerRole`, over pp-ledger's
@@ -139,8 +139,8 @@ introducers a punch target trusts to name the initiator.
 ## Related docs
 
 - [MESH_IDENTITY.md](MESH_IDENTITY.md) — PeerId derivation
-- [projects/adp/STACK.md](../../projects/adp/STACK.md) — Amp stack
-- [AMP-CHANNEL.md](../contracts/AMP-CHANNEL.md) — L3 channels
+- [pp-cpp-amp STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md) — Amp stack
+- [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md) — L3 channels
 - [NETWORKING.md](NETWORKING.md) — product networking overview
 - [projects/p2p-mesh/MESH_ORGANIZATION.md](../../projects/p2p-mesh/MESH_ORGANIZATION.md) — rename + consolidation notes
 

@@ -249,6 +249,33 @@ TEST(BackendProfileKeyTest, ATesterBuildNeverYieldsProdsKey) {
   EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Staging, "", kStore), "prod");
 }
 
+// A tester build never opens a profile of an environment it cannot use (its relay id pending): a saved staging whose
+// setup could not finish opens the first usable environment's profile (release-compatibility RC022).
+TEST(BackendProfileKeyTest, ATesterBuildOpensNoProfileOfAnEnvironmentItCannotUse) {
+  constexpr pbr::CompiledOrigins kStagingPending{.staging = "https://staging.example.test",
+                                                 .dev = "https://dev.example.test",
+                                                 .staging_relay_id = pbr::kPendingRelayId,
+                                                 .dev_relay_id = "relay:dev",
+                                                 .kind = pbr::BuildKind::Tester};
+  constexpr pbr::CompiledOrigins kBothPending{.staging = "https://staging.example.test",
+                                              .dev = "https://dev.example.test",
+                                              .staging_relay_id = pbr::kPendingRelayId,
+                                              .dev_relay_id = pbr::kPendingRelayId,
+                                              .kind = pbr::BuildKind::Tester};
+  for (const pbr::BackendEnv env : {pbr::BackendEnv::Prod, pbr::BackendEnv::Staging, pbr::BackendEnv::Dev}) {
+    EXPECT_EQ(pbr::BackendProfileKeyFor(env, "", kStagingPending), "dev") << pbr::BackendEnvName(env);
+    EXPECT_EQ(pbr::BackendProfileKeyFor(env, "", kBothPending), pbr::CustomProfileKey("", pbr::BuildKind::Tester))
+        << pbr::BackendEnvName(env);
+  }
+  constexpr pbr::CompiledOrigins kStorePending{.prod = "https://prod.example.test",
+                                               .staging = "https://staging.example.test",
+                                               .prod_relay_id = pbr::kPendingRelayId,
+                                               .staging_relay_id = pbr::kPendingRelayId};
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Staging, "", kStorePending), "staging")
+      << "a store build: as before";
+  EXPECT_EQ(pbr::BackendProfileKeyFor(pbr::BackendEnv::Prod, "", kStorePending), "prod");
+}
+
 TEST(BackendProfileKeyTest, ATesterBuildOpensNoStoreProfile) {
   for (const char* store_key : {"prod", "custom-0123456789ab"}) {
     EXPECT_FALSE(pbr::ProfileBackendAllowed(store_key, pbr::BuildKind::Tester)) << store_key;

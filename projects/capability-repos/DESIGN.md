@@ -143,4 +143,5 @@ Moved in pp-cpp-common **v1.3.0** (`common/runtime/`, namespace `pp`, with its t
    `#include "lib/messaging/…"`. A moved capability needs its own (mesh uses `mesh::` and `mesh/…`). Proposal:
    settle the scheme during P3 while renames are in-repo, so a move is mechanical.
 2. **The contracts repo** (CR010): its name, layout (spec + vectors per format) and how TS services pin it.
+   Answered by CR025: pp-specs, a spec and its vectors per format, tagged and pinned; created after release 1.
 3. **The shared home for vendored deps** (CR012): pp-cpp-common, or a repo of its own.

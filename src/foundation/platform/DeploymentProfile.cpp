@@ -121,11 +121,38 @@ const char* CompiledOriginFor(const BackendEnv env, const CompiledOrigins& compi
   return "";
 }
 
+namespace {
+
+/** The relay id compiled for `Staging` / `Dev` ("" for the others: this is only for the tester-build check). */
+const char* TestEnvRelayIdFor(const BackendEnv env, const CompiledOrigins& compiled) {
+  if (env == BackendEnv::Staging) {
+    return compiled.staging_relay_id;
+  }
+  return env == BackendEnv::Dev ? compiled.dev_relay_id : "";
+}
+
+/**
+ * The compiled environment whose origin and org relay `backend` takes: `Staging` / `Dev` their own (in a tester build
+ * only when it can run them), anything else the fallback's — so a tester build never takes an environment it cannot use.
+ */
+BackendEnv CompiledEnvFor(const BackendEnv backend, const CompiledOrigins& compiled) {
+  if ((backend == BackendEnv::Staging || backend == BackendEnv::Dev) &&
+      (compiled.kind == BuildKind::Store || BackendAvailableIn(backend, compiled))) {
+    return backend;
+  }
+  return FallbackBackendIn(compiled);
+}
+
+} // namespace
+
 bool BackendAvailableIn(const BackendEnv env, const CompiledOrigins& compiled) {
   switch (env) {
     case BackendEnv::Staging:
     case BackendEnv::Dev:
-      return *CompiledOriginFor(env, compiled) != '\0';
+      // A tester build has no prod to fall back on, so an environment whose relay is a placeholder (its operator set
+      // not made yet: refused, so no account can be set up there) is not one it can use (release-compatibility RC022).
+      return *CompiledOriginFor(env, compiled) != '\0' &&
+             (compiled.kind == BuildKind::Store || !IsPendingRelayId(TestEnvRelayIdFor(env, compiled)));
     case BackendEnv::Prod:
       return compiled.kind == BuildKind::Store;
     case BackendEnv::Custom:
@@ -212,15 +239,11 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   if (ui_demo) {
     return {};
   }
-  std::string origin;
-  if (env_origin && *env_origin) {
-    origin = env_origin;
-  } else if (backend == BackendEnv::Staging || backend == BackendEnv::Dev) {
-    origin = CompiledOriginFor(backend, compiled);
-  } else {
-    // Prod and Custom (whose own URLs are in the config file): the fallback's origin — prod's in a store build.
-    origin = CompiledOriginFor(FallbackBackendIn(compiled), compiled);
-  }
+  // Prod and Custom (whose own URLs are in the config file), and a staging / dev a tester build cannot use, take the
+  // fallback's origin: prod's in a store build.
+  std::string origin = (env_origin && *env_origin)
+                           ? std::string(env_origin)
+                           : std::string(CompiledOriginFor(CompiledEnvFor(backend, compiled), compiled));
   while (!origin.empty() && origin.back() == '/') {
     origin.pop_back();
   }
@@ -236,11 +259,9 @@ OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_ori
     // The override's relay: its own relay id, or none; its certificate is fetched (the build's are other relays').
     return {.relay_id = env_relay_id ? std::string(env_relay_id) : std::string()};
   }
-  // Prod and Custom take the fallback's: prod's in a store build; in a tester build staging's, dev's or none, never
-  // prod's (a custom backend there is no way to the prod relay's identity).
-  const BackendEnv env =
-      (backend == BackendEnv::Staging || backend == BackendEnv::Dev) ? backend : FallbackBackendIn(compiled);
-  switch (env) {
+  // Prod and Custom take the fallback's: prod's in a store build; in a tester build the first usable one of staging's
+  // and dev's, or none, never prod's (a custom backend there is no way to the prod relay's identity).
+  switch (CompiledEnvFor(backend, compiled)) {
     case BackendEnv::Staging:
       return {.relay_id = compiled.staging_relay_id, .certificate_b64 = compiled.staging_relay_certificate};
     case BackendEnv::Dev:

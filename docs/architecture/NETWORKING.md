@@ -25,7 +25,7 @@ Meters and hop **quotes** still originate on the mesh ([p2p-mesh](../../projects
 
 ## Amp mesh (D10)
 
-**AMP** ([`projects/adp`](../../projects/adp/)) is the only product underlay when `mesh_enabled` is on: UDP + MSH + channels; ch0 replaces Identify; Amp UDP accept is always on. MeshHost does **not** start TCP listen, Identify, DialBack, or libp2p circuit/media-relay hosting.
+**AMP** ([pp-cpp-amp's docs](https://github.com/people-post/pp-cpp-amp/blob/main/README.md#docs); the app's move onto it: [`projects/adp`](../../projects/adp/)) is the only product underlay when `mesh_enabled` is on: UDP + MSH + channels; ch0 replaces Identify; Amp UDP accept is always on. MeshHost does **not** start TCP listen, Identify, DialBack, or libp2p circuit/media-relay hosting.
 
 **LAN keep:** mDNS (TXT `peer=` `wire=`, SRV the Amp UDP port), PreferLocal / invite Amp multiaddrs (`BuildAmpLanAdvertisedAddrs`), contact/ch0 ADP addrs. **WAN inbound chrome:** Amp dial-back (D8) + optional UPnP UDP; needs ADP bootstrap peers for seed dial. Global `/ip6` advertise + probe targets preferred over private `/ip4` (`RankAmpDialMultiaddrs`, N013); Reachable-via-v6 when `has_global_ipv6` and dial-back succeed.
 
@@ -38,7 +38,7 @@ The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still 
 
 **Network changes** (Wi-Fi ↔ cellular, new address, back online): the platform `NetworkMonitor` feeds the mesh, which re-validates every direct link within 2 s and re-learns its addresses; calls re-anchor — [MESH.md § Local network change](MESH.md#local-network-change-call-path-resilience-k5).
 
-**Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)), including planned **Amp Coordinated Punch** ([HOLE_PUNCH.md](../../projects/media-hop-reachability/HOLE_PUNCH.md)). SoftMigrate must not grow a parallel NAT toolkit.
+**Hop reachability** continues in-mesh ([media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability)), including planned **Amp Coordinated Punch** ([HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md)). SoftMigrate must not grow a parallel NAT toolkit.
 
 **Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **ConversationsHub** / ConversationsCore, with **CallStack** and **BroadcastHub** riding it as participants (app-only, composed by `ProductStack`) → **ConversationsFacade** / CallUiBackend (UI).
 

@@ -15,6 +15,7 @@
 #include "common/Error.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -48,7 +49,19 @@ struct ChatAttachmentUploadOptions {
   /** Set when the person cancels (staged or not). The upload stops at its next progress step; whatever comes back
    *  after, the staged copy and any server copy go and the result is an error, so nothing is sent. */
   std::shared_ptr<const std::atomic<bool>> cancelled;
+  /**
+   * Tests: runs `task` once `delay` has passed (the server upload that starts beside a staged direct push still
+   * running after kDirectHeadStart). Empty: the runtime's coordinator timer, the task on a worker; without a
+   * running runtime the direct push runs alone and the server follows only its failure.
+   */
+  std::function<void(std::chrono::milliseconds delay, std::function<void()> task)> run_after;
 };
+
+/**
+ * How long a staged direct push runs alone. A push that must dial an unreachable contact fails only at its handshake
+ * timeout (about 10 s); after this head start the server upload starts beside it and the first to deliver wins.
+ */
+inline constexpr std::chrono::milliseconds kDirectHeadStart{1000};
 
 /**
  * Whether to try the peer-direct push first: only a 1:1 E2E thread, and only up to
@@ -72,7 +85,8 @@ uint64_t AttachmentQuotaNeededBytes(const Error& quota_error);
 
 /**
  * Deliver an already staged attachment (a retry, also after the app was killed): the same ciphertext and key, a
- * direct push first when it is small and the contact is reachable, then the server. A record already delivered
+ * direct push first when it is small and the contact is reachable, the server beside it once the push has run for
+ * kDirectHeadStart (or at once on its failure); the first to deliver gives the result. A record already delivered
  * returns its fields at once. `options.outgoing` and `options.dek` are required. The send holds `blob` until it ends:
  * the client it started with, whatever the caller's client becomes meanwhile (a preferred relay changed, MR006).
  */

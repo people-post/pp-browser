@@ -1,5 +1,7 @@
 # AMP extraction readiness (pp-browser)
 
+**Finished.** pp-browser consumes pp-cpp-amp (FetchContent; the pin is in `cmake/`); nothing here is open. Kept as the record of the move, and because other docs cite it. The layer map and test layout as they are now: pp-cpp-amp [README](https://github.com/people-post/pp-cpp-amp/blob/main/README.md) and [docs/testing/](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md).
+
 **Status:** AMP stack consumed via FetchContent `pp-cpp-amp` (`cmake/PpCppAmp.cmake`, tag `v2.1.6`).
 **Done:** in-tree production sources removed; consumers use `#include "amp/..."` from FetchContent pp-cpp-amp. L4 harness duplicated under `src/lib/mesh/tests/support/`.
 
@@ -7,10 +9,10 @@
 
 | Layer | In-tree path | CMake target | Contract |
 |-------|--------------|--------------|----------|
-| L1 ADP wire | `src/lib/amp/L1/` | `pp_base_adp` | [ADP.md](../../docs/contracts/ADP.md) |
-| L2 MSH session | `src/lib/amp/L2/` | `pp_base_mesh_session` | [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md) |
-| L3 channel mux | `src/lib/amp/L3/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md) |
-| Link (horizontal) | `src/lib/amp/link/` | `pp_base_mesh_link` | [STACK.md](STACK.md) |
+| L1 ADP wire | `src/lib/amp/L1/` | `pp_base_adp` | [ADP.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/ADP.md) |
+| L2 MSH session | `src/lib/amp/L2/` | `pp_base_mesh_session` | [AMP-SESSION.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-SESSION.md) |
+| L3 channel mux | `src/lib/amp/L3/` | `pp_base_mesh_channel` | [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md) |
+| Link (horizontal) | `src/lib/amp/link/` | `pp_base_mesh_link` | [STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md) |
 | L4 product | `src/lib/mesh/`, `capabilities/messaging/src/feature/conversations/` | `pp_lib_mesh`, … | stays in pp-browser |
 
 ## Shared helpers (colocated in `src/lib/amp/`)
@@ -57,7 +59,7 @@ Acyclic order: `pp_common` + `pp_crypto` → L1 → L2 → L3 → link → `peer
 
 Harness headers under `lib/amp/tests/support/` are **p2p-free**. AMP-owned tests link the stub `mesh_harness_support.cpp` in that directory. L4 tests link `base/mesh/tests/support/mesh_harness_support.cpp` instead (same header, mesh PeerId derivation).
 
-Matrices: [L1_TEST_MATRIX.md](L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](L2_TEST_MATRIX.md), [L3_TEST_MATRIX.md](L3_TEST_MATRIX.md), [LINK_TEST_MATRIX.md](LINK_TEST_MATRIX.md), [TEST_MATRIX.md](TEST_MATRIX.md) (Tier B).
+Matrices: [L1_TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/L1_TEST_MATRIX.md), [L2_TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/L2_TEST_MATRIX.md), [L3_TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/L3_TEST_MATRIX.md), [LINK_TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/LINK_TEST_MATRIX.md), [TEST_MATRIX.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/testing/TEST_MATRIX.md) (Tier B).
 
 ## Do not do yet
 

@@ -11,7 +11,7 @@ Prefix **K**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** A call-media bundle owns a **path set** (active / standby / retiring), each path = link + its bound channels + `path_gen`. The session (call id, media key, epoch, seq) is independent of paths. Link loss removes a path; only an empty set past the reconnect window ends the call.  
 **Rationale:** Today the bundle is pinned to the first link's mux (`bound_mux`); any link change is a teardown (dogfood 2026-09-24: relay path lost → `peer link lost` while a punched link to the same peer was Connected). Frames are already link-portable (AAD has no path term) and the jitter buffer de-dupes on seq, so multi-path receive costs little.  
 **Alternatives rejected:** Re-dial a fresh session on path change (audible gap, new key/epoch handshake, glare); rebinding `bound_mux` in place (no overlap → break-before-make).  
-**Cross-link:** [A024](../adp/DECISIONS.md) nested carrier; [V038](../p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) N=2 path order.
+**Cross-link:** [A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) nested carrier; [V038](../p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) N=2 path order.
 
 ---
 
@@ -22,7 +22,7 @@ Prefix **K**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** Migration opens the new path, switches TX, and releases the old path only after both sides have RX on the new path and a `path_release` is acked. Timers never release a path that carries or backs a live call. The relay path, when superseded, becomes **warm standby** (keepalive-only), not closed (see K003).  
 **Rationale:** Supplies "safe" for L3.25c "request circuit close when safe". The 2026-09-24 trace lost media 10 s after the punch while the planner kept media on the relay — exactly the unowned-relay failure. The existing `TryUpgradeToDirectAsync` cancels the tunnel before moving media.  
 **Alternatives rejected:** Close relay on punch success (break-before-make); close after fixed grace (races slow peers, loses media on asymmetric switch).  
-**Cross-link:** [media-hop-reachability HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) L3.25c; H005 billing.
+**Cross-link:** [media-hop-reachability HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md) L3.25c; H005 billing.
 
 ---
 
@@ -105,7 +105,7 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 **Decision:** A standby reservation is free. Relayed bytes after a failover are billed as brokered relay use (H005 unchanged for media). Abuse control: a per-account cap on concurrent standby reservations, and a standby reservation is valid only while its call is live (released at hangup).  
 **Rationale:** Standby costs the relay almost nothing (no media); per-minute quoting would add payment traffic to every call.  
 **Alternatives rejected:** Per-minute standby fee; free-up-to-N-minutes (complexity for negligible cost).  
-**Cross-link:** [H005](../media-hop-reachability/DECISIONS.md) brokered relay billing; [pricing](../pricing/).
+**Cross-link:** [H005](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DECISIONS.md) brokered relay billing; [pricing](../pricing/).
 
 ---
 

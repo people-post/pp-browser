@@ -99,6 +99,10 @@ enum class GroupChangeReason : uint8_t {
   LostRename,
 };
 
+/** Lower-case names for logs ("applied", "signer_not_joined", ...). */
+const char* GroupChangeStatusToString(GroupChangeStatus status);
+const char* GroupChangeReasonToString(GroupChangeReason reason);
+
 struct GroupChangeVerdict {
   std::string id;
   GroupChangeKind kind = GroupChangeKind::Add;

@@ -353,6 +353,32 @@ TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton)
   EXPECT_FALSE(Has(rml, "chat-header"));
 }
 
+// The hold-to-talk bubble is a child of the chat overlay with a childless material layer (the engine draws no backdrop
+// blur on an element that has children). The chat view's frame stays at two blurred regions: the header's, and the bubble's
+// (the composer bar is clear), so the composer's own frost needs no switching off. Transparency off: no blur class.
+TEST(ShellLayoutRmlTest, TheVoiceBubbleIsInTheChatOverlayAndKeepsTheFrameAtTwoBlurs) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  const size_t overlay = rml.find("class=\"shell-chat-overlay");
+  ASSERT_NE(overlay, std::string::npos);
+  EXPECT_TRUE(Has(rml.substr(overlay, 80), "shell-chat-overlay--frost")) << "Transparency on: the blur is the bubble's";
+  const size_t bubble = rml.find("class=\"voice-bubble\"");
+  const size_t bar = rml.find("shell-composer-bar");
+  ASSERT_NE(bubble, std::string::npos);
+  EXPECT_GT(bubble, bar) << "above the composer bar";
+  EXPECT_EQ(Count(rml, "class=\"voice-bubble-material\"></div>"), 1U) << "one material layer, no children";
+  EXPECT_NE(rml.find("data-style-left=\"voice_bubble_left\"", bubble), std::string::npos);
+  // Blurred regions in a frame: the header's material + the bubble's (only while it is shown), never the composer's.
+  EXPECT_EQ(Count(rml, "bar-material--frost"), 1U);
+  EXPECT_EQ(Count(rml, "surface-chrome--frost"), 1U) << "the header's surface; the composer mount has none";
+  state.reduce_transparency = true;
+  const std::string opaque = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(opaque, "shell-chat-overlay--frost")) << "Transparency off: an opaque bubble, no blur class";
+  EXPECT_FALSE(Has(opaque, "shell-chat-overlay--glass"));
+  EXPECT_TRUE(Has(opaque, "voice-bubble-material")) << "still there, opaque";
+}
+
 // #188 / #202: the chat view frosts its header only; its composer bar is clear (a floating pill and two round buttons,
 // no material child). A pushed page over the chat leaves no frost of the chat's, and Transparency off leaves none.
 TEST(ShellLayoutRmlTest, TheChatViewFrostsItsHeaderAndItsComposerBarIsClear) {

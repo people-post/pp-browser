@@ -166,6 +166,37 @@ TEST_F(SharedRootFilesTest, ABuildThatCannotRunTheSavedChoiceDoesNotRewriteIt) {
   EXPECT_EQ(again->backend.unavailable_env, unavailable) << "still the file's choice";
 }
 
+// A tester build whose staging / dev is compiled with a pending relay id (its operator set not made yet) cannot use it:
+// a saved one (the user's half-done setup there) runs the first usable environment, and the file keeps the choice.
+TEST_F(SharedRootFilesTest, ATesterBuildKeepsASavedEnvironmentItCannotUse) {
+  if (!pbr::IsTesterBuild()) {
+    GTEST_SKIP() << "a store build ignores the relay ids for this (the ctest run with -DPP_TESTER_BUILD=ON checks it)";
+  }
+  const pbr::CompiledOrigins compiled = pbr::BuildCompiledOrigins();
+  int checked = 0;
+  for (const pbr::BackendEnv env : {pbr::BackendEnv::Staging, pbr::BackendEnv::Dev}) {
+    if (*pbr::CompiledOriginFor(env, compiled) == '\0' || pbr::BackendAvailableIn(env, compiled)) {
+      continue; // not compiled, or usable
+    }
+    ++checked;
+    const char* saved = pbr::BackendEnvName(env);
+    pbr::ResetActiveBackendForTest();
+    const std::string path = (std::filesystem::path(data_dir_) / "config.json").string();
+    WriteText(path, std::string(R"({"config_version": 1, "backend": {"env": ")") + saved + R"("}})");
+    auto loaded = pbr::Config::LoadFromFile(path);
+    ASSERT_TRUE(static_cast<bool>(loaded));
+    EXPECT_EQ(pbr::ActiveBackend(), pbr::FallbackBackendIn(compiled)) << saved;
+    EXPECT_NE(pbr::ActiveBackend(), env);
+    EXPECT_EQ(loaded->backend.unavailable_env, saved);
+    EXPECT_NE(pbr::BackendProfileKey(*loaded), saved) << "its profile is not opened";
+    ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(path, *loaded)));
+    EXPECT_NE(ReadText(path).find(std::string("\"env\": \"") + saved + "\""), std::string::npos) << "kept";
+  }
+  if (checked == 0) {
+    GTEST_SKIP() << "this tester build compiles no staging / dev with a pending relay id";
+  }
+}
+
 TEST_F(SharedRootFilesTest, AChoiceThisBuildRunsIsSavedAsIs) {
   const std::string path = (std::filesystem::path(data_dir_) / "config.json").string();
   WriteText(path, R"({"config_version": 1, "backend": {"env": "custom"}})");

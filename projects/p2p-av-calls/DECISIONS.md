@@ -559,7 +559,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 |-------|------|
 | **N=2** | Prefer **direct libp2p** media between dialable peers; if undialable, use mesh hop / circuit (explicit path — not ICE Retry). |
 | **N≥3** | Blind `media_relay` star (V020/V021 topology intent retained; transport is libp2p only). |
-| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](../media-hop-reachability/) H007 — no app addr gather; punch planned H009). |
+| **Signaling** | Keep system `call_*` controls; `call_sdp` / `call_ice` are **legacy** (remove with teardown). Hop reachability is **in Amp mesh** ([media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) H007 — no app addr gather; punch planned H009). |
 | **HTTP** | Preferred for org backend (Brief, billing UX) when reachable. |
 | **Settle** | HTTP backend preferred for price/settle; **chain settle backup** when HTTP unavailable ([N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)). |
 | **Teardown** | Remove libdatachannel PeerConnection path from product on a dedicated phase after voice-on-libp2p dogfood; until then treat PC code as legacy. |
@@ -572,7 +572,7 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 **Dogfood claimed (2026-08-02):** Android ↔ Android LAN 1:1 bidirectional voice on libp2p `call-media` (moto g7 play ↔ Samsung SM-T380). Desktop matrix and NAT/hop not claimed. Details: [CURRENT_STATE.md](CURRENT_STATE.md).
 
-**Cross-link:** [media-hop-reachability](../media-hop-reachability/) (dialability); mesh N018–N022.
+**Cross-link:** [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (dialability); mesh N018–N022.
 
 ---
 
@@ -749,7 +749,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**); the hop-queue rule stands as [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video) states it: video is shed before audio wherever they queue together (V063 had dropped it); `ReliableOrdered` is now `Forward` (V065 7); the frame row (v2, "decrypt v1 bodies as channel 0") by [adp A029](../adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2 — one media frame, any other version refused ([WIRE_SCHEMAS § Media frames](../../docs/contracts/WIRE_SCHEMAS.md#media-frames))  
+**Status:** Accepted (**implementing**); the hop-queue rule stands as [V065](#v065--call-audio-keeps-a-delay-budget-audio-before-video) states it: video is shed before audio wherever they queue together (V063 had dropped it); `ReliableOrdered` is now `Forward` (V065 7); the frame row (v2, "decrypt v1 bodies as channel 0") by [adp A029](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2 — one media frame, any other version refused ([WIRE_SCHEMAS § Media frames](../../docs/contracts/WIRE_SCHEMAS.md#media-frames))  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |
@@ -1225,7 +1225,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Status:** Accepted — addresses dogfood **B31** ([PR #214](https://github.com/people-post/pp-browser/pull/214))  
 **Decision:** On call-media Connect, **both offerer and answerer dial immediately**. Within the dial budget, **re-attempt `EnsureAssociation`** after a short backoff when a miss (or ok-but-not-connected) leaves no Connected PeerLink. Do **not** wait a long offerer-only inbound grace before the first dial.
 
-**Rationale:** Carrier IPv6 and home-router firewalls drop unsolicited inbound UDP. A flow works only after the inside host has sent to that remote IP:port. The previous policy (answerer dials once; offerer waits ~15 s then falls back) made **Mac → phone** succeed (phone opens the carrier hole; Mac dials into it) and **phone → Mac** fail (Mac dials into a closed hole and stops; windows barely overlap). Amp already elects one PeerLink under [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); `CallMediaDirect` claims one stream — the old Critical-pool dual-hello deadlock is gone.
+**Rationale:** Carrier IPv6 and home-router firewalls drop unsolicited inbound UDP. A flow works only after the inside host has sent to that remote IP:port. The previous policy (answerer dials once; offerer waits ~15 s then falls back) made **Mac → phone** succeed (phone opens the carrier hole; Mac dials into it) and **phone → Mac** fail (Mac dials into a closed hole and stops; windows barely overlap). Amp already elects one PeerLink under [A026](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); `CallMediaDirect` claims one stream — the old Critical-pool dual-hello deadlock is gone.
 
 **Alternatives rejected:**
 - Keep asymmetric grace (fails reverse direction under stateful NAT).
@@ -1236,7 +1236,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Still open (not this ADR):** B30 CN-reachable relay / push (client poll fail-fast landed) — see [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md). B26 reflexive IPv4, B27 circuit reserve/ServeDial + re-park, B28 RegisterEndpoints probing, and B29 H012 signaling punch are landed.
 
-**Cross-link:** [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
+**Cross-link:** [A026](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
 
 ---
 

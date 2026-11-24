@@ -69,22 +69,26 @@ struct CompiledOrigins {
 /** `compiled`'s origin for `env` (`Custom` has none: ""; nor has `Prod` in a tester build). */
 const char* CompiledOriginFor(BackendEnv env, const CompiledOrigins& compiled);
 /**
- * Whether `env` can run: `Custom` always; `Prod` in a store build only (never in a tester build); `Staging` / `Dev` only
- * with a compiled origin.
+ * Whether `env` can run (and Settings lists it): `Custom` always; `Prod` in a store build only (never in a tester build);
+ * `Staging` / `Dev` only with a compiled origin — and in a tester build only when their relay id is also not the
+ * placeholder (IsPendingRelayId: that relay is refused, so no account could be set up there). A store build ignores the
+ * relay ids here, as before (release-compatibility RC022).
  */
 bool BackendAvailableIn(BackendEnv env, const CompiledOrigins& compiled);
 /**
- * What a backend this build cannot run falls back to: `Prod` in a store build; in a tester build `Staging`, else `Dev`
- * (whichever is compiled), else `Custom` — never `Prod`. A tester build with neither runs only a custom backend (the
- * URLs saved in the config file; none: no backend), with a `test-custom-…` profile.
+ * What a backend this build cannot run falls back to: `Prod` in a store build; in a tester build the first of `Staging`,
+ * `Dev` that BackendAvailableIn (compiled, relay id not pending), else `Custom` — never `Prod`. A tester build with
+ * neither usable runs only a custom backend (the URLs saved in the config file; none: no backend), with a
+ * `test-custom-…` profile.
  */
 BackendEnv FallbackBackendIn(const CompiledOrigins& compiled);
 /** This build's compile-time origins. */
 CompiledOrigins BuildCompiledOrigins();
 /**
  * The rule behind BriefOrigin(), with its inputs passed in. The UI demo app (`ui_demo`) has no backend: always "".
- * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over `compiled`'s origin for `backend` (`Prod` / `Custom`:
- * FallbackBackendIn's — prod's in a store build, the tester environment's or none in a tester build).
+ * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over `compiled`'s origin for `backend` (`Prod` / `Custom`,
+ * and in a tester build a `Staging` / `Dev` it cannot use: FallbackBackendIn's — prod's in a store build, the first usable
+ * tester environment's or none in a tester build).
  */
 std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend,
                                const CompiledOrigins& compiled);
@@ -97,8 +101,9 @@ struct OrgRelayIdentity {
 };
 /**
  * The relay id the org's relay (BriefRelayBaseUrl) must prove (MR008, SIGNED_FORMATS § 3.5), and the build's
- * certificate for it: `compiled`'s for `backend` (`Staging` / `Dev` → their own; `Prod` / `Custom` → FallbackBackendIn's:
- * prod's in a store build, staging's / dev's or none in a tester build, never prod's); none in the UI demo app. When
+ * certificate for it: `compiled`'s for `backend` (`Staging` / `Dev` → their own; `Prod` / `Custom`, and in a tester build a
+ * `Staging` / `Dev` it cannot use → FallbackBackendIn's: prod's in a store build, the first usable of staging's / dev's or
+ * none in a tester build, never prod's); none in the UI demo app. When
  * `env_origin` (PP_BROWSER_ORIGIN) replaces the compiled origin, `env_relay_id` (PP_BROWSER_RELAY_ID, may be null) and
  * no certificate: none there, a developer build pins that relay on its first valid certificate (warned) and a release
  * build does not use it.
@@ -166,7 +171,8 @@ bool CompiledRelayContentSha256();
 bool BackendAvailable(BackendEnv env);
 /**
  * The rule behind LatchActiveBackend(): `requested` when BackendAvailableIn `compiled`, else FallbackBackendIn — so a
- * store build runs a staging / dev it has no origin for as `Prod`, and a tester build never runs `Prod`. Only the run's
+ * store build runs a staging / dev it has no origin for as `Prod`, and a tester build never runs `Prod` nor a staging /
+ * dev whose relay id is pending (a half-done staging setup runs the first usable environment). Only the run's
  * backend: the saved choice (`backend.env`) is not rewritten for it (BackendConfig::unavailable_env).
  */
 BackendEnv ResolveLatchedBackend(BackendEnv requested, const CompiledOrigins& compiled);

@@ -23,6 +23,7 @@
 #include "gui/chat/PictureSendController.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "feature/presenters/PictureSendQueue.h"
+#include "feature/presenters/VoiceSendQueue.h"
 #include "gui/chat/PhotoPreview.h"
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
@@ -425,6 +426,8 @@ private:
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
   void ShowPictureSendChoice(std::string path, const std::string& thread_id);
   void ToggleVoiceMode();
+  float VoiceTopLimitDp() const;
+  float VoiceOverlayTopDp() const;
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing(const std::string& name);
   /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
@@ -436,8 +439,8 @@ private:
   /**
    * Sends `path` to `to_thread` and only there: the chat a pick was armed in, a recording's own (never whatever
    * chat is open when this runs; empty: nothing is sent). `voice_file`: a voice recording of ours; it is deleted once
-   * the send succeeded or is staged for a retry, otherwise it is kept and the chip offers Retry / Discard (also when
-   * the send is refused because another one runs).
+   * the send succeeded or is staged for a retry, otherwise it is kept and the chip offers Retry / Discard.
+   * `reuse_row`: a voice message from voice_queue_, whose bubble was made when the recording was finished.
    * `on_finished` hears how the send ended exactly once, on every way out (AttachmentSendOnce; empty: nobody asks).
    * `from_picture_queue`: an item of picture_queue_, which holds the attachment slot between its items, so only a send
    * really running refuses it; its file is the queue's (released by the queue, never here), it has no pick, a pace
@@ -446,7 +449,7 @@ private:
   void StartAttachmentUpload(const std::string& path, OutgoingPickSource source, bool voice_file,
                              const std::string& to_thread, std::optional<PendingUploadKind> bubble = std::nullopt,
                              uint64_t pick_serial = 0, std::function<void(AttachmentSendOutcome)> on_finished = {},
-                             bool from_picture_queue = false);
+                             bool from_picture_queue = false, const std::string& reuse_row = {});
   /**
    * The one "an attachment is on its way" check: preparing (a pick being copied), uploading, or a picture queue that
    * has started and not ended (its gaps and pace waits included). Every entry that starts an attachment, and every
@@ -503,6 +506,34 @@ private:
   void RefreshAttachmentInTranscript();
   /** A voice recording that could not be sent and was not staged: the chip offers Retry / Discard for the file. */
   void KeepVoiceForRetry(const std::string& path, const std::string& thread_id);
+  /**
+   * A voice send ended with nothing staged: the bubble `row_id` shows Failed with `path` behind its own Retry / ✕; the
+   * bubble goes when the recording is empty or gone or it was cancelled. No bubble: the chip's single Retry.
+   */
+  void FailVoiceKeepingRecording(const std::string& row_id, const std::string& path, const std::string& thread_id);
+  /** A failed voice bubble's Retry when it holds its own recording: a fresh job for that file, at the end of the line. */
+  void EnqueueVoiceResend(const std::string& row_id, const std::string& thread_id, const std::string& path);
+  /**
+   * Failed voice bubbles holding their own recording go, rows and files: all of them on the lock (it wipes the
+   * recording folder), or `thread_id`'s when that chat is deleted.
+   */
+  void DropFailedVoiceRecordings(const std::optional<std::string>& thread_id = std::nullopt);
+  /** Which way the voice message just sent went (`voice_send_won_`), for its voice.send line. */
+  void NoteVoiceSendWon(const ThreadMessage& sent);
+  /**
+   * A finished recording: its bubble goes up at once and its send joins voice_queue_, which sends the recordings one
+   * at a time in the order they were made, behind any other attachment in flight. Never refused for being busy.
+   */
+  void EnqueueVoiceSend(const std::string& path, const std::string& thread_id);
+  /** A failed voice bubble's Retry: the row shows uploading again and its resend joins voice_queue_. */
+  void EnqueueVoiceRetry(const std::string& row_id, const std::string& thread_id);
+  /** The voice jobs that have not started leave (lock, sign-out, a deleted chat: `thread_id`) and their bubbles are fixed. */
+  void DropWaitingVoice(const std::optional<std::string>& thread_id = std::nullopt);
+  /** The row of a voice job that left the line before it started: a recording's goes, a retry's is Failed again. */
+  void SettleLeftVoiceJob(const VoiceSendJob& job);
+  /** Resends the staged copy `record_id` (the Retry of a bubble `item_id`, or of the chip: empty); `on_done` once it ends. */
+  void StartAttachmentRetry(const std::string& item_id, const std::string& record_id, const std::string& thread_id,
+                            std::function<void(bool sent)> on_done = {});
   /**
    * Retry / discard the failed send: a bubble's carries its item id (that item and its own staged copy); the chip's
    * none (the send it shows). The staged ciphertext is what a retry sends again.
@@ -621,6 +652,8 @@ private:
   uint64_t pending_upload_serial_ = 0;
   /** The pictures of one pick being chosen or sent one at a time (none most of the time); see BeginPictureQueue. */
   std::unique_ptr<PictureSendQueue> picture_queue_;
+  /** Voice messages waiting for the attachment slot (always there; empty most of the time). */
+  std::unique_ptr<VoiceSendQueue> voice_queue_;
   /** Names the current queue: an item's late end or a late tick for an older one is told apart. */
   uint64_t picture_queue_serial_ = 0;
   /** The preview page of the pictures picked together (hosted here like OpenHomeEdit's layer). */
@@ -655,6 +688,8 @@ private:
   std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
   std::string failed_voice_path_;
+  /** "direct" or "server": the last voice send's winning leg, read once by the voice.send line. */
+  std::string voice_send_won_;
   std::string failed_voice_thread_;
   std::chrono::steady_clock::time_point last_voice_call_check_{};
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
@@ -1022,6 +1057,8 @@ private:
   std::unique_ptr<VoicePlayback> voice_playback_;
   /** The chat the voice parts last saw: another one cancels a recording and stops a clip. */
   std::string voice_thread_;
+  /** A chat was just opened: put the composer back in the remembered mode once the chat can take a voice message. */
+  bool restore_voice_mode_pending_ = false;
   // AgentTurnHost, ChatMenusHost
   ConversationsFacade* Facade() const override { return facade_; }
   bool MessagingIsReady() const override { return messaging_ready_; }

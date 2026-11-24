@@ -35,7 +35,7 @@ Do **not** edit phase status into `AGENTS.md` or keep a second editable normativ
 | Ship | `PHASES.md`, `CURRENT_STATE.md` | Checkboxes match code |
 | **Promote** | [`docs/contracts/`](../docs/contracts/) (and other tiers as appropriate) | Wire, disk, HTTP, crypto, compat policy — **one canonical file**; same release window as the ship |
 | **Freeze** | Project `DECISIONS.md` | Mark outcomes **superseded by** `docs/…`; do not edit normative tables in two places |
-| **Archive** | Move row to **Done / archived** below (folder may remain for ADR history) | When delivery ends; enduring facts already in `docs/` |
+| **Archive** | `git mv` the folder to [`_archive/`](_archive/README.md), fix its links, move its row to **Done / archived** below | When delivery ends; enduring facts already in `docs/`; its ids stay valid (CR025) |
 
 Promote **outcomes** (must/behavior/version fields). Keep **rationale** in ADRs. Do not leave shipped wire schemas only under `projects/` (example: [WIRE_SCHEMAS.md](../docs/contracts/WIRE_SCHEMAS.md) — stub remains under chat-storage).
 
@@ -61,11 +61,10 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [social-posts](social-posts/) | Public posts: signed hash-chained author logs, claimed → witnessed → anchored time |
 | [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |
-| [media-hop-reachability](media-hop-reachability/) | Circuit hop dial / SoftMigrate consume |
 | [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment/discovery scenarios (Wave 1–3 partial scaffold) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |
 | [multi-device-account](multi-device-account/) | Account ID, shared DEK, link-device |
-| [adp](adp/) | ADP L1 + AMP stack (mesh underlay) |
+| [adp](adp/) | The app's move onto the Amp stack (mesh underlay); the stack's own docs are in [pp-cpp-amp](https://github.com/people-post/pp-cpp-amp/blob/main/README.md#docs) |
 | [feature-layer-reorg](feature-layer-reorg/) | `app → feature → domain → …` cleanup |
 | [group-chat](group-chat/) | Group threads: signed roster, member check, mentions (G015) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
@@ -73,15 +72,23 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |
 | [release-compatibility](release-compatibility/) | Release mode: every app, pp-node and relay in the supported range works with every other; format changes by the range rule; one main, a branch per release |
 
+## Moved to another repo
+
+A stub per file stays here, so old links keep working ([CR025](capability-repos/DECISIONS.md#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs); where every repo's docs are: [docs/README.md § Where docs live](../docs/README.md#where-docs-live)).
+
+| Project | Now in |
+|---------|--------|
+| [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) | pp-cpp-mesh `docs/projects/` — circuit hop dial, punch, rendezvous; SoftMigrate consume |
+
 ## Done / archived
 
-Delivery ended; use **docs/** for normative refs. Folders kept for ADR / history unless deleted later.
+Delivery ended; use **docs/** for normative refs. Folders are kept in [`_archive/`](_archive/README.md) for their decisions and history (their ids are cited); relay-blob-upload is finished but stays in place, as a cross-repo program it moves to pp-specs after release 1 (CR025 step 2).
 
 | Project | Stable refs |
 |---------|-------------|
-| [node-monitoring](node-monitoring/) | [NODE_METRICS](../docs/contracts/NODE_METRICS.md), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md), [CALLS § Call media health](../docs/architecture/CALLS.md) |
-| [thread-ownership](thread-ownership/) | [THREADING.md § Owner threads](../docs/architecture/THREADING.md#owner-threads), [CALLS.md](../docs/architecture/CALLS.md) |
-| [liquid-glass](liquid-glass/) | [UI_DESIGN_SYSTEM — Floating Chrome](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md) |
-| [libp2p-pq-transport](libp2p-pq-transport/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md), [LIBP2P_UPSTREAM](../docs/architecture/LIBP2P_UPSTREAM.md) |
-| [at-rest-crypto](at-rest-crypto/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md) |
+| [node-monitoring](_archive/node-monitoring/) | [NODE_METRICS](../docs/contracts/NODE_METRICS.md), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md), [CALLS § Call media health](../docs/architecture/CALLS.md) |
+| [thread-ownership](_archive/thread-ownership/) | [THREADING.md § Owner threads](../docs/architecture/THREADING.md#owner-threads), [CALLS.md](../docs/architecture/CALLS.md) |
+| [liquid-glass](_archive/liquid-glass/) | [UI_DESIGN_SYSTEM — Floating Chrome](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md) |
+| [libp2p-pq-transport](_archive/libp2p-pq-transport/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md), [LIBP2P_UPSTREAM](../docs/architecture/LIBP2P_UPSTREAM.md) |
+| [at-rest-crypto](_archive/at-rest-crypto/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md) |
 | [relay-blob-upload](relay-blob-upload/) | [SERVICE_ENDPOINTS](../docs/contracts/SERVICE_ENDPOINTS.md), [WIRE_SCHEMAS](../docs/contracts/WIRE_SCHEMAS.md) |

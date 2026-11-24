@@ -1,7 +1,7 @@
 # Capability repos — current state
 
-**Updated:** 2026-11-22  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done
+**Updated:** 2026-11-23  
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done; the docs split (CR025) step 1 done
 
 ## Done
 
@@ -140,10 +140,16 @@
   names its owner thread and the app registers it; the crash dump, the text layer and net take the product's identity
   as values.
 
+- **CR025, the docs split, step 1 (2026-11-23):** where docs live is decided and mapped
+  ([docs/README.md § Where docs live](../../docs/README.md#where-docs-live)); five finished projects in
+  `projects/_archive/`; media-hop-reachability in pp-cpp-mesh (stubs here); a `docs/README.md` in every capability
+  folder.
+
 ## Next
 
 1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
-2. Contracts repo (CR010) when convenient.
+2. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
+   the cross-repo programs, this project included).
 3. P3's namespaces when a second app needs a capability.
 
 ## A second app is waiting (2026-11-22)
@@ -157,7 +163,7 @@ Not pp-cpp-crypto: its README keeps product wire formats in the apps, and only t
 and PeerId in this code are crypto.
 
 - **Before it:** CR012's prerequisites (one pin list per app and a sibling-build mode; one home for vendored deps).
-  The vectors go to the contracts repo (CR010) in the same step if it exists by then, since the relay reads them too.
+  The vectors go to the contracts repo (pp-specs, CR010 / CR025 step 2) in the same step if it exists by then, since the relay reads them too.
 - **A reference port:** pp-cpp-crypto branch `feat/relay-certificate` (commit 402421f; not merged, not to be released
   from there) carries the code with these vectors byte for byte, every case with the same verdict. Moving it here:
   - origin policy becomes the caller's: the shared code keeps the structural rules and takes an origin predicate, and

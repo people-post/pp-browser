@@ -124,7 +124,7 @@ messaging's attachments. Neither had a place in the plan.
 ## CR010 — Wire contracts and vectors in their own repo
 
 **Date:** 2026-10-30  
-**Status:** accepted; not started
+**Status:** accepted; how and when in [CR025](#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs): the repo is pp-specs, created after release 1 (step 2)
 
 **Context:** Formats now have a C++ and a TypeScript implementation each (posts in app-posts, the locker and
 the KEM binding in app-static-api), and vectors are copied by hand ("copy the file again when pp-browser
@@ -513,3 +513,91 @@ content's: they are the format, not a database. The blob port lost `SetProfileId
 from `PeerTransports`, which keeps it across a re-attach (the id was lost on one before).
 
 **Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).
+
+## CR025 — Documentation lives with what it describes; pp-specs (public) holds shared contracts, vectors and cross-repo programs
+
+**Date:** 2026-11-23  
+**Status:** accepted (Hongwei, 2026-11-23); step 1 done; step 2 after release 1; step 3 when a second app needs a
+capability. Gives CR010 its how and when. Amended by [CR026](#cr026--pp-cpp-amp-takes-the-stacks-design-and-the-contracts-it-alone-implements) (pp-cpp-amp and pp-cpp-mesh take the contracts only
+they implement, and adp's library half, ahead of step 2). The map: [docs/README.md § Where docs live](../../docs/README.md#where-docs-live)
+
+**Context:** pp-browser holds most of the organisation's documentation, not only the app's: the design history of
+libraries that left with their code (pp-cpp-amp, pp-cpp-mesh) but whose projects stayed here, contracts the relay
+and other repos implement too, programs that span the app, the relay and its deployment, and the vector files other
+repos copy byte for byte (the relay keeps nine copies). Other repos link here by path (pp-relay-apis alone, in over 70 files).
+CR010 (2026-10-30) put contracts and vectors in a repo of their own, but said neither how nor when.
+
+**Decision:**
+
+*Rules:*
+1. A doc lives with what it describes: the repo of the code, or of the contract.
+2. Anything that spans repos has exactly one neutral home; everything else links there.
+3. Decision ids never change: RC020 stays RC020 wherever its file lives. Code cites ids, not paths.
+
+*Homes:*
+- **pp-specs** (new, public; created after release 1, not now): contracts implemented by more than one repo; every
+  `*_vectors.json`, tagged, which the implementations pin instead of keeping copies; and the cross-repo programs
+  (release-compatibility, multi-relay, support-chat, push-notifications, relay-blob-upload, capability-repos).
+- **Each code repo** keeps its own architecture, ops, API and design history. pp-cpp-mesh and pp-cpp-amp take their
+  library projects; pp-relay-apis keeps its server designs; the infrastructure repositories take node monitoring's
+  and the programs' infrastructure halves. pp-browser keeps the app's architecture, ops and UI, its app-local
+  contracts (DATA_LAYOUT, AT_REST_ENCRYPTION) and its app-only projects.
+- **pp-plan** (private, tied to the organisation's project board #3): roadmap, priorities and to-dos only, nothing
+  technical. Whatever code relies on stays public.
+- **Each `capabilities/<name>/`** gets a `docs/`, so its docs move with its code when it leaves (CR005, CR006).
+- **Finished projects** go to [`projects/_archive/`](../_archive/README.md), kept because their ids are cited.
+
+*Public and private:* specs and designs are public; plans and infrastructure details are private, as #720 drew the
+line for the relay's deployment ([AGENTS.md § Documentation authority](../../AGENTS.md#documentation-authority),
+`scripts/check/check_private_infra.sh`).
+
+*Steps:*
+1. **Now:** this decision and the map; finished projects into `projects/_archive/`; library projects copied into
+   their library with a one-line stub per moved file here (stubs keep every old link working; inside one repo links
+   are fixed instead); a `docs/README.md` in every capability folder. No contract, vector file or cross-repo
+   program moves.
+2. **After release 1:** create pp-specs; move the shared contracts, the vector files and the cross-repo programs
+   there, with stubs; pp-browser and pp-relay-apis pin a pp-specs tag instead of copying vectors. Not earlier:
+   release 1 freezes pins and paths ([release-compatibility](../release-compatibility/)).
+3. **When a second app needs a capability** (CR005): its `capabilities/<name>/docs/` moves with its code.
+
+**Consequences:** CR010's open questions ([DESIGN § Open questions](DESIGN.md#open-questions) 2) are answered: the
+repo is pp-specs, a spec and its vectors per format, tagged and pinned; it is created in step 2. A link across repos
+is an absolute URL to `main`; a moved file leaves a stub that names its new home.
+
+**Notes (step 1, 2026-11-23):**
+- Archived: at-rest-crypto, libp2p-pq-transport, liquid-glass, node-monitoring, thread-ownership. relay-blob-upload is
+  finished too but is a cross-repo program: it moves in step 2.
+- **media-hop-reachability → pp-cpp-mesh** (`docs/projects/media-hop-reachability/`): the in-stack dialability
+  program (address book, punch, circuit, rendezvous); the app side is consume notes.
+- **Left here, spanning the app and the libraries:** adp (the Amp stack's design, but also the app's cutover to it,
+  D5–D10, and app composition and L4 decisions: A020, A021, A023, A028) and p2p-mesh (the product's mesh policy:
+  roles, capabilities, relay pricing and scope, pp-node packaging). libp2p-pq-transport described the retired libp2p
+  fork and the app's identity, so it has no library home and was archived here.
+- **adp's library half → pp-cpp-amp, and MESH_DIRECTORY_AMP → pp-cpp-mesh** (2026-11-23, [CR026](#cr026--pp-cpp-amp-takes-the-stacks-design-and-the-contracts-it-alone-implements)).
+
+## CR026 — pp-cpp-amp takes the stack's design and the contracts it alone implements
+
+**Date:** 2026-11-23  
+**Status:** accepted (Hongwei, 2026-11-23); done. Amends [CR025](#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs)
+(step 1 moved no contract; its notes left adp here whole)
+
+**Context:** After step 1 a reader of pp-cpp-amp alone could not learn its protocol, why it is so, or how it is tested:
+the wire, session and channel contracts, the stack's big picture, its design decisions and its test matrices were all
+in pp-browser (`docs/contracts/`, `projects/adp/`), though the library is their only implementer.
+
+**Decision:** A contract one library alone implements moves to that library now (rule 1), not in step 2; so does a
+project's library half when the project spans the app and the library. Same mechanics as step 1: a header line in each
+copy, a one-line stub here per moved file, ids and headings unchanged.
+- **To pp-cpp-amp:** ADP, AMP-SESSION and AMP-CHANNEL's L3 sections (`docs/contracts/`); adp's STACK (merged into
+  amp's `docs/STACK.md`), DESIGN, the test matrices (`docs/testing/`), the transport's decisions (A001–A005, A007,
+  A012–A016, A018, A019, A024–A027, A029, in `docs/DECISIONS.md`) and the library's open items (`docs/STATUS.md`).
+- **To pp-cpp-mesh:** MESH_DIRECTORY_AMP (`docs/contracts/`).
+- **Stay here:** adp's app half (the cutover, CALL_MEDIA_CIRCUIT, EXTRACTION_READINESS, and the decisions on the app's
+  use of the stack: A006, A008–A011, A017, A020–A023, A028); in [AMP-CHANNEL](../../docs/contracts/AMP-CHANNEL.md) the
+  protocols that run on channels (the `protocol_id` map, the call-media bundle, pp-cpp-mesh's circuit tunnel
+  requests), beside L4_PROTOCOL_KINDS and MEDIA_CHANNELS; AMP-LINK-ERRORS, which pp-cpp-mesh mirrors
+  (`IChatPeerLinks::Err`), so two repos implement it (step 2); CODED_FAILURE (step 2).
+
+A moved decision keeps its heading in [adp DECISIONS](../adp/DECISIONS.md), with one line pointing at its new place,
+so `#a0xx-…` anchors still resolve; a moved AMP-CHANNEL section does the same at the end of that file.

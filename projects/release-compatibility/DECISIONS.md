@@ -558,7 +558,9 @@ profile:
 2. **No prod in a tester build:** CMake refuses a prod origin or a prod relay id with it and compiles no prod
    certificate; Production is never available or listed; a backend the build cannot run falls back to staging, then
    dev, then only a custom backend — never prod (a store build still falls back to prod); a custom backend gets the
-   tester environment's org relay identity, or none, never prod's.
+   tester environment's org relay identity, or none, never prod's. A tester build offers and starts only on an
+   environment it can use — its origin compiled and its relay id not `pending` — so a fresh install, or a saved
+   staging whose relay is still a placeholder, starts on dev instead of an account setup that cannot finish.
 3. **Profiles apart per build kind:** a tester build's keys are never `prod`; its custom profiles are
    `test-custom-<hash>` (a store build keeps `custom-<hash>`); it refuses to start on a profile recorded for `prod` or
    `custom-…`, whichever way it was named.

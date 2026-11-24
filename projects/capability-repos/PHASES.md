@@ -79,8 +79,12 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       [x] `src/lib/storage` with the SQLite stores and the profile database, [x] calls' stores,
       [x] people's and social's stores (peer cards, posts, content's object index).
 
-## Contracts repo (any time, CR010)
+## Contracts repo (CR010; after release 1, CR025 step 2)
 
+- [x] Decided where docs live (CR025) and did step 1: the map, `projects/_archive/`, library projects in their
+      libraries, a `docs/` per capability folder.
+- [ ] Create pp-specs (public) and move the shared contracts, every `*_vectors.json` (tagged) and the cross-repo
+      programs there, with stubs; pp-browser and pp-relay-apis pin a tag instead of copying vectors.
 - [ ] Specs and golden vectors for formats with more than one implementation (posts, the account locker, the
       KEM binding) in their own repo; pp-browser and the TS services (app-posts, app-static-api) pin it and
       test against it instead of copied vectors.

@@ -5,7 +5,7 @@
 **Owner:** Hongwei + agents  
 
 **Stable refs:** [NETWORKING.md](../../docs/architecture/NETWORKING.md), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md), [CONFIGURATION.md](../../docs/ops/CONFIGURATION.md), [PLATFORMS.md](../../docs/architecture/PLATFORMS.md), [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md)  
-**Related:** [media-hop-reachability](../media-hop-reachability/) (dial-by-PeerId in Amp mesh), [p2p-av-calls](../p2p-av-calls/) (V026), [peer-scoped-broadcast](../peer-scoped-broadcast/) ([program board](../peer-scoped-broadcast/PROGRAM.md)) (announce feeds + live fan-out sketch), [push-notifications](../push-notifications/), messaging under `capabilities/messaging/src/feature/conversations/`
+**Related:** [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/tree/main/docs/projects/media-hop-reachability) (dial-by-PeerId in Amp mesh), [p2p-av-calls](../p2p-av-calls/) (V026), [peer-scoped-broadcast](../peer-scoped-broadcast/) ([program board](../peer-scoped-broadcast/PROGRAM.md)) (announce feeds + live fan-out sketch), [push-notifications](../push-notifications/), messaging under `capabilities/messaging/src/feature/conversations/`
 
 ## One-line goal
 
@@ -45,7 +45,7 @@ flowchart TB
 | Name directory / chain-later phone book | [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md) (N029) |
 | Pre-chain engineering plan (A–C) | [PRE_CHAIN_PLAN.md](PRE_CHAIN_PLAN.md) |
 | Scope tags and bridge score | [RELAY_SCOPE.md](RELAY_SCOPE.md) |
-| Can we dial this hop PeerId? | [media-hop-reachability](../media-hop-reachability/DESIGN.md) |
+| Can we dial this hop PeerId? | [media-hop-reachability](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/DESIGN.md) |
 | How should `media_relay` attach be stated as a SM? | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) (N026) |
 | What's in the repo today? | [CURRENT_STATE.md](CURRENT_STATE.md) |
 | What to build next, in what order? | [PHASES.md](PHASES.md) |
@@ -71,8 +71,8 @@ Operated via **`pp-node`**. Desktop Node preferred listen: `/ip4/0.0.0.0/tcp/185
 | [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) | Directory consumers → DHT tracks |
 | [RELAY_SCOPE.md](RELAY_SCOPE.md) | Connectivity domains, scope escalation, bridge score |
 | [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) | Per-stream attach SM design (N026) — docs before code |
-| [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
-| [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md) | Amp Coordinated Punch plan — not implemented |
+| [MULTI_HOP_CIRCUIT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
+| [HOLE_PUNCH.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/projects/media-hop-reachability/HOLE_PUNCH.md) | Amp Coordinated Punch plan — not implemented |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Codebase today |
 | [PHASES.md](PHASES.md) | Checklists and delivery order |
 | [DECISIONS.md](DECISIONS.md) | ADRs (N001+) |

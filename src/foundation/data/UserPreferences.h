@@ -76,6 +76,8 @@ struct ProfilePreferences {
   /** The Chats page's "save your recovery phrase" card: how often it was put off (0-2; it comes back once after 7 days) and when last. Device-only. */
   int recovery_reminder_dismissals = 0;
   int64_t recovery_reminder_dismissed_ms = 0;
+  /** Phone chat composer: the last input mode was voice (true) rather than keyboard (false). Optional on disk; device-only, never synced. */
+  bool composer_voice_mode_last = false;
   /**
    * PIN grace window (#21): minutes after the last foreground use during which a cold start or call skips the PIN.
    * One of 0 (every time), 5, 15, 60, or -1 (kUnlockGraceAlways: until the phone restarts, A015); anything else reads back as 15. Device-only, never synced.
