@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-23  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest)
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest)
 
 ## Done
 
@@ -153,6 +153,13 @@
   ctest, and a sibling build against checkouts at the pins, pass. The shared home across repos waits for a second repo
   (CR012's notes).
 
+- **CR023 steps 4–5, calls repo-ready (2026-11-23):** calls builds and tests on its own —
+  `cmake -S capabilities -DPP_CAPABILITIES=calls` (calls, base, people, net, delivery, pricing, media; no app), and
+  CI's `capabilities` job builds calls' tests so and runs its 784 on every PR that touches calls or what is below it. A
+  link above calls fails that configure; the gate holds the standalone table to the order. The host contract is
+  [capabilities/calls/README.md](../../capabilities/calls/README.md); the Android hooks media called on the app's
+  activity by name are a port (`MediaHost`) the app fills (`src/app/MediaHost_Android.cpp`).
+
 ## Defaults taken (owners may revisit)
 
 - **pp-cpp-ui's implicit `../pp-cpp-ui` is gone** (CR012): a developer who built a checkout beside the repo without
@@ -163,10 +170,11 @@
 
 ## Next
 
-1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
-2. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
+1. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
    the cross-repo programs, this project included).
-3. P3's namespaces when a second app needs a capability.
+2. P3's namespaces when a second app needs a capability.
+3. The same standalone build for the next capability a second app asks for (net and base for the operator app,
+   below): `-DPP_CAPABILITIES=net` configures today; a CI job of its own when it leaves.
 
 ## A second app is waiting (2026-11-22)
 

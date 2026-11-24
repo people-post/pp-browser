@@ -7,6 +7,8 @@
 # this file exports PP_BROWSER_SDL3_* for platform/media/render.
 # Targets: pp_ui / pp_ui_core / pp_ui_backend / ui::core (paths PP_LIB_UI_*).
 
+include(PpBrowserCapability) # PP_BROWSER_ROOT
+
 # UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
 # Enabling UI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
 # leaves ui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
@@ -19,7 +21,7 @@ set(FT_REQUIRE_BROTLI OFF CACHE BOOL "" FORCE)
 
 # The implicit sibling this file used to take (until CR012): say why it is not built any more, once per build tree.
 if(NOT PP_CPP_UI_SOURCE_DIR AND NOT PP_SIBLINGS_DIR AND NOT PP_BROWSER_PACKAGED_BUILD
-   AND EXISTS "${CMAKE_SOURCE_DIR}/../pp-cpp-ui/CMakeLists.txt" AND NOT PP_CPP_UI_SIBLING_NOTICE_SHOWN)
+   AND EXISTS "${PP_BROWSER_ROOT}/../pp-cpp-ui/CMakeLists.txt" AND NOT PP_CPP_UI_SIBLING_NOTICE_SHOWN)
   message(NOTICE "pp-browser: ../pp-cpp-ui is beside the repo but not built: the pinned ${PP_CPP_UI_GIT_TAG} is. "
                  "To build the checkout: -DPP_SIBLINGS_DIR=.. (every library) or -DPP_CPP_UI_SOURCE_DIR=<path>")
   set(PP_CPP_UI_SIBLING_NOTICE_SHOWN ON CACHE INTERNAL "")
@@ -75,7 +77,7 @@ endfunction()
 # mismatch aborts every launch (SDL 3.4's nativeSetupJNI()V against 3.2's ()I) — fail here instead.
 if(ANDROID)
   set(_pp_sdl_version_h "${PP_LIB_UI_ROOT}/third_party/sdl3/include/SDL3/SDL_version.h")
-  set(_pp_sdl_activity "${CMAKE_SOURCE_DIR}/android/app/src/main/java/org/libsdl/app/SDLActivity.java")
+  set(_pp_sdl_activity "${PP_BROWSER_ROOT}/android/app/src/main/java/org/libsdl/app/SDLActivity.java")
   if(NOT EXISTS "${_pp_sdl_version_h}" OR NOT EXISTS "${_pp_sdl_activity}")
     message(FATAL_ERROR "pp-browser: cannot compare SDL's Java glue with the native SDL "
                         "(${_pp_sdl_version_h}, ${_pp_sdl_activity})")

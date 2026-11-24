@@ -444,7 +444,7 @@ external code nobody edits, which the checks, formatting and lint skip.
 ## CR023 — Calls becomes repo-ready first
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); steps 1–3 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
+**Status:** accepted (Hongwei, 2026-11-02); done (steps 4–5 on 2026-11-23, below). Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
 
 **Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
 testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
@@ -493,6 +493,31 @@ Namespaces and an `include/` split wait for an actual repo split (CR022).
   (`foundation/product`): the crash dump takes a `CrashIdentity`, text gets `product.name` / `{product}` from the
   app's translator, net's upgrade fallback is passed in. `AppLifecycle`, background activity / sync and diagnostics
   stay base mechanisms.
+
+**Steps 4–5, as done (2026-11-23):**
+- **Standalone build:** `capabilities/CMakeLists.txt` is a root of its own (what the capabilities repo's root will be,
+  CR006): `-DPP_CAPABILITIES=calls` adds calls and the folders below it (base, people, net, delivery, pricing, media)
+  with the pin list's libraries (CR012) and `third_party/`, no app. Its table of what each capability builds on is
+  the gate's `ALLOWED` (`check_capability_edges.py` fails when they differ); a target that links a `pp_*` name the
+  configure does not define — one above — fails configure; `pp_capability_<name>_tests` builds one capability's tests.
+  The cmake helpers find the repo from their own place (`PP_BROWSER_ROOT`), not `CMAKE_SOURCE_DIR`. Every capability
+  file compiles with the same command as in the app's configure, so the app's compiler cache serves it — which needed
+  net to stop handing the product's version to everything above it (unused there; the app's `AppVersion.h` takes it
+  from `pp_foundation_product` only, as its guard intends).
+- **CI:** `build.yml`'s `capabilities` job (Linux, Release, the build job's ccache restored) builds calls' tests
+  standalone and runs `capability:calls`, on pushes and on every PR whose `calls_standalone` filter (calls' filter plus
+  the standalone root) matched; `required` waits for it.
+- **Host contract:** [capabilities/calls/README.md](../../capabilities/calls/README.md) — the ports an app fills: the
+  stores, `CallStackDeps` (threads, contacts, account, billing, delivery, the mesh objects), the owner thread, text by
+  key, the UI backend and the ring's ports, and the platform through media. Of the three CR023 named: the **call system
+  UI** (CallKit, the Android call notification) was already the app's (`foundation/platform`, the presenters), telling
+  media's session who owns the audio; the **audio route** is media's session, driven by the app's speaker button; the
+  **Android hooks** — media called five of the app's activity methods by name and defined two JNI callbacks named after
+  its class — are now `MediaHost` (`lib/media/MediaHost.h`) and `AudioSession::NotifyHostCallAudioFocus` /
+  `NotifyHostResumed`, which the app fills and calls from `src/app/MediaHost_Android.cpp` (installed in `main`). Media
+  still reaches the OS through SDL's activity (permissions, display rotation), but no app code.
+- **Docs:** calls' `docs/README.md` indexes CALLS.md and its wire schemas where they are: CR025 (later than this
+  decision) keeps a capability's docs in place until it leaves, and the shared schemas go to pp-specs.
 
 ## CR024 — Capabilities own ideas; the app owns the database
 

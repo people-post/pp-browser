@@ -1,6 +1,7 @@
 #include "app/Application.h"
 #include "app/Bootstrap.h"
 #include "app/CrashReportUpload.h"
+#include "app/MediaHost.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/runtime/AppRuntime.h"
@@ -122,6 +123,8 @@ int main(int argc, char** argv) {
   // so the crash dump and the log file below were silently disabled there (B94).
   // Bootstrap::Run registers again; that is idempotent.
   pbr::PlatformHooks::Register();
+  // Media's host ports (CR023 step 5), before anything starts a call's audio.
+  pbr::InstallMediaHost();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
   pbr::CrashDump::Install(pbr::AppPaths::DataDir(),

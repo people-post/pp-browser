@@ -969,6 +969,10 @@ int CaptureReopenSettleDelayMs() {
 void ApplyCaptureAudioHints() {}
 void ClearCaptureAudioHints() {}
 
+// The host keeps no call audio focus here: the session's interruptions come from AVAudioSession (MediaHost).
+void NotifyHostCallAudioFocus(int /*focus_change*/) {}
+void NotifyHostResumed() {}
+
 } // namespace AudioSession
 } // namespace pbr
 

@@ -145,6 +145,18 @@ On Windows, Debug and RelWithDebInfo builds use embedded debug info (`/Z7`) so s
 
 CI uses ccache on every platform automatically via `-DPP_BROWSER_COMPILER_CACHE=ON`. Its Actions cache key includes the runner image (`ImageOS`-`ImageVersion`): ccache misses every object after a compiler change, so a new image starts its own cache, restoring the newest one meanwhile.
 
+### Capabilities on their own
+
+`capabilities/CMakeLists.txt` builds chosen capability folders and what is below them, without the app — the shape of a capabilities repo (capability-repos [CR023](../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first) step 4):
+
+```bash
+cmake -S capabilities -B build-calls -DCMAKE_BUILD_TYPE=Debug -DPP_CAPABILITIES=calls   # base … media, calls
+cmake --build build-calls --target pp_capability_calls_tests -j                          # or everything
+ctest --test-dir build-calls -L '^capability:calls$' -j
+```
+
+It reads the same pin list and `third_party/`, and takes the same options (`PP_SIBLINGS_DIR`, `…_SOURCE_DIR`, `PP_BROWSER_COMPILER_CACHE`); `pp_capability_<name>_tests` builds one capability's tests. Linux and macOS desktop. CI's `capabilities` job runs it for calls ([capabilities/calls/README.md](../../capabilities/calls/README.md)).
+
 ## Run
 
 From the repository root (assets path is compile-time `PP_BROWSER_ASSETS_DIR`):
