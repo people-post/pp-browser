@@ -1,6 +1,6 @@
 # Profile model: design
 
-**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM008](DECISIONS.md#pm008--one-account-per-install-for-release-1-the-layout-allows-more)); nothing built. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
+**Status:** Proposed (2026-11-23), decided in outline ([PM001](DECISIONS.md#pm001--a-network-on-top-the-tester-app-guard-is-at-the-network)–[PM009](DECISIONS.md#pm009--one-backend-per-profile-for-release-1-in-the-final-layout)); nothing built. **Release 1 builds this whole layout with one backend per profile** (PM009); a profile using several backends of its network comes later, without a layout change. Pre-release: a clean cutover, no migration ([RC017](../release-compatibility/DECISIONS.md#rc017--p0s-decisions-a-clean-local-start-the-currency-id-fixed-two-features-after-release-1)). What holds today is in [DATA_LAYOUT § Per-backend profiles](../../docs/contracts/DATA_LAYOUT.md#per-backend-profiles) until this is built and promoted.
 
 ## Why
 
@@ -12,7 +12,8 @@ for the backend it runs. Three things follow that are wrong:
   launch ([#733](https://github.com/people-post/pp-browser/issues/733); the same by a backend switch before a restart,
   INVENTORY § E 3).
 - **An account cannot span backends,** although it is the user's own key (multi-relay MR001) and its relays are its own
-  list (MR002). A store app's custom backend gets a separate identity.
+  list (MR002). Release 1 still keeps one backend per profile (PM009), but in a layout that lets one account use
+  several backends later without moving a file.
 - **A backend is one origin.** Every service is the origin plus a fixed path, so a custom backend uses prod's LLM and
   MCP and may expect prod's relay id (INVENTORY § Services).
 
@@ -76,7 +77,7 @@ backend
 {data_dir}/
   config.json                  # machine: the active backend id, custom backends' tables, device-wide settings
   machine.json                 # machine: window, display, logs; show_tester_options (PM006); no active profile
-  profiles.json                # index: profiles [{id, label}], active: {network → profile id} (PM008)
+  profiles.json                # index: profiles [{id, label}], active: {backend_id → profile id} (PM008)
   profiles/
     {id}/                      # opaque, fixed for life (PM003)
       manifest.json            # schema_version, network — written first, atomically, never changed
@@ -86,7 +87,7 @@ backend
       relay_pins.json, relay_inbox_cursor.json   # per relay; the cursor's "preferred" slot goes
       contacts.json, preferences.json, threads/, cas/, cache/, …   # device data, unchanged
       backends/
-        {backend_id}/
+        {backend_id}/          # release 1: exactly one per profile (PM009)
           registration.enc     # the org registration slot + Brief LLM token, sealed, AAD names profile and backend
           client_compat.json
           mesh_directory_nodes.json, mesh_node_reputation.json
@@ -101,9 +102,10 @@ so the two cannot disagree. At startup the registry reads `profiles/*/manifest.j
 
 1. Load `config.json`; resolve the active backend (or this build's fallback) and its network.
 2. Refuse a network this build may not open (the guard; a `--profile` override is checked the same way).
-3. Read the manifests. Take the network's pointer from `profiles.json`; if it is missing, or names a profile that is
-   gone or on another network, take the first profile on the network; if there is none, make one.
-4. Open `backends/{backend_id}/` in it, making it on first use.
+3. Read the manifests. Take the backend's pointer from `profiles.json`; if it is missing, or names a profile that is
+   gone or on another network, take the profile on the backend's network that holds `backends/{backend_id}/`; if there
+   is none, make one (with that folder).
+4. Open `backends/{backend_id}/` in it. (Later, when a profile may use several backends: made on first use.)
 
 A folder without a readable manifest, or with a newer one, is logged and left alone. Nothing is ever claimed or
 renamed.
@@ -116,25 +118,38 @@ device).
 
 ## Backend switch
 
-- **Same network:** the profile stays; the active backend changes; push is unbound on every relay holding a binding
-  of ours.
-- **Other network:** the other network's profile opens (or is made) on the next start; push is unbound the same way.
-- Push binding ids are kept on disk (in the backend's or relay's record) so a restart can still unbind them.
-- Onto a store app's custom backend: the confirm says the account is registered with that deployment.
+- **Release 1 (PM009):** every switch, within a network or across, opens the new backend's profile on the next start,
+  or makes one.
+- **Later:** a switch to a backend on the same network keeps the profile and points the new backend at it; its
+  `backends/{backend_id}/` is made on first use. Onto a store app's custom backend, the confirm then says the account
+  is registered with that deployment.
+- Either way push is unbound on every relay holding a binding of ours, and binding ids are kept on disk (in the
+  backend's or relay's record) so a restart can still unbind them.
 
 ## Open questions
 
-1. **A custom backend's identity across edits.** An opaque id that the user's edits keep, or a new backend when its
-   registration URL changes? (Today an edit makes a new `custom-<hash>` profile on the next start, without a confirm.)
-2. **The org relay and the account's relay list on a switch within `main`.** Is the new backend's org relay added to
+**Needed for release 1:**
+
+1. **What makes a custom backend the same backend.** Its table has many URLs; its id (`custom-<hash>`, also the
+   `backends/` folder name and part of an AAD) is a hash of some of them. Proposed: the registration URL and the org
+   relay (origin and relay id), where the account lives. Changing either is a switch (a confirm, push unbound, the
+   other backend's profile on the next start, #745); changing any other service applies in place.
+
+**Defaults for release 1, unless changed:**
+
+2. **Switch without a restart:** no; the backend stays latched once per process, as today.
+3. **`node`:** pp-node's profile records `node`, under its own data root (PM007).
+
+**When a profile may use several backends (after PM009):**
+
+4. **The org relay and the account's relay list on a switch within `main`.** Is the new backend's org relay added to
    the list, offered, or left out?
-3. **Account lockers** stay at the org's registration URL (MR006). With one account on several backends, which
+5. **Account lockers** stay at the org's registration URL (MR006). With one account on several backends, which
    backend's locker is the account's?
-4. **Stream history** is read from the org's relay while it is ours (`HistoryRelay`): per backend, or per relay?
-5. **Switch without a restart.** The backend is latched once per process today.
-6. **`node`.** Whether pp-node's profile needs a network at all once its data root is its own.
+6. **Stream history** is read from the org's relay while it is ours (`HistoryRelay`): per backend, or per relay?
 
 ## Not in scope
 
 - An account switcher UI (PM008: the layout allows it).
+- A profile using several backends (PM009: the layout allows it).
 - Changes to the relay list, the account card or the device list (multi-relay, multi-device-account).
