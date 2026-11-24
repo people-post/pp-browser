@@ -99,6 +99,9 @@ const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std:
 
 /** brief_AI's answer routes a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
 constexpr ShareWord kTurnRoutes[] = {"none", "web", "chat", "app_action", "news", "image"};
+/** A news read's done.answer_kind and done.unavailable_kind (contract section 15) for "ai.news_read"; else `other`. */
+constexpr ShareWord kNewsAnswerKinds[] = {"news_digest", "news_unavailable"};
+constexpr ShareWord kNewsUnavailableKinds[] = {"not_article", "blocked", "mismatch", "other"};
 
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
 void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
@@ -228,7 +231,8 @@ struct AgentSession::Impl : public Module {
   std::string pending_user_text;
   std::optional<std::string> pending_user_payload;
   std::optional<AgentImageTurn> pending_image; // at most one per turn; SubmitToThread only
-  /** This turn reads a news item (SubmitNewsRead): its messages are stored hidden, nothing streams into the chat. */
+  /** This turn reads a news item (SubmitNewsRead): its messages are stored hidden; its text streams to the reader
+   *  only (the chat screen keeps its deltas out of the chat). */
   bool news_read = false;
   std::string news_title; // the read item's title (client.news_title)
   /** The streamed answer's done.answer_kind (empty: none); set by on_done for the persist and the ready event. */
@@ -1799,7 +1803,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   auto image_error_kind = std::make_shared<std::string>();
 
   BriefTurnSinks sinks;
-  // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue.
+  // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue. A news read's
+  // deltas go to the reader (AgentTurnController keeps them out of the chat); its done replaces them.
   auto last_delta = std::make_shared<std::optional<std::chrono::steady_clock::time_point>>();
   sinks.on_delta = [state, current, last_delta, stats](const std::string& text) {
     const auto now = std::chrono::steady_clock::now();
@@ -1807,8 +1812,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
       stats->first_token = now;
     }
     ++stats->deltas;
-    if (!current() || state->news_read || (*last_delta && now - **last_delta < std::chrono::milliseconds(50))) {
-      return; // a news read shows in the reader once it is done, never as a bubble in the chat
+    if (!current() || (*last_delta && now - **last_delta < std::chrono::milliseconds(50))) {
+      return;
     }
     *last_delta = now;
     PushEvent(state, AgentEvent{.type = AgentEventType::AssistantDelta,
@@ -1824,12 +1829,21 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   sinks.on_meta = [stats](const std::string& route) { stats->route = route; };
   sinks.on_done = [state, current, emit_turn, role_thread_id](
                       const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
-                      const std::string& role, const std::string& answer_kind, const bool translated) {
+                      const std::string& role, const std::string& answer_kind, const bool translated,
+                      const std::string& unavailable_kind) {
     emit_turn(finish == "length" ? ShareWord("done_truncated") : ShareWord("done"));
     state->shared->brief_key_renewed.store(false); // the key works: a later 401 may renew it again
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
+    }
+    if (state->news_read) {
+      // Counts reads by outcome and, for one that got no digest, by the server's reason; never a URL or title.
+      MetricsLine("ai.news_read")
+          .Pick("answer", answer_kind, kNewsAnswerKinds)
+          .Pick("unavailable_kind", unavailable_kind, kNewsUnavailableKinds)
+          .Add("translated", translated)
+          .Emit();
     }
     if (!role_thread_id.empty()) {
       std::lock_guard lock(state->shared->last_role_mutex);

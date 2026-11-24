@@ -72,6 +72,11 @@ public:
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
   /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
   virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
+  /** The news read running in `thread_id` streamed more text: `text_so_far` is all of it (never stored). */
+  virtual void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) {
+    (void)thread_id;
+    (void)text_so_far;
+  }
   /** The ask-AI panel shows this thread now: an answer there is read, not unread. */
   virtual bool AskAiPanelShows(const std::string& thread_id) const {
     (void)thread_id;
@@ -170,7 +175,8 @@ public:
   void OnStopTurn();
   /**
    * Reads a news item in AI thread `thread_id` (NewsReader): busy there with the step label "Reading “title”" until
-   * the turn ends; nothing of it streams into the chat, and an error is told by the reader, not by a banner.
+   * the turn ends; its text streams to the reader (AgentTurnHost::OnNewsReadText), never into the chat, and an error
+   * is told by the reader, not by a banner.
    */
   SubmitOutcome StartNewsRead(const std::string& thread_id, const std::string& request_text, const std::string& title);
   /** A news item tapped in `thread_id` must wait: a turn runs there, or no turn may start now. */

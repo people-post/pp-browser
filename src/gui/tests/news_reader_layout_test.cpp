@@ -276,12 +276,93 @@ TEST_F(NewsReaderLayoutTest, ChineseStringsAndALongChineseTitleWrapWithoutOverla
   ui::Element* failed = nullptr;
   for (ui::Element* note : All("news-reader-note")) {
     if (note->IsVisible() &&
-        std::string(note->GetInnerRML().c_str()).find("这篇暂时取不到内容。") != std::string::npos) {
+        std::string(note->GetInnerRML().c_str()).find("暂时取不到正文，可以打开原文试试。") != std::string::npos) {
       failed = note;
     }
   }
   ASSERT_NE(failed, nullptr);
   EXPECT_LE(BorderEdges(failed).bottom, BorderEdges(First("news-reader-bar")).top);
+  EXPECT_LE(BorderEdges(failed).right, BorderEdges(document_->GetElementById("sheet")).right) << "it wraps";
+}
+
+void Settle(ui::Context* context) {
+  for (int i = 0; i < 3; ++i) {
+    context->Update();
+  }
+}
+
+/** The visible failure line, or null. */
+ui::Element* VisibleNote(const std::vector<ui::Element*>& notes, const std::string& text) {
+  for (ui::Element* note : notes) {
+    if (note->IsVisible() && std::string(note->GetInnerRML().c_str()).find(text) != std::string::npos) {
+      return note;
+    }
+  }
+  return nullptr;
+}
+
+// The failure sentence in English (the owner's wording), above the row and inside the sheet.
+TEST_F(NewsReaderLayoutTest, TheEnglishFailureSentenceSitsAboveTheRow) {
+  Fill("A Russian cargo ship remains on fire off Finland", "");
+  state_.news_reader_body_rml = "";
+  state_.news_reader_failed = true;
+  Show("en");
+  ExpectTheBarAtTheBottomAndTappable();
+  // The apostrophe aside (the inner RML may write it as an entity), the whole sentence.
+  ui::Element* failed = VisibleNote(All("news-reader-note"), "t get the article text. Try opening the original.");
+  ASSERT_NE(failed, nullptr);
+  EXPECT_EQ(std::string(failed->GetInnerRML().c_str()).rfind("Couldn", 0), 0u);
+  EXPECT_LE(BorderEdges(failed).bottom, BorderEdges(First("news-reader-bar")).top);
+  EXPECT_LE(BorderEdges(failed).right, BorderEdges(document_->GetElementById("sheet")).right) << "it wraps";
+}
+
+// While a digest streams: the spinner line goes with the first text and the body grows under the title. The scroll
+// stays where the reader is — at the top when they have not scrolled, where they scrolled to when they have — as
+// the text grows below (nothing scrolls it; this checks the growth itself does not move it).
+TEST_F(NewsReaderLayoutTest, AStreamingDigestGrowsWithoutMovingTheScroll) {
+  Fill("Netanyahu, Eisenkot parties end talks without deal on forming Israel government", "");
+  state_.news_reader_body_rml = "";
+  state_.news_reader_loading = true;
+  state_.news_reader_can_prev = false;
+  state_.news_reader_can_next = false;
+  Show("en");
+  ui::Element* loading = First("news-reader-loading");
+  ui::Element* scroll = First("news-reader-scroll");
+  ui::Element* body = First("news-reader-body");
+  ASSERT_NE(loading, nullptr);
+  ASSERT_NE(scroll, nullptr);
+  ASSERT_NE(body, nullptr);
+  EXPECT_TRUE(loading->IsVisible());
+
+  const auto stream = [&](const std::string& markdown) {
+    state_.news_reader_loading = false;
+    state_.news_reader_body_rml = MarkdownToRml(markdown, MarkdownOptions{.links = false}).rml.c_str();
+    DataModelHost::Instance().Dirty("chat", "news_reader_loading");
+    DataModelHost::Instance().Dirty("chat", "news_reader_body_rml");
+    Settle(context_);
+  };
+  std::string text = "The Hindu \u00b7 November 23, 2026\n\n";
+  stream(text);
+  EXPECT_FALSE(loading->IsVisible()) << "the first token hides the spinner line";
+  EXPECT_NE(std::string(body->GetInnerRML().c_str()).find("The Hindu"), std::string::npos);
+  const float short_height = body->GetBox().GetSize(ui::BoxArea::Border).y;
+  ExpectTheBarAtTheBottomAndTappable();
+
+  for (int i = 0; i < 30; ++i) {
+    text += "The parties concluded a new round of talks without reaching an agreement on a coalition.\n\n";
+  }
+  stream(text);
+  EXPECT_GT(body->GetBox().GetSize(ui::BoxArea::Border).y, short_height) << "the body grew";
+  EXPECT_FLOAT_EQ(scroll->GetScrollTop(), 0.f) << "it stays at the top: the reader reads from the start";
+  ExpectTheBarAtTheBottomAndTappable();
+
+  scroll->SetScrollTop(120.f); // the reader scrolled down while it streams
+  Settle(context_);
+  const float scrolled = scroll->GetScrollTop();
+  ASSERT_GT(scrolled, 0.f);
+  text += "More text arrives below.\n\n";
+  stream(text);
+  EXPECT_FLOAT_EQ(scroll->GetScrollTop(), scrolled) << "no jump while they scroll";
 }
 
 } // namespace

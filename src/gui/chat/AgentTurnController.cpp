@@ -771,6 +771,10 @@ void AgentTurnController::OnAssistantDelta(const AgentEvent& event) {
   if (thread_id.empty()) {
     return; // a Home turn with no chat to show in: never the open one
   }
+  if (ReadingNews(thread_id)) {
+    host_.OnNewsReadText(thread_id, event.text); // the reader shows it; never a bubble in the chat
+    return;
+  }
   const auto it = streaming_.find(thread_id);
   if (it == streaming_.end() || it->second.row_id != "streaming-" + event.entry_id) {
     ClearStreamingRow(thread_id);
@@ -1437,7 +1441,7 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     case AgentEventType::Error:
       log().error << "Agent session error: " << event.message;
       if (ReadingNews(EventThread(event))) {
-        break; // the reader says "this article can't be read right now" once the turn ends
+        break; // the reader says "couldn't get the article text" once the turn ends
       }
       // A partial answer was already persisted via AssistantReady; the error toast is separate.
       UserFeedback::NeedsSetup(error_message);

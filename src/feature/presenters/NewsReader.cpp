@@ -190,25 +190,27 @@ NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, co
   return DecideNewsTap(reads.IsRead(item_url), reading_this, busy);
 }
 
-NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url,
-                                   const std::string& reading_url) {
+NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
+                                   const std::string_view streamed) {
   NewsReaderShows shows;
   shows.digest = reads.Find(item_url);
   if (shows.digest) {
     shows.translated = shows.digest->translated;
   } else if (!reading_url.empty() && NormalizeNewsUrl(reading_url) == NormalizeNewsUrl(item_url)) {
-    shows.loading = true;
+    shows.reading = true;
+    shows.partial = streamed;
+    shows.loading = streamed.empty();
   } else {
     shows.failed = true;
   }
   return shows;
 }
 
-NewsNav NewsNavFor(const size_t index, const size_t count, const bool loading) {
+NewsNav NewsNavFor(const size_t index, const size_t count, const bool reading) {
   NewsNav nav;
   nav.shown = count >= 2;
-  nav.can_prev = nav.shown && !loading && index > 0;
-  nav.can_next = nav.shown && !loading && index + 1 < count;
+  nav.can_prev = nav.shown && !reading && index > 0;
+  nav.can_next = nav.shown && !reading && index + 1 < count;
   return nav;
 }
 

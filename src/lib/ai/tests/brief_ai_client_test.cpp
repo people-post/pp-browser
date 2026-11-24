@@ -301,6 +301,14 @@ TEST(BriefAiClientTest, ParseDoneAnswerKind) {
       R"({"type":"done","response":"r","answer_kind":"news_digest","translated":false})");
   ASSERT_TRUE(same.has_value());
   EXPECT_FALSE(same->translated);
+  EXPECT_TRUE(same->unavailable_kind.empty()) << "absent: empty";
+  for (const char* why : {"not_article", "blocked", "mismatch", "other"}) {
+    auto unavailable =
+        pbr::BriefAiClient::ParseEvent(std::string(R"({"type":"done","response":"r",)") +
+                                       R"("answer_kind":"news_unavailable","unavailable_kind":")" + why + R"("})");
+    ASSERT_TRUE(unavailable.has_value());
+    EXPECT_EQ(unavailable->unavailable_kind, why);
+  }
 }
 
 // A news read is an ordinary request: the item's URL and a fixed sentence as the message, `news_digest` among the

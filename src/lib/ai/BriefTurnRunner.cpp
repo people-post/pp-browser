@@ -124,7 +124,7 @@ BriefTurnRunner::Attempt BriefTurnRunner::RunOnce(const BriefAiStreamFn& stream,
       const BriefAiEvent empty;
       const BriefAiEvent& event = done ? *done : empty;
       Call(sinks.on_done, event.response.empty() ? text : event.response, event.finish, event.sources, event.role,
-           event.answer_kind, event.translated);
+           event.answer_kind, event.translated, event.unavailable_kind);
       return Attempt::Finished;
     }
     case BriefAiOutcome::Handoff:

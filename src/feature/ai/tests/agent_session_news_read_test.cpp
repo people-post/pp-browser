@@ -1,6 +1,7 @@
 // A news item read in an AI thread (DEV/PLAN-news-inline-digest.md, brief_AI contract section 15): the request and
-// the digest are stored hidden, nothing streams into the chat, failures store no digest, every brief turn declares
-// `news_digest`, and the latest news list stays in the history sent.
+// the digest are stored hidden, the text streams to the reader as deltas (the chat screen keeps them out of the chat)
+// and only done's text is stored, failures store no digest, every brief turn declares `news_digest`, and the latest
+// news list stays in the history sent.
 #include "feature/ai/tests/agent_session_test_support.h"
 
 #include <algorithm>
@@ -58,7 +59,11 @@ TEST_F(AgentSessionBriefStreamTest, ANewsReadStoresAHiddenRequestAndDigest) {
   EXPECT_FALSE(requests[0].intent.has_value()) << "no new intent: an unknown one is a 400";
   EXPECT_TRUE(HasNewsDigest(requests[0]));
 
-  EXPECT_TRUE(Of(events, AgentEventType::AssistantDelta).empty()) << "nothing streams into the chat";
+  // An older server's one big token: one delta for the reader (AgentTurnController keeps it out of the chat).
+  const auto deltas = Of(events, AgentEventType::AssistantDelta);
+  ASSERT_EQ(deltas.size(), 1u);
+  EXPECT_EQ(deltas[0].thread_id, "t1");
+  EXPECT_EQ(deltas[0].text, "来源：n.example\n\n文章说……");
   const auto ready = Of(events, AgentEventType::AssistantReady);
   ASSERT_EQ(ready.size(), 1u);
   EXPECT_EQ(ready[0].answer_kind, "news_digest");
@@ -86,6 +91,61 @@ TEST_F(AgentSessionBriefStreamTest, ATranslatedDigestIsStoredAsSuch) {
   EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsDigestTranslatedGeneration);
   EXPECT_TRUE(IsHiddenNewsMessage(store.messages[1]));
   EXPECT_TRUE(IsNewsDigestMessage(store.messages[1]));
+}
+
+// A streamed digest (the source line first, then the text): the reader gets the text as it grows, and what is stored
+// is done's response, not the streamed text.
+TEST_F(AgentSessionBriefStreamTest, AStreamedDigestReachesTheReaderAndOnlyDonesTextIsStored) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  session_->SetBriefAiStream([this](const BriefAiRequest& request,
+                                    const std::function<void(const BriefAiEvent&)>& on_event,
+                                    const std::atomic<bool>&) -> Roe<BriefAiOutcome> {
+    Record(request);
+    on_event(Meta());
+    on_event(Token("n.example \u00b7 2026-11-24\n\n"));
+    std::this_thread::sleep_for(std::chrono::milliseconds(80)); // past the session's 50 ms delta cap
+    on_event(Token("The article says rates rose."));
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    on_event(Token(" Markets fell."));
+    BriefAiEvent done = Done("n.example \u00b7 2026-11-24\n\nThe article says rates rose. Markets fell.");
+    done.sources.clear();
+    done.answer_kind = "news_digest";
+    on_event(done);
+    return BriefAiOutcome::Done;
+  });
+  session_->SubmitNewsRead("t1", kRequest, "Rates rise");
+  const auto events = WaitForTurn();
+  const auto deltas = Of(events, AgentEventType::AssistantDelta);
+  ASSERT_GE(deltas.size(), 2u);
+  EXPECT_EQ(deltas[0].text, "n.example \u00b7 2026-11-24\n\n") << "the source line comes first";
+  for (size_t i = 1; i < deltas.size(); ++i) {
+    EXPECT_EQ(deltas[i].text.rfind(deltas[i - 1].text, 0), 0u) << "each delta is the whole text so far";
+  }
+  ASSERT_EQ(store.messages.size(), 2u);
+  EXPECT_EQ(store.messages[1].text, "n.example \u00b7 2026-11-24\n\nThe article says rates rose. Markets fell.");
+  EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsDigestGeneration);
+}
+
+// Tokens were streamed, then done says the page was not the article: done's fixed sentence is the answer, stored as
+// "could not be read" (the item stays unread), and the streamed text is never stored.
+TEST_F(AgentSessionBriefStreamTest, UnavailableAfterTokensStoresOnlyTheFailure) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  BriefAiEvent done = DoneKind("这篇暂时取不到内容。", "news_unavailable");
+  done.unavailable_kind = "mismatch";
+  Script({Meta(), Token("n.example \u00b7 11月24日\n\n"), Token("文章说……"), done}, BriefAiOutcome::Done);
+  session_->SubmitNewsRead("t1", kRequest);
+  const auto events = WaitForTurn();
+  EXPECT_FALSE(Of(events, AgentEventType::AssistantDelta).empty()) << "the reader saw the text while it came";
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].answer_kind, "news_unavailable");
+  ASSERT_EQ(store.messages.size(), 2u);
+  EXPECT_EQ(store.messages[1].text, "这篇暂时取不到内容。");
+  EXPECT_EQ(store.messages[1].generation.value_or(""), kNewsFailedGeneration);
 }
 
 TEST_F(AgentSessionBriefStreamTest, AnUnreadableArticleIsStoredAsFailed) {
@@ -189,7 +249,7 @@ TEST_F(AgentSessionBriefStreamTest, AStoppedNewsReadStoresNoAnswer) {
   session_->Cancel();
   const auto events = WaitForTurn();
   EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
-  EXPECT_TRUE(Of(events, AgentEventType::AssistantDelta).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantDelta).size(), 1u) << "the reader saw the part; nothing keeps it";
   ASSERT_EQ(store.messages.size(), 1u);
   EXPECT_EQ(store.messages[0].generation.value_or(""), kNewsRequestGeneration);
 }

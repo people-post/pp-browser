@@ -2,10 +2,13 @@
 
 #include "common/thread/ThreadTypes.h"
 
+#include <chrono>
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -80,14 +83,50 @@ NewsTap DecideNewsTap(bool stored, bool reading_this, bool busy);
 NewsTap DecideNewsTapFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
                          bool busy);
 
-/** What the reader shows for one item: its digest (and whether it is an AI translation), loading, or the failure line. */
+/**
+ * What the reader shows for one item: its digest (and whether it is an AI translation); while it is being read, the
+ * text streamed so far, or the spinner until the first of it; or the failure line.
+ */
 struct NewsReaderShows {
   const NewsReads::Digest* digest = nullptr; // points into the NewsReads passed in
   bool translated = false;                   // only with a digest: the line "AI translation of the original"
-  bool loading = false;
+  bool reading = false;                      // this item is being read: Previous / Next stay off until it ends
+  bool loading = false;                      // reading, and nothing of the text has come yet: the spinner line
+  std::string_view partial;                  // reading: the text so far (points into `streamed`), never stored
   bool failed = false;
 };
-NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url);
+/** `streamed`: the text the running read of `reading_url` has streamed so far ("" while none has come). */
+NewsReaderShows NewsReaderShowsFor(const NewsReads& reads, const std::string& item_url, const std::string& reading_url,
+                                   std::string_view streamed = {});
+
+/**
+ * The text a news read has streamed so far (brief_AI's tokens, the whole text each time) and when the reader last drew
+ * it. The reader redraws the growing text at most once per kRedrawInterval: each redraw converts the whole text again
+ * and replaces the digest's elements, so a long digest coming token by token would otherwise lay the sheet out again
+ * for every token. What a skipped redraw would have shown is drawn by the next due one (the chat's per-frame tick asks
+ * DrawDue), and the end of the read shows the stored final text whatever was drawn. Memory only, never stored.
+ */
+struct NewsStreamText {
+  static constexpr std::chrono::milliseconds kRedrawInterval{100}; // at most ten redraws a second
+
+  std::string text;
+  bool drawn = true; // the reader shows `text` (or does not show this read at all)
+  std::optional<std::chrono::steady_clock::time_point> last_drawn;
+
+  void Grow(std::string text_so_far) {
+    if (text_so_far != text) {
+      text = std::move(text_so_far);
+      drawn = false;
+    }
+  }
+  bool DrawDue(const std::chrono::steady_clock::time_point now) const {
+    return !drawn && (!last_drawn || now - *last_drawn >= kRedrawInterval);
+  }
+  void Drawn(const std::chrono::steady_clock::time_point now) {
+    drawn = true;
+    last_drawn = now;
+  }
+};
 
 /** Previous / Next under the reader: only for a list (two or more items), off at the ends and while a read runs. */
 struct NewsNav {
@@ -95,6 +134,7 @@ struct NewsNav {
   bool can_prev = false;
   bool can_next = false;
 };
-NewsNav NewsNavFor(size_t index, size_t count, bool loading);
+/** `reading`: the item shown is being read (spinner or streamed text). */
+NewsNav NewsNavFor(size_t index, size_t count, bool reading);
 
 } // namespace pbr

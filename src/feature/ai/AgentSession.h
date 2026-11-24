@@ -212,8 +212,9 @@ public:
    * A news item read in an AI thread (DEV/PLAN-news-inline-digest.md; brief preset only, else the turn fails).
    * `request_text` is the item's URL and the fixed sentence (NewsReadRequestText). The request is stored with
    * kNewsRequestGeneration; the answer with kNewsDigestGeneration, or kNewsFailedGeneration when brief_AI says the
-   * article could not be read (done.answer_kind). An error or a stop stores no answer (the item stays unread), and
-   * nothing of the turn streams into the chat. `title` (the item's, from the list) goes as client.news_title, data the
+   * article could not be read (done.answer_kind). An error or a stop stores no answer (the item stays unread). Its
+   * text streams as AssistantDelta events for the reader (the chat screen keeps them out of the chat); only done's
+   * response is stored. `title` (the item's, from the list) goes as client.news_title, data the
    * server checks the page against; never in the message.
    */
   SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,

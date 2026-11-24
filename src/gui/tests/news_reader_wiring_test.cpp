@@ -98,10 +98,41 @@ TEST(NewsReaderWiringTest, TheAskAiPanelAndItsQuestionCheckIgnoreTheReader) {
             std::string::npos);
 }
 
+// The text a read streams reaches the open sheet, throttled (NewsStreamText decides when a redraw is due; the per-frame
+// tick draws what a skipped redraw held back), lives in memory only, and goes when the read ends (the stored answer is
+// shown then), on a lock, sign-out, a profile reset and when its chat is deleted.
+TEST(NewsReaderWiringTest, AStreamingReadDrawsThrottledAndLeavesNothingBehind) {
+  const std::string text = Body(kController, "void ChatController::OnNewsReadText(");
+  EXPECT_NE(text.find("news_streams_[thread_id].Grow(text_so_far);"), std::string::npos);
+  EXPECT_NE(text.find("DrawNewsStream();"), std::string::npos);
+  const std::string draw = Body(kController, "void ChatController::DrawNewsStream(");
+  EXPECT_NE(draw.find("if (!news_reader_) {"), std::string::npos) << "a closed sheet draws nothing";
+  EXPECT_NE(draw.find("DrawDue("), std::string::npos);
+  EXPECT_NE(Body(kController, "void ChatController::ApplyNewsReader(").find("stream->second.Drawn("),
+            std::string::npos);
+  EXPECT_NE(Body(kController, "void ChatController::Update(").find("DrawNewsStream();"), std::string::npos);
+
+  const std::string ended = Body(kController, "void ChatController::OnNewsReadEnded(");
+  const size_t erased = ended.find("news_streams_.erase(thread_id);");
+  ASSERT_NE(erased, std::string::npos);
+  EXPECT_LT(erased, ended.find("ApplyNewsReader();")) << "the stored answer replaces the streamed text";
+  for (const char* signature : {"void ChatController::Update(", "void ChatController::Shutdown(",
+                                "void ChatController::OnProfileDataReset(", "void ChatController::CloseChatWith("}) {
+    const std::string body = Body(kController, signature);
+    EXPECT_TRUE(body.find("news_streams_.clear();") != std::string::npos ||
+                body.find("news_streams_.erase(thread_id);") != std::string::npos)
+        << signature;
+  }
+  // Only the stored answer is ever written: nothing in the reader's code stores the streamed text.
+  EXPECT_EQ(text.find("AppendMessage"), std::string::npos);
+}
+
 TEST(NewsReaderWiringTest, TheDigestHasNothingToTap) {
   // The article is untrusted: no link in the digest is tappable ("Open original" is the way out).
   const std::string apply = Body(kController, "void ChatController::ApplyNewsReader(");
   EXPECT_NE(apply.find("MarkdownToRml(shows.digest->text, MarkdownOptions{.links = false})"), std::string::npos);
+  EXPECT_NE(apply.find("MarkdownToRml(shows.partial, MarkdownOptions{.links = false})"), std::string::npos)
+      << "the streamed text is as inert as the digest";
   EXPECT_EQ(apply.find("chat_links_"), std::string::npos);
   // After a restart a hidden digest's links are rebuilt without news items, and only in an AI chat do they count.
   const std::string links = Body(kController, "const std::vector<MarkdownLink>* ChatController::ChatLinksOf(");

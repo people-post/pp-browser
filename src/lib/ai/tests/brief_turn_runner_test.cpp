@@ -46,7 +46,7 @@ struct Recorder {
   std::vector<std::string> deltas;
   std::vector<std::string> statuses;
   int done = 0, handoff = 0, error = 0, cancelled = 0;
-  std::string response, finish, role, answer_kind, error_message, partial, capability, reason;
+  std::string response, finish, role, answer_kind, unavailable_kind, error_message, partial, capability, reason;
   bool translated = false;
   size_t sources = 0;
   bool retryable = false;
@@ -60,13 +60,14 @@ struct Recorder {
       statuses.push_back(tool + ":" + phase);
     };
     sinks.on_done = [this](const std::string& r, const std::string& f, const std::vector<pbr::BriefAiSource>& s,
-                           const std::string& ro, const std::string& kind, bool tr) {
+                           const std::string& ro, const std::string& kind, bool tr, const std::string& why) {
       ++done;
       response = r;
       finish = f;
       role = ro;
       answer_kind = kind;
       translated = tr;
+      unavailable_kind = why;
       sources = s.size();
     };
     sinks.on_handoff = [this](const std::string& c, const std::string& r) {
@@ -133,6 +134,20 @@ TEST(BriefTurnRunnerTest, DoneAnswerKindReachesTheSink) {
   RunScript(Script({Token("digest"), done}, BriefAiOutcome::Done), rec);
   EXPECT_EQ(rec.answer_kind, "news_digest");
   EXPECT_TRUE(rec.translated);
+}
+
+// A streamed news read that ends unread: the tokens shown so far are not the answer, done's own response is, and
+// done.unavailable_kind reaches the sink (for the log only).
+TEST(BriefTurnRunnerTest, DoneUnavailableKindAndResponseReachTheSinkAfterTokens) {
+  Recorder rec;
+  BriefAiEvent done = Done("The content of this article isn't available right now.");
+  done.answer_kind = "news_unavailable";
+  done.unavailable_kind = "mismatch";
+  RunScript(Script({Token("n.example \u00b7 Nov 24\n\n"), Token("The article says"), done}, BriefAiOutcome::Done), rec);
+  EXPECT_EQ(rec.deltas.size(), 2u);
+  EXPECT_EQ(rec.response, "The content of this article isn't available right now.");
+  EXPECT_EQ(rec.answer_kind, "news_unavailable");
+  EXPECT_EQ(rec.unavailable_kind, "mismatch");
 }
 
 TEST(BriefTurnRunnerTest, EmptyDoneResponseUsesAccumulatedText) {

@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -67,7 +68,7 @@ TEST(NewsReaderTest, PreviousAndNextStopAtTheEndsAndWhileReading) {
   EXPECT_TRUE(nav.can_prev);
   EXPECT_FALSE(nav.can_next);
 
-  nav = NewsNavFor(1, 3, /*loading=*/true);
+  nav = NewsNavFor(1, 3, /*reading=*/true);
   EXPECT_TRUE(nav.shown);
   EXPECT_FALSE(nav.can_prev);
   EXPECT_FALSE(nav.can_next);
@@ -139,6 +140,86 @@ TEST(NewsReaderTest, TheTranslationLineShowsOnlyOnATranslatedDigest) {
   shows = NewsReaderShowsFor(reads, "https://n.example/new", "");
   EXPECT_TRUE(shows.failed);
   EXPECT_FALSE(shows.translated);
+}
+
+// A read that streams: the spinner until the first text, then the text so far (Previous / Next off throughout); when it
+// ends with a digest the stored text (done's response) shows, whatever had streamed.
+TEST(NewsReaderTest, AStreamingReadShowsItsTextSoFarThenTheStoredDigest) {
+  const std::string url = "https://n.example/a";
+  NewsReaderShows shows = NewsReaderShowsFor({}, url, url, "");
+  EXPECT_TRUE(shows.reading);
+  EXPECT_TRUE(shows.loading) << "nothing yet: the spinner line";
+  EXPECT_TRUE(shows.partial.empty());
+  EXPECT_FALSE(NewsNavFor(1, 3, shows.reading).can_prev);
+
+  const std::string streamed = "n.example \u00b7 2026-11-24\n\nThe article says";
+  shows = NewsReaderShowsFor({}, url + "?utm_source=brief", url, streamed);
+  EXPECT_TRUE(shows.reading);
+  EXPECT_FALSE(shows.loading) << "the first token hides the spinner";
+  EXPECT_EQ(shows.partial, streamed);
+  EXPECT_FALSE(shows.failed);
+  EXPECT_EQ(shows.digest, nullptr);
+  const NewsNav nav = NewsNavFor(1, 3, shows.reading);
+  EXPECT_TRUE(nav.shown);
+  EXPECT_FALSE(nav.can_prev || nav.can_next) << "Previous / Next stay off until the read ends";
+
+  // Another item of the list while this one reads: not its text.
+  shows = NewsReaderShowsFor({}, "https://n.example/b", url, streamed);
+  EXPECT_FALSE(shows.reading);
+  EXPECT_TRUE(shows.partial.empty());
+
+  // Ended with a digest (the sheet open, or closed meanwhile and opened again): done's text, the translation line per
+  // done.translated, the buttons back.
+  const std::string final_text = "n.example \u00b7 2026-11-24\n\nThe article says rates rose.";
+  for (const bool translated : {false, true}) {
+    const NewsReads reads =
+        ScanNewsReads({Request("r1", url), translated ? TranslatedDigest("d1", final_text) : Digest("d1", final_text)});
+    shows = NewsReaderShowsFor(reads, url, "");
+    ASSERT_NE(shows.digest, nullptr);
+    EXPECT_EQ(shows.digest->text, final_text);
+    EXPECT_EQ(shows.translated, translated);
+    EXPECT_FALSE(shows.reading || shows.loading || shows.failed);
+    EXPECT_TRUE(shows.partial.empty());
+    EXPECT_TRUE(NewsNavFor(1, 3, shows.reading).can_next);
+  }
+}
+
+// Text streamed, then done said "news_unavailable" (or the read was stopped or failed): the streamed text is gone,
+// the fixed sentence shows, and the item is not read.
+TEST(NewsReaderTest, UnavailableAfterStreamedTextShowsTheFailureAndLeavesTheItemUnread) {
+  const std::string url = "https://n.example/a";
+  for (const bool answered : {true, false}) { // news_unavailable stored; or nothing stored (stop, error)
+    const NewsReads reads =
+        answered ? ScanNewsReads({Request("r1", url), Failed("f1")}) : ScanNewsReads({Request("r1", url)});
+    const NewsReaderShows shows = NewsReaderShowsFor(reads, url, /*reading_url=*/"", /*streamed=*/"");
+    EXPECT_TRUE(shows.failed);
+    EXPECT_FALSE(shows.reading || shows.loading);
+    EXPECT_TRUE(shows.partial.empty());
+    EXPECT_FALSE(reads.IsRead(url));
+  }
+}
+
+// The reader redraws the growing text at most every 100 ms; a skipped redraw is drawn by the next due one, with the
+// newest text, so throttling never loses the end of what streamed.
+TEST(NewsReaderTest, TheStreamRedrawIsThrottledWithoutDroppingText) {
+  using namespace std::chrono_literals;
+  const auto t0 = std::chrono::steady_clock::time_point{} + 10s;
+  NewsStreamText stream;
+  EXPECT_FALSE(stream.DrawDue(t0)) << "nothing streamed yet";
+  stream.Grow("src");
+  EXPECT_TRUE(stream.DrawDue(t0)) << "the first text draws at once";
+  stream.Drawn(t0);
+  std::string text = "src";
+  for (int i = 1; i <= 9; ++i) { // nine more tokens within 90 ms: no redraw
+    text += " word";
+    stream.Grow(text);
+    EXPECT_FALSE(stream.DrawDue(t0 + std::chrono::milliseconds(10 * i))) << i;
+  }
+  EXPECT_TRUE(stream.DrawDue(t0 + 100ms)) << "the tick after the interval draws";
+  EXPECT_EQ(stream.text, text) << "with all of it";
+  stream.Drawn(t0 + 100ms);
+  stream.Grow(text);
+  EXPECT_FALSE(stream.DrawDue(t0 + 1s)) << "the same text again needs no redraw";
 }
 
 TEST(NewsReaderTest, TheRequestIsTheUrlAndTheFixedSentence) {

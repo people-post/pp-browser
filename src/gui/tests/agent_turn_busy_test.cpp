@@ -38,7 +38,8 @@ public:
   bool messaging_ready = false;
   /** What ChatController does when a queued send starts a turn (marks that chat busy). */
   std::function<void(const std::string& thread_id)> on_started;
-  std::vector<std::string> ended; // OnAgentTurnEnded(thread), in order
+  std::vector<std::string> ended;                             // OnAgentTurnEnded(thread), in order
+  std::vector<std::pair<std::string, std::string>> news_text; // OnNewsReadText(thread, text so far), in order
 
   ConversationsFacade* Facade() const override { return nullptr; }
   bool MessagingIsReady() const override { return messaging_ready; }
@@ -64,6 +65,9 @@ public:
     put_back.push_back({thread_id, text});
   }
   void OnAgentTurnEnded(const std::string& thread_id) override { ended.push_back(thread_id); }
+  void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) override {
+    news_text.push_back({thread_id, text_so_far});
+  }
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override {
     handed_over.push_back(item);
     if (outcomes.empty()) {
@@ -1113,6 +1117,46 @@ TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
   EXPECT_FALSE(controller_.ReadingNews("A"));
   EXPECT_FALSE(chat_.loading);
   EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
+}
+
+// A news read's streamed text goes to the reader (the host), never into the chat as a streaming bubble; an ordinary
+// turn's text in another chat still streams as before.
+TEST_F(AgentTurnBusyTest, ANewsReadsStreamedTextGoesToTheReaderNotTheChat) {
+  host_.messaging_ready = true;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&) {
+    return SubmitOutcome::Started;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "Rates rise"),
+            SubmitOutcome::Started);
+  const size_t rows_before = chat_.messages.size();
+
+  AgentEvent delta;
+  delta.type = AgentEventType::AssistantDelta;
+  delta.thread_id = "A";
+  delta.entry_id = "req-1";
+  delta.text = "n.example \u00b7 Nov 24\n\n";
+  controller_.HandleAgentEvent(delta);
+  delta.text += "The article says rates rose.";
+  controller_.HandleAgentEvent(delta);
+  controller_.Tick();
+
+  ASSERT_EQ(host_.news_text.size(), 2u);
+  EXPECT_EQ(host_.news_text[0], (std::pair<std::string, std::string>{"A", "n.example \u00b7 Nov 24\n\n"}));
+  EXPECT_EQ(host_.news_text[1].second, "n.example \u00b7 Nov 24\n\nThe article says rates rose.");
+  EXPECT_EQ(chat_.messages.size(), rows_before) << "no streaming bubble in the chat";
+  EXPECT_TRUE(chat_links_.empty());
+
+  // Once the read ended, a later turn of the chat streams into it as usual.
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  delta.entry_id = "q-2";
+  delta.text = "An ordinary answer";
+  controller_.HandleAgentEvent(delta);
+  EXPECT_EQ(host_.news_text.size(), 2u);
+  EXPECT_EQ(chat_.messages.size(), rows_before + 1) << "the ordinary answer's streaming bubble";
 }
 
 // What a tap on a news item does, against the chat's real busy state (ChatController::ShowNewsItem asks exactly this).

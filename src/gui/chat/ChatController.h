@@ -657,6 +657,10 @@ private:
                          const std::map<std::string, std::string>& news_texts);
   /** A news read of `thread_id` ended (digest, failure, error or stop): the reader and the list show what it left. */
   void OnNewsReadEnded(const std::string& thread_id);
+  /** The running news read of `thread_id` streamed more text: kept in memory, drawn when a redraw is due. */
+  void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) override;
+  /** Redraws the open reader with its read's streamed text when NewsStreamText says a redraw is due (per tick too). */
+  void DrawNewsStream();
   /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
    *  asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
@@ -1126,6 +1130,7 @@ private:
   int news_reader_layer_ = -1;
   std::map<std::string, std::string> news_reading_url_; // AI thread -> the URL its running news read reads
   std::map<std::string, NewsReads> news_reads_;         // AI thread -> its read items (NewsReadsOf)
+  std::map<std::string, NewsStreamText> news_streams_;  // AI thread -> its running read's text so far (never stored)
   int home_edit_layer_ = -1;                            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
