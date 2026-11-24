@@ -4,6 +4,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/LlmPreset.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "feature/settings/SettingsUiState.h"
 
@@ -35,9 +36,17 @@ AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draf
 
 AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
   AppConfig config = base;
+  // The field shows the backend's seed until the user types an address of their own; only that is marked as theirs
+  // (`set_by_user`) and saved. Clearing the field removes the entry and its marker.
+  const bool typed = !state.promoted_mcp_url.empty() &&
+                     (base.promoted_mcp.user_set || state.promoted_mcp_url != ActiveBackendTable().promoted_mcp_url);
   config.promoted_mcp.url = state.promoted_mcp_url;
   config.promoted_mcp.command.clear();
   config.promoted_mcp.args.clear();
+  config.promoted_mcp.user_set = typed;
+  if (state.promoted_mcp_url.empty()) {
+    config.promoted_mcp = McpConfig{};
+  }
   config.search.provider = state.search_provider.empty() ? config.search.provider : state.search_provider;
 
   config.mcp_servers.clear();

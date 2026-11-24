@@ -5,6 +5,7 @@
 #include "feature/settings/IntegrationsSettingsSection.h"
 #include "feature/settings/LlmSettingsSection.h"
 #include "feature/settings/NetworkSettingsSection.h"
+#include "feature/settings/SettingsLogic.h"
 
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -171,4 +172,26 @@ TEST(NetworkRegistrationTest, ACustomBackendWithoutAnAccountServerUrlIsNotSaved)
   LoadLocale("zh-Hans");
   EXPECT_NE(pbr::Tr("settings.network.registration_required"), "settings.network.registration_required");
   LoadLocale("en");
+}
+
+// The Integrations field shows the backend's seed until the user types an address; only that address is marked as theirs
+// (`set_by_user`) and saved. Clearing the field removes the entry and its marker.
+TEST(IntegrationsPromotedMcpTest, OnlyAnAddressTheUserTypedIsMarkedAndClearingRemovesIt) {
+  const pbr::ScopedCompiledOriginsForTest compiled(pbr::CompiledOrigins{.prod = "https://prod.example.test"});
+  pbr::LatchActiveBackend(pbr::BackendEnv::Prod);
+  pbr::AppConfig base = pbr::Config::DefaultAppConfig(false);
+  ASSERT_EQ(base.promoted_mcp.url, "https://prod.example.test/mcp");
+  pbr::SettingsUiState state;
+  state.promoted_mcp_url = base.promoted_mcp.url; // another field of the page was edited: the shown seed comes back
+  EXPECT_FALSE(pbr::ApplyIntegrationsSettingsDraft(base, state).promoted_mcp.user_set);
+  state.promoted_mcp_url = "https://mine.example.test/mcp";
+  const pbr::AppConfig typed = pbr::ApplyIntegrationsSettingsDraft(base, state);
+  EXPECT_TRUE(typed.promoted_mcp.user_set);
+  EXPECT_EQ(typed.promoted_mcp.url, "https://mine.example.test/mcp");
+  // Edited again on a later visit (the field now shows the user's own address): still theirs.
+  EXPECT_TRUE(pbr::ApplyIntegrationsSettingsDraft(typed, state).promoted_mcp.user_set);
+  state.promoted_mcp_url.clear();
+  const pbr::AppConfig cleared = pbr::ApplyIntegrationsSettingsDraft(typed, state);
+  EXPECT_FALSE(cleared.promoted_mcp.IsConfigured());
+  EXPECT_FALSE(cleared.promoted_mcp.user_set);
 }

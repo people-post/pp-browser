@@ -14,7 +14,7 @@ until P1. The issues found in the inventory are #738–#751; the phases are trac
 keys only (`backend.services`; `config_version` stays 1), every caller taking its address from the active table, a service
 the table lacks absent with no fallback, and PM010's custom id as a function that profile selection does not use yet.
 Closed: #742 and #743. #741 and #744 as far as the table goes (a custom backend no longer takes prod's LLM or MCP; a user's
-promoted-MCP address is kept and its derived seed is never written back); the `services.json` half of #744 (the
+promoted-MCP address is kept when it carries `set_by_user`, and a derived seed or any unmarked leftover is replaced by the backend's seed and never written back); the `services.json` half of #744 (the
 Integrations field editing a per-profile setting) is P2b. Not done in P2a: `services.json`, the Network page's table editor and
 the page binding of the service list (P2b); no consumer yet reads `mesh_nodes` or `seed_relays`; the `/api/relay` mount in
 `HttpBlobClient` / `RelayFileUrl` / `RelayOrigins`, `HttpClient`'s `kUiBlockRoutes` and `CrashReportEnvelope` do not take

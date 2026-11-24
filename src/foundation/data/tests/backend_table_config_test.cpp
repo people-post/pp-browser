@@ -258,15 +258,17 @@ TEST_F(BackendTableConfigTest, AUsersPromotedMcpUrlSurvivesAStartOnProdStagingAn
   for (const char* env : {"prod", "staging", "dev"}) {
     SCOPED_TRACE(env);
     pbr::ResetActiveBackendForTest();
-    const pbr::AppConfig config = Load(std::string("mcp_user_") + env,
-                                       std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
-                                           "\" }, \"promoted_mcp\": { \"url\": \"https://mine.example.test/mcp\" } }");
+    const pbr::AppConfig config =
+        Load(std::string("mcp_user_") + env,
+             std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
+                 "\" }, \"promoted_mcp\": { \"url\": \"https://mine.example.test/mcp\", \"set_by_user\": true } }");
     EXPECT_EQ(config.promoted_mcp.url, "https://mine.example.test/mcp") << "not replaced by the backend's";
     // ...and a save writes the user's, not a derived one.
     const Object saved = pbr::ConfigToObject(config, pbr::Config::kConfigVersion);
     const Object* mcp = saved.getObject("promoted_mcp");
     ASSERT_NE(mcp, nullptr);
     EXPECT_EQ(mcp->getString("url").value_or(""), "https://mine.example.test/mcp");
+    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false)) << "written back with the marker";
   }
 }
 
@@ -408,13 +410,12 @@ TEST_F(BackendTableConfigTest, AStoreCustomFileHoldingProdsMcpSeedCallsNoMcpAtAl
   EXPECT_EQ(named.promoted_mcp.url, "https://custom.example.test/mcp") << "compared normalized";
 }
 
-// A file saved by a store prod build, read by a tester build that runs staging: staging's seed, not prod's.
-TEST(BackendTableMcpSeedTest, ATesterBuildReadingAStoreProdFileGetsItsOwnEnvironmentsSeed) {
+// A file saved by a store prod build, read by a tester build that has NO prod origin compiled (CMake refuses one): the
+// leftover is recognised by having no marker, not by comparing with compiled origins, so the tester uses its own seed.
+TEST(BackendTableMcpSeedTest, ATesterBuildWithNoProdOriginReadingAStoreProdFileGetsItsOwnEnvironmentsSeed) {
   const ScopedEnv no_origin("PP_BROWSER_ORIGIN", nullptr);
-  constexpr pbr::CompiledOrigins tester{.prod = "https://prod.example.test", // named only so the leftover is recognised
-                                        .staging = "https://staging.example.test",
+  constexpr pbr::CompiledOrigins tester{.staging = "https://staging.example.test",
                                         .dev = "https://dev.example.test",
-                                        .prod_relay_id = "relay:prod",
                                         .staging_relay_id = "relay:staging",
                                         .dev_relay_id = "relay:dev",
                                         .kind = pbr::BuildKind::Tester};
@@ -422,13 +423,15 @@ TEST(BackendTableMcpSeedTest, ATesterBuildReadingAStoreProdFileGetsItsOwnEnviron
   const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_table_tester_mcp.json").string();
   {
     std::ofstream out(path);
-    out << R"({ "config_version": 1, "backend": { "env": "prod" }, "promoted_mcp": { "url": "https://prod.example.test/mcp" } })";
+    out << R"({ "config_version": 1, "backend": { "env": "prod" },
+                "promoted_mcp": { "url": "https://store-prod.example.test/mcp" } })";
   }
   auto loaded = pbr::Config::LoadFromFile(path, false);
   std::filesystem::remove(path);
   ASSERT_TRUE(static_cast<bool>(loaded));
   EXPECT_EQ(loaded->backend.env, "staging") << "a tester build never runs prod";
   EXPECT_EQ(loaded->promoted_mcp.url, "https://staging.example.test/mcp");
+  EXPECT_EQ(pbr::ConfigToObject(*loaded, 1).getObject("promoted_mcp"), nullptr);
 }
 
 // The backend was switched in Settings (saved) before the upgrade: the file says staging and holds prod's old seed.
@@ -438,29 +441,84 @@ TEST_F(BackendTableConfigTest, ASwitchSavedWithoutARestartThenAnUpgradeGetsTheNe
   EXPECT_EQ(config.promoted_mcp.url, "https://staging.example.test/mcp");
 }
 
-// A genuine user address is kept on prod / staging / dev; a user's entry (id, switched off) is never taken for a seed, and
-// keeps its fields through a save even when its address is a built-in's.
-TEST_F(BackendTableConfigTest, AUsersOwnPromotedMcpEntryIsKeptAndSavedWhole) {
-  for (const char* env : {"prod", "staging", "dev"}) {
+// The marker decides (the old app could write a user's value only where it survived a start, and left no way to tell):
+// a marked entry is the user's on every backend, whatever its address, id or switches, and is saved whole with the marker.
+TEST_F(BackendTableConfigTest, AMarkedPromotedMcpEntryIsTheUsersOnEveryBackendAndSavedWhole) {
+  for (const char* env : {"prod", "staging", "dev", "custom"}) {
     SCOPED_TRACE(env);
     pbr::ResetActiveBackendForTest();
-    const pbr::AppConfig mine = Load(std::string("mcp_mine_") + env,
-                                     std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
-                                         "\" }, \"promoted_mcp\": { \"url\": \"https://mine.example.test/mcp\" } }");
-    EXPECT_EQ(mine.promoted_mcp.url, "https://mine.example.test/mcp");
-    pbr::ResetActiveBackendForTest();
     const pbr::AppConfig off =
-        Load(std::string("mcp_off_") + env, std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
-                                                "\" }, \"promoted_mcp\": { \"id\": \"feeds\", \"enabled\": false, "
-                                                "\"url\": \"https://prod.example.test/mcp\" } }");
+        Load(std::string("mcp_marked_") + env,
+             std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
+                 "\" }, \"promoted_mcp\": { \"id\": \"feeds\", \"enabled\": false, \"set_by_user\": true,"
+                 " \"url\": \"https://prod.example.test/mcp\" } }");
     EXPECT_EQ(off.promoted_mcp.id, "feeds");
     EXPECT_FALSE(off.promoted_mcp.enabled);
+    EXPECT_EQ(off.promoted_mcp.url, "https://prod.example.test/mcp") << "the user's, even if it looks like a seed";
     const Object saved = pbr::ConfigToObject(off, 1);
     const Object* mcp = saved.getObject("promoted_mcp");
-    ASSERT_NE(mcp, nullptr) << "a user's entry is saved, not dropped as a seed";
+    ASSERT_NE(mcp, nullptr);
     EXPECT_EQ(mcp->getString("id").value_or(""), "feeds");
     EXPECT_FALSE(mcp->getIf<bool>("enabled").value_or(true));
+    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false));
+    // Round trip: what a save writes reads back as the same entry.
+    pbr::ResetActiveBackendForTest();
+    const pbr::AppConfig again = Load(std::string("mcp_marked_again_") + env, pp::common::DumpJson(saved, 2));
+    EXPECT_EQ(again.promoted_mcp.url, off.promoted_mcp.url);
+    EXPECT_TRUE(again.promoted_mcp.user_set);
   }
+}
+
+// Any other entry is a leftover of the old app on every backend, whatever its id or switches. Decision: on a custom backend
+// main kept a value typed in Integrations (Config.cpp:156 skipped the override), and that one is dropped once and must be
+// typed again — accepted (unreleased, test data may be discarded; custom backends are developers' only).
+TEST_F(BackendTableConfigTest, AnUnmarkedPromotedMcpEntryIsALeftoverOnEveryBackend) {
+  for (const char* env : {"prod", "staging", "dev", "custom"}) {
+    SCOPED_TRACE(env);
+    for (const char* entry : {R"({ "url": "https://mine.example.test/mcp" })",
+                              R"({ "id": "feeds", "enabled": false, "url": "https://mine.example.test/mcp" })"}) {
+      pbr::ResetActiveBackendForTest();
+      const pbr::AppConfig config =
+          Load(std::string("mcp_unmarked_") + env, std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") +
+                                                       env + "\" }, \"promoted_mcp\": " + entry + " }");
+      EXPECT_EQ(config.promoted_mcp.url, pbr::ActiveBackendTable().promoted_mcp_url) << entry;
+      EXPECT_NE(config.promoted_mcp.url, "https://mine.example.test/mcp");
+      EXPECT_TRUE(config.promoted_mcp.id.empty());
+      EXPECT_TRUE(config.promoted_mcp.enabled);
+      EXPECT_EQ(pbr::ConfigToObject(config, 1).getObject("promoted_mcp"), nullptr)
+          << "a leftover is never written back";
+    }
+  }
+}
+
+// A stdio server the user configured by hand (main kept those: it replaced only the url) is the user's, marked or not, and
+// gets the marker on the next save.
+TEST_F(BackendTableConfigTest, AnUnmarkedCommandEntryIsTheUsersAndIsMarkedOnSave) {
+  for (const char* env : {"prod", "custom"}) {
+    SCOPED_TRACE(env);
+    pbr::ResetActiveBackendForTest();
+    const pbr::AppConfig config =
+        Load(std::string("mcp_command_") + env,
+             std::string("{ \"config_version\": 1, \"backend\": { \"env\": \"") + env +
+                 "\" }, \"promoted_mcp\": { \"command\": \"/usr/bin/feeds\", \"args\": [\"--x\"] } }");
+    EXPECT_EQ(config.promoted_mcp.command, "/usr/bin/feeds");
+    const Object saved = pbr::ConfigToObject(config, 1);
+    const Object* mcp = saved.getObject("promoted_mcp");
+    ASSERT_NE(mcp, nullptr);
+    EXPECT_EQ(mcp->getString("command").value_or(""), "/usr/bin/feeds");
+    EXPECT_TRUE(mcp->getIf<bool>("set_by_user").value_or(false));
+  }
+}
+
+// An older build reads a file with the marker: `McpConfigFromObject` (ConfigJson.cpp) reads only id, command, url, args and
+// enabled, so the unknown key is ignored and the entry loads as before. Held here as the new reader's own tolerance of
+// unknown keys in the same object.
+TEST(BackendTableMcpSeedTest, UnknownKeysInThePromotedMcpObjectAreIgnored) {
+  pbr::McpConfig mcp;
+  pbr::McpConfigFromObject(*pp::common::TryParseObject(R"({ "url": "https://x.example.test/mcp", "future_key": 1 })"),
+                           mcp);
+  EXPECT_EQ(mcp.url, "https://x.example.test/mcp");
+  EXPECT_FALSE(mcp.user_set);
 }
 
 // ---- Profile folders do not move (this PR must not change which profile any install opens) ----------------------------

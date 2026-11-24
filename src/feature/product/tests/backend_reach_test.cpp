@@ -2,6 +2,7 @@
 // loads it, the hub's settings and the backend's clients are made from it, and every request they try goes through the
 // HTTP test gate, which records the URL and refuses it (no network). The build's prod, staging and dev are all compiled
 // here: a request to any of them would be a fallback to another backend.
+#include "feature/ai/ArticleFeedFetch.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
@@ -292,4 +293,28 @@ TEST(BackendReachTest, ACustomBackendWithNoRelayRegistrationOrDirectoryFallsBack
       pbr::PlatformDefaults::ForTable(pbr::BuiltInBackendTable(pbr::BackendEnv::Prod, kCompiled));
   EXPECT_EQ(prod_defaults.relay.base_url, "https://prod.example.test/api/relay");
   EXPECT_NE(prod_defaults.relay.base_url, defaults.relay.base_url);
+}
+
+// A tester build with no prod origin compiled reads a file a store prod build saved (its promoted_mcp is the old write-back,
+// unmarked): the feed fetch goes to the tester's own seed and nothing is sent to the file's address.
+TEST(BackendReachTest, ATesterBuildReadingAStoreProdFileNeverCallsTheFileMcpAddress) {
+  const ScopedUnset no_origin("PP_BROWSER_ORIGIN");
+  const pbr::ScopedCompiledOriginsForTest compiled(pbr::CompiledOrigins{
+      .staging = "https://staging.example.test", .staging_relay_id = "relay:staging", .kind = pbr::BuildKind::Tester});
+  const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_reach_tester_mcp.json").string();
+  {
+    std::ofstream out(path);
+    out << R"({ "config_version": 1, "backend": { "env": "prod" },
+                "promoted_mcp": { "url": "https://store-prod.example.test/mcp" } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(path, false);
+  std::filesystem::remove(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  const RequestRecorder recorder;
+  (void)pbr::FetchArticleFeed(*loaded, pbr::Object{});
+  EXPECT_GE(recorder.Urls().size(), 1U) << "the feed is asked at the tester's own address";
+  for (const std::string& url : recorder.Urls()) {
+    EXPECT_NE(url.find("https://staging.example.test/mcp"), std::string::npos) << url;
+    EXPECT_EQ(url.find("store-prod"), std::string::npos) << url;
+  }
 }

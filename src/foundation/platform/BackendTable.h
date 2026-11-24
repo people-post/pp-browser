@@ -102,14 +102,6 @@ BackendTable CustomBackendTable(const CustomServices& services, BuildKind kind);
 BackendTable ResolveBackendTable(bool ui_demo, const char* env_origin, const char* env_relay_id, BackendEnv backend,
                                  const CompiledOrigins& compiled, const CustomServices& custom);
 
-/**
- * Whether `url` is the promoted-MCP seed of one of `compiled`'s built-in backends (prod, staging, dev: `<origin>/mcp`,
- * compared trimmed, without a trailing `/`, scheme and host in lower case). Before the tables the app wrote the running
- * backend's derived address into every `config.json`, so a file's `promoted_mcp` equal to one is a leftover seed, not
- * something the user typed. A tester build compiles no prod origin, so prod's is not among what it can recognise.
- */
-bool IsBuiltInPromotedMcpSeed(const std::string& url, const CompiledOrigins& compiled);
-
 /** The table of the backend this process runs against (the latch, PP_BROWSER_ORIGIN, the custom services latched with it). */
 BackendTable ActiveBackendTable();
 /** The table a config with nothing saved starts from: ActiveBackendTable(), but a custom backend starts empty. */

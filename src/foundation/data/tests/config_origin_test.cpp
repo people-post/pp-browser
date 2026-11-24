@@ -52,7 +52,7 @@ constexpr const char* kSavedConfig = R"({
   "relay": { "base_url": "https://saved.example.test/api/relay" },
   "directory": { "base_url": "https://saved.example.test/api/relay" },
   "registration": { "base_url": "https://saved.example.test/api/relay" },
-  "promoted_mcp": { "url": "https://saved.example.test/mcp" }
+  "promoted_mcp": { "url": "https://saved.example.test/mcp", "set_by_user": true }
 })";
 
 } // namespace

@@ -46,6 +46,7 @@ TEST(ConfigJsonTest, ParsesTheCurrentKeysOnly) {
 TEST(ConfigJsonTest, EmitsModernConfigKeys) {
   pbr::AppConfig config;
   config.promoted_mcp.url = "https://promoted.example/mcp";
+  config.promoted_mcp.user_set = true; // only the user's own entry is written (set_by_user)
 
   const pbr::Object out = pbr::AppConfigToObject(config);
   EXPECT_TRUE(out.contains("promoted_mcp"));

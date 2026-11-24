@@ -70,43 +70,6 @@ BackendNetwork NetworkOf(const BackendEnv env) {
 
 } // namespace
 
-namespace {
-
-std::string NormalizedUrl(const std::string& url) {
-  size_t begin = 0;
-  size_t end = url.size();
-  while (begin < end && (url[begin] == ' ' || url[begin] == '\t')) {
-    ++begin;
-  }
-  while (end > begin && (url[end - 1] == ' ' || url[end - 1] == '\t' || url[end - 1] == '/')) {
-    --end;
-  }
-  std::string out = url.substr(begin, end - begin);
-  const size_t scheme_end = out.find("://");
-  const size_t host_end = out.find('/', scheme_end == std::string::npos ? 0 : scheme_end + 3);
-  for (size_t i = 0; i < (host_end == std::string::npos ? out.size() : host_end); ++i) {
-    if (out[i] >= 'A' && out[i] <= 'Z') {
-      out[i] = static_cast<char>(out[i] - 'A' + 'a');
-    }
-  }
-  return out;
-}
-
-} // namespace
-
-bool IsBuiltInPromotedMcpSeed(const std::string& url, const CompiledOrigins& compiled) {
-  if (url.empty()) {
-    return false;
-  }
-  const std::string wanted = NormalizedUrl(url);
-  for (const char* origin : {compiled.prod, compiled.staging, compiled.dev}) {
-    if (origin && *origin != '\0' && NormalizedUrl(BriefMcpUrlFor(NormalizedUrl(origin))) == wanted) {
-      return true;
-    }
-  }
-  return false;
-}
-
 BackendTable BuiltInBackendTable(const BackendEnv env, const CompiledOrigins& compiled) {
   if (env == BackendEnv::Custom) {
     return CustomBackendTable({}, compiled.kind);

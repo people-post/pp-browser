@@ -633,6 +633,9 @@ Object McpConfigToObject(const McpConfig& config) {
   if (!config.enabled) {
     object.set("enabled", false);
   }
+  if (config.user_set) {
+    object.set("set_by_user", true);
+  }
   return object;
 }
 
@@ -656,6 +659,9 @@ void McpConfigFromObject(const Object& object, McpConfig& config) {
   }
   if (auto enabled = object.getIf<bool>("enabled")) {
     config.enabled = *enabled;
+  }
+  if (auto user_set = object.getIf<bool>("set_by_user")) {
+    config.user_set = *user_set;
   }
 }
 
@@ -769,14 +775,9 @@ Object AppConfigToObject(const AppConfig& config) {
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
   }
-  // The active backend's own seed is derived, not the user's: it is never written back (#744), so a later switch
-  // to another backend does not carry it along as if the user had typed it.
-  const bool is_seed =
-      IsPromotedMcpSeedEntry(config.promoted_mcp, BuildCompiledOrigins()) ||
-      (config.promoted_mcp.id.empty() && config.promoted_mcp.command.empty() && config.promoted_mcp.args.empty() &&
-       config.promoted_mcp.enabled && !config.promoted_mcp.url.empty() &&
-       config.promoted_mcp.url == ActiveBackendTable().promoted_mcp_url);
-  if (config.promoted_mcp.IsConfigured() && !is_seed) {
+  // Only the user's own entry is written (it carries `set_by_user`). The backend's derived seed is never written back
+  // (#744), so a later switch to another backend does not carry it along as if the user had typed it.
+  if (config.promoted_mcp.IsConfigured() && config.promoted_mcp.user_set) {
     object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
   }
   if (!config.mcp_servers.empty()) {
