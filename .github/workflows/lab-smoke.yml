@@ -8,7 +8,7 @@ name: lab-smoke
 #
 # Never on pull requests and never a required check: it runs after the merge and blocks nothing; a failure shows on
 # the commit and in the run's summary (no issue: the nightly keeps those). Idle (a notice) until the lab is set up —
-# the secret PP_LAB_RELAY_APIS_TOKEN.
+# the secret PP_LAB_RELAY_APIS_DEPLOY_KEY.
 
 on:
   push:

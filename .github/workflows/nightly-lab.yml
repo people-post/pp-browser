@@ -5,7 +5,7 @@ name: nightly-lab
 # retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
 #
 # Never on pull requests: the lab runs only what this workflow, from the default branch, gives it. Idle (a notice)
-# until the secret PP_LAB_RELAY_APIS_TOKEN (read access to people-post/pp-relay-apis, which is private) is set.
+# until the secret PP_LAB_RELAY_APIS_DEPLOY_KEY (a read-only deploy key of people-post/pp-relay-apis, which is private) is set.
 
 on:
   schedule:

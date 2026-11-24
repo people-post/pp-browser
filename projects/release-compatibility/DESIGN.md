@@ -626,7 +626,7 @@ and `PP_LAB_AWS_ROLE` that start the lab machine were never set. Tiers, each wit
   it leaves smoke and the PR-facing tiers for a quarantine with an issue. A lab failure a unit test can reproduce gets
   that test ([TESTING § When a higher tier finds a bug](../../docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug)).
 - **The lab runner is set up**: a privileged CodeBuild runner project in pp-runners-infra plus the relay-checkout
-  secret. The cheapest high-value item here.
+  deploy key. The cheapest high-value item here.
 
 The tiers move into `docs/ops/TEST_STRATEGY.md` (the home of test tiers) when release mode ships.
 

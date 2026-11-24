@@ -6,8 +6,8 @@ name: lab-run
 # (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
 # from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).
 #
-# Idle — a notice and nothing started — until the secret PP_LAB_RELAY_APIS_TOKEN (read access to
-# people-post/pp-relay-apis, which is private) is set. Callers pass `secrets: inherit` and grant contents: read and
+# Idle — a notice and nothing started — until the secret PP_LAB_RELAY_APIS_DEPLOY_KEY (a read-only
+# deploy key of people-post/pp-relay-apis, which is private) is set. Callers pass `secrets: inherit` and grant contents: read and
 # issues: write.
 
 on:
@@ -59,10 +59,10 @@ jobs:
         id: gate
         env:
           RUN_NAME: ${{ inputs.name }}
-          RELAY_APIS_TOKEN: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
+          RELAY_APIS_KEY: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
         run: |
-          if [ -z "$RELAY_APIS_TOKEN" ]; then
-            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_TOKEN; docs/ops/TEST_STRATEGY.md § Nightly lab)."
+          if [ -z "$RELAY_APIS_KEY" ]; then
+            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Nightly lab)."
             echo "::notice title=$RUN_NAME idle::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -91,7 +91,7 @@ jobs:
         with:
           repository: people-post/pp-relay-apis
           ref: ${{ vars.PP_LAB_RELAY_APIS_REF || 'main' }}
-          token: ${{ secrets.PP_LAB_RELAY_APIS_TOKEN }}
+          ssh-key: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
           path: pp-relay-apis
           persist-credentials: false
 

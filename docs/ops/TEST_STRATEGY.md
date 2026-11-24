@@ -145,7 +145,7 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
 - **Flakes:** `pp_app_lab.py --retry-failed` runs each failed scenario once more; passing then is a flake (listed in the run's summary), failing again a failure. `--summary <file>` writes every outcome as JSON.
 - **Reporting:** [`nightly_lab_report.py`](../../scripts/test/nightly_lab_report.py) keeps one issue per failing scenario (label `nightly-lab`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
-- **Idle until configured:** the secret `PP_LAB_RELAY_APIS_TOKEN` (read access to the private pp-relay-apis) switches it on. Until then each run's first job says so in a notice and starts nothing.
+- **Idle until configured:** the secret `PP_LAB_RELAY_APIS_DEPLOY_KEY` (a read-only deploy key of the private pp-relay-apis) switches it on. Until then each run's first job says so in a notice and starts nothing.
 
 ### Lab smoke
 
