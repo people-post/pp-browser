@@ -6,10 +6,12 @@
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/net/OrgBackendClients.h"
 #include "common/Utilities.h"
+#include "foundation/runtime/BackgroundActivity.h"
 
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <unordered_set>
 
 namespace pbr {
 
@@ -40,7 +42,16 @@ DeliveryOutcome DeliveryOutbox::RelayFailureOutcome(DeliveryOutcome outcome, con
   outcome.detail = failure.message;
   outcome.relay_recipient = recipient;
   outcome.initiation_floor = RelayPaymentRequiredFloor(failure);
+  outcome.stranger_quota = RelayStrangerQuota(failure);
   return outcome;
+}
+
+DeliveryOutcome DeliveryOutbox::DroppedOutcome(const Pending& item) {
+  return RelayFailureOutcome(DeliveryOutcome{.thread_id = item.thread_id,
+                                             .message_id = item.message_id,
+                                             .group_member = item.group_member,
+                                             .copy_device = item.copy_device},
+                             item.relay_recipient, item.last_failure);
 }
 
 void DeliveryOutbox::Report(DeliveryOutcome outcome) {
@@ -50,14 +61,24 @@ void DeliveryOutbox::Report(DeliveryOutcome outcome) {
 }
 
 void DeliveryOutbox::Finish(DeliveryOutcome outcome) {
-  if (!outcome.thread_id.empty()) {
+  bool followers = false;
+  const std::string thread_id = outcome.thread_id;
+  if (!thread_id.empty()) {
     std::lock_guard lock(mutex_);
     EndActiveLocked(outcome.message_id);
+    // Its chat's later messages that waited untried behind it go now, in order (B236).
+    followers = !active_.contains(outcome.message_id) && outcome.group_member.empty() &&
+                std::any_of(queue_.begin(), queue_.end(), [&](const Pending& item) {
+                  return item.thread_id == thread_id && item.group_member.empty() && item.attempt_count == 0;
+                });
   }
   Report(std::move(outcome));
+  if (followers) {
+    AppRuntime::PostWorkerNormal(lifetime_.Bind([this, thread_id]() { Retry(thread_id); }));
+  }
 }
 
-uint64_t DeliveryOutbox::BeginActive(const std::string& thread_id, const std::string& message_id) {
+uint64_t DeliveryOutbox::BeginActive(const std::string& thread_id, const std::string& message_id, const bool group) {
   std::lock_guard lock(mutex_);
   const uint64_t serial = ++next_serial_;
   if (thread_id.empty() || message_id.empty()) {
@@ -66,9 +87,27 @@ uint64_t DeliveryOutbox::BeginActive(const std::string& thread_id, const std::st
   ActiveSend& active = active_[message_id];
   if (active.requests == 0) {
     active.started_ms = util::NowUnixMs();
+    active.thread_id = thread_id;
+    active.first_serial = serial;
+    active.group = group;
   }
   ++active.requests;
   return serial;
+}
+
+bool DeliveryOutbox::WaitsBehindEarlierLocked(const std::string& thread_id, const std::string& message_id) const {
+  const auto mine = active_.find(message_id);
+  if (thread_id.empty() || mine == active_.end() || mine->second.group) {
+    return false;
+  }
+  return std::any_of(active_.begin(), active_.end(), [&](const auto& entry) {
+    return entry.first != message_id && !entry.second.group && entry.second.thread_id == thread_id &&
+           entry.second.first_serial < mine->second.first_serial;
+  });
+}
+
+std::string DeliveryOutbox::OrderLane(const Pending& item) {
+  return item.group_member.empty() ? item.thread_id : item.thread_id + "|" + item.group_member;
 }
 
 void DeliveryOutbox::EndActiveLocked(const std::string& message_id) {
@@ -93,13 +132,42 @@ bool DeliveryOutbox::CancelledLocked(const std::string& thread_id, const std::st
 
 bool DeliveryOutbox::EndIfCancelled(const std::string& thread_id, const std::string& message_id,
                                     const uint64_t serial) {
-  std::lock_guard lock(mutex_);
-  if (!CancelledLocked(thread_id, message_id, serial)) {
+  bool wake = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (!CancelledLocked(thread_id, message_id, serial)) {
+      return false;
+    }
+    log().info << "send cancelled message_id=" << message_id << " (no further attempt)";
+    EndActiveLocked(message_id);
+    wake = FollowersFreeLocked(thread_id);
+  }
+  if (wake) {
+    WakeFollowers({thread_id});
+  }
+  return true;
+}
+
+bool DeliveryOutbox::FollowersFreeLocked(const std::string& thread_id) const {
+  if (thread_id.empty()) {
     return false;
   }
-  log().info << "send cancelled message_id=" << message_id << " (no further attempt)";
-  EndActiveLocked(message_id);
-  return true;
+  const auto queued = [&](const std::string& message_id) {
+    return std::any_of(queue_.begin(), queue_.end(),
+                       [&](const Pending& item) { return item.message_id == message_id; });
+  };
+  const bool waiting = std::any_of(queue_.begin(), queue_.end(), [&](const Pending& item) {
+    return item.thread_id == thread_id && item.group_member.empty() && item.attempt_count == 0;
+  });
+  return waiting && std::none_of(active_.begin(), active_.end(), [&](const auto& entry) {
+           return !entry.second.group && entry.second.thread_id == thread_id && !queued(entry.first);
+         });
+}
+
+void DeliveryOutbox::WakeFollowers(const std::vector<std::string>& thread_ids) {
+  for (const std::string& thread_id : thread_ids) {
+    AppRuntime::PostWorkerNormal(lifetime_.Bind([this, thread_id]() { Retry(thread_id); }));
+  }
 }
 
 std::optional<int64_t> DeliveryOutbox::SendStartedMs(const std::string& message_id) const {
@@ -112,8 +180,19 @@ std::optional<int64_t> DeliveryOutbox::SendStartedMs(const std::string& message_
 }
 
 bool DeliveryOutbox::Enqueue(Pending pending) {
-  std::lock_guard lock(mutex_);
-  return EnqueueLocked(std::move(pending));
+  const std::string thread_id = pending.thread_id;
+  bool wake = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (EnqueueLocked(std::move(pending))) {
+      return true;
+    }
+    wake = FollowersFreeLocked(thread_id); // cancelled on its way: what waited behind it goes
+  }
+  if (wake) {
+    WakeFollowers({thread_id});
+  }
+  return false;
 }
 
 bool DeliveryOutbox::EnqueueLocked(Pending pending) {
@@ -128,11 +207,35 @@ bool DeliveryOutbox::EnqueueLocked(Pending pending) {
 
 void DeliveryOutbox::Send(DeliveryRequest request) {
   const bool critical = request.critical_lane;
-  const uint64_t serial = BeginActive(request.thread_id, request.message_id);
+  const uint64_t serial = BeginActive(request.thread_id, request.message_id, !request.group_member.empty());
+  if (!critical && request.relay_recipient) {
+    // In a 1:1 chat messages arrive in the order they were sent (B236): one still on its way — or queued for a retry —
+    // holds a later one back; it waits in the queue, untried, and goes right after the earlier one (Finish) or with
+    // the next retry, in order.
+    std::lock_guard lock(mutex_);
+    if (WaitsBehindEarlierLocked(request.thread_id, request.message_id)) {
+      log().info << "send waits behind an earlier message of its chat message_id=" << request.message_id;
+      EnqueueLocked(Pending{.envelope = std::move(request.envelope),
+                            .message_id = request.message_id,
+                            .thread_id = request.thread_id,
+                            .attempt_count = 0,
+                            .amp_peer_key = request.amp_peer_key,
+                            .group_member = request.group_member,
+                            .copy_device = request.copy_device,
+                            .relay_recipient = *request.relay_recipient,
+                            .serial = serial,
+                            .last_failure = Error("Waiting behind an earlier message")});
+      return;
+    }
+  }
   auto work = [this, serial, request = std::move(request)]() mutable {
     if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
       return;
     }
+    // From the attempt's start until its outcome is written (the row marked, in the outcome handler): an app going to
+    // the background meanwhile is given the time to hear the answer and record it (B236: a relay that took the message
+    // while the app was being suspended left the row unsent for good).
+    auto background = std::make_shared<BackgroundActivity>("message send");
     auto post_continue = [critical = request.critical_lane](std::function<void()> fn) {
       if (critical) {
         AppRuntime::PostWorkerCritical(std::move(fn));
@@ -142,7 +245,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
     };
     // `direct`: the direct send's failure when it was tried — what the notice says when the relay
     // cannot carry the envelope either.
-    auto finish_relay = [this, serial, request](std::optional<DirectSendFailure> direct) {
+    auto finish_relay = [this, serial, request, background](std::optional<DirectSendFailure> direct) {
       // After a direct failure the relay is a new attempt.
       if (direct && EndIfCancelled(request.thread_id, request.message_id, serial)) {
         return;
@@ -165,7 +268,7 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
-        if (RelayRecipientNotRegistered(sent.error()) && TryAmpFallback(request, serial, sent.error())) {
+        if (RelayRecipientNotRegistered(sent.error()) && TryAmpFallback(request, serial, sent.error(), background)) {
           return; // not on our relay: over a link to it, if one can be had
         }
         Pending pending{.envelope = request.envelope,
@@ -176,7 +279,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                         .group_member = request.group_member,
                         .copy_device = request.copy_device,
                         .relay_recipient = *request.relay_recipient,
-                        .serial = serial};
+                        .serial = serial,
+                        .last_failure = sent.error()};
         if (RelayStrangerQuota(sent.error())) {
           pending.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(1).count();
         }
@@ -193,8 +297,9 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
                           : control_lane ? " (retrying shortly)"
                                          : " (queued for retry)");
         outcome = RelayFailureOutcome(std::move(outcome), *request.relay_recipient, sent.error());
-        // Queued for a retry: the send goes on, so the failure is reported without ending it.
+        // Queued for a retry: the send goes on, so the failure is reported without ending it (its row stays queued).
         if (again) {
+          outcome.retrying = true;
           Report(std::move(outcome));
         } else {
           Finish(std::move(outcome));
@@ -231,8 +336,8 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
       return;
     }
     // Fire and forget: this worker is free while the mesh pump drives the open + ack.
-    chat->SendEnvelopeAsync(
-        request.amp_peer_key, request.envelope,
+    SendDirect(
+        chat, request.amp_peer_key, request.envelope,
         [this, request, post_continue, finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, request, direct = std::move(direct), finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
@@ -257,16 +362,80 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
   }
 }
 
-bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure) {
+void DeliveryOutbox::SendDirect(IDirectMessageClient* chat, const std::string& peer_key, const RelayEnvelope& envelope,
+                                std::function<void(DirectSendRoe)> on_done) {
+  // B236 R4: whatever the transport does, the attempt ends — its answer, or after direct_send_timeout_ a retryable
+  // "not confirmed" (the relay next, or the queue). Whichever comes first is the one; the other is dropped. A
+  // transport that drops the callback unanswered leaves the timer's copy to end it.
+  struct Once {
+    std::atomic<bool> done{false};
+    std::function<void(DirectSendRoe)> on_done;
+  };
+  auto once = std::make_shared<Once>();
+  once->on_done = std::move(on_done);
+  const uint64_t timer =
+      AppRuntime::ScheduleCoordinatorOneShot(direct_send_timeout_, lifetime_.Bind([this, once, peer_key]() {
+        if (once->done.exchange(true)) {
+          return;
+        }
+        log().info << "direct send unanswered peer=" << peer_key << " after "
+                   << std::chrono::duration_cast<std::chrono::seconds>(direct_send_timeout_).count() << " s";
+        auto finish = std::move(once->on_done);
+        finish(DirectSendFailure::Of(DirectSendErr::NotConfirmed, "Direct send unanswered"));
+      }));
+  chat->SendEnvelopeAsync(peer_key, envelope, [once, timer](DirectSendRoe direct) {
+    if (once->done.exchange(true)) {
+      return;
+    }
+    AppRuntime::CancelCoordinatorTimer(timer);
+    auto finish = std::move(once->on_done);
+    finish(std::move(direct));
+  });
+}
+
+void DeliveryOutbox::EndBatch(const std::vector<std::string>& lanes, std::vector<Pending> still_pending) {
+  std::vector<std::string> follow; // threads with untried items left: one more pass, in order
+  {
+    std::lock_guard lock(mutex_);
+    for (const std::string& lane : lanes) {
+      batch_lanes_.erase(lane);
+    }
+    for (Pending& item : still_pending) {
+      EnqueueLocked(std::move(item));
+    }
+    for (const Pending& item : queue_) {
+      if (item.attempt_count == 0 && item.not_before_ms == 0 &&
+          std::find(lanes.begin(), lanes.end(), OrderLane(item)) != lanes.end() &&
+          std::find(follow.begin(), follow.end(), item.thread_id) == follow.end()) {
+        // Waited behind this batch's lane and was never tried: unless its lane is blocked by a failure the batch
+        // queued again (that one goes first, at the next retry), it goes now.
+        const bool behind_failure = std::any_of(queue_.begin(), queue_.end(), [&](const Pending& other) {
+          return OrderLane(other) == OrderLane(item) && other.message_id != item.message_id &&
+                 other.serial < item.serial && other.attempt_count > 0;
+        });
+        if (!behind_failure) {
+          follow.push_back(item.thread_id);
+        }
+      }
+    }
+  }
+  for (const std::string& thread_id : follow) {
+    AppRuntime::PostWorkerNormal(lifetime_.Bind([this, thread_id]() { Retry(thread_id); }));
+  }
+}
+
+bool DeliveryOutbox::TryAmpFallback(const DeliveryRequest& request, const uint64_t serial, const Error& relay_failure,
+                                    std::shared_ptr<BackgroundActivity> background) {
   IDirectMessageClient* chat = direct_chat_ ? direct_chat_() : nullptr;
   if (request.amp_fallback_key.empty() || !chat || !chat->IsPeerReachable(request.amp_fallback_key)) {
     return false;
   }
   log().info << "relay does not know the recipient message_id=" << request.message_id << "; over a link to "
              << request.amp_fallback_key;
-  chat->SendEnvelopeAsync(
-      request.amp_fallback_key, request.envelope, [this, request, serial, relay_failure](DirectSendRoe direct) {
-        AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, direct = std::move(direct)]() {
+  SendDirect(
+      chat, request.amp_fallback_key, request.envelope,
+      [this, request, serial, relay_failure, background = std::move(background)](DirectSendRoe direct) {
+        AppRuntime::PostWorkerNormal([this, request, serial, relay_failure, background, direct = std::move(direct)]() {
           if (EndIfCancelled(request.thread_id, request.message_id, serial)) {
             return;
           }
@@ -350,17 +519,27 @@ void DeliveryOutbox::RetryControlNow(Pending item) {
 
 void DeliveryOutbox::Cancel(const std::string& message_id) {
   std::vector<uint64_t> timers;
+  std::vector<std::string> wake; // chats whose later messages waited behind this one, untried (B236)
   {
     std::lock_guard lock(mutex_);
+    std::vector<std::string> threads;
     std::erase_if(queue_, [&](const Pending& pending) {
       if (pending.message_id != message_id) {
         return false;
       }
       if (!pending.thread_id.empty()) {
         EndActiveLocked(pending.message_id);
+        if (std::find(threads.begin(), threads.end(), pending.thread_id) == threads.end()) {
+          threads.push_back(pending.thread_id);
+        }
       }
       return true;
     });
+    for (const std::string& thread_id : threads) {
+      if (FollowersFreeLocked(thread_id)) {
+        wake.push_back(thread_id);
+      }
+    }
     if (active_.contains(message_id)) {
       cancelled_[message_id] = next_serial_; // what is still on its way (or held by a Retry) goes no further
     }
@@ -375,6 +554,7 @@ void DeliveryOutbox::Cancel(const std::string& message_id) {
   for (const uint64_t timer : timers) {
     AppRuntime::CancelCoordinatorTimer(timer);
   }
+  WakeFollowers(wake);
 }
 
 void DeliveryOutbox::PurgeThread(const std::string& thread_id) {
@@ -426,74 +606,88 @@ void DeliveryOutbox::ReleaseHeldFor(const std::string& recipient) {
   }
 }
 
-void DeliveryOutbox::Retry() {
+void DeliveryOutbox::Retry(const std::string& only_thread) {
   std::vector<Pending> pending;
-  {
-    std::lock_guard lock(mutex_);
-    pending.swap(queue_);
-  }
+  std::vector<std::string> lanes; // the order lanes this batch takes (no other batch runs them meanwhile)
   const int64_t now_ms = util::NowUnixMs();
   {
-    // Not due yet (a stranger-quota backoff): back in the queue, untouched.
-    const auto due = std::stable_partition(pending.begin(), pending.end(),
-                                           [now_ms](const Pending& item) { return item.not_before_ms <= now_ms; });
     std::lock_guard lock(mutex_);
-    std::move(due, pending.end(), std::back_inserter(queue_));
-    pending.erase(due, pending.end());
+    std::vector<Pending> all;
+    all.swap(queue_);
+    // In the order they were first sent (B236): a lane's (a 1:1 chat's, a group member's) items go one after another,
+    // and one not due yet (a stranger-quota backoff) holds back every later one of its lane.
+    std::stable_sort(all.begin(), all.end(), [](const Pending& a, const Pending& b) { return a.serial < b.serial; });
+    std::unordered_map<std::string, std::string> held; // lane -> the message holding it (its other copies may go)
+    for (Pending& item : all) {
+      const std::string lane = OrderLane(item);
+      const bool other_thread = !only_thread.empty() && item.thread_id != only_thread;
+      const bool lane_busy = batch_lanes_.contains(lane); // another batch is sending it: it keeps the order
+      const auto holder = held.find(lane);
+      const bool held_back = holder != held.end() && holder->second != item.message_id;
+      if (other_thread || lane_busy || held_back || item.not_before_ms > now_ms) {
+        if (!other_thread && holder == held.end()) {
+          held.emplace(lane, item.message_id);
+        }
+        queue_.push_back(std::move(item));
+        continue;
+      }
+      if (std::find(lanes.begin(), lanes.end(), lane) == lanes.end()) {
+        lanes.push_back(lane);
+      }
+      pending.push_back(std::move(item));
+    }
+    for (const std::string& lane : lanes) {
+      batch_lanes_.insert(lane);
+    }
   }
-  std::vector<std::string> dropped; // rows whose request ends here (not sent again)
+  std::vector<Pending> dropped; // rows whose request ends here (not sent again)
   std::erase_if(pending, [this, now_ms, &dropped](const Pending& item) {
     const bool control_lane = item.thread_id.empty();
     if (OutboxSendStillWanted(control_lane, now_ms - item.envelope.timestamp, Paused(item.thread_id))) {
       return false;
     }
     if (!control_lane) {
-      dropped.push_back(item.message_id);
+      dropped.push_back(item);
     }
     return true;
   });
-  if (!dropped.empty()) {
-    std::lock_guard lock(mutex_);
-    for (const std::string& message_id : dropped) {
-      EndActiveLocked(message_id);
-    }
+  for (const Pending& item : dropped) {
+    Finish(DroppedOutcome(item)); // its row was queued until now: the last failure is its end (B236)
   }
   if (pending.empty()) {
+    EndBatch(lanes, {});
     return;
   }
-  AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
-    if (!relay_.load(std::memory_order_acquire)) {
-      std::lock_guard lock(mutex_);
-      for (Pending& item : pending) {
-        EnqueueLocked(std::move(item));
-      }
-      return;
-    }
+  AppRuntime::PostWorkerNormal([this, lanes, pending = std::move(pending)]() mutable {
+    // As a first send's: the batch's outcomes are written before the app may be suspended (B236).
+    auto background = std::make_shared<BackgroundActivity>("message retry");
+    // No relay set (yet): each item still counts the try (try_relay: "Relay client not configured"), so one never
+    // waits forever on a relay that does not come — it fails once its retries are used up (B236 R4).
     auto still_pending = std::make_shared<std::vector<Pending>>();
+    // A lane whose item failed and is tried again later: its later items wait, untried, behind it (B236).
+    auto blocked = std::make_shared<std::unordered_map<std::string, std::string>>(); // lane -> the failed message
     // Held by this call and by each send still in flight; it reaches itself only weakly. A strong
     // self-capture was a cycle that kept every batch's closure alive after it ended.
     auto process = std::make_shared<std::function<void(size_t)>>();
-    *process = [this, pending = std::move(pending), still_pending,
+    *process = [this, lanes, pending = std::move(pending), still_pending, blocked, background,
                 weak_process = std::weak_ptr<std::function<void(size_t)>>(process)](size_t index) mutable {
       const auto process = weak_process.lock();
       if (!process) {
         return;
       }
       if (index >= pending.size()) {
-        if (!still_pending->empty()) {
-          std::lock_guard lock(mutex_);
-          for (Pending& item : *still_pending) {
-            EnqueueLocked(std::move(item));
-          }
-        }
+        EndBatch(lanes, std::move(*still_pending));
         return;
       }
       Pending item = std::move(pending[index]);
+      if (const auto holder = blocked->find(OrderLane(item));
+          holder != blocked->end() && holder->second != item.message_id) {
+        still_pending->push_back(std::move(item)); // behind an earlier one still to be tried again: untried
+        (*process)(index + 1);
+        return;
+      }
       if (Paused(item.thread_id)) {
-        {
-          std::lock_guard lock(mutex_); // dropped, not queued again: its request ends
-          EndActiveLocked(item.message_id);
-        }
+        Finish(DroppedOutcome(item)); // dropped, not queued again: its request ends with its last failure
         (*process)(index + 1);
         return;
       }
@@ -501,7 +695,7 @@ void DeliveryOutbox::Retry() {
         (*process)(index + 1);
         return;
       }
-      auto try_relay = [this, still_pending, process, index](Pending item) mutable {
+      auto try_relay = [this, still_pending, blocked, process, index](Pending item) mutable {
         if (EndIfCancelled(item.thread_id, item.message_id, item.serial)) {
           (*process)(index + 1);
           return;
@@ -518,6 +712,8 @@ void DeliveryOutbox::Retry() {
                                  .relay_recipient = item.envelope.recipient_account_id.value_or("")});
         } else if (OutboxRetryAgain(item.attempt_count, result.error())) {
           item.attempt_count += 1;
+          item.last_failure = result.error();
+          blocked->emplace(OrderLane(item), item.message_id);
           if (RelayStrangerQuota(result.error())) {
             item.not_before_ms = util::NowUnixMs() + StrangerQuotaRetryAfter(item.attempt_count).count();
           }
@@ -536,8 +732,8 @@ void DeliveryOutbox::Retry() {
           !item.amp_peer_key.empty() ? item.amp_peer_key : item.envelope.recipient_account_id.value_or("");
       if (!peer_key.empty() && chat && chat->IsPeerReachable(peer_key)) {
         const RelayEnvelope envelope = item.envelope;
-        chat->SendEnvelopeAsync(
-            peer_key, envelope,
+        SendDirect(
+            chat, peer_key, envelope,
             [this, process, index, item = std::move(item),
              try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
               AppRuntime::PostWorkerNormal([this, process, index, item = std::move(item),

@@ -9,6 +9,7 @@ pp_browser_add_domain_library(pp_domain_delivery
     AmpAccountCardTransport.cpp
     AccountCardService.cpp
     DeliveryOutbox.cpp
+    DeliveryRowMark.cpp
     E2ePublicSessionKeys.cpp
     ControlLane.cpp
     RelayGrantCoordinator.cpp

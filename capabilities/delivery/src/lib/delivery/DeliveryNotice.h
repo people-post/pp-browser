@@ -52,6 +52,11 @@ enum class SendFailure {
   SenderNotRegistered,
   /** The peer's app speaks another version of the mesh's link: one of the two needs an update (DirectSendErr). */
   VersionMismatch,
+  /**
+   * The recipient has not added us (no grant from it): the relay took the few messages a stranger may send and
+   * refused the rest (MR005 stranger quota), until the outbox gave up on it.
+   */
+  NotAddedYet,
 };
 
 /** `failure` as a word for a shareable line (common/Diag.h). */
@@ -63,8 +68,8 @@ SendFailure SendFailureFromDirect(DirectSendErr code);
 
 /**
  * A relay send's failure, by its app error category and code (foundation/error/AppError). A rate
- * limit (the stranger quota included) reads `RelayRateLimited`; `SendFailureForThread` turns it into `RelayBusy`
- * for a trusted peer.
+ * limit reads `RelayRateLimited` (`SendFailureForThread` turns it into `RelayBusy` for a trusted peer); the stranger
+ * quota reads `NotAddedYet` (B236: the recipient has not added us yet).
  */
 SendFailure SendFailureFromRelay(const Error& error);
 
@@ -142,5 +147,17 @@ ThreadMessage MakeSendFailureRow(const std::string& thread_id, const std::string
 std::optional<std::string> SendFailureRowReason(const ThreadMessage& message);
 /** The message a send-failure row is about; none for any other message. */
 std::optional<std::string> SendFailureRowMessageId(const ThreadMessage& message);
+
+/**
+ * A local transcript line saying the chat is held (B236): the recipient has not added us, the relay refused a send of
+ * ours for its stranger quota, and that message (the probe) is still being tried. A stored System row, never sent or
+ * mirrored (local, not relay_visible), with no words — the transcript words it — naming its probe; one per probe.
+ */
+inline constexpr const char* kStrangerHeldControlType = "stranger_held";
+std::string StrangerHeldRowId(const std::string& probe_message_id);
+ThreadMessage MakeStrangerHeldRow(const std::string& thread_id, const std::string& probe_message_id,
+                                  int64_t timestamp_ms);
+/** The probe a "held" line is about; none for any other message. */
+std::optional<std::string> StrangerHeldRowProbe(const ThreadMessage& message);
 
 } // namespace pbr

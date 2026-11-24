@@ -287,7 +287,6 @@ void ChatPresenter::ResetForNewProfile() {
   showing_archived_ = false;
   showing_archived_ai_ = false;
   resent_ids_.clear();
-  resent_unremoved_.clear();
 }
 
 const std::unordered_map<std::string, ThreadLocalPrefs>& ChatPresenter::AllPrefs() {
@@ -565,6 +564,10 @@ SendMark ChatPresenter::SendMarkOf(const ThreadMessage& message, const int64_t n
   return SendMark::None;
 }
 
+bool ChatPresenter::SendHeld(const std::string& thread_id) const {
+  return facade_ != nullptr && !thread_id.empty() && facade_->ChatSendHeld(thread_id);
+}
+
 SendMarkTap ChatPresenter::TapSendMark(const std::string& thread_id, const std::string& message_id) {
   return TapSendMarkWith(thread_id, message_id, /*offer_fix=*/true);
 }
@@ -591,7 +594,6 @@ SendAdvice ChatPresenter::SendAdviceOf(const std::string& thread_id, const std::
     return SendAdvice::None; // the tap resends the edit: it never offers a card update (same order as TapSendMarkWith)
   }
   facts.started_ms = facade_->SendStartedMs(message_id);
-  facts.already_resent = resent_unremoved_.count(message_id) != 0;
   facts.now_ms = util::NowUnixMs();
   FillGuidanceFacts(thread_id, message_id, facts);
   return AdviceOf(DecideSendMarkTap(facts));
@@ -650,37 +652,14 @@ SendMarkTap ChatPresenter::TapSendMarkWith(const std::string& thread_id, const s
     return tap;
   }
   facts.started_ms = facade_->SendStartedMs(message_id);
-  facts.already_resent = resent_unremoved_.count(message_id) != 0;
   facts.now_ms = util::NowUnixMs();
   facts.offer_fix = offer_fix;
   FillGuidanceFacts(thread_id, message_id, facts);
   if (const auto others = GroupOthersJoinedAt(thread_id)) {
     facts.no_recipients = !GroupRowHadRecipients(*others, facts.row->timestamp);
   }
-  ResendPorts ports;
-  ports.spans_on_roster = [this, thread_id](std::vector<TextSpan> spans) {
-    return SpansOnRoster(thread_id, std::move(spans));
-  };
-  ports.send_direct = [this, thread_id](const std::string& text) {
-    return facade_->SendUserMessage(thread_id, text, SendRelayOptions{});
-  };
-  ports.send_group = [this, thread_id](const std::string& text, std::vector<TextSpan> spans) {
-    return facade_->SendGroupText(thread_id, text, std::move(spans));
-  };
-  ports.remove_unsent = [this, thread_id](const std::string& id) {
-    return facade_->RemoveUnsentMessage(thread_id, id);
-  };
-  SendMarkTap tap = ResendAfterTap(facts, ports);
-  if (tap.kind == SendMarkTap::Kind::Resent && !tap.new_id.empty()) {
-    resent_ids_[tap.new_id] = thread_id; // told once when it turns red again (ResentTurnedRed)
-  }
-  if (tap.removal_error) {
-    log().warning << "resend: the unsent row was not removed message_id=" << message_id;
-    resent_unremoved_.insert(message_id); // never sent a third time
-  } else if (tap.old_removed) {
-    resent_unremoved_.erase(message_id);
-  }
-  return tap;
+  // B236: the message itself goes again (ResendSameMessage, started by the caller): never a new copy beside it.
+  return DecideSendMarkTap(facts);
 }
 
 std::optional<SendFailure> ChatPresenter::SendFailureReasonOf(const std::string& thread_id,

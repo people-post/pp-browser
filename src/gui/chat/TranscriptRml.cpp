@@ -309,6 +309,9 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   if (auto failure = SendFailureLine(message, facts)) {
     return SystemLineRml(*failure);
   }
+  if (StrangerHeldRowProbe(message)) {
+    return SystemLineRml(Tr("chat.send.held_line")); // B236: shown only while it holds the chat (InboxController)
+  }
   return SystemLineRml(StoredSystemText(message));
 }
 

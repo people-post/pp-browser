@@ -179,11 +179,15 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # An edit of ours blanked before it went out keeps its row, seq and delivery state; no further
                             # send of it starts (only a try already on its way can still arrive).
                             # Local-only System rows (sender local:self, delivery 'local', never sent or synced; text empty, the UI words
-                            # them from the payload): payload_json {control_type: "receive_failure"|"send_failure", detail: <JSON string>}.
+                            # them from the payload): payload_json {control_type: "receive_failure"|"send_failure"|"stranger_held", detail: <JSON string>}.
                             # `send_failure` (#182): a message of ours did not go out, one row per message, id "send-failure-<message_id>"
                             # (+ "-group" for a partial group send); detail {reason, message_id}, reason = a SendFailureWord
-                            # (mesh_off, no_address, ..., relay_rejected, recipient_not_found, sender_not_registered) or "group_members_missed";
+                            # (mesh_off, no_address, ..., relay_rejected, recipient_not_found, sender_not_registered, version_mismatch,
+                            # not_added_yet) or "group_members_missed";
                             # a reader that does not know a word shows the generic reason. It does not touch the thread's preview/order.
+                            # `stranger_held` (B236): the recipient has not added us and the relay refused a send of ours for its stranger
+                            # quota while that message (the probe) is still being tried; one row per probe, id "stranger-held-<message_id>",
+                            # generation "local", detail {message_id}. Not model context; does not touch the thread's preview/order.
                             # `call_blocked`: 1:1 calls "who can call me" dropped, one row per caller in the DM, id "call-blocked:<caller>",
                             # rewritten in place per call (its time never moves back); detail {count, setting ("contacts_only"|"nobody"),
                             # call_ids (last 20 counted)}; text = the words at write time, a preview stand-in (the transcript words the payload);

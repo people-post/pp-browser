@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/conversations/QueuedResend.h"
 #include "common/Secret.h"
 
 #include "foundation/crypto/CryptoTypes.h"
@@ -162,11 +163,6 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
-  /**
-   * A message of ours that never went out, sent again as a new one (#210): what is still queued of it is dropped, then
-   * its row goes (IThreadSync::RemoveUnsentMessage). false: not such a row (it was delivered meanwhile), kept.
-   */
-  Roe<bool> RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
@@ -175,6 +171,14 @@ public:
                                  const std::string& new_text, int64_t tapped_at_ms);
   /** Send again the edit of our message that did not go out (ConversationsHub::ResendEdit). */
   Roe<ThreadMessage> ResendEdit(const std::string& thread_id, const std::string& message_id);
+  /**
+   * B236: whether the 1:1 chat `thread_id` is held — the recipient has not added us and a refused message of ours is
+   * still queued — so nothing more is sent for now (MeshDeliveryOrchestrator::ChatSendHeld). Blocking (the store).
+   */
+  bool ChatSendHeld(const std::string& thread_id);
+  /** Send our failed message again as itself, after a tap on its red mark (ConversationsHub::ResendMessageAsync). */
+  void ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                          std::function<void(Roe<StoredResendAnswer>)> on_done);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();

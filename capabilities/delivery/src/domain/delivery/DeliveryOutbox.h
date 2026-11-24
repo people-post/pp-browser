@@ -10,16 +10,20 @@
 
 #include <cstdint>
 #include <atomic>
+#include <chrono>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
+class BackgroundActivity;
 class IRelayClient;
 
 /** One envelope to get to a peer. */
@@ -64,6 +68,13 @@ struct DeliveryOutcome {
   std::string relay_recipient;
   /** `failure` PaymentRequired: the recipient's initiation floor the relay named (pp_credit minor units). */
   int64_t initiation_floor = 0;
+  /**
+   * A failure after which the outbox tries again (queued for a retry, or a control-lane retry scheduled): not the
+   * request's end, so its row stays queued (B236). False on every outcome that ends the request.
+   */
+  bool retrying = false;
+  /** The relay refused it for its stranger quota (the recipient has not added us): the chat is held (B236). */
+  bool stranger_quota = false;
 };
 
 /**
@@ -92,8 +103,12 @@ public:
   void SetThreadPaused(std::function<bool(const std::string& thread_id)> paused) { paused_ = std::move(paused); }
 
   void Send(DeliveryRequest request);
-  /** Send what is queued again (when the inbox is synced: the relay is likely reachable). */
-  void Retry();
+  /**
+   * Send what is queued again (when the inbox is synced: the relay is likely reachable) — only `only_thread`'s when
+   * named. In the order the messages were first sent, one after another per 1:1 chat (or group member): an item not
+   * due, or failing and queued again, holds back the later ones of its chat (B236: they arrive in the order sent).
+   */
+  void Retry(const std::string& only_thread = {});
   /**
    * `recipient`'s grant to us just arrived: what its stranger quota held back is due now (a contact's send) — the
    * control-lane retries first, in the order they were refused (a call invite before its later `call_ended`), then
@@ -116,6 +131,8 @@ public:
    * restart); the control lane is not tracked. It changes nothing that is reported or retried. Any thread.
    */
   std::optional<int64_t> SendStartedMs(const std::string& message_id) const;
+  /** How long a direct (Amp) send may go unanswered before it counts as a retryable failure (tests: shorter). */
+  void SetDirectSendTimeoutForTest(const std::chrono::milliseconds timeout) { direct_send_timeout_ = timeout; }
   /** How many messages are remembered as cancelled (tests: the record stays bounded). */
   size_t CancelledCountForTest() const {
     std::lock_guard lock(mutex_);
@@ -138,6 +155,8 @@ private:
     int64_t not_before_ms = 0;
     /** Its request's (BeginActive): a Cancel after the Send stops it. */
     uint64_t serial = 0;
+    /** Why its last attempt failed: what is reported if it is dropped without another try (a paused thread). */
+    Error last_failure;
   };
 
   /** A control-lane retry waiting on its timer: the item it sends (taken by the timer, or by ReleaseHeldFor). */
@@ -154,24 +173,43 @@ private:
   /** A request's last outcome: it leaves `active_` first, then is reported as Report does. */
   void Finish(DeliveryOutcome outcome);
   /** A request starts (Send): its serial. The control lane (no thread) is not tracked. */
-  uint64_t BeginActive(const std::string& thread_id, const std::string& message_id);
+  uint64_t BeginActive(const std::string& thread_id, const std::string& message_id, bool group = false);
+  /** A 1:1 message of `thread_id` sent earlier than `message_id` is still on its way or queued. Holds `mutex_`. */
+  bool WaitsBehindEarlierLocked(const std::string& thread_id, const std::string& message_id) const;
+  /** The lane an item keeps its order in: its 1:1 chat, or its group member in a group. */
+  static std::string OrderLane(const Pending& item);
+  /** A retry batch ended: its lanes free, what it queued again back in the queue, waiting followers sent. */
+  void EndBatch(const std::vector<std::string>& lanes, std::vector<Pending> still_pending);
   /** One request of `message_id` ended (with its last, the record of a cancel). Holds `mutex_`. */
   void EndActiveLocked(const std::string& message_id);
   /** A transcript row's request cancelled after it was sent (Cancel). Holds `mutex_`. */
   bool CancelledLocked(const std::string& thread_id, const std::string& message_id, uint64_t serial) const;
   /** Before an attempt: true (and the request ended, nothing reported) when it was cancelled. */
   bool EndIfCancelled(const std::string& thread_id, const std::string& message_id, uint64_t serial);
+  /**
+   * `thread_id`'s 1:1 messages that wait, untried, behind an earlier one, and nothing of the chat still on its way
+   * outside the queue (whose end wakes them, Finish): they may go now. Holds `mutex_`.
+   */
+  bool FollowersFreeLocked(const std::string& thread_id) const;
+  /** A request of `thread_id` ended without an outcome (cancelled): its waiting followers go now (FollowersFreeLocked). */
+  void WakeFollowers(const std::vector<std::string>& thread_ids);
   /** Queued for a retry; false (and the request ended, nothing reported) when it was cancelled. */
   bool Enqueue(Pending pending);
   bool EnqueueLocked(Pending pending);
   /** The outcome of a failed relay send to `recipient`: its notice, and the floor a `payment_required` named. */
   static DeliveryOutcome RelayFailureOutcome(DeliveryOutcome outcome, const std::string& recipient,
                                              const Error& failure);
+  /** A queued item dropped without another try (its thread paused): its last failure, final. */
+  static DeliveryOutcome DroppedOutcome(const Pending& item);
   /**
    * The relay does not know `request`'s recipient (`relay_failure`): its `amp_fallback_key` over a link, when one can
    * be had — then true, and the outcome is reported when that send ends.
    */
-  bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure);
+  bool TryAmpFallback(const DeliveryRequest& request, uint64_t serial, const Error& relay_failure,
+                      std::shared_ptr<BackgroundActivity> background);
+  /** `chat`'s SendEnvelopeAsync, ended by `direct_send_timeout_` when the transport never answers (B236 R4). */
+  void SendDirect(IDirectMessageClient* chat, const std::string& peer_key, const RelayEnvelope& envelope,
+                  std::function<void(DirectSendRoe)> on_done);
   /** Schedule the control-lane send again after `failure` (ControlRetryAfter); false: given up. */
   bool RetryControlLater(Pending item, const Error& failure);
   /** A control-lane retry's turn: over the relay, again later when that fails. */
@@ -179,6 +217,8 @@ private:
   bool Paused(const std::string& thread_id) const { return !thread_id.empty() && paused_ && paused_(thread_id); }
 
   std::function<IDirectMessageClient*()> direct_chat_;
+  /** A direct send's answer is waited for this long (the transport's own deadline is a few seconds). */
+  std::chrono::milliseconds direct_send_timeout_{30000};
   std::atomic<IRelayClient*> relay_{nullptr};
   std::function<void(const DeliveryOutcome&)> on_outcome_;
   std::function<bool(const std::string&)> paused_;
@@ -186,12 +226,18 @@ private:
   struct ActiveSend {
     int64_t started_ms = 0;
     int requests = 0;
+    /** Its chat, and its first request's serial (its place in the chat's order); a group's message keeps none. */
+    std::string thread_id;
+    uint64_t first_serial = 0;
+    bool group = false;
   };
 
   mutable std::mutex mutex_;
   std::vector<Pending> queue_;
   /** By message id (SendStartedMs). */
   std::unordered_map<std::string, ActiveSend> active_;
+  /** Order lanes a retry batch is sending now: another batch leaves them alone (B236). */
+  std::unordered_set<std::string> batch_lanes_;
   /**
    * A cancelled message's requests up to this serial: none of them starts another attempt. Only while the message is
    * in `active_` (it goes with its last request), so it holds no more ids than `active_` does.

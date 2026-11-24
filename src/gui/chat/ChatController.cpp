@@ -3902,6 +3902,8 @@ PictureSendHost ChatController::MakePictureSendHost() {
       picture_picker_done_ms_ = 0;
     }
   };
+  // B236: the preview's Send in a held chat says why and leaves the page open (nothing is queued).
+  host.may_send = [this]() { return !RefuseSendWhileHeld(ActiveThreadId()); };
   host.send_label = [](const size_t sendable) {
     return sendable <= 1 ? Tr("picture_send.send_one") : Tr("picture_send.send_n", {{"n", std::to_string(sendable)}});
   };
@@ -4092,6 +4094,18 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const std::string& thread_id = to_thread;
   // A picture queue holds the slot between its items: anyone else waits, its own next item only for a running send.
   const bool busy = from_picture_queue ? chat_.attachment_uploading || chat_.attachment_preparing : AttachmentBusy();
+  if (!from_picture_queue && !thread_id.empty() && RefuseSendWhileHeld(thread_id)) {
+    // B236: the chat sends nothing for now. A recording already made is kept behind Retry (never thrown away); a picked
+    // file is let go.
+    EndPick(pick_serial);
+    if (voice_file) {
+      FailVoiceKeepingRecording(reuse_row, path, thread_id);
+    } else {
+      release_pick_(path);
+    }
+    finished.Fire(ClassifyUploadOutcome(/*sent=*/false, /*cancelled=*/false, /*staged=*/false, false));
+    return;
+  }
   if (!facade_ || thread_id.empty() || !picks_.Accept(pick_serial, busy)) {
     EndPick(pick_serial);
     if (voice_file && !thread_id.empty()) {
@@ -4652,22 +4666,57 @@ void ChatController::ApplySendMarkTap(const std::string& thread_id, const std::s
     case SendMarkTap::Kind::ReasonOnly:
       ShowToast(SendFailureReasonText(presenter_.SendFailureReasonOf(thread_id, message_id), tap.refusal));
       return;
-    case SendMarkTap::Kind::RemovalFailed:
-      // Its new copy already went out on an earlier tap; nothing is sent a third time.
-      ShowToast(Tr("chat.send.not_sent"));
-      return;
     case SendMarkTap::Kind::SendFailed:
       // As the composer says it; the old bubble stays as it was.
       UserFeedback::Fail(PaymentErrorUserMessage(tap.error.value_or(Error("Send failed"))));
       return;
     case SendMarkTap::Kind::Resent:
-      // The new message is at the bottom (the draft untouched); the old row is gone unless it was delivered meanwhile.
+      // An edit sent again (MessageEdit): its new edit row went out; the unsent one is gone.
       if (thread_id == ActiveThreadId()) {
         scroller_.RequestScrollToLatest(); // only the chat that is open (a resend after a card update may be another)
       }
       RefreshFromMessaging();
       return;
+    case SendMarkTap::Kind::ResendSameMessage:
+      if (!RefuseSendWhileHeld(thread_id)) { // B236: a held chat sends nothing, a tap neither
+        ResendSameMessage(thread_id, message_id);
+      }
+      return;
   }
+}
+
+bool ChatController::RefuseSendWhileHeld(const std::string& thread_id) {
+  if (!messaging_ready_ || !presenter_.SendHeld(thread_id)) {
+    return false;
+  }
+  ShowToast(Tr("chat.send.held"));
+  return true;
+}
+
+void ChatController::ResendSameMessage(const std::string& thread_id, const std::string& message_id) {
+  // B236: the message (text, picture, file, voice, card) goes again as itself, where it is in the chat; its mark turns
+  // to the clock once it is on its way. Off this thread (a picture's file may be looked up on the server first); the
+  // answer comes back here.
+  facade_->ResendMessageAsync(
+      thread_id, message_id,
+      [this, thread_id, message_id, alive = std::weak_ptr<int>(send_mark_alive_),
+       session = messaging_session_](Roe<StoredResendAnswer> answer) {
+        AppRuntime::PostUI([this, alive, session, thread_id, message_id, answer = std::move(answer)]() {
+          if (!alive.lock() || !messaging_ready_ || session != messaging_session_) {
+            return; // a lock / unlock since: the tap belongs to no session now
+          }
+          if (!answer) {
+            UserFeedback::Fail(PaymentErrorUserMessage(answer.error())); // as the composer says it; the row stays red
+          } else if (*answer == StoredResendAnswer::StillTrying) {
+            ShowToast(Tr("chat.send.still_trying"));
+          } else if (*answer == StoredResendAnswer::AttachmentGone) {
+            ShowToast(Tr("chat.send.file_gone"));
+          } else {
+            presenter_.NoteResent(thread_id, message_id); // told once if it turns red again
+          }
+          RefreshFromMessaging();
+        });
+      });
 }
 
 void ChatController::OpenGroupSender(const std::string& message_id) {
@@ -5280,6 +5329,9 @@ void ChatController::OnSendMessage() {
   const bool with_image = agent_.HasPendingImage() && InAiComposerContext();
   if (text.empty() && !with_image) {
     return;
+  }
+  if (RefuseSendWhileHeld(ActiveThreadId())) {
+    return; // B236: the typed text stays in the box
   }
 
   // Sending keeps the draft focused, so the keyboard stays up for the next line (#90); a tap on the transcript
@@ -6710,8 +6762,17 @@ bool ChatController::Setup(ui::Context* context) {
             }));
         ctor.BindEventCallback("attach_capture", DataEventAt([this](ui::Event& ev) { OnAttachCapture(&ev); }));
         ctor.BindEventCallback("voice_mode_toggle", DataEvent([this] { ToggleVoiceMode(); }));
-        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) { voice_->OnPress(ev); }));
-        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) { voice_->OnClick(ev); }));
+        // B236: in a held chat nothing is recorded at all; the pill says why on each press.
+        ctor.BindEventCallback("voice_press", DataEventAt([this](ui::Event& ev) {
+                                 if (!RefuseSendWhileHeld(ActiveThreadId())) {
+                                   voice_->OnPress(ev);
+                                 }
+                               }));
+        ctor.BindEventCallback("voice_click", DataEventAt([this](ui::Event& ev) {
+                                 if (!RefuseSendWhileHeld(ActiveThreadId())) {
+                                   voice_->OnClick(ev);
+                                 }
+                               }));
         ctor.BindEventCallback("voice_send", DataEvent([this] { voice_->OnSendButton(); }));
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>([this](const std::string& message_id) {

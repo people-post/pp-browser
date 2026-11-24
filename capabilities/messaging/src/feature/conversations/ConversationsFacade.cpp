@@ -303,11 +303,6 @@ Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, 
   return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
 }
 
-Roe<bool> ConversationsFacade::RemoveUnsentMessage(const std::string& thread_id, const std::string& message_id) {
-  hub_.MeshMessaging().CancelPendingSend(message_id);
-  return hub_.Store().RemoveUnsentMessage(thread_id, message_id);
-}
-
 Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
                                                                   const std::string& message_id) {
   return hub_.Store().GetMessage(thread_id, message_id);
@@ -324,6 +319,15 @@ Roe<ThreadMessage> ConversationsFacade::EditMessage(const std::string& thread_id
 
 Roe<ThreadMessage> ConversationsFacade::ResendEdit(const std::string& thread_id, const std::string& message_id) {
   return hub_.ResendEdit(thread_id, message_id);
+}
+
+bool ConversationsFacade::ChatSendHeld(const std::string& thread_id) {
+  return hub_.IsMessagingReady() && hub_.MeshMessaging().ChatSendHeld(thread_id);
+}
+
+void ConversationsFacade::ResendMessageAsync(const std::string& thread_id, const std::string& message_id,
+                                             std::function<void(Roe<StoredResendAnswer>)> on_done) {
+  hub_.ResendMessageAsync(thread_id, message_id, std::move(on_done));
 }
 
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {

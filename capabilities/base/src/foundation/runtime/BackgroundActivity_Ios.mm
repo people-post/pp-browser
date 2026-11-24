@@ -39,6 +39,7 @@ void EndBackgroundTask(BackgroundActivity::State& state) {
 
 // No ARC in this repo, and a transfer's worker thread has no autorelease pool of its own: each body has one.
 BackgroundActivity::BackgroundActivity(const std::string& name) : state_(std::make_shared<State>()) {
+  ++Held();
   @autoreleasepool {
     state_->name = name;
     UIApplication* app = [UIApplication sharedApplication];
@@ -77,6 +78,7 @@ BackgroundActivity::BackgroundActivity(const std::string& name) : state_(std::ma
 }
 
 BackgroundActivity::~BackgroundActivity() {
+  --Held();
   @autoreleasepool {
     if (state_) {
       EndBackgroundTask(*state_);

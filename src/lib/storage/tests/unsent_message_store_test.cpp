@@ -149,6 +149,51 @@ TEST_P(UnsentMessageStoreTest, ALateSuccessDoesNotBringTheRowBack) {
   EXPECT_EQ(Count(), before);
 }
 
+// B236: a failed message of ours sent again as itself is queued again (UpdateMessageDelivery to pending): it waits in
+// the outbox, so a start before it is through finds it to send again (ResumeQueuedSends), and leaves it once through.
+TEST_P(UnsentMessageStoreTest, ARowQueuedAgainWaitsInTheOutboxUntilItIsThrough) {
+  Add(Message("m1", kLocalSelfContactId, MessageDelivery::Pending, 2));
+  ASSERT_TRUE(store().UpdateMessageDelivery("t1", "m1", MessageDelivery::Failed, std::nullopt, true));
+  EXPECT_FALSE(InOutbox("m1")) << "failed: nothing waits";
+  auto queued = store().UpdateMessageDelivery("t1", "m1", MessageDelivery::Pending, std::nullopt, true);
+  ASSERT_TRUE(queued);
+  EXPECT_TRUE(*queued);
+  EXPECT_TRUE(InOutbox("m1")) << "queued again: it waits in the outbox";
+  ASSERT_TRUE(store().ReconcileOutbox()); // the start's reconcile
+  EXPECT_TRUE(InOutbox("m1")) << "still there after a start";
+  ASSERT_TRUE(store().UpdateMessageDelivery("t1", "m1", MessageDelivery::Relayed, MessageTransport::Relay, false));
+  EXPECT_FALSE(InOutbox("m1")) << "through: gone from the outbox";
+  auto again = store().UpdateMessageDelivery("t1", "m1", MessageDelivery::Pending, std::nullopt, true);
+  ASSERT_TRUE(again);
+  EXPECT_FALSE(*again) << "a delivered row is never queued again";
+  EXPECT_FALSE(InOutbox("m1"));
+}
+
+// B236 R5: a group's pending row missing its outbox record gets it back at the start (as a direct one does), and a
+// queue-again of a row that is not there leaves no record behind.
+TEST_P(UnsentMessageStoreTest, TheStartKeepsAGroupsPendingRowInTheOutboxAndNoRecordForNothing) {
+  Thread group;
+  group.id = "g1";
+  group.kind = ThreadKind::Group;
+  group.group_id = "group-1";
+  group.title = "Group";
+  group.updated_at = 1;
+  ASSERT_TRUE(store().UpsertThread(group));
+  ThreadMessage row = Message("gm1", kLocalSelfContactId, MessageDelivery::Failed, 3);
+  row.thread_id = "g1";
+  Add(row);
+  // Pending again with no record (as an interrupted queue-again might leave it), then a start.
+  row.delivery = MessageDelivery::Pending;
+  ASSERT_TRUE(store().UpdateMessage(row));
+  ASSERT_TRUE(store().ReconcileOutbox());
+  EXPECT_TRUE(InOutbox("gm1")) << "a group's row is found again at the start";
+
+  auto none = store().UpdateMessageDelivery("t1", "no-such-row", MessageDelivery::Pending, std::nullopt, true);
+  ASSERT_TRUE(none);
+  EXPECT_FALSE(*none);
+  EXPECT_FALSE(InOutbox("no-such-row")) << "no record for a row that is not there";
+}
+
 INSTANTIATE_TEST_SUITE_P(Impls, UnsentMessageStoreTest, ::testing::Values(Impl::Sqlite, Impl::Memory),
                          [](const ::testing::TestParamInfo<Impl>& info) {
                            return info.param == Impl::Sqlite ? std::string("Sqlite") : std::string("Memory");
