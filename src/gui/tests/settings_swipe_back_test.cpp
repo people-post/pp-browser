@@ -42,6 +42,8 @@ constexpr const char* kSettingsLikePage =
     "row</button>"
     "<input id=\"field\" type=\"checkbox\" style=\"display: block; width: 400px; height: 40px;\"/>"
     "<p id=\"text\" style=\"display: block; width: 400px; height: 40px;\">Footnote</p>"
+    "<button id=\"voice_bar\" style=\"display: block; margin: 0px 12px; width: 376px; height: 50px;\">Hold to "
+    "talk</button>"
     "</div></body></rml>";
 
 class SettingsSwipeBackTest : public testing::Test {
@@ -247,6 +249,24 @@ TEST_F(SettingsSwipeBackTest, AHorizontalBackSwipeStillLocksOutVerticalScrollWhi
   EXPECT_EQ(axis_lock_.Get(), ShellGestureAxis::None);
   EXPECT_EQ(dismissed_, 0) << "short of the threshold";
   Drag(8, 320, y);
+  EXPECT_EQ(dismissed_, 1);
+}
+
+// The voice bar of the phone chat is a button: a hold on it records, and a finger that wanders to the left edge (or starts
+// in the 28dp edge strip at the bar's left end) must not also start the chat's swipe back. The chat overlay attaches the
+// gesture without `edge_over_buttons` (ShellHost sets it on the Me tab only), so a press on any button is the button's.
+TEST_F(SettingsSwipeBackTest, AHoldOnTheVoiceBarNeverStartsTheBackSwipeWhereverTheFingerWanders) {
+  AttachBack(false);
+  const int y = static_cast<int>(CentreY("voice_bar"));
+  Drag(200, 10, y); // pressed in the middle, dragged to within 28dp of the left edge, released there
+  EXPECT_EQ(dismissed_, 0);
+  EXPECT_FLOAT_EQ(page_->GetAbsoluteOffset(ui::BoxArea::Border).x, 0.f) << "the page did not move with the finger";
+  Drag(20, 330,
+       y); // pressed in the edge strip at the bar's left end, dragged right (the bubble follows, the page stays)
+  EXPECT_EQ(dismissed_, 0);
+  EXPECT_FLOAT_EQ(page_->GetAbsoluteOffset(ui::BoxArea::Border).x, 0.f);
+  // The plain text beside it still goes back: the gesture itself is alive.
+  Drag(8, 320, static_cast<int>(CentreY("text")));
   EXPECT_EQ(dismissed_, 1);
 }
 

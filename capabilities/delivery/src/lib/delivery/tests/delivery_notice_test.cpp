@@ -23,6 +23,7 @@ TEST(DeliveryNoticeTest, SendFailuresFromTheDirectSendsCode) {
   EXPECT_EQ(SendFailureFromDirect(DirectSendErr::TransportFailed), SendFailure::PeerNoAnswer);
   EXPECT_EQ(SendFailureFromDirect(DirectSendErr::ChannelFailed), SendFailure::HandshakeFailed);
   EXPECT_EQ(SendFailureFromDirect(DirectSendErr::NotConfirmed), SendFailure::DirectUnconfirmed);
+  EXPECT_EQ(SendFailureFromDirect(DirectSendErr::VersionMismatch), SendFailure::VersionMismatch);
   EXPECT_EQ(SendFailureFromDirect(DirectSendErr::Generic), SendFailure::Unknown);
 }
 
@@ -65,7 +66,8 @@ TEST(DeliveryNoticeTest, OtherRelayFailuresAreClassifiedAsBefore) {
 }
 
 TEST(DeliveryNoticeTest, TheNewReasonsRoundTripAndAnUnknownWordIsNotAReason) {
-  for (const SendFailure failure : {SendFailure::RecipientNotOnRelay, SendFailure::SenderNotRegistered}) {
+  for (const SendFailure failure :
+       {SendFailure::RecipientNotOnRelay, SendFailure::SenderNotRegistered, SendFailure::VersionMismatch}) {
     const ThreadMessage row = MakeSendFailureRow("t1", "m1", SendFailureWord(failure).c_str(), 5);
     const auto reason = SendFailureRowReason(row);
     ASSERT_TRUE(reason);
@@ -73,6 +75,7 @@ TEST(DeliveryNoticeTest, TheNewReasonsRoundTripAndAnUnknownWordIsNotAReason) {
   }
   EXPECT_EQ(SendFailureWord(SendFailure::RecipientNotOnRelay).view(), "recipient_not_on_relay");
   EXPECT_EQ(SendFailureWord(SendFailure::SenderNotRegistered).view(), "sender_not_registered");
+  EXPECT_EQ(SendFailureWord(SendFailure::VersionMismatch).view(), "version_mismatch");
   // A reader that does not know a word (an older app, or a future one) falls back to the generic reason.
   EXPECT_FALSE(SendFailureFromWire("recipient_gone_from_the_future"));
   const ThreadMessage future = MakeSendFailureRow("t1", "m1", "recipient_gone_from_the_future", 5);

@@ -28,6 +28,7 @@ PAIRS = (
     + [("label-on-accent", s, 3.0) for s in ["accent", "bubble-out", "danger", "mention"]]
     # group sender names on a received bubble (light variants are darkened avatar colours; dark is the avatar colour)
     + [(f"x-name-{n}", "bubble-in", 3.0) for n in (0, 1, 2, 3, 4, 5, 7)]
+    + [("x-vbar-ink-armed", "x-vbar-armed", 4.5), ("x-vbar-ink-armed", "bg-card", 4.5)]
     + [("x-name-indigo", "bubble-in", 3.0)]  # dark only; light indigo is avatar-6 (5.65:1, not a token pair)
 )
 
@@ -55,6 +56,14 @@ def ratio(a, b):
     return (hi + 0.05) / (lo + 0.05)
 
 
+# The voice bubble's glass is translucent over a blur of whatever the chat shows: its text must hold >= 4.5 : 1 over the
+# worst plain backdrops (white, black, saturated red / green / blue / yellow; the blur only averages a picture).
+BUBBLE_BACKDROPS = {"white": "#ffffff", "black": "#000000", "red": "#ff0000", "green": "#00ff00", "blue": "#0000ff",
+                    "yellow": "#ffd60a"}
+BUBBLE_PAIRS = [("label", "x-vbubble-glass"), ("x-vbubble-ink-2", "x-vbubble-glass"),
+                ("x-vbubble-ink-armed", "x-vbubble-armed")]
+
+
 def load():
     tokens = {}
     for line in TSV.read_text(encoding="utf-8").splitlines()[1:]:
@@ -66,7 +75,7 @@ def load():
 
 def main():
     tokens = load()
-    failures, missing = [], set()
+    failures, missing, worst = [], set(), {}
     for theme in ("light", "dark"):
         base_rgb, _ = parse(tokens["bg"][theme])
         for fg_name, bg_name, need in PAIRS:
@@ -81,6 +90,16 @@ def main():
             got = ratio(over(fg_rgb, fg_a, surface), surface)
             if got + 1e-9 < need:
                 failures.append(f"{theme}: {fg_name} on {bg_name} = {got:.2f} (needs {need})")
+        for fg_name, bg_name in BUBBLE_PAIRS:
+            for backdrop_name, backdrop in BUBBLE_BACKDROPS.items():
+                backdrop_rgb, _ = parse(backdrop)
+                glass_rgb, glass_a = parse(tokens[bg_name][theme])
+                surface = over(glass_rgb, glass_a, backdrop_rgb)
+                fg_rgb, fg_a = parse(tokens[fg_name][theme])
+                got = ratio(over(fg_rgb, fg_a, surface), surface)
+                worst[(theme, fg_name)] = min(got, worst.get((theme, fg_name), 99.0))
+                if got + 1e-9 < 4.5:
+                    failures.append(f"{theme}: {fg_name} on {bg_name} over {backdrop_name} = {got:.2f} (needs 4.5)")
     if missing:
         print("missing tokens: " + ", ".join(sorted(missing)))
         return 1
@@ -88,6 +107,8 @@ def main():
         print("\n".join(failures))
         return 1
     print(f"contrast ok: {len(PAIRS)} pairs x 2 themes")
+    for (theme, name), got in sorted(worst.items()):
+        print(f"  voice bubble {theme} {name}: worst {got:.2f} over white / black / red / green / blue / yellow")
     return 0
 
 

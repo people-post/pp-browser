@@ -3,7 +3,7 @@
 **Tier:** contract (draft — **n2-spec**; implementation **n2-core**)  
 **Status:** Draft v1 (routing table, iterative lookup, publish at the k closest: 2026-10-21)  
 **Date:** 2026-09-02, updated 2026-10-21 — design: pp-cpp-mesh [docs/DHT.md](https://github.com/people-post/pp-cpp-mesh/blob/main/docs/DHT.md)  
-**Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger fleet DHT retired)
+**Related:** [N028](../../projects/p2p-mesh/DECISIONS.md#n028--amp-native-mesh-dht-find_peer-v1), [DISCOVERY_ROADMAP](../../projects/p2p-mesh/DISCOVERY_ROADMAP.md), [SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md), [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger fleet DHT retired)
 
 ## Purpose
 

@@ -80,6 +80,8 @@ struct ChatScreenState {
   bool voice_entry_off = false;
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
+  /** The microphone toggle (text mode) is off: recording, a message being edited or the composer disabled. Not for an upload in flight. */
+  bool voice_toggle_disabled = false;
   bool voice_recording = false;
   /** Released to send (or the limit ran out) and the file is still being written: the bar says "Sending…". */
   bool voice_finishing = false;
@@ -101,8 +103,19 @@ struct ChatScreenState {
   /** The last seconds before the limit: the timer counts down. */
   bool voice_countdown = false;
   ui::String voice_timer;
+  /** The bubble's first line when it is not the timer: the countdown ("N s left") or the limit text. Desktop: the bar's hint. */
   ui::String voice_hint;
   ui::String voice_title;
+  /** Phones: the floating bubble shows (a hold is on). Its box: left / top in dp from the chat overlay's corner ("123dp"),
+   *  Strings are tiny; they change by 1dp or more. */
+  bool voice_bubble = false;
+  ui::String voice_bubble_left = "12dp";
+  ui::String voice_bubble_top = "0dp";
+  /** The recorder stopped at its limit and the finger is still down: releasing sends, sliding up cancels. */
+  bool voice_limit = false;
+  /** The level bars' heights ("4dp".."20dp"), newest last. Written on the UI thread only. */
+  static constexpr int kVoiceLevelBars = 12;
+  ui::String voice_lv[kVoiceLevelBars];
   /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
   bool image_chip = false;
   bool image_preparing = false;

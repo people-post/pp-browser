@@ -11,7 +11,7 @@ Prefix **K**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** A call-media bundle owns a **path set** (active / standby / retiring), each path = link + its bound channels + `path_gen`. The session (call id, media key, epoch, seq) is independent of paths. Link loss removes a path; only an empty set past the reconnect window ends the call.  
 **Rationale:** Today the bundle is pinned to the first link's mux (`bound_mux`); any link change is a teardown (dogfood 2026-09-24: relay path lost → `peer link lost` while a punched link to the same peer was Connected). Frames are already link-portable (AAD has no path term) and the jitter buffer de-dupes on seq, so multi-path receive costs little.  
 **Alternatives rejected:** Re-dial a fresh session on path change (audible gap, new key/epoch handshake, glare); rebinding `bound_mux` in place (no overlap → break-before-make).  
-**Cross-link:** [A024](../adp/DECISIONS.md) nested carrier; [V038](../p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) N=2 path order.
+**Cross-link:** [A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) nested carrier; [V038](../p2p-av-calls/DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3) N=2 path order.
 
 ---
 

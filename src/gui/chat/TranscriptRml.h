@@ -114,8 +114,17 @@ inline constexpr bool kPendingProgressRing = true;
  * in its middle; the disc cancels; failed: it retries and a 44dp ✕ at the tile's corner gives the file up.
  */
 std::string PendingFileRml(const PendingUpload& upload);
+/**
+ * A voice message being sent: the finished voice bubble itself (same card, avatar, play button, waveform, length and
+ * clock, in our colour), with the upload disc laid over the play button — the ring and the percent in its middle; the
+ * disc cancels; failed: it retries and a 44dp ✕ at the card's corner gives it up. `facts` and `timestamp_ms` give the
+ * avatar and the clock the sent bubble will have. The length is the one in the file's name (`upload.title`).
+ */
+std::string PendingVoiceRml(const PendingUpload& upload, const TranscriptFacts& facts, int64_t timestamp_ms);
 /** The bubble of item `upload` by its kind: PendingFileRml for a file, PendingPictureRml for a picture or a video. */
 std::string PendingUploadRml(const PendingUpload& upload);
+/** The same, a voice message with the avatar and clock the transcript gives our own bubbles. */
+std::string PendingUploadRml(const PendingUpload& upload, const TranscriptFacts& facts, int64_t timestamp_ms);
 /** The type tile's text for a file name: its extension in capitals, at most 4 letters or digits; else empty (icon). */
 std::string FileTypeTileLabel(const std::string& name);
 

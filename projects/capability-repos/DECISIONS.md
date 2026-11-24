@@ -518,7 +518,8 @@ from `PeerTransports`, which keeps it across a re-attach (the id was lost on one
 
 **Date:** 2026-11-23  
 **Status:** accepted (Hongwei, 2026-11-23); step 1 done; step 2 after release 1; step 3 when a second app needs a
-capability. Gives CR010 its how and when. The map: [docs/README.md § Where docs live](../../docs/README.md#where-docs-live)
+capability. Gives CR010 its how and when. Amended by [CR026](#cr026--pp-cpp-amp-takes-the-stacks-design-and-the-contracts-it-alone-implements) (pp-cpp-amp and pp-cpp-mesh take the contracts only
+they implement, and adp's library half, ahead of step 2). The map: [docs/README.md § Where docs live](../../docs/README.md#where-docs-live)
 
 **Context:** pp-browser holds most of the organisation's documentation, not only the app's: the design history of
 libraries that left with their code (pp-cpp-amp, pp-cpp-mesh) but whose projects stayed here, contracts the relay
@@ -573,3 +574,30 @@ is an absolute URL to `main`; a moved file leaves a stub that names its new home
   D5–D10, and app composition and L4 decisions: A020, A021, A023, A028) and p2p-mesh (the product's mesh policy:
   roles, capabilities, relay pricing and scope, pp-node packaging). libp2p-pq-transport described the retired libp2p
   fork and the app's identity, so it has no library home and was archived here.
+- **adp's library half → pp-cpp-amp, and MESH_DIRECTORY_AMP → pp-cpp-mesh** (2026-11-23, [CR026](#cr026--pp-cpp-amp-takes-the-stacks-design-and-the-contracts-it-alone-implements)).
+
+## CR026 — pp-cpp-amp takes the stack's design and the contracts it alone implements
+
+**Date:** 2026-11-23  
+**Status:** accepted (Hongwei, 2026-11-23); done. Amends [CR025](#cr025--documentation-lives-with-what-it-describes-pp-specs-public-holds-shared-contracts-vectors-and-cross-repo-programs)
+(step 1 moved no contract; its notes left adp here whole)
+
+**Context:** After step 1 a reader of pp-cpp-amp alone could not learn its protocol, why it is so, or how it is tested:
+the wire, session and channel contracts, the stack's big picture, its design decisions and its test matrices were all
+in pp-browser (`docs/contracts/`, `projects/adp/`), though the library is their only implementer.
+
+**Decision:** A contract one library alone implements moves to that library now (rule 1), not in step 2; so does a
+project's library half when the project spans the app and the library. Same mechanics as step 1: a header line in each
+copy, a one-line stub here per moved file, ids and headings unchanged.
+- **To pp-cpp-amp:** ADP, AMP-SESSION and AMP-CHANNEL's L3 sections (`docs/contracts/`); adp's STACK (merged into
+  amp's `docs/STACK.md`), DESIGN, the test matrices (`docs/testing/`), the transport's decisions (A001–A005, A007,
+  A012–A016, A018, A019, A024–A027, A029, in `docs/DECISIONS.md`) and the library's open items (`docs/STATUS.md`).
+- **To pp-cpp-mesh:** MESH_DIRECTORY_AMP (`docs/contracts/`).
+- **Stay here:** adp's app half (the cutover, CALL_MEDIA_CIRCUIT, EXTRACTION_READINESS, and the decisions on the app's
+  use of the stack: A006, A008–A011, A017, A020–A023, A028); in [AMP-CHANNEL](../../docs/contracts/AMP-CHANNEL.md) the
+  protocols that run on channels (the `protocol_id` map, the call-media bundle, pp-cpp-mesh's circuit tunnel
+  requests), beside L4_PROTOCOL_KINDS and MEDIA_CHANNELS; AMP-LINK-ERRORS, which pp-cpp-mesh mirrors
+  (`IChatPeerLinks::Err`), so two repos implement it (step 2); CODED_FAILURE (step 2).
+
+A moved decision keeps its heading in [adp DECISIONS](../adp/DECISIONS.md), with one line pointing at its new place,
+so `#a0xx-…` anchors still resolve; a moved AMP-CHANNEL section does the same at the end of that file.

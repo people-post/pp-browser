@@ -114,10 +114,20 @@ struct RecorderProbe {
   bool finished = false;
   VoiceRecording recording;
   std::atomic<int64_t> last_progress_ms{0};
+  std::atomic<int> progress_calls{0};
+  std::atomic<float> max_level{0.f};
+  std::atomic<float> last_level{0.f};
 
   VoiceRecorder::Callbacks Callbacks() {
     VoiceRecorder::Callbacks cb;
-    cb.on_progress = [this](int64_t ms) { last_progress_ms = ms; };
+    cb.on_progress = [this](int64_t ms, float level) {
+      last_progress_ms = ms;
+      last_level = level;
+      if (level > max_level.load()) {
+        max_level = level;
+      }
+      ++progress_calls;
+    };
     cb.on_finished = [this](VoiceRecording r) {
       std::lock_guard lock(mutex);
       recording = std::move(r);

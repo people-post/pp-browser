@@ -73,7 +73,7 @@ TEST(SendFailureReasonTest, BothLanguagesHaveTheWords) {
           "chat.notice.send.recipient_not_found_resend", "chat.notice.send.sender_not_registered",
           "chat.send.fix.title", "chat.send.fix.body", "chat.send.fix.update_and_resend",
           "chat.send.fix.update_their_card", "chat.send.fix.updating", "chat.send.fix.updated_send_again",
-          "chat.send.fix.not_found"}) {
+          "chat.send.fix.not_found", "chat.notice.send.version_mismatch"}) {
       const std::string text = Tr(key);
       EXPECT_FALSE(text.empty()) << language << " " << key;
       EXPECT_NE(text, key) << language << ": missing " << key;

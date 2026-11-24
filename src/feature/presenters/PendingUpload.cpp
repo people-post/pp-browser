@@ -121,6 +121,20 @@ PendingUploadStep OnUploadSendFinished(const PendingUpload& now, const UploadSen
   return Unchanged(now);
 }
 
+PendingUploadStep OnVoiceFailedKeepingRecording(const PendingUpload& now, const std::string& path) {
+  if (now.state == State::Cancelling) {
+    return Removed(now);
+  }
+  if (now.state != State::Uploading) {
+    return Unchanged(now);
+  }
+  PendingUpload next = now;
+  next.state = State::Failed;
+  next.record_id.clear();
+  next.voice_path = path;
+  return {std::move(next), {}};
+}
+
 PendingUploadStep OnUploadResumeFinished(const PendingUpload& now, const bool sent, const bool still_staged) {
   if (now.state != State::Uploading && now.state != State::Cancelling) {
     return Unchanged(now);
@@ -148,7 +162,8 @@ PendingUploadStep OnUploadDiscardTapped(const PendingUpload& now) {
 }
 
 PendingUploadStep OnOtherAttachmentStarted(const PendingUpload& now) {
-  return now.state == State::Failed ? Removed(now) : Unchanged(now);
+  // A voice message's own recording behind its Retry stays: nothing else would offer it again.
+  return now.state == State::Failed && now.voice_path.empty() ? Removed(now) : Unchanged(now);
 }
 
 PendingUploadStep OnAppLocked(const PendingUpload& now) {
@@ -208,6 +223,17 @@ std::vector<std::string> PendingUploadQueue::Clear() {
   }
   items_.clear();
   return files;
+}
+
+std::vector<PendingUpload> FailedVoiceRecordings(const PendingUploadQueue& queue,
+                                                 const std::optional<std::string>& thread_id) {
+  std::vector<PendingUpload> found;
+  for (const PendingUpload& item : queue.Items()) {
+    if (!item.voice_path.empty() && item.state == State::Failed && (!thread_id || item.thread_id == *thread_id)) {
+      found.push_back(item);
+    }
+  }
+  return found;
 }
 
 } // namespace pbr

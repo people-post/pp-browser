@@ -179,7 +179,12 @@ DirectSendFailure AmpDirectChatTransport::WrapLinkFailure(const mesh::IChatPeerL
     case LinkErr::NestedCarrierIncomplete:
       code = DirectSendErr::ChannelFailed;
       break;
-    default:
+    case LinkErr::VersionMismatch:
+      code = DirectSendErr::VersionMismatch;
+      break;
+    case LinkErr::Ok:
+    case LinkErr::DualDialLost:
+    case LinkErr::Generic:
       code = DirectSendErr::Generic;
       break;
   }

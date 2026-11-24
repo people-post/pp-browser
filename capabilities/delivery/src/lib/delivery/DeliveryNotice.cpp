@@ -55,6 +55,8 @@ SendFailure SendFailureFromDirect(const DirectSendErr code) {
       return SendFailure::HandshakeFailed;
     case DirectSendErr::NotConfirmed:
       return SendFailure::DirectUnconfirmed;
+    case DirectSendErr::VersionMismatch:
+      return SendFailure::VersionMismatch;
     case DirectSendErr::Ok:
     case DirectSendErr::Generic:
       break;
@@ -144,6 +146,8 @@ ShareWord SendFailureWord(const SendFailure failure) {
       return "payment_required";
     case SendFailure::SenderNotRegistered:
       return "sender_not_registered";
+    case SendFailure::VersionMismatch:
+      return "version_mismatch";
   }
   return "unknown";
 }
@@ -173,7 +177,8 @@ std::optional<SendFailure> SendFailureFromWire(const std::string& wire) {
                                          SendFailure::RelayRejected,
                                          SendFailure::RecipientNotOnRelay,
                                          SendFailure::PaymentRequired,
-                                         SendFailure::SenderNotRegistered};
+                                         SendFailure::SenderNotRegistered,
+                                         SendFailure::VersionMismatch};
   for (const SendFailure failure : kAll) {
     if (wire == SendFailureWord(failure).view()) {
       return failure;

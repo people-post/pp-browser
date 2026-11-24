@@ -70,6 +70,8 @@ TEST(CallConnectDiagTest, ReachLinesNameTheKindOrTheReasonNotTheText) {
   EXPECT_EQ(line,
             "event=call.reach call=ddc19c94 role=caller attempt=1 ok=0 err=circuit_failed why=not_registered ms=13500");
   EXPECT_EQ(line.find("circuit-relay"), std::string::npos);
+  EXPECT_EQ(ReachErrWord(mesh::PeerReachCoordinator::Err::VersionMismatch).view(), "version_mismatch")
+      << "a peer of another version reads so, not generic";
 }
 
 TEST(CallConnectDiagTest, WhyIsOneOfAFixedListFromTheMessageChain) {

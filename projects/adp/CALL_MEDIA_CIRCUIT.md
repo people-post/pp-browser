@@ -1,7 +1,7 @@
 # Amp call-media over circuit
 
-**Status:** Implemented ([A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)); golden tests green  
-**Depends on:** D7a circuit tunnel, D9 step 5c hop registry, [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel), [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime)  
+**Status:** Implemented ([A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session)); golden tests green  
+**Depends on:** D7a circuit tunnel, D9 step 5c hop registry, [A019](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a019--circuit-relay--channel-tunnel), [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime)  
 **Unblocks:** D9 step 6 (retire Identify / TCP mesh listen) for NAT 1:1 calls
 
 ## Problem

@@ -98,6 +98,8 @@ ShareWord ReachErrWord(const mesh::PeerReachCoordinator::Err code) {
       return "circuit_failed";
     case E::NotConnected:
       return "not_connected";
+    case E::VersionMismatch:
+      return "version_mismatch";
     case E::Generic:
       break;
   }

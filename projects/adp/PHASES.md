@@ -1,6 +1,8 @@
 # Phases — ADP / AMP stack
 
-Foundation L1 (Phases 0–3) is **done**. Phase 4 (Opus TCP side-path) is **transitional** — superseded by AMP migration ([STACK.md](STACK.md), [A012](DECISIONS.md#a012--amp-native-stack-option-b)).
+The app's phases, all done but the D8 follow-on. What is left in the library itself: pp-cpp-amp [docs/STATUS.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STATUS.md).
+
+Foundation L1 (Phases 0–3) is **done**. Phase 4 (Opus TCP side-path) is **transitional** — superseded by AMP migration ([STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md), [A012](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a012--amp-native-stack-option-b)).
 
 ## Phase 0 — Project + ADRs (L1)
 
@@ -31,7 +33,7 @@ Foundation L1 (Phases 0–3) is **done**. Phase 4 (Opus TCP side-path) is **tran
 - [x] ADRs A008–A011
 - [x] `CallMediaAdpPath` + HKDF + hello negotiate + bridge Opus path
 - [x] TEMP dogfood gate `CallMediaAdpDogfood.h`
-- [ ] **Superseded:** delete when D6 call-media on AMP ships ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
+- [ ] **Superseded:** delete when D6 call-media on AMP ships ([A015](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
 
 ---
 
@@ -41,9 +43,9 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 
 ### D0 — Stack constitution
 
-- [x] [STACK.md](STACK.md)
-- [x] [AMP-SESSION.md](../../docs/contracts/AMP-SESSION.md)
-- [x] [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md)
+- [x] [STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md)
+- [x] [AMP-SESSION.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-SESSION.md)
+- [x] [AMP-CHANNEL.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/contracts/AMP-CHANNEL.md)
 - [x] ADRs A012–A020
 - [x] Register contracts in `docs/README.md`
 - [x] `SRC_LAYOUT.md` — planned `base/mesh/`
@@ -97,10 +99,10 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] Shared `mesh_test_harness.h` + `MeshRuntime` for AMP L4 tests
 - [x] Wire `CallMediaLegCoordinator` into `CallStack` via `CallMediaAmpTransport` ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Disable `kCallMediaAdpOpusDogfood` (legacy side-path idle; delete header in D9 step 7)
-- [x] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
+- [x] Delete `CallMediaAdpDogfood.h` + TCP-hello `K_assoc` ([A015](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a015--k_assoc-and-k_session-from-msh-transcript))
 - [x] SoftMigrate media-relay single entry via `AmpMediaRelayClient` when Amp is up ([A020](DECISIONS.md#a020--single-transport-entry-per-protocol))
 - [x] Amp circuit hop registry + SoftMigrate NAT reach (`AmpCircuitHopReach` / media-relay adopt)
-- [x] Amp call-media circuit — nested Session ([A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session), [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
+- [x] Amp call-media circuit — nested Session ([A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session), [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md))
 
 ### D7 — L4 port: circuit + media-relay
 
@@ -108,11 +110,11 @@ Coding-first; `MemoryDatagramIo` + unit tests before integration.
 - [x] `CircuitTunnelChannelPolicy` (+ media-relay policies stubbed for D7b)
 - [x] `pp_browser_mesh_test` — `CircuitBundleLogicTest` + `CircuitTunnelCoordinatorTest`
 - [x] **D7b** `AmpMediaRelayCoordinator` + `MediaRelayBundleLogic` — quote/accept/attach on ChannelSession (A022; fan-out SoftMigrate deferred)
-- [x] Nested A↔B Session through tunnel (full [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — [A024](DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
+- [x] Nested A↔B Session through tunnel (full [A019](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a019--circuit-relay--channel-tunnel) blind L2) — [A024](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session) / [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md)
 
 ### D8 — Reachability
 
-- [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](DECISIONS.md#a016--channel-0--capability--identify-plane))
+- [x] ch0 capability exchange on `PeerLinkManager` after MSH ([A016](https://github.com/people-post/pp-cpp-amp/blob/main/docs/DECISIONS.md#a016--channel-0--capability--identify-plane))
 - [x] Ingest remote ADP listen addrs under authenticated PeerId (`PreferredMultiaddr` / peer-id dial)
 - [x] AMP dial-back protocol (`AmpDialBackProtocol` / `/pp-mesh/reach/1.0.0`) + Me→Network / pp-node probe
 - [x] UPnP **UDP** mapping attempt during reachability probe (`TryUpnpUdpPortMapping`)
