@@ -95,8 +95,12 @@ public:
    * then `directory`. `on_updated` runs on a worker after a refresh lands. Once per profile; `directory` must
    * outlive StopDirectoryCache.
    */
+  /**
+   * `source`: the directory's address the node list comes from (its primary provider): the saved list is kept with
+   * it, and one saved from another source is not loaded (profile-model; pp-cpp-mesh 10.2.0).
+   */
   virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
-                                   std::function<void()> on_updated) = 0;
+                                   const std::string& source, std::function<void()> on_updated) = 0;
   /** Whether the directory cache runs. */
   virtual bool HasDirectoryCache() const = 0;
   /** The cached nodes (every row; empty when not running). Any thread. */

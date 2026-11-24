@@ -14,6 +14,6 @@ include(PpFetchPin)
 pp_pin(pp-cpp-common  TAG v1.5.1)          # both: the runtime, JSON, logging
 pp_pin(pp-cpp-crypto  TAG v1.4.1)          # both: sodium, ML-KEM / ML-DSA, BoringSSL
 pp_pin(pp-cpp-amp     TAG v6.1.0)          # both: the Amp links
-pp_pin(pp-cpp-mesh    TAG v10.1.0)         # both: the mesh host and its services
+pp_pin(pp-cpp-mesh    TAG v10.2.0)         # both: the mesh host and its services
 pp_pin(pp-cpp-ui      TAG v0.6.3)          # pp-browser (GUI configures): the UI engine, SDL3 for media
 pp_pin(pp-ledger      TAG release/v1.8.1)  # pp-node: the ledger role (PP_BROWSER_WITH_LEDGER)
