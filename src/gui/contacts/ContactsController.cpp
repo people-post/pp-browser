@@ -983,8 +983,12 @@ void ContactsController::SyncLists() {
     SyncBlocked();
     DirtyBlocked();
   }
-  SyncGroupList(); // the Groups row's count, and the page when it is up (a group left or restored meanwhile)
-  DirtyGroupList();
+  // The Groups row's count, and the page when it is up — only while one of them is on screen: this runs at every
+  // incoming message, and the groups are read from the store (Contacts and New chat read them again when shown).
+  if (GroupsShown()) {
+    SyncGroupList();
+    DirtyGroupList();
+  }
 }
 
 void ContactsController::SetAccountSync(const bool syncing, const bool delayed) {
@@ -2733,6 +2737,18 @@ std::vector<ContactsController::GroupListRow> GroupListRowsByName(std::vector<Gr
     rows.push_back(std::move(row));
   }
   return rows;
+}
+
+bool ContactsController::GroupsShown() const {
+  return group_list_open_ || new_chat_open_ || ChromeSnapshot().nav_tab == NavTab::Contacts;
+}
+
+void ContactsController::OnThreadsChanged() {
+  if (!group_list_open_) {
+    return; // nothing else here shows chats: the closed pages read the groups when they open
+  }
+  SyncGroupList();
+  DirtyGroupList();
 }
 
 void ContactsController::SyncGroupList() {

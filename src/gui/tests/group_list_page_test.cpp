@@ -49,9 +49,10 @@ protected:
     LocalizationService::Instance().SetPreferredLanguage("en");
 
     ShellNavigationPorts nav;
-    nav.snapshot = []() {
+    nav.snapshot = [this]() {
       ShellChromeSnapshot chrome;
       chrome.layout_mode = LayoutMode::Compact;
+      chrome.nav_tab = shown_tab_;
       return chrome;
     };
     nav.push_transient = [this](const PaneSpec& spec) { pages_.push_back(spec.key); };
@@ -71,7 +72,10 @@ protected:
       return view;
     };
     ports.list_contacts = []() -> Roe<std::vector<Contact>> { return std::vector<Contact>{}; };
-    ports.list_groups = [this]() -> Roe<std::vector<GroupListEntry>> { return groups_; };
+    ports.list_groups = [this]() -> Roe<std::vector<GroupListEntry>> {
+      ++group_reads_;
+      return groups_;
+    };
     controller_.BindContactsPorts(ports);
 
     ChatSessionPorts chat;
@@ -95,6 +99,8 @@ protected:
   std::vector<std::string> opened_;
   NavTab tab_ = NavTab::Contacts;
   std::string pane_;
+  NavTab shown_tab_ = NavTab::Contacts; // the tab the shell shows (the snapshot's)
+  int group_reads_ = 0;                 // list_groups calls: each reads every group from the store
 };
 
 TEST(GroupListRowsTest, RowsAreByNameWithTheirMemberCount) {
@@ -128,6 +134,55 @@ TEST_F(GroupListPageTest, ATapOpensTheGroupsChatAndClosesThePages) {
   EXPECT_TRUE(pages_.empty()) << "the Groups page and New chat under it are gone";
   EXPECT_EQ(tab_, NavTab::Sessions);
   EXPECT_EQ(pane_, "chat");
+}
+
+// A contacts refresh runs at every incoming message: with neither the Groups page, New chat nor the Contacts tab on
+// screen it reads no groups.
+TEST_F(GroupListPageTest, ARefreshWithThePagesClosedReadsNoGroups) {
+  groups_ = {Entry("t1", "Book club", 3)};
+  shown_tab_ = NavTab::Sessions;
+  group_reads_ = 0;
+  controller_.Refresh();
+  controller_.OnContactsChanged();
+  controller_.OnThreadsChanged();
+  EXPECT_EQ(group_reads_, 0);
+
+  shown_tab_ = NavTab::Contacts; // the Groups row's count is on screen again
+  controller_.OnNavTabActivated();
+  EXPECT_EQ(group_reads_, 1);
+  EXPECT_EQ(controller_.GroupListCountForTest(), 1);
+  controller_.Refresh();
+  EXPECT_EQ(group_reads_, 2) << "while Contacts shows, a refresh keeps the count current";
+
+  shown_tab_ = NavTab::Sessions;
+  controller_.OpenNewChatPage(); // New chat's Groups row
+  const int before = group_reads_;
+  controller_.Refresh();
+  EXPECT_EQ(group_reads_, before + 1);
+}
+
+// Left (or deleted) from the Groups page's long-press menu: the chats change, and the open page drops the group.
+TEST_F(GroupListPageTest, TheOpenPageDropsAGroupLeftFromItsMenu) {
+  groups_ = {Entry("t1", "Book club", 3), Entry("t2", "Walkers", 5)};
+  controller_.OpenGroupList();
+  ASSERT_EQ(controller_.GroupListRowsForTest().size(), 2u);
+  groups_ = {Entry("t2", "Walkers", 5)}; // "Leave group" on Book club
+  controller_.OnThreadsChanged();
+  ASSERT_EQ(controller_.GroupListRowsForTest().size(), 1u);
+  EXPECT_EQ(std::string(controller_.GroupListRowsForTest()[0].thread_id.c_str()), "t2");
+  EXPECT_EQ(controller_.GroupListCountForTest(), 1);
+}
+
+TEST(GroupListMarkupTest, TheChatsTellContactsWhenTheyChange) {
+  const std::string chat = ReadSource("src/gui/chat/ChatController.cpp");
+  const size_t refresh = chat.find("void ChatController::RefreshFromMessaging() {");
+  ASSERT_NE(refresh, std::string::npos);
+  const size_t told = chat.find("contacts_notify_.threads_changed();", refresh);
+  ASSERT_NE(told, std::string::npos);
+  EXPECT_LT(told, chat.find("\n}\n", refresh));
+  const std::string app = ReadSource("src/app/Application.cpp");
+  EXPECT_NE(app.find("contacts_notify.threads_changed = [this]() { contacts_->OnThreadsChanged(); };"),
+            std::string::npos);
 }
 
 TEST(GroupListMarkupTest, ThePageIsRegisteredAndBindsItsRows) {

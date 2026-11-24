@@ -1776,6 +1776,9 @@ void ChatController::RefreshFromMessaging() {
   DirtyShell();
   NotifySurfaceChanged();
   mentions_.SyncThread(); // the open group's @ lines: reloaded when its members or names may have changed
+  if (contacts_notify_.threads_changed) {
+    contacts_notify_.threads_changed(); // an open Groups page drops a group just left or deleted from its menu
+  }
   const NavBadgeState& badges = ChromeSnapshot().nav_badges;
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();

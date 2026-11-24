@@ -2382,6 +2382,7 @@ bool Application::MountPresenters(ui::Context* context) {
 
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
+  contacts_notify.threads_changed = [this]() { contacts_->OnThreadsChanged(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
   contacts_notify.select_contact_sheet = [this](const std::string& id) { contacts_->OnSelectContactSheet(id); };
   contacts_notify.show_member_sheet = [this](const std::string& account_id, const std::string& name,
