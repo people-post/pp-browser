@@ -894,6 +894,28 @@ TEST_F(StoredResendTest, ARecipientThatChargesRefusesAResendAsItRefusesANewSend)
   mesh_->SetInitiationBillingStore(nullptr);
 }
 
+// Pre-PR review 2: a new message typed after a start, before the first sync, waits behind the chat's rows the start
+// sends again: the relay gets them in the order written.
+TEST_F(StoredResendTest, ANewMessageBeforeTheFirstSyncGoesAfterTheChatsQueuedRows) {
+  Add(chat_.id, "q1", MessageDelivery::Pending, 120'000);
+  Add(chat_.id, "q2", MessageDelivery::Pending, 60'000);
+  mesh_->PrimeQueuedResume();
+  relay_->Hold();
+  auto typed = mesh_->SendUserMessage(chat_.id, "third", SendRelayOptions{});
+  ASSERT_TRUE(typed) << typed.error().message;
+  mesh_->ResumeQueuedSends(); // the first sync
+  relay_->Release();
+  Drain();
+  std::vector<std::string> order;
+  for (const RelayEnvelope& envelope : relay_->Sent()) {
+    order.push_back(envelope.message_id);
+  }
+  EXPECT_EQ(order, (std::vector<std::string>{"q1", "q2", typed->id}));
+  for (const std::string& id : {std::string("q1"), std::string("q2"), typed->id}) {
+    EXPECT_EQ(Delivery(chat_.id, id), MessageDelivery::Relayed) << id;
+  }
+}
+
 // --- B236: our other devices get a message only once it is through ------------------------------------------------
 
 class MirrorTest : public StoredResendTest {

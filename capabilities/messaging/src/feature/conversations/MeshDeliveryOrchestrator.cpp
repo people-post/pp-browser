@@ -1764,6 +1764,9 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   if (auto prepared = PrepareDirectDispatch(**thread, system_control); !prepared) {
     return prepared.error();
   }
+  if (!system_control && (*thread)->kind == ThreadKind::Direct) {
+    ResumeAwaitingIn(thread_id); // the chat's rows the start sends again go first: they were written first (B236)
+  }
   ThreadMessage outbound = NewOutboundMessage(thread_id, text, options, util::GenerateUuid(), util::NowUnixMs());
   if (options.stored_payload_json) {
     outbound.payload_json = *options.stored_payload_json;
@@ -2438,6 +2441,26 @@ void MeshDeliveryOrchestrator::PrimeQueuedResume() {
   if (!plan.resend.empty() || given_up > 0) {
     log().info << "after the start: " << plan.resend.size() << " queued message(s) to send again, " << given_up
                << " too old (failed)";
+  }
+}
+
+void MeshDeliveryOrchestrator::ResumeAwaitingIn(const std::string& thread_id) {
+  std::vector<QueuedRow> rows;
+  {
+    std::lock_guard lock(resume_mu_);
+    for (const QueuedRow& row : awaiting_resume_) {
+      if (row.thread_id == thread_id) {
+        rows.push_back(row);
+      }
+    }
+  }
+  for (const QueuedRow& row : rows) {
+    // As ResumeQueuedSends, in its order (PlanQueuedResume: as written): handed over before the new send is.
+    if (auto sent = ResendStoredMessage(row.thread_id, row.message_id); !sent) {
+      log().info << "queued message not sent again message_id=" << row.message_id << ": " << sent.error().message;
+    }
+    std::lock_guard lock(resume_mu_);
+    std::erase(awaiting_resume_, row);
   }
 }
 

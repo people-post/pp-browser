@@ -485,6 +485,11 @@ private:
    * restored without our numbering starting its next epoch (StartNextEpochIfRestored). An error: nothing is sent.
    */
   Roe<void> PrepareDirectDispatch(const Thread& thread, bool system_control);
+  /**
+   * The rows of `thread_id` the start sends again (awaiting_resume_), handed to the outbox now, in order — before a new
+   * send of that chat, so it waits behind them as behind any earlier message (B236). Blocking: as ResendStoredMessage.
+   */
+  void ResumeAwaitingIn(const std::string& thread_id);
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
