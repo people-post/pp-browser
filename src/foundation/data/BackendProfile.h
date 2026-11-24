@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 
 #include <string>
@@ -16,6 +17,18 @@ std::string NormalizeBackendUrl(const std::string& url);
  * FNV-1a 64 of the normalized `url`), so a tester build never opens a store user's custom profile.
  */
 std::string CustomProfileKey(const std::string& url, BuildKind kind);
+
+/**
+ * A custom backend's id by profile-model PM010: `custom-<12 hex>` (`test-custom-<12 hex>` in a tester build) over the
+ * normalized registration URL, the org relay's normalized origin and its relay id — and nothing else, so editing the
+ * locker, client-compat, LLM, crash intake, directory or MCP address keeps the id. **Not used yet:** profile selection
+ * keeps BackendProfileKey / CustomProfileKey (which hash the registration URL alone) until the profile-model P1a switch;
+ * the two give different ids for the same backend.
+ */
+std::string CustomBackendId(const std::string& registration_url, const std::string& org_relay_url,
+                            const std::string& org_relay_id, BuildKind kind);
+/** `table.id` for a built-in table, CustomBackendId of a custom one. Not used for profile selection yet (see above). */
+std::string BackendTableId(const BackendTable& table, BuildKind kind);
 
 /**
  * The profile key of backend `env` in a build with `compiled` (`registration_url` names a custom one). `env` is first

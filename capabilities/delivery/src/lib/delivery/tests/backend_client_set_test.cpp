@@ -26,6 +26,10 @@ BackendClientSet::Endpoints At(const std::string& relay, const std::string& dire
   endpoints.relay.base_url = relay;
   endpoints.directory.base_url = directory;
   endpoints.registration.base_url = registration;
+  // The services the backend's table names, each by its own address (an empty one is absent): here the org's relay for
+  // client compatibility and the registration URL for lockers, as a built-in backend's table has them.
+  endpoints.client_compat = relay;
+  endpoints.account_locker = registration;
   return endpoints;
 }
 
@@ -99,6 +103,30 @@ TEST(BackendClientSetTest, NoEndpointAndNoDefaultLeavesTheClientsOut) {
   EXPECT_EQ(clients.Registration(), nullptr);
   EXPECT_EQ(clients.Locker(), nullptr);
   EXPECT_FALSE(directory.Configured());
+}
+
+// Profile-model PM002: a service the backend's table does not name is absent — the defaults, the org relay and the
+// registration URL do not stand in for it.
+TEST(BackendClientSetTest, AServiceTheEndpointsDoNotNameIsAbsentWhateverTheDefaultsHold) {
+  SwitchableDirectoryClient directory;
+  BackendClientSet clients(directory);
+  clients.SetDefaults(At("https://relay.default", "https://directory.default", "https://registration.default"));
+  BackendClientSet::Endpoints endpoints;
+  endpoints.relay.base_url = "https://relay.example";
+  endpoints.registration.base_url = "https://registration.example";
+  endpoints.directory.base_url = "https://directory.example";
+  clients.Apply(endpoints);
+  EXPECT_NE(clients.Relay(), nullptr);
+  EXPECT_EQ(clients.ClientCompat(), nullptr) << "client compatibility is its own service, not the relay's";
+  EXPECT_EQ(clients.Locker(), nullptr) << "lockers are their own service, not the registration URL's";
+  EXPECT_TRUE(clients.LockerHome().empty());
+  // Named, they appear — each at its own address.
+  endpoints.client_compat = "https://compat.example";
+  endpoints.account_locker = "https://locker.example";
+  clients.Apply(endpoints);
+  EXPECT_NE(clients.ClientCompat(), nullptr);
+  EXPECT_NE(clients.Locker(), nullptr);
+  EXPECT_EQ(clients.LockerHome(), "https://locker.example");
 }
 
 TEST(BackendClientSetTest, AnUnchangedEndpointKeepsItsClientsAndAChangedOneRebuildsThem) {
@@ -254,6 +282,7 @@ protected:
   /** The org's config; ours `our_relays` (empty: the default). */
   void Apply(std::vector<std::string> our_relays) {
     auto endpoints = At(OrgRelay(), OrgRelay(), OrgRelay());
+    endpoints.llm_token = org_.Origin() + "/api/llm/v1"; // the org's table names its token service under its origin
     endpoints.our_relays = std::move(our_relays);
     clients_.Apply(endpoints);
   }

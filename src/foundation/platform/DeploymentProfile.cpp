@@ -1,9 +1,11 @@
 #include "foundation/platform/DeploymentProfile.h"
 
+#include "foundation/platform/BackendTable.h"
 #include "foundation/product/DevTools.h"
 
 #include <cstdlib>
 #include <optional>
+#include <utility>
 
 #ifndef PP_RELAY_CONTENT_SHA256
 #define PP_RELAY_CONTENT_SHA256 0
@@ -54,6 +56,12 @@ std::optional<BackendEnv>& Latched() {
   return latched;
 }
 
+/** The custom backend's services, latched with the backend (the first latch wins, as the backend does). */
+CustomServices& LatchedCustomServices() {
+  static CustomServices services;
+  return services;
+}
+
 std::string Derive(const std::string& origin, const char* path) {
   return origin.empty() ? std::string() : origin + path;
 }
@@ -92,7 +100,29 @@ const char* CompiledDefaultRelayCertificate() {
   return IsTesterBuild() ? "" : kCompiledRelayCertificateProd;
 }
 
+namespace {
+
+std::optional<CompiledOrigins>& CompiledOriginsOverride() {
+  static std::optional<CompiledOrigins> override_origins;
+  return override_origins;
+}
+
+} // namespace
+
+ScopedCompiledOriginsForTest::ScopedCompiledOriginsForTest(const CompiledOrigins& compiled) {
+  CompiledOriginsOverride() = compiled;
+  ResetActiveBackendForTest();
+}
+
+ScopedCompiledOriginsForTest::~ScopedCompiledOriginsForTest() {
+  CompiledOriginsOverride().reset();
+  ResetActiveBackendForTest();
+}
+
 CompiledOrigins BuildCompiledOrigins() {
+  if (CompiledOriginsOverride()) {
+    return *CompiledOriginsOverride();
+  }
   // In a tester build CMake allows no prod origin and no prod relay id (only `pending` or none) and compiles no prod
   // certificate; the prod fields are never used there anyway (CompiledOriginFor, ResolveOrgRelayIdentity).
   return {.prod = CompiledDefaultOrigin(),
@@ -131,19 +161,15 @@ const char* TestEnvRelayIdFor(const BackendEnv env, const CompiledOrigins& compi
   return env == BackendEnv::Dev ? compiled.dev_relay_id : "";
 }
 
-/**
- * The compiled environment whose origin and org relay `backend` takes: `Staging` / `Dev` their own (in a tester build
- * only when it can run them), anything else the fallback's — so a tester build never takes an environment it cannot use.
- */
-BackendEnv CompiledEnvFor(const BackendEnv backend, const CompiledOrigins& compiled) {
+} // namespace
+
+BackendEnv CompiledBackendFor(const BackendEnv backend, const CompiledOrigins& compiled) {
   if ((backend == BackendEnv::Staging || backend == BackendEnv::Dev) &&
       (compiled.kind == BuildKind::Store || BackendAvailableIn(backend, compiled))) {
     return backend;
   }
   return FallbackBackendIn(compiled);
 }
-
-} // namespace
 
 bool BackendAvailableIn(const BackendEnv env, const CompiledOrigins& compiled) {
   switch (env) {
@@ -210,10 +236,15 @@ BackendEnv ActiveBackend() {
 }
 
 void LatchActiveBackend(BackendEnv requested) {
+  LatchActiveBackend(requested, CustomServices{});
+}
+
+void LatchActiveBackend(BackendEnv requested, CustomServices custom) {
   if (Latched()) {
     return;
   }
   Latched() = ResolveLatchedBackend(requested, BuildCompiledOrigins());
+  LatchedCustomServices() = std::move(custom);
 }
 
 BackendEnv ResolveLatchedBackend(const BackendEnv requested, const CompiledOrigins& compiled) {
@@ -226,6 +257,7 @@ bool ActiveBackendLatched() {
 
 void ResetActiveBackendForTest() {
   Latched().reset();
+  LatchedCustomServices() = CustomServices{};
 }
 
 bool OriginEnvOverrideActive() {
@@ -239,11 +271,15 @@ std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const
   if (ui_demo) {
     return {};
   }
-  // Prod and Custom (whose own URLs are in the config file), and a staging / dev a tester build cannot use, take the
-  // fallback's origin: prod's in a store build.
+  // A custom backend has no origin of its own: its services are the ones its table names (BackendTable), never the
+  // fallback environment's (#741). Prod, and a staging / dev a tester build cannot use, take the fallback's origin:
+  // prod's in a store build.
+  if (backend == BackendEnv::Custom && !(env_origin && *env_origin)) {
+    return {};
+  }
   std::string origin = (env_origin && *env_origin)
                            ? std::string(env_origin)
-                           : std::string(CompiledOriginFor(CompiledEnvFor(backend, compiled), compiled));
+                           : std::string(CompiledOriginFor(CompiledBackendFor(backend, compiled), compiled));
   while (!origin.empty() && origin.back() == '/') {
     origin.pop_back();
   }
@@ -259,9 +295,12 @@ OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_ori
     // The override's relay: its own relay id, or none; its certificate is fetched (the build's are other relays').
     return {.relay_id = env_relay_id ? std::string(env_relay_id) : std::string()};
   }
-  // Prod and Custom take the fallback's: prod's in a store build; in a tester build the first usable one of staging's
-  // and dev's, or none, never prod's (a custom backend there is no way to the prod relay's identity).
-  switch (CompiledEnvFor(backend, compiled)) {
+  // A custom backend names its own relay id, or none: it never takes the fallback's (#742). Prod takes prod's in a store
+  // build; in a tester build the first usable one of staging's and dev's, or none, never prod's.
+  if (backend == BackendEnv::Custom) {
+    return {};
+  }
+  switch (CompiledBackendFor(backend, compiled)) {
     case BackendEnv::Staging:
       return {.relay_id = compiled.staging_relay_id, .certificate_b64 = compiled.staging_relay_certificate};
     case BackendEnv::Dev:
@@ -277,9 +316,21 @@ OrgRelayIdentity ResolveOrgRelayIdentity(const bool ui_demo, const char* env_ori
   return {};
 }
 
+BackendTable ActiveBackendTable() {
+  return ResolveBackendTable(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), std::getenv("PP_BROWSER_RELAY_ID"),
+                             ActiveBackend(), BuildCompiledOrigins(), LatchedCustomServices());
+}
+
+BackendTable DefaultBackendTable() {
+  // What a config with nothing saved starts from: a custom backend starts with no service (its own come from the file).
+  const BackendEnv backend = ActiveBackend();
+  return ResolveBackendTable(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), std::getenv("PP_BROWSER_RELAY_ID"),
+                             backend, BuildCompiledOrigins(), CustomServices{});
+}
+
 OrgRelayIdentity BriefOrgRelayIdentity() {
-  return ResolveOrgRelayIdentity(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend(),
-                                 BuildCompiledOrigins(), std::getenv("PP_BROWSER_RELAY_ID"));
+  const BackendTable table = ActiveBackendTable();
+  return {.relay_id = table.org_relay_id, .certificate_b64 = table.org_relay_certificate_b64};
 }
 
 std::string BriefRelayId() {
@@ -303,7 +354,7 @@ std::string BriefMcpUrlFor(const std::string& origin) {
 }
 
 std::string BriefLlmBaseUrl() {
-  return BriefLlmBaseUrlFor(BriefOrigin());
+  return ActiveBackendTable().llm_gateway_url;
 }
 
 std::string ResolveBriefStreamUrlOverride(const bool ui_demo, const char* env_url) {
@@ -325,11 +376,11 @@ bool RunIfUploadAllowed(const bool ui_demo, const std::function<void()>& sender)
 }
 
 std::string BriefRelayBaseUrl() {
-  return BriefRelayBaseUrlFor(BriefOrigin());
+  return ActiveBackendTable().org_relay_url;
 }
 
 std::string BriefMcpUrl() {
-  return BriefMcpUrlFor(BriefOrigin());
+  return ActiveBackendTable().promoted_mcp_url;
 }
 
 const char* ProductDirBasename() {

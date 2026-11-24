@@ -2,6 +2,7 @@
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/platform/os/OsDeviceName.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
@@ -21,6 +22,10 @@ HubSettings HubSettingsFrom(const AppConfig& config, const ProfilePreferences& p
   settings.relay_extra_base_urls = config.relay_extra_base_urls;
   settings.directory = config.directory;
   settings.registration = config.registration;
+  const BackendTable table = ActiveBackendTable();
+  settings.account_locker_url = table.account_locker_url;
+  settings.client_compat_url = table.client_compat_url;
+  settings.llm_token_url = table.llm_token_url;
   settings.initiation_floor = config.initiation_floor;
   settings.app_data_dir = AppPaths::DataDir(config.data_dir);
   settings.policy = ProjectPolicy(prefs);

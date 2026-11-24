@@ -49,6 +49,11 @@ void MaybeUploadPendingCrashReport(const std::string& data_dir, const std::strin
     return;
   }
 
+  if (relay_base_url.empty()) {
+    // The backend names no crash intake: nothing is sent, whatever address a cached document holds (profile-model PM002).
+    log.info << "Pending crash dump present but the backend names no crash intake; keeping " << path;
+    return;
+  }
   const std::string url = ResolveCrashReportUploadUrl(relay_base_url, CachedCrashReportsUrlOverride(profile_data_dir));
   if (url.empty()) {
     log.info << "Pending crash dump present but relay base URL empty; keeping " << path;

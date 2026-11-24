@@ -49,8 +49,16 @@ public:
     ServiceEndpointConfig relay;
     /** The directory configured: the org's relay's by default, which then follows our preferred relay. */
     DirectoryConfig directory;
-    /** The org's registration URL (config `registration`): the home of account lockers and stream history. */
+    /** The org's registration URL (config `registration`): the home of stream history. */
     ServiceEndpointConfig registration;
+    /**
+     * The services the backend's table names (profile-model PM002), each by its own address: **empty is absent** — no
+     * client is made and no default or other service's address stands in. The account lockers' home, client
+     * compatibility's, and the Brief LLM token service (the org's registration client renews there).
+     */
+    std::string account_locker;
+    std::string client_compat;
+    std::string llm_token;
     /** Our relays' base URLs, preferred first (My relays); empty: `relay`, then `extra_relays`. BoundOurRelays. */
     std::vector<std::string> our_relays;
     /** Our other relays' base URLs (config `relay.extra_base_urls`), after `relay`'s: only when `our_relays` is empty. */
@@ -106,30 +114,32 @@ public:
   std::vector<OurRelay> OurRelays() const;
   /** The preferred relay's (shared, as Relay). */
   std::shared_ptr<IPushDeviceClient> PushDevices() const { return push_devices_; }
-  /** The org's (MR006; shared, as Relay). */
+  /** The client-compat service's (MR006; shared, as Relay): null when the backend names none. */
   std::shared_ptr<IClientCompatClient> ClientCompat() const { return client_compat_; }
   /** The preferred relay's (shared, as Relay). */
   std::shared_ptr<IRegistrationClient> Registration() const { return registration_; }
   /** The preferred relay's: profile photos and chat files (shared, as Relay). */
   std::shared_ptr<IBlobClient> Blob() const { return blob_; }
-  /** The org's registration URL's: lockers stay where they were written (MR006; shared, as Relay). */
+  /** The account locker service's (MR006; shared, as Relay): null when the backend names none. */
   std::shared_ptr<ILockerClient> Locker() const { return locker_; }
   /** Stream history: the relay of ours at the org's registration URL, where it was kept; else the preferred one. */
   std::shared_ptr<IRelayClient> HistoryRelay() const;
   /** The org's relay base URL (normalized; empty when none). */
   const std::string& OrgRelay() const { return org_relay_url_; }
-  /** The org's registration URL, where the lockers are (empty when none). */
+  /** The account locker service's URL (empty when the backend names none). */
   const std::string& LockerHome() const { return home_url_; }
 
 private:
   /** Ours, preferred first, for `endpoints` (BoundOurRelays). */
   std::vector<std::string> OursFor(const Endpoints& endpoints) const;
-  /** The org's: client compatibility. */
+  /** The org's relay: the address the org's pins are kept under. */
   void ApplyOrg(const std::string& url);
+  /** The client-compat service (the table's; empty: none). */
+  void ApplyClientCompat(const std::string& url);
   /** The preferred relay's: messages, push, registration, blobs. */
   void ApplyPreferred(const std::string& url);
   void ApplyDirectory(DirectoryConfig directory);
-  /** The org's registration URL: lockers. */
+  /** The account locker service (the table's; empty: none). */
   void ApplyHome(const std::string& url);
   void ApplyExtraRelays(const std::vector<std::string>& origins, size_t asked);
   /** Each registration client of ours keeps the Brief LLM key only when its relay is the org's (every Apply). */
@@ -163,6 +173,8 @@ private:
   std::string org_relay_url_;
   std::string relay_url_;
   std::string home_url_;
+  std::string compat_url_;
+  std::string llm_token_url_;
   std::string directory_fingerprint_;
   /** The configured directory (its providers, failing over) and its providers' base URLs. */
   std::shared_ptr<mesh::IDirectoryClient> configured_directory_;

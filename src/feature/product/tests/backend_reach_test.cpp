@@ -1,0 +1,246 @@
+// A custom backend reaches only its own addresses (profile-model P2, #741–#744). The config file is loaded the way the app
+// loads it, the hub's settings and the backend's clients are made from it, and every request they try goes through the
+// HTTP test gate, which records the URL and refuses it (no network). The build's prod, staging and dev are all compiled
+// here: a request to any of them would be a fallback to another backend.
+#include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/Config.h"
+#include "foundation/data/LlmPreset.h"
+#include "foundation/data/UserPreferences.h"
+#include "foundation/diagnostics/CrashReportEnvelope.h"
+#include "foundation/platform/BackendTable.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "lib/delivery/BackendClientSet.h"
+#include "lib/net/OrgBackendClientsImpl.h"
+#include "lib/net/HttpClient.h"
+#include "lib/net/SwitchableDirectoryClient.h"
+
+#include <gtest/gtest.h>
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace {
+
+constexpr pbr::CompiledOrigins kCompiled{.prod = "https://prod.example.test",
+                                         .staging = "https://staging.example.test",
+                                         .dev = "https://dev.example.test",
+                                         .prod_relay_id = "relay:prod",
+                                         .staging_relay_id = "relay:staging",
+                                         .dev_relay_id = "relay:dev"};
+
+class ScopedUnset {
+public:
+  explicit ScopedUnset(const char* name) : name_(name) {
+    if (const char* old = std::getenv(name)) {
+      had_ = true;
+      old_ = old;
+    }
+    Set(nullptr);
+  }
+  ~ScopedUnset() { Set(had_ ? old_.c_str() : nullptr); }
+
+private:
+  void Set(const char* value) const {
+#ifdef _WIN32
+    _putenv_s(name_.c_str(), value ? value : "");
+#else
+    if (value) {
+      setenv(name_.c_str(), value, 1);
+    } else {
+      unsetenv(name_.c_str());
+    }
+#endif
+  }
+  std::string name_;
+  bool had_ = false;
+  std::string old_;
+};
+
+/** Records every request the net layer is asked to make and refuses it. */
+class RequestRecorder {
+public:
+  RequestRecorder() {
+    pbr::HttpClient::SetRequestGateForTest([this](const std::string& method, const std::string& url) {
+      std::lock_guard lock(mutex_);
+      urls_.push_back(method + " " + url);
+      return false;
+    });
+  }
+  ~RequestRecorder() { pbr::HttpClient::SetRequestGateForTest(nullptr); }
+  std::vector<std::string> Urls() const {
+    std::lock_guard lock(mutex_);
+    return urls_;
+  }
+  size_t Asked(const std::string& part) const {
+    size_t n = 0;
+    for (const std::string& url : Urls()) {
+      n += url.find(part) != std::string::npos ? 1 : 0;
+    }
+    return n;
+  }
+
+private:
+  mutable std::mutex mutex_;
+  std::vector<std::string> urls_;
+};
+
+std::string CustomFile(const std::string& without) {
+  std::string services;
+  const std::vector<std::pair<std::string, std::string>> rows = {
+      {"llm_gateway", "https://custom.example.test/api/llm/v1"},
+      {"llm_token", "https://custom.example.test/api/llm/v1"},
+      {"promoted_mcp", "https://custom.example.test/mcp"},
+      {"crash_intake", "https://custom.example.test/api/relay"},
+      {"account_locker", "https://custom.example.test/api/relay"},
+      {"client_compat", "https://custom.example.test/api/relay"}};
+  for (const auto& [key, value] : rows) {
+    if (key != without) {
+      services += std::string(services.empty() ? "" : ",") + " \"" + key + "\": \"" + value + "\"";
+    }
+  }
+  const std::string directory =
+      without == "directory" ? "{}" : R"({ "base_url": "https://custom.example.test/api/relay" })";
+  return "{ \"config_version\": 1, \"backend\": { \"env\": \"custom\", \"services\": {" + services +
+         " } }, \"llm\": { \"preset\": \"brief\" },"
+         " \"relay\": { \"base_url\": \"https://custom.example.test/api/relay\", \"relay_id\": \"relay:custom\" },"
+         " \"registration\": { \"base_url\": \"https://custom.example.test/api/relay\", \"relay_id\": \"relay:custom\" "
+         "},"
+         " \"directory\": " +
+         directory + " }";
+}
+
+/** What ConversationsHub::UpdateOrgBackendClients hands the clients, from the hub's settings. */
+pbr::BackendClientSet::Endpoints EndpointsOf(const pbr::HubSettings& settings) {
+  return {.relay = settings.relay,
+          .directory = settings.directory,
+          .registration = settings.registration,
+          .account_locker = settings.account_locker_url,
+          .client_compat = settings.client_compat_url,
+          .llm_token = settings.llm_token_url,
+          .extra_relays = settings.relay_extra_base_urls};
+}
+
+const pbr::SignedRelayCommand kSigned{.audience = "QmRelay", .timestamp = 1, .signature = "sig"};
+
+} // namespace
+
+// Each service in turn removed from a custom table: what needs it sends nothing, and every other request is to the
+// custom backend's own host.
+TEST(BackendReachTest, ACustomBackendReachesOnlyItsOwnUrlsWhateverServiceIsMissing) {
+  const ScopedUnset no_origin("PP_BROWSER_ORIGIN");
+  const ScopedUnset no_relay_id("PP_BROWSER_RELAY_ID");
+  const char* const removals[] = {
+      "", "llm_gateway", "llm_token", "directory", "promoted_mcp", "crash_intake", "account_locker", "client_compat"};
+  for (const char* removed : removals) {
+    SCOPED_TRACE(std::string("without: ") + removed);
+    const pbr::ScopedCompiledOriginsForTest compiled(kCompiled);
+    const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_reach.json").string();
+    {
+      std::ofstream out(path);
+      out << CustomFile(removed);
+    }
+    auto loaded = pbr::Config::LoadFromFile(path, false);
+    std::filesystem::remove(path);
+    ASSERT_TRUE(static_cast<bool>(loaded)) << loaded.error().message;
+    const std::string gone = removed;
+
+    const pbr::HubSettings settings = pbr::HubSettingsFrom(*loaded, pbr::ProfilePreferences{});
+    EXPECT_EQ(settings.account_locker_url.empty(), gone == "account_locker");
+    EXPECT_EQ(settings.client_compat_url.empty(), gone == "client_compat");
+    EXPECT_EQ(settings.llm_token_url.empty(), gone == "llm_token");
+
+    const RequestRecorder recorder;
+    pbr::SwitchableDirectoryClient directory;
+    pbr::BackendClientSet clients(directory);
+    clients.Apply(EndpointsOf(settings));
+    ASSERT_NE(clients.Registration(), nullptr);
+    // Every service, asked once.
+    if (auto compat = clients.ClientCompat()) {
+      (void)compat->Fetch();
+    }
+    (void)clients.Registration()->RenewLlmToken("account:me", kSigned);
+    (void)directory.SearchPeople("alice");
+    (void)directory.LookupByAccount("account:alice");
+    if (auto locker = clients.Locker()) {
+      (void)locker->Get("00ff");
+    }
+
+    // The absent service: no client, or no request.
+    EXPECT_EQ(clients.ClientCompat() == nullptr, gone == "client_compat");
+    EXPECT_EQ(clients.Locker() == nullptr, gone == "account_locker");
+    EXPECT_EQ(directory.Configured(), gone != "directory");
+    EXPECT_EQ(recorder.Asked("/v1/client-compat"), gone == "client_compat" ? 0U : 1U);
+    EXPECT_EQ(recorder.Asked("/token/renew"), gone == "llm_token" ? 0U : 1U);
+    EXPECT_EQ(recorder.Asked("/v1/lockers/"), gone == "account_locker" ? 0U : 1U);
+    const size_t directory_requests = recorder.Urls().size() - recorder.Asked("/v1/client-compat") -
+                                      recorder.Asked("/token/renew") - recorder.Asked("/v1/lockers/");
+    if (gone == "directory") {
+      EXPECT_EQ(directory_requests, 0U) << "no directory: nothing is asked";
+    } else {
+      EXPECT_GE(directory_requests, 1U) << "the directory is asked at the custom backend's own address";
+    }
+
+    // The token renews under the token service's address, not under the relay's origin.
+    if (gone != "llm_token") {
+      EXPECT_EQ(recorder.Asked("POST https://custom.example.test/api/llm/v1/token/renew"), 1U);
+    }
+    // Zero requests outside the custom backend's own host.
+    for (const std::string& url : recorder.Urls()) {
+      EXPECT_NE(url.find("https://custom.example.test/"), std::string::npos) << url;
+      EXPECT_EQ(url.find("prod.example.test"), std::string::npos) << url;
+      EXPECT_EQ(url.find("staging.example.test"), std::string::npos) << url;
+      EXPECT_EQ(url.find("dev.example.test"), std::string::npos) << url;
+    }
+
+    // The LLM, the promoted MCP and the crash intake are not HTTP clients of this set: their addresses are the table's.
+    EXPECT_EQ(pbr::BriefLlmBaseUrl().empty(), gone == "llm_gateway");
+    EXPECT_EQ(pbr::BriefLlmServiceBaseUrl(*loaded),
+              gone == "llm_gateway" ? "" : "https://custom.example.test/api/llm/v1");
+    EXPECT_EQ(pbr::ResolvePromotedMcp(*loaded, pbr::Config::DefaultAppConfig(false)).url.empty(),
+              gone == "promoted_mcp");
+    const std::string crash_url = pbr::ResolveCrashReportUploadUrl(pbr::ActiveBackendTable().crash_intake_url, "");
+    EXPECT_EQ(crash_url.empty(), gone == "crash_intake");
+    if (!crash_url.empty()) {
+      EXPECT_EQ(crash_url, "https://custom.example.test/api/relay/v1/crash-reports");
+    }
+  }
+}
+
+// With no token service named, a renew sends nothing at all — not to the relay's origin, not to another backend.
+TEST(BackendReachTest, ATokenRenewWithoutATokenServiceSendsNothing) {
+  const RequestRecorder recorder;
+  pbr::HttpRegistrationClient client("https://custom.example.test/api/relay");
+  auto renewed = client.RenewLlmToken("account:me", kSigned);
+  EXPECT_FALSE(renewed);
+  EXPECT_TRUE(recorder.Urls().empty());
+  client.SetLlmTokenUrl("https://tokens.example.test/api/llm/v1/");
+  (void)client.RenewLlmToken("account:me", kSigned);
+  ASSERT_EQ(recorder.Urls().size(), 1U);
+  EXPECT_EQ(recorder.Urls().front(), "POST https://tokens.example.test/api/llm/v1/token/renew");
+}
+
+// A built-in backend renews where it always did: under the origin's LLM prefix.
+TEST(BackendReachTest, ABuiltInBackendsTokenRenewIsUnderItsOriginsLlmPrefix) {
+  const ScopedUnset no_origin("PP_BROWSER_ORIGIN");
+  const pbr::ScopedCompiledOriginsForTest compiled(kCompiled);
+  const std::string path = (std::filesystem::temp_directory_path() / "pp_backend_reach_prod.json").string();
+  {
+    std::ofstream out(path);
+    out << R"({ "config_version": 1, "backend": { "env": "prod" } })";
+  }
+  auto loaded = pbr::Config::LoadFromFile(path, false);
+  std::filesystem::remove(path);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  const pbr::HubSettings settings = pbr::HubSettingsFrom(*loaded, pbr::ProfilePreferences{});
+  const RequestRecorder recorder;
+  pbr::SwitchableDirectoryClient directory;
+  pbr::BackendClientSet clients(directory);
+  clients.Apply(EndpointsOf(settings));
+  (void)clients.Registration()->RenewLlmToken("account:me", kSigned);
+  ASSERT_EQ(recorder.Urls().size(), 1U);
+  EXPECT_EQ(recorder.Urls().front(), "POST https://prod.example.test/api/llm/v1/token/renew");
+}

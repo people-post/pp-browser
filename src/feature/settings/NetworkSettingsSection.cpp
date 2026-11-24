@@ -3,6 +3,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/product/DevTools.h"
@@ -26,6 +27,7 @@ SettingsFlushMode NetworkSettingsSection::FlushMode() const {
 
 void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.backend_env = bootstrap.config.backend.env;
+  state.backend_services = BackendServiceEntries(ActiveBackendTable(), bootstrap.config.promoted_mcp.IsConfigured());
   state.backend_prod_available = BackendAvailable(BackendEnv::Prod);
   state.backend_staging_available = BackendAvailable(BackendEnv::Staging);
   state.backend_dev_available = BackendAvailable(BackendEnv::Dev);

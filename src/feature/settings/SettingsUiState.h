@@ -1,5 +1,7 @@
 #pragma once
 
+#include "feature/settings/BackendServiceEntries.h"
+
 #include <string>
 #include <vector>
 
@@ -28,6 +30,11 @@ struct SettingsUiState {
   std::vector<McpServerUiState> mcp_servers;
   /** Backend picked in Me -> Network: prod | staging | dev | custom (config `backend.env`). */
   std::string backend_env = "prod";
+  /**
+   * What the active backend's table serves (profile-model PM002): every feature stays listed; one the table names no
+   * address for is `available = false` with its plain-language reason. Not edited, only shown.
+   */
+  std::vector<BackendServiceEntry> backend_services;
   /** False in a tester build (release-compatibility RC022): Production is not offered. */
   bool backend_prod_available = true;
   /** False when the build has no staging / dev origin: that choice is not offered. */

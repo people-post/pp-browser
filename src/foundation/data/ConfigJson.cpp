@@ -1,6 +1,7 @@
 #include "foundation/data/ConfigJson.h"
 
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
@@ -658,6 +659,79 @@ void McpConfigFromObject(const Object& object, McpConfig& config) {
   }
 }
 
+namespace {
+
+/** `backend.services`: only the services this file names, so a config that names none writes no key. */
+void ServicesFromObject(const Object& object, CustomServices& services) {
+  const auto read = [&object](const char* key, std::string& out) {
+    if (auto value = object.getString(key)) {
+      out = *value;
+    }
+  };
+  read("account_locker", services.account_locker_url);
+  read("client_compat", services.client_compat_url);
+  read("llm_gateway", services.llm_gateway_url);
+  read("llm_token", services.llm_token_url);
+  read("promoted_mcp", services.promoted_mcp_url);
+  read("crash_intake", services.crash_intake_url);
+  read("mesh_nodes", services.mesh_nodes_url);
+}
+
+Object ServicesToObject(const CustomServices& services) {
+  Object object;
+  const auto write = [&object](const char* key, const std::string& value) {
+    if (!value.empty()) {
+      object.set(key, value);
+    }
+  };
+  write("account_locker", services.account_locker_url);
+  write("client_compat", services.client_compat_url);
+  write("llm_gateway", services.llm_gateway_url);
+  write("llm_token", services.llm_token_url);
+  write("promoted_mcp", services.promoted_mcp_url);
+  write("crash_intake", services.crash_intake_url);
+  write("mesh_nodes", services.mesh_nodes_url);
+  return object;
+}
+
+} // namespace
+
+CustomServices CustomServicesFromObject(const Object& root) {
+  CustomServices services;
+  if (const Object* backend = root.getObject("backend")) {
+    if (const Object* extra = backend->getObject("services")) {
+      ServicesFromObject(*extra, services);
+    }
+  }
+  if (const Object* relay_object = root.getObject("relay")) {
+    ServiceEndpointConfig relay;
+    ServiceEndpointFromObject(*relay_object, relay);
+    services.org_relay_url = relay.base_url;
+    services.org_relay_id = relay.relay_id;
+    if (const Array* extras = relay_object->getArray("extra_base_urls")) {
+      for (const Value& item : extras->elements) {
+        if (auto url = asString(item); url && !url->empty()) {
+          services.seed_relays.push_back(*url);
+        }
+      }
+    }
+  }
+  if (const Object* registration_object = root.getObject("registration")) {
+    ServiceEndpointConfig registration;
+    ServiceEndpointFromObject(*registration_object, registration);
+    services.registration_url = registration.base_url;
+    services.registration_relay_id = registration.relay_id;
+  }
+  if (const Object* directory_object = root.getObject("directory")) {
+    DirectoryConfig directory;
+    DirectoryConfigFromObject(*directory_object, directory);
+    for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(directory)) {
+      services.directory_providers.push_back(provider.base_url);
+    }
+  }
+  return services;
+}
+
 Object AppConfigToObject(const AppConfig& config) {
   Object object;
   object.set("theme", config.theme);
@@ -671,6 +745,9 @@ Object AppConfigToObject(const AppConfig& config) {
   Object backend;
   // The saved choice as the file had it when this build runs another (BackendConfig::unavailable_env).
   backend.set("env", config.backend.unavailable_env.empty() ? config.backend.env : config.backend.unavailable_env);
+  if (Object services = ServicesToObject(config.backend.services); !services.empty()) {
+    backend.set("services", services);
+  }
   object.set("backend", backend);
   const bool saved = config.backend.has_saved_urls;
   Object relay = ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay);
@@ -692,7 +769,11 @@ Object AppConfigToObject(const AppConfig& config) {
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
   }
-  if (config.promoted_mcp.IsConfigured()) {
+  // The active backend's own seed is derived, not the user's: it is never written back (#744), so a later switch
+  // to another backend does not carry it along as if the user had typed it.
+  const bool is_seed = config.promoted_mcp.command.empty() && !config.promoted_mcp.url.empty() &&
+                       config.promoted_mcp.url == ActiveBackendTable().promoted_mcp_url;
+  if (config.promoted_mcp.IsConfigured() && !is_seed) {
     object.set("promoted_mcp", McpConfigToObject(config.promoted_mcp));
   }
   if (!config.mcp_servers.empty()) {
@@ -746,6 +827,9 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   if (const Object* backend = object.getObject("backend")) {
     if (auto env = backend->getString("env")) {
       config.backend.env = BackendEnvName(ParseBackendEnv(*env));
+    }
+    if (const Object* services = backend->getObject("services")) {
+      ServicesFromObject(*services, config.backend.services);
     }
   }
   if (const Object* relay = object.getObject("relay")) {

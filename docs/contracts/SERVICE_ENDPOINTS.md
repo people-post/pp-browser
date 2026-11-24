@@ -13,9 +13,9 @@ For each of `relay`, `directory`, and `registration`:
 | 1 | `base_url` non-empty (platform default or `config.json`) | `Http*Client` |
 | 2 | otherwise | Client not created (left unset); production defaults always fill Brief URLs |
 
-With `backend.env` `prod`, `staging` or `dev` the three are derived from that backend's compiled origin and the saved values are ignored; `custom` uses the saved ones ([CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
+With `backend.env` `prod`, `staging` or `dev` the three come from that backend's service table, which the build compiles from its origin, and the saved values are ignored (`directory.providers[]` too); `custom` uses the saved ones, and the services it names in `backend.services`; a service its table does not name is **absent** — its clients are not made and no other backend's address stands in for it ([§ Backend tables](#backend-tables-profile-model-p2), [CONFIGURATION.md](../ops/CONFIGURATION.md)). Push tokens are registered with the running backend's `/v1/devices/register` under the active profile's identity, so a backend switch (applied on restart) registers with the new one; when a switch is saved the device's bindings are removed from the running backend at once (`/v1/devices/unregister`, signed by the running profile, whose key is not usable after the restart) and registration stays off until the switch is undone, which registers again. An unreachable old backend keeps its binding: the removal is best effort and is retried when a switch is saved again.
 
-Platform defaults (`PlatformDefaults`) set all three to `<origin>/api/relay` (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied. Empty values in settings/config coalesce back to those defaults. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
+Platform defaults (`PlatformDefaults`) set all three to the table's address — `<origin>/api/relay` for a built-in backend (e.g. `https://backend.example.test/api/relay`); the origin is empty, and the services disabled, unless supplied; a custom backend's defaults are empty. Empty values in settings/config coalesce back to those defaults on a built-in backend only. `Mock*Client` implementations remain for **unit tests only** (construct directly); they are not selected by the factory.
 
 ## Config shape
 
@@ -354,6 +354,24 @@ preferred first, at most 4, none twice. A new profile's list is seeded once from
 config is only a new profile's default. Our account card lists the `https://` ones, preferred first
 ([ACCOUNT_CARD](ACCOUNT_CARD.md#account-card)).
 
+## Backend tables (profile-model P2)
+
+A **backend** is a table of services, each with its own address (profile-model [PM002](../../projects/profile-model/DECISIONS.md#pm002--a-backend-is-a-named-table-of-services-each-with-its-own-url);
+`BackendTable`, `src/foundation/platform/BackendTable.h`): the org relay and registration (each with the relay id it must
+prove), the directory (first provider primary, the rest failing over), the account locker, client compatibility, the
+Brief LLM gateway and token service, the crash intake, plus the seeds a new profile starts from (the promoted MCP, the mesh
+node list, the extra relays). `prod` / `staging` / `dev` are tables the build compiles from `CompiledOrigins` — every
+service of one operator sits under its one origin (`/api/relay`, `/api/llm/v1`, `/mcp`); that is how a built-in table is
+filled in, not a rule any caller relies on. A **custom** table is the user's (`relay`, `registration`, `directory`,
+`backend.services`); `PP_BROWSER_ORIGIN` names a table with every service under that origin.
+
+**An empty address is an absent service:** its client is not made (`BackendClientSet`: client compat, lockers; the LLM
+token renew sends nothing; no crash report is sent; the directory is not asked), the Brief LLM and the promoted MCP have
+no address, and Settings lists the feature with a reason. No caller falls back to a built-in backend's address.
+Callers read the table: `ActiveBackendTable()` (the backend this run latched), `BriefLlmBaseUrl()`, `BriefMcpUrl()`,
+`BriefRelayBaseUrl()`, `BriefOrgRelayIdentity()`, `HubSettings` (`account_locker_url`, `client_compat_url`,
+`llm_token_url`).
+
 ### Relay services and org services
 
 Two origins ([multi-relay MR006](../../projects/multi-relay/DECISIONS.md#mr006--the-preferred-relay-carries-the-users-relay-services-org-services-stay-on-the-orgs-origin);
@@ -368,7 +386,7 @@ user changes the list.
 | Profile photos and blobs ([HTTP relay blobs](#http-relay-blobs-profile-photos)), chat attachment files ([HTTP relay files](#http-relay-files-chat-attachments)) | The Brief LLM gateway (`/api/llm/v1`) and its key, the promoted MCP server (`/mcp`) |
 
 - **The Brief LLM token is the org's:** only a registration at the org's relay keeps the `llm_token` it answers with
-  (`HttpRegistrationClient::SetTakesBriefLlmKey`); when the org's relay is another of ours, its registration
+  (`HttpRegistrationClient::SetTakesBriefLlmKey`), and it is renewed at the table's token service (`HttpRegistrationClient::SetLlmTokenUrl`, `<llm_token>/token/renew`; none named: no renew is sent); when the org's relay is another of ours, its registration
   (`RelayRegistrationsWorkflow`) gives the identity the token, and that relay's registry renews it
   (`ConversationsHub::BriefLlmTokenRegistry`). Another relay's token is not kept.
 - **Not moved (yet):** account lockers stay at the org's registration URL ([HTTP account lockers](#http-account-lockers-multi-device-m023)),

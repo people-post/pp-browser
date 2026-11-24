@@ -37,6 +37,7 @@ SettingsFlushMode LlmSettingsSection::FlushMode() const {
 void LlmSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   const AppConfig& config = bootstrap.config;
   state.llm_preset = ResolvePreset(config);
+  state.backend_services = BackendServiceEntries(ActiveBackendTable(), config.promoted_mcp.IsConfigured());
   state.llm_base_url = config.llm.base_url;
   state.llm_model = config.llm.model;
   state.llm_api_key = config.llm.api_key.Reveal();

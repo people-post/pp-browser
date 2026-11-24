@@ -72,13 +72,15 @@ void BackendClientSet::Apply(const Endpoints& endpoints) {
   const std::vector<std::string> ours = OursFor(endpoints);
   const std::string preferred = ours.empty() ? std::string() : ours.front();
   ApplyOrg(org_relay);
+  ApplyClientCompat(endpoints.client_compat);
+  llm_token_url_ = endpoints.llm_token;
   ApplyPreferred(preferred);
   DirectoryConfig directory = endpoints.directory;
   if (directory.base_url.empty()) {
     directory.base_url = defaults_.directory.base_url;
   }
   ApplyDirectory(FollowingPreferred(std::move(directory), org_relay, preferred));
-  ApplyHome(OrDefault(endpoints.registration.base_url, defaults_.registration.base_url));
+  ApplyHome(endpoints.account_locker);
   const size_t asked = endpoints.our_relays.empty() ? endpoints.extra_relays.size() + 1 : endpoints.our_relays.size();
   ApplyExtraRelays(ours, asked);
   WireBriefLlmKey();
@@ -87,16 +89,20 @@ void BackendClientSet::Apply(const Endpoints& endpoints) {
 }
 
 void BackendClientSet::ApplyOrg(const std::string& url) {
+  org_relay_url_ = NormalizeRegistrationBackend(url);
+}
+
+void BackendClientSet::ApplyClientCompat(const std::string& url) {
   const std::string normalized = NormalizeRegistrationBackend(url);
   if (normalized.empty()) {
     client_compat_.reset();
-    org_relay_url_.clear();
+    compat_url_.clear();
     return;
   }
-  if (client_compat_ && org_relay_url_ == normalized) {
+  if (client_compat_ && compat_url_ == normalized) {
     return;
   }
-  org_relay_url_ = normalized;
+  compat_url_ = normalized;
   client_compat_ = std::make_shared<HttpClientCompatClient>(url);
 }
 
@@ -105,11 +111,14 @@ void BackendClientSet::WireBriefLlmKey() {
   const auto takes = [this](const std::string& url) {
     return !org_relay_url_.empty() && !url.empty() && SameRelay(url, org_relay_url_);
   };
+  // Only the org's relay's client renews, and only at the token service the backend names (none: nowhere).
   if (registration_) {
     registration_->SetTakesBriefLlmKey(takes(relay_url_));
+    registration_->SetLlmTokenUrl(takes(relay_url_) ? llm_token_url_ : std::string());
   }
   for (const Extra& extra : extras_) {
     extra.registration->SetTakesBriefLlmKey(takes(extra.origin));
+    extra.registration->SetLlmTokenUrl(takes(extra.origin) ? llm_token_url_ : std::string());
   }
 }
 
@@ -400,6 +409,8 @@ void BackendClientSet::Clear() {
   org_relay_url_.clear();
   relay_url_.clear();
   home_url_.clear();
+  compat_url_.clear();
+  llm_token_url_.clear();
   directory_fingerprint_.clear();
   configured_directory_.reset();
   directory_providers_.clear();

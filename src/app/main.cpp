@@ -17,6 +17,7 @@
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformStartupHints.h"
+#include "foundation/platform/BackendTable.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/product/AppVersion.h"
@@ -199,7 +200,7 @@ int main(int argc, char** argv) {
     pbr::RunIfUploadAllowed(pbr::kUiDemoBuild, [&snapshot] {
       pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
                                              enabled = snapshot.profile_prefs.crash_reports_enabled,
-                                             base_url = snapshot.config.relay.base_url]() {
+                                             base_url = pbr::ActiveBackendTable().crash_intake_url]() {
         pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
       });
     });

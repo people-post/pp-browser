@@ -3,6 +3,7 @@
 # is ifstream-only; mobile packaged reads use SDL (linked onto core below).
 set(_pp_platform_core_sources
   DeploymentProfile.cpp
+  BackendTable.cpp
   PickedFileName.cpp
   Platform.cpp
   SavedFileCopy.cpp
