@@ -427,14 +427,22 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
         const float centre = ContentMidX(card);
         const float centre_slack = scrolls ? 9.f : 1.f;
         EXPECT_LE(Box(card).right - Box(card).left, compact ? width + 0.5f : 560.5f) << where;
+        // Step markers: step 1 above the code always, step 2 over the buttons until a reply was pasted.
+        EXPECT_EQ(Visible("settings-step-num").size(), state_case.reply_pasted ? 1U : 2U) << where << ": step markers";
         if (state_case.reply_pasted) {
           EXPECT_TRUE(Visible("shell-pin-gate-scan").empty()) << where;
+          EXPECT_TRUE(Visible("shell-pin-gate-computer-note").empty()) << where;
         } else {
           EXPECT_EQ(Visible("shell-pin-gate-scan").size(), state_case.can_scan ? 1U : 0U) << where;
           EXPECT_EQ(Visible("shell-pin-gate-paste").size(), 1U) << where;
+          // A computer's return leg: Paste first and the main one, Scan second, one caption; a phone: Scan first.
+          EXPECT_EQ(Visible("shell-pin-gate-computer-note").size(), compact ? 0U : 1U) << where;
           if (state_case.can_scan) {
-            ExpectOneRow(One("shell-pin-gate-scan"), One("shell-pin-gate-paste"), where);
-            EXPECT_TRUE(One("shell-pin-gate-scan")->IsClassSet("btn-primary")) << where;
+            ui::Element* scan = One("shell-pin-gate-scan");
+            ui::Element* paste = One("shell-pin-gate-paste");
+            ExpectOneRow(compact ? scan : paste, compact ? paste : scan, where);
+            EXPECT_TRUE((compact ? scan : paste)->IsClassSet("btn-primary")) << where << ": the first button is main";
+            EXPECT_FALSE((compact ? paste : scan)->IsClassSet("btn-primary")) << where;
           }
         }
         ui::Element* qr = One("shell-pin-gate-qr");
@@ -451,14 +459,27 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
           EXPECT_LE(card->GetScrollHeight(), card->GetClientHeight() + 1.f) << where << ": nothing needs scrolling";
         }
         EXPECT_LT(Box(digits).top - Box(qr).bottom, 60.f) << where << ": the digits are right under the code";
-        std::vector<ui::Element*> stack{
-            One("shell-dialog-title"),   One("shell-dialog-message"), qr, One("shell-pin-gate-code-label"), digits,
-            One("shell-pin-gate-valid"), One("shell-pin-gate-copy")};
+        EXPECT_TRUE(Visible("shell-dialog-message").empty()) << where << ": the message is step 1 on this page";
+        ui::Element* step_one = Visible("link-step").front();
+        std::vector<ui::Element*> stack{One("shell-dialog-title"),        step_one, qr,
+                                        One("shell-pin-gate-code-label"), digits,   One("shell-pin-gate-valid"),
+                                        One("shell-pin-gate-copy")};
+        std::vector<ui::Element*> inside{qr, digits, step_one};
         if (!state_case.reply_pasted) {
           stack.push_back(One("shell-pin-gate-step"));
+          inside.push_back(One("shell-pin-gate-step"));
+          if (!compact) {
+            ui::Element* note = One("shell-pin-gate-computer-note");
+            inside.push_back(note);
+            // Not clipped: the whole caption is inside the card (a card that scrolls shows the rest on scrolling).
+            EXPECT_GE(Box(note).bottom - Box(note).top, 18.f) << where << ": the caption has height";
+            if (!scrolls) {
+              EXPECT_LE(Box(note).bottom, ContentBox(card).bottom + 0.5f) << where << ": the caption is not clipped";
+            }
+          }
         }
         ExpectTargetsAndNoOverlap(stack, where);
-        ExpectInside(card, {qr, digits}, where);
+        ExpectInside(card, inside, where);
         if (!state_case.reply_pasted) {
           for (ui::Element* button : Buttons()) {
             EXPECT_EQ(button->GetInnerRML().find('\n'), std::string::npos) << where;
@@ -499,12 +520,14 @@ struct MainCase {
   const char* name;
   bool can_scan;
   bool reply_shown;
+  bool can_share;
 };
 
 constexpr MainCase kMainCases[] = {
-    {"no camera", false, false},
-    {"camera", true, false},
-    {"reply shown", true, true},
+    {"no camera", false, false, false},
+    {"camera", true, false, false},
+    {"reply shown, no share sheet", true, true, false},
+    {"reply shown, share sheet", true, true, true},
 };
 
 TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredReplyCodeInEveryState) {
@@ -526,7 +549,7 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
                   {"own_devices_not_main", "0"},
                   {"link_reply_shown", state_case.reply_shown ? "1" : "0"},
                   {"link_can_scan", state_case.can_scan ? "1" : "0"},
-                  {"move_lead_label", Tr("settings.security.link_device.lead")},
+                  {"link_can_share", state_case.can_share ? "1" : "0"},
                   {"move_valid_label", Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}})},
                   {"link_qr_side", display.css},
                   {"link_reply_qr_rml", "x"}};
@@ -549,19 +572,41 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
           ui::Element* box = One("settings-link-reply");
           ASSERT_NE(box, nullptr) << where;
           EXPECT_NEAR(Box(qr).MidX(), Box(box).MidX(), 1.f) << where << ": the code is centred";
-          EXPECT_EQ(Visible("settings-link-btn").size(), 2U) << where << ": copy and done";
+          // Done is the one main button; Copy (and Send) are the quiet ones, in a row above it, left to right.
+          std::vector<ui::Element*> quiet;
+          ui::Element* done = nullptr;
+          for (ui::Element* button : Visible("settings-link-btn")) {
+            if (button->IsClassSet("btn-primary")) {
+              done = button;
+            } else {
+              quiet.push_back(button);
+            }
+          }
+          std::sort(quiet.begin(), quiet.end(),
+                    [](ui::Element* a, ui::Element* b) { return Box(a).left < Box(b).left; });
+          ASSERT_NE(done, nullptr) << where;
+          ASSERT_EQ(quiet.size(), state_case.can_share ? 2U : 1U) << where << ": copy and send (if any), then done";
           EXPECT_TRUE(Visible("settings-transfer-btn").empty()) << where;
-          EXPECT_TRUE(Visible("settings-transfer-lead").empty()) << where << ": no lead over the reply";
-          ExpectTargetsAndNoOverlap({One("settings-copied-title"), qr, One("settings-copied-sub")}, where);
-          ExpectInside(box, {qr}, where);
-          ui::Element* copy = Visible("settings-link-btn").front();
-          EXPECT_NEAR(Box(copy).MidX(), Box(box).MidX(), 1.f) << where << ": copy is centred under the code";
+          EXPECT_TRUE(Visible("settings-transfer-steps").empty()) << where << ": no step list over the reply";
+          EXPECT_EQ(Visible("settings-step-num").size(), 1U) << where << ": step 3 is the box's title";
+          ui::Element* note = One("settings-link-note");
+          ASSERT_NE(note, nullptr) << where;
+          ExpectTargetsAndNoOverlap({One("settings-copied-title"), qr, One("settings-copied-sub"), note}, where);
+          ExpectInside(box, {qr, note, One("link-step")}, where);
+          EXPECT_GE(Box(done).top, Box(quiet.front()).bottom) << where << ": done below";
+          if (state_case.can_share) {
+            ExpectOneRow(quiet[0], quiet[1], where);
+            EXPECT_NEAR((Box(quiet[0]).left + Box(quiet[1]).right) / 2.f, Box(box).MidX(), 1.f) << where;
+          } else {
+            EXPECT_NEAR(Box(quiet[0]).MidX(), Box(box).MidX(), 1.f) << where << ": copy is centred";
+          }
         } else {
           const auto buttons = Visible("settings-transfer-btn");
           ASSERT_EQ(buttons.size(), state_case.can_scan ? 2U : 1U) << where << ": scan and paste, or paste alone";
-          EXPECT_EQ(Visible("settings-transfer-lead").size(), 1U) << where;
+          EXPECT_EQ(Visible("settings-step-num").size(), 3U) << where << ": the three steps are listed";
           EXPECT_TRUE(Visible("settings-link-qr").empty()) << where;
-          ExpectTargetsAndNoOverlap({One("settings-transfer-lead")}, where);
+          ExpectTargetsAndNoOverlap({One("settings-transfer-steps")}, where);
+          ExpectInside(One("settings-transfer-copy"), Visible("link-step"), where);
           if (buttons.size() == 2) {
             ExpectOneRow(buttons[0], buttons[1], where);
           } else {

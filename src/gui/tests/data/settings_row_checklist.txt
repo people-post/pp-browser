@@ -272,11 +272,16 @@ data-event-click="clear_link_reply()"	1	-	devices	link_reply_shown	devices
 {{i18n:settings.security.link_device.scan_button}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan	devices	
 {{i18n:settings.security.link_device.paste_button}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan	devices	
 {{i18n:settings.security.link_device.paste_button}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown;;!link_can_scan	devices	
-{{i18n:settings.security.link_device.reply_title}}	1	-	devices	link_reply_shown	devices	
+{{i18n:settings.security.link_device.step_3}}	1	-	devices	link_reply_shown	devices	
+{{i18n:settings.security.link_device.reply_note}}	1	-	devices	link_reply_shown	devices	
+data-event-click="send_link_reply()"	1	-	devices	link_reply_shown;;link_can_share	devices	
+{{i18n:settings.security.link_device.send_reply}}	1	-	devices	link_reply_shown;;link_can_share	devices	
 {{i18n:settings.security.link_device.copy_reply}}	1	-	devices	link_reply_shown	devices	
 {{i18n:settings.security.link_device.done}}	1	-	devices	link_reply_shown	devices	
 {{i18n:settings.security.link_device.handover_after}}	1	-	devices	link_reply_shown	devices	
-{{move_lead_label}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+{{i18n:settings.security.link_device.step_1}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+{{i18n:settings.security.link_device.step_2}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
+{{i18n:settings.security.link_device.step_3}}	1	-	devices	security_can_export_link && !own_devices_not_main && !link_reply_shown	devices	
 {{move_valid_label}}	1	-	devices	link_reply_shown	devices	
 data-event-click="open_security_page('transfer')"	1	-	devices	!own_devices_not_main && !own_list_getting && !own_list_missing	devices	
 data-event-click="remove_own_device(device_index)"	1	-	devices	own_devices_shown;;device.can_manage	security	

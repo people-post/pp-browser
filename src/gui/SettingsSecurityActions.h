@@ -106,6 +106,7 @@ private:
   void SealLinkReply(std::string offer);
   /** The reply's "Copy as text": the reply to the clipboard (safe: only the new device opens it). */
   void CopyLinkReply();
+  void SendLinkReply();
   /** The page's lead and validity lines, with the link's window in minutes (kLinkWindowMs). */
   void SetTransferLabels();
   bool CanScanLink() const;
@@ -170,13 +171,14 @@ private:
   bool link_reply_shown_ = false;
   /** The page offers the camera for the new device's code. */
   bool link_can_scan_ = false;
+  /** The system has a text share sheet: "Send…" shows beside "Copy as text". */
+  bool link_can_share_ = false;
   ui::String link_reply_qr_rml_;
   /** The reply code's side as CSS ("340dp"), taken from the page when the reply is made. */
   ui::String link_qr_side_;
   std::string link_reply_text_;
   /** Bumped by ClearLinkReply: a check or seal still running for an older visit shows nothing. */
   uint64_t link_request_ = 0;
-  ui::String move_lead_label_;
   ui::String move_valid_label_;
 
   bool show_change_pin_ = true;

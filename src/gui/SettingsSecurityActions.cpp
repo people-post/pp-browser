@@ -11,6 +11,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/PlatformShare.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/os/OsTime.h"
@@ -59,6 +60,7 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("link_scan_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/true); }));
   ctor.BindEventCallback("link_paste_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/false); }));
   ctor.BindEventCallback("copy_link_reply", DataEvent<>([this]() { CopyLinkReply(); }));
+  ctor.BindEventCallback("send_link_reply", DataEvent<>([this]() { SendLinkReply(); }));
   ctor.BindEventCallback("clear_link_reply", DataEvent<>([this]() { ClearLinkReply(); }));
   SetTransferLabels();
   ctor.Bind("link_reply_shown", &link_reply_shown_);
@@ -66,7 +68,8 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   link_qr_side_ = "280dp";
   ctor.Bind("link_qr_side", &link_qr_side_);
   ctor.Bind("link_can_scan", &link_can_scan_);
-  ctor.Bind("move_lead_label", &move_lead_label_);
+  link_can_share_ = PlatformCanShareText(); // "Send…" only where the system has a text share sheet (macOS, iOS)
+  ctor.Bind("link_can_share", &link_can_share_);
   ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
   if (auto word = ctor.RegisterStruct<RecoveryWord>()) {
@@ -380,6 +383,17 @@ void SettingsSecurityActions::CopyLinkReply() {
   UserFeedback::Ok(Tr("settings.security.link_device.reply_copied"));
 }
 
+void SettingsSecurityActions::SendLinkReply() {
+  if (!link_reply_shown_ || link_reply_text_.empty()) {
+    return;
+  }
+  // The system sheet first; where it cannot show, the text is copied and the person is told, as Copy does.
+  if (PlatformShareText(Backend::GetWindow(), link_reply_text_)) {
+    return;
+  }
+  CopyLinkReply();
+}
+
 void SettingsSecurityActions::ReportLinkFailure(const Error& error) {
   const std::string words = LinkErrorText(error, /*on_new_device=*/false);
   if (words.empty()) {
@@ -392,7 +406,6 @@ void SettingsSecurityActions::ReportLinkFailure(const Error& error) {
 
 void SettingsSecurityActions::SetTransferLabels() {
   const std::string minutes = std::to_string(kLinkWindowMs / 60000);
-  move_lead_label_ = Tr("settings.security.link_device.lead").c_str();
   move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
   link_can_scan_ = static_cast<bool>(commands_.scan_link_offer); // the cameras are asked when the page opens
 }
@@ -423,7 +436,6 @@ void SettingsSecurityActions::ClearLinkReply() {
   model.Dirty("settings", "link_reply_shown");
   model.Dirty("settings", "link_reply_qr_rml");
   model.Dirty("settings", "link_can_scan");
-  model.Dirty("settings", "move_lead_label");
   model.Dirty("settings", "move_valid_label");
 }
 
