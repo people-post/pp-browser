@@ -192,6 +192,10 @@ public:
   void BindShowMyQr(std::function<void()> show);
   /** The rows "Service" offers now (prod, custom, and staging / dev only with that address in the build and the tester options on); `OnChooseBackend` shows exactly these. */
   std::vector<SettingsChoicePage::Option> BackendChoiceOptions() const;
+  /** The rows "Language" offers: System and the user-selectable languages; a stored language not offered reads as System. */
+  std::vector<SettingsChoicePage::Option> LanguageChoiceOptions() const;
+  /** Test seam: what the Language chooser does for a picked row id. */
+  void ChooseLanguageForTest(const std::string& id) { ApplyLanguageChoice(id); }
   /** Test seam: what the Service chooser does for a picked row id (a public forwarder; tests must not widen access with `#define private public`, which breaks the MSVC link). */
   void ChooseBackendForTest(const std::string& id) { ApplyBackendChoice(id); }
   /** Test seam: replaces the platform's quit (`can_quit` false = the platform has none: a "reopen the app" note instead). */

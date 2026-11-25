@@ -940,7 +940,7 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;
     }
-    LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
+    LocalizationService::Instance().Apply(LocalizationService::Prefs{.language = bootstrap.profile_prefs.language});
   }
 
   context = ui::CreateContext("main", ui::Vector2i(window_width, window_height));
@@ -1142,7 +1142,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
-  settings_commands.available_locales = []() { return LocalizationService::Instance().AvailableLocales(); };
+  settings_commands.available_locales = []() { return LocalizationService::Instance().UserSelectableLocales(); };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
     // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
     AppRuntime::PostUI([appearance_pref]() {

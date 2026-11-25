@@ -150,7 +150,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Appearance (light/dark):** `profiles/{id}/preferences.json` → `appearance` (`system`, `light`, or `dark`). System follows `SDL_GetSystemTheme` and live-updates on `SDL_EVENT_SYSTEM_THEME_CHANGED`.
 
-**Language (UI):** `preferences.json` → `language` (`system`, `en`, or `zh-Hans`). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`.
+**Language (UI):** `preferences.json` → `language` (`system` or `en`; release 1 ships in English, so Me → Appearance offers only System and English). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English), so a Chinese system still gets Chinese. A stored `zh-Hans` from an earlier build is read as `system` (and left as stored until a language is picked). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`.
 
 **Secondary pane (expanded layout):** `preferences.json` → `sidebar_width_dp` (default 240, clamped 200–480) and `sidebar_collapsed` (default false). Written by `ShellHost` after a splitter drag ends or the collapse button is used; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 

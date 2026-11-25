@@ -53,7 +53,13 @@ public:
   /** `from` reads as `to` (a platform's own text for a shared key: common/Localized.h kPlatformNetworkHintKey). */
   void SetKeyAlias(std::string from, std::string to);
 
+  /** Every catalog we ship (what a system-language match can pick). */
   std::vector<LocaleInfo> AvailableLocales() const;
+  /** What the language picker offers: release 1 ships in English, so only `en` (plus "System", added by the UI). */
+  std::vector<LocaleInfo> UserSelectableLocales() const;
+  static bool IsUserSelectable(std::string_view tag);
+  /** `pref` if it is `system` or user-selectable; any other stored tag (an earlier build's `zh-Hans`) reads as `system`. */
+  static std::string EffectivePreference(std::string_view pref);
 
   /** Replace `{{i18n:key}}` tokens in RML/text. Leaves unknown tokens unchanged. */
   std::string LocalizeText(std::string_view input) const;

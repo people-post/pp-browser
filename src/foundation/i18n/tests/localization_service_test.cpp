@@ -61,11 +61,51 @@ TEST(LocalizationServiceTest, SystemResolveAndInterpolation) {
   loc.ClearSystemLocalesForTest();
 }
 
+// Release 1 ships in English: the picker offers en only (System is the UI's own row); the Chinese catalog stays loaded.
+TEST(LocalizationServiceTest, OnlyEnglishIsUserSelectableAndAStoredChineseChoiceFollowsTheSystem) {
+  auto& loc = pbr::LocalizationService::Instance();
+  ASSERT_TRUE(loc.LoadFromAssets(AssetsRoot()));
+
+  const auto selectable = loc.UserSelectableLocales();
+  ASSERT_EQ(selectable.size(), 1U);
+  EXPECT_EQ(selectable[0].tag, "en");
+  bool zh_loaded = false;
+  for (const auto& info : loc.AvailableLocales()) {
+    zh_loaded = zh_loaded || info.tag == "zh-Hans";
+  }
+  EXPECT_TRUE(zh_loaded) << "the Chinese catalog stays in the app";
+
+  EXPECT_EQ(pbr::LocalizationService::EffectivePreference("zh-Hans"), "system");
+  EXPECT_EQ(pbr::LocalizationService::EffectivePreference("zh_CN"), "system");
+  EXPECT_EQ(pbr::LocalizationService::EffectivePreference("en"), "en");
+  EXPECT_EQ(pbr::LocalizationService::EffectivePreference("system"), "system");
+  EXPECT_EQ(pbr::LocalizationService::EffectivePreference(""), "system");
+
+  // A stored zh-Hans (an earlier build) is applied like System: Chinese on a Chinese system, English otherwise.
+  loc.SetSystemLocalesForTest({"zh-CN"});
+  loc.Apply({.language = "zh-Hans"});
+  EXPECT_EQ(loc.PreferredLanguage(), "system");
+  EXPECT_EQ(loc.ResolvedLanguage(), "zh-Hans");
+  loc.SetSystemLocalesForTest({"en-US"});
+  loc.Apply({.language = "zh-Hans"});
+  EXPECT_EQ(loc.ResolvedLanguage(), "en");
+  // An explicit English still wins on a Chinese system; System itself is unchanged.
+  loc.SetSystemLocalesForTest({"zh-CN"});
+  loc.Apply({.language = "en"});
+  EXPECT_EQ(loc.ResolvedLanguage(), "en");
+  loc.Apply({.language = "system"});
+  EXPECT_EQ(loc.ResolvedLanguage(), "zh-Hans");
+
+  loc.ClearSystemLocalesForTest();
+  loc.SetPreferredLanguage("en");
+}
+
 TEST(LocalizationServiceTest, NativeSelfNames) {
   auto& loc = pbr::LocalizationService::Instance();
   ASSERT_TRUE(loc.LoadFromAssets(AssetsRoot()));
   loc.SetPreferredLanguage("en");
-  EXPECT_EQ(loc.LanguageDisplayLabel("zh-Hans"), "简体中文");
+  // Release 1 ships in English: Chinese is not a choice, so a stored one reads as System.
+  EXPECT_EQ(loc.LanguageDisplayLabel("zh-Hans"), "System");
   EXPECT_EQ(loc.LanguageDisplayLabel("en"), "English");
   EXPECT_EQ(loc.LanguageDisplayLabel("system"), "System");
 

@@ -29,7 +29,7 @@ LocalizationService& LocalizationService::Instance() {
 }
 
 void LocalizationService::Apply(const Prefs& prefs) {
-  SetPreferredLanguage(prefs.language);
+  SetPreferredLanguage(EffectivePreference(prefs.language));
 }
 
 Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
@@ -166,6 +166,27 @@ std::vector<LocaleInfo> LocalizationService::AvailableLocales() const {
   return available_;
 }
 
+std::vector<LocaleInfo> LocalizationService::UserSelectableLocales() const {
+  std::vector<LocaleInfo> out;
+  for (const LocaleInfo& info : available_) {
+    if (IsUserSelectable(info.tag)) {
+      out.push_back(info);
+    }
+  }
+  return out;
+}
+
+bool LocalizationService::IsUserSelectable(std::string_view tag) {
+  return NormalizeTag(tag) == "en";
+}
+
+std::string LocalizationService::EffectivePreference(std::string_view pref) {
+  if (pref.empty() || pref == "system" || IsUserSelectable(pref)) {
+    return std::string(pref.empty() ? "system" : pref);
+  }
+  return "system";
+}
+
 std::string LocalizationService::LocalizeText(std::string_view input) const {
   std::string out;
   out.reserve(input.size());
@@ -194,7 +215,7 @@ void LocalizationService::AddLanguageChangeListener(std::function<void(const std
 }
 
 std::string LocalizationService::LanguageDisplayLabel(std::string_view pref) const {
-  if (pref.empty() || pref == "system") {
+  if (EffectivePreference(pref) == "system") {
     return Tr("settings.language.system");
   }
   for (const auto& info : available_) {

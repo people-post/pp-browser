@@ -21,6 +21,24 @@ void LoadLocales() {
 
 } // namespace
 
+// A stored Chinese choice (an earlier build) is read as before and never rewritten on load; only a pick changes it.
+TEST(SettingsSectionsTest, AStoredChineseLanguageIsKeptAsStoredAndShownAsSystem) {
+  LoadLocales();
+  pbr::BootstrapResult bootstrap;
+  bootstrap.profile_prefs.language = "zh-Hans";
+  pbr::SettingsUiState state;
+  pbr::AppearanceSettingsSection section;
+  pbr::SettingsCommands commands;
+  commands.language_display_label = [](const std::string& pref) {
+    return pbr::LocalizationService::Instance().LanguageDisplayLabel(pref);
+  };
+  section.BindPorts(&commands);
+  section.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.language, "zh-Hans");
+  EXPECT_EQ(state.language_label, "System");
+  EXPECT_TRUE(section.IsPersisted(state, bootstrap)) << "nothing to save just because the app was opened";
+}
+
 TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   LoadLocales();
   pbr::BootstrapResult bootstrap;

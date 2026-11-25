@@ -567,11 +567,10 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
   tools.push_back(MakeTool(
       ToolDefinition{
           "set_language",
-          "Set UI language to system or a shipped BCP-47 tag from list_locales "
-          "(en, zh-Hans). Accepts locale/lang aliases and common labels "
-          "(Chinese, 简体中文, zh, zh-CN).",
+          "Set UI language to system or a BCP-47 tag from list_locales "
+          "(en). Accepts locale/lang aliases and common labels (English, en-US).",
           MustSchema(
-              R"json({"type":"object","properties":{"language":{"type":"string","description":"system | en | zh-Hans (or alias/label)"},"locale":{"type":"string","description":"Alias for language"}},"required":[]})json")},
+              R"json({"type":"object","properties":{"language":{"type":"string","description":"system | en (or alias/label)"},"locale":{"type":"string","description":"Alias for language"}},"required":[]})json")},
       Meta("settings", "write", true), [ports](const Object& arguments) -> Roe<std::string> {
         const std::string language = LanguageFromArgs(ports, arguments);
         if (language.empty()) {

@@ -1977,14 +1977,19 @@ void SettingsController::OnChooseLanguage(ui::Event& ev) {
     return;
   }
 
-  const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
+  ShowChoice(ev, "language", Tr("settings.language.label"), Tr("settings.language.help"), {}, LanguageChoiceOptions(),
+             [this](const std::string& id) { ApplyLanguageChoice(id); });
+}
+
+std::vector<SettingsChoicePage::Option> SettingsController::LanguageChoiceOptions() const {
+  // A stored language the picker no longer offers (an earlier build's Chinese) follows the system: show System.
+  const std::string current = LocalizationService::EffectivePreference(bindings_.language.c_str());
   std::vector<SettingsChoicePage::Option> options;
   options.push_back({"system", commands_.language_display_label("system").c_str(), current == "system"});
   for (const LocaleInfo& info : commands_.available_locales()) {
     options.push_back({info.tag.c_str(), commands_.language_display_label(info.tag).c_str(), current == info.tag});
   }
-  ShowChoice(ev, "language", Tr("settings.language.label"), Tr("settings.language.help"), {}, std::move(options),
-             [this](const std::string& id) { ApplyLanguageChoice(id); });
+  return options;
 }
 
 void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {

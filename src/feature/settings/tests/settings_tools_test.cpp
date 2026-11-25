@@ -215,6 +215,26 @@ TEST_F(SettingsToolsTest, SetLanguageValidatesLocales) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.language, "zh-Hans");
 }
 
+// Release 1 ships in English: with only English offered (what the app binds), the tool cannot set Chinese either.
+TEST_F(SettingsToolsTest, SetLanguageRefusesALanguageThePickerDoesNotOffer) {
+  pbr::SettingsToolPorts ports = MakePorts();
+  ports.available_locales = []() {
+    return std::vector<pbr::LocaleInfo>{{.tag = "en", .native_name_key = "settings.language.en"}};
+  };
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, ports);
+  for (const char* wanted : {"zh-Hans", "zh", "zh-CN", "中文", "Chinese"}) {
+    pbr::Object args;
+    args.set("language", wanted);
+    EXPECT_FALSE(registry.Execute("set_language", args)) << wanted;
+    EXPECT_NE(store_.Snapshot().profile_prefs.language, "zh-Hans");
+  }
+  pbr::Object en;
+  en.set("language", "English");
+  ASSERT_TRUE(registry.Execute("set_language", en));
+  EXPECT_EQ(store_.Snapshot().profile_prefs.language, "en");
+}
+
 TEST_F(SettingsToolsTest, SetLanguageAcceptsLocaleAliasAndTagVariants) {
   pbr::ToolRegistry registry;
   pbr::RegisterSettingsTools(registry, MakePorts());

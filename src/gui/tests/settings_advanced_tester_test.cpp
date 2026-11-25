@@ -301,6 +301,47 @@ TEST_F(SettingsAdvancedTesterTest, PickingCustomWithTheTesterOptionsOffSavesExac
   EXPECT_EQ(store.Snapshot().config.backend.env, "custom");
 }
 
+// Release 1 ships in English: the Language chooser offers System and English; a stored Chinese choice shows System.
+TEST_F(SettingsAdvancedTesterTest, TheLanguageChooserOffersSystemAndEnglishOnly) {
+  commands.language_display_label = [](const std::string& pref) {
+    return LocalizationService::Instance().LanguageDisplayLabel(pref);
+  };
+  commands.available_locales = []() { return LocalizationService::Instance().UserSelectableLocales(); };
+  settings.BindCommands(commands);
+
+  for (const char* stored : {"system", "en", "zh-Hans"}) {
+    host().UiState().language = stored;
+    host().PushToView(false);
+    const std::vector<SettingsChoicePage::Option> options = settings.LanguageChoiceOptions();
+    ASSERT_EQ(options.size(), 2u) << stored;
+    EXPECT_STREQ(options[0].id.c_str(), "system");
+    EXPECT_STREQ(options[0].label.c_str(), "System");
+    EXPECT_STREQ(options[1].id.c_str(), "en");
+    EXPECT_STREQ(options[1].label.c_str(), "English");
+    const bool english = std::string(stored) == "en";
+    EXPECT_EQ(options[0].selected, !english) << "a stored zh-Hans is shown as System: " << stored;
+    EXPECT_EQ(options[1].selected, english) << stored;
+  }
+}
+
+TEST_F(SettingsAdvancedTesterTest, PickingEnglishStoresEnglishAndAStoredChineseValueIsNotRewrittenBeforeThat) {
+  commands.language_display_label = [](const std::string& pref) {
+    return LocalizationService::Instance().LanguageDisplayLabel(pref);
+  };
+  commands.available_locales = []() { return LocalizationService::Instance().UserSelectableLocales(); };
+  settings.BindCommands(commands);
+  ProfilePreferences prefs = store.Snapshot().profile_prefs;
+  prefs.language = "zh-Hans";
+  ASSERT_TRUE(static_cast<bool>(store.SaveProfilePrefs(prefs)));
+  host().UiState().language = "zh-Hans";
+  host().PushToView(false);
+
+  (void)settings.LanguageChoiceOptions();
+  EXPECT_EQ(store.Snapshot().profile_prefs.language, "zh-Hans") << "opening the chooser changes nothing";
+  settings.ChooseLanguageForTest("en");
+  EXPECT_EQ(store.Snapshot().profile_prefs.language, "en");
+}
+
 TEST_F(SettingsAdvancedTesterTest, TheNetworkResetButtonIsBoundOnlyUnderTheCustomAddressCondition) {
   const std::string rml = ReadAsset("views/settings_section_advanced_backend.rml");
   const size_t button = rml.find("data-event-click=\"reset_section('network')\"");
