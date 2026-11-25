@@ -12,6 +12,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <string>
 
 namespace pbr {
@@ -33,9 +34,21 @@ ui::Style::FontWeight Weight(int weight) {
   return static_cast<ui::Style::FontWeight>(weight);
 }
 
+/**
+ * The source tree's assets (this target's PP_BROWSER_ASSETS_DIR). The default locator of a packaged build points into
+ * the app bundle, which a test run from the build folder (release.yml) does not have.
+ */
+class AssetsLocator : public IAssetLocator {
+public:
+  std::string Resolve(const std::string& relative) const override {
+    return (std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative).string();
+  }
+};
+
 class FontWeightsTest : public testing::Test {
 protected:
   void SetUp() override {
+    IAssetLocator::SetInstance(&locator_);
     ui::SetRenderInterface(&renderer_);
     ui::SetFontEngineInterface(&engine_);
     initialized_ = ui::Initialise();
@@ -47,6 +60,7 @@ protected:
       ui::Shutdown();
     }
     ui::SetRenderInterface(nullptr);
+    IAssetLocator::SetInstance(nullptr);
   }
 
   static std::string Asset(const char* relative) { return IAssetLocator::Instance().Resolve(relative); }
@@ -62,6 +76,7 @@ protected:
     return handle ? engine_.GetStringWidth(handle, text, ui::TextShapingContext{language}, ui::Character::Null) : 0;
   }
 
+  AssetsLocator locator_;
   NullRender renderer_;
   FontEngineInterfaceHarfBuzz engine_;
   bool initialized_ = false;
