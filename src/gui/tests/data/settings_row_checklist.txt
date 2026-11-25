@@ -238,7 +238,8 @@ data-event-click="show_recovery_phrase()"	1	-	security	security_has_recovery_phr
 data-event-click="toggle_biometric()"	1	security	security	security_biometric_shown	security	
 {{i18n:settings.security.biometric.help}}	1	-	security	security_biometric_shown	security	
 {{i18n:settings.security.pin_row}}	1	-	security	show_change_pin	security	
-{{pin_page_note}}	2	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:settings.security.pin_page.note}}	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
+{{i18n:settings.security.pin_page.note_calls}}	2	-	security	show_change_pin && security_can_change_pin;;pin_calls_note_shown	security	
 {{i18n:settings.security.grace.caption}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.grace.title}}	1	-	security	security_grace_shown	security	
 {{i18n:settings.security.recovery}}	1	-	security	!security_has_recovery_phrase	security	
@@ -582,11 +583,11 @@ data-event-click="send_run_logs()"	1	-	advanced	advanced;;show_run_logs	advanced
 {{i18n:settings.run_logs.send_short}}	1	-	advanced	advanced;;show_run_logs	advanced	
 data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
 data-event-click="change_pin()"	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
-{{i18n:pin.forget_warning}}	2	-	security	show_change_pin && security_can_change_pin	security	
+{{i18n:pin.forget_warning}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
 {{i18n:settings.security.change_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
 data-event-click="remove_pin()"	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
 {{i18n:settings.security.remove_pin}}	2	-	security	show_change_pin && security_can_change_pin;;!pin_protection_is_default	security	
-{{i18n:settings.security.set_custom_pin}}	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
+{{i18n:settings.security.set_pin}}	2	-	security	show_change_pin && security_can_change_pin;;pin_protection_is_default	security	
 {{i18n:settings.security.unlock_to_change}}	1	-	security	show_change_pin && !security_can_change_pin && !pin_protection_not_setup	security	
 {{i18n:settings.privacy.blocked_help}}	1	-	privacy	-	security	
 {{i18n:settings.tester.banner}}	1	-	tester	tester	-	
