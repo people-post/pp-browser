@@ -232,14 +232,13 @@ protected:
   int pin_prompts = 0;
 };
 
-// Default PIN: the digits check carries the line and a "?" that tells the PIN; an own PIN has neither.
-TEST_F(LinkReplyTest, TheCheckOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
+// With no PIN the digits check is the plain confirm: no line about a default PIN and no "?" that tells it.
+TEST_F(LinkReplyTest, TheCheckWithNoPinIsAPlainConfirmWithoutANote) {
   ScanToTheCheck();
-  ASSERT_EQ(noted_confirms, 1);
+  ASSERT_EQ(confirms, 1);
+  EXPECT_EQ(noted_confirms, 0);
   EXPECT_NE(confirm_message.find("0427"), std::string::npos) << "the digits to compare";
-  EXPECT_EQ(confirm_note_line, Tr("settings.security.default_hint"));
-  EXPECT_NE(confirm_note_text.find(kDefaultProfilePin), std::string::npos);
-  EXPECT_EQ(confirm_note_text.find("{pin}"), std::string::npos) << "the digits were filled in";
+  EXPECT_TRUE(confirm_note_line.empty());
 }
 
 TEST_F(LinkReplyTest, AnOwnPinIsAskedBeforeTheCameraAndTheCheckHasNoNote) {

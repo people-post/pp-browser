@@ -281,10 +281,6 @@ struct PinGateState {
    * phone's own lock screen); the pad / field come after that button, or once the biometric unlock is lost.
    */
   bool biometric_first = false;
-  /** People on the app's default PIN: one short line ("" none) with a "?" after it; the "?" opens `default_note_text`. */
-  ui::String default_note_line;
-  ui::String default_note_text;
-  bool default_note_open = false;
   ui::String title;
   ui::String message;
   ui::String error;

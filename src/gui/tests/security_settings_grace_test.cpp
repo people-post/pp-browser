@@ -471,6 +471,7 @@ TEST_F(SecuritySettingsBiometricTest, RemovePinChecksTheCurrentPinThenGoesBackTo
   EXPECT_FALSE(host.UiState().security_biometric_on);
   EXPECT_EQ(modes, std::vector<bool>{true});
   EXPECT_EQ(pills, std::vector<std::string>{Tr("settings.security.pin_removed")});
+  EXPECT_EQ(pills, std::vector<std::string>{"PIN removed. Anyone who has this device can open PP."});
 
   actions.RemovePin();
   EXPECT_EQ(purposes_.size(), 1U) << "nothing to remove on the app default PIN";

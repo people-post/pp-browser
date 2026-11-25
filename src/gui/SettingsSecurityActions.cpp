@@ -5,7 +5,6 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
-#include "gui/DefaultPinNote.h"
 #include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -319,12 +318,6 @@ void SettingsSecurityActions::CheckLinkCode(std::string offer) {
         const std::string title = Tr("settings.security.link_device.check_title");
         const std::string message = Tr("settings.security.link_device.check_message", {{"code", *code}});
         const std::string ok = Tr("settings.security.link_device.check_ok");
-        // On the app's default PIN nothing asked for it: the dialog says so, with a "?" that tells the digits.
-        if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
-          feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
-                                           std::move(on_result), ok);
-          return;
-        }
         feedback_.show_confirm(title, message, std::move(on_result), ok);
       });
 }

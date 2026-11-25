@@ -1949,7 +1949,6 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_waiting_device_unlock = [this](const bool waiting) {
     pin_gate_->SetWaitingDeviceUnlock(waiting);
   };
-  unlock_ports.ui.on_default_provisioned = []() { UserFeedback::Ok(Tr("pin.default_provisioned_toast")); };
   // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
   // failed import keeps it (the old DEK stays).
   unlock_ports.import_link_device = [this, &facade](const SecretText& pin, const std::string& reply) -> Roe<void> {
@@ -2183,7 +2182,6 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
     pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
-    pin_actions.on_note_toggle = [this]() { pin_gate_->OnNoteToggle(); };
     pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
     pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
     pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
