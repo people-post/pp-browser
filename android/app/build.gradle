@@ -89,6 +89,10 @@ android {
         versionCode 1
         versionName ppBrowserReleaseVersion
         buildConfigField "boolean", "ENABLE_FCM", enableFcm ? "true" : "false"
+        // Release 1 ships in English only (temporary, Hongwei 2026-11-25): the native strings (notification channels,
+        // the call notification's buttons) stay English on a Chinese phone too; res/values-zh is kept, not packaged.
+        // Remove this line to bring them back.
+        resourceConfigurations += ["en"]
         externalNativeBuild {
             cmake {
                 arguments(*ppBrowserCmakeArgs)
