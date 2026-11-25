@@ -83,6 +83,8 @@ struct AgentEvent {
   ResponseGoal response_goal = ResponseGoal::General;
   RenderMode render_mode = RenderMode::Blocks;
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
+  /** AssistantReady of a streamed answer: brief_AI's done.answer_kind ("news_pick", "news_digest", …; empty: none). */
+  std::string answer_kind;
   /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
   bool from_model = true;
   /** Error: `thread_id` / `entry_id` name the turn it ended (Home's turn: no thread); both empty outside a turn. */
@@ -206,6 +208,18 @@ public:
   SubmitOutcome SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                                    std::optional<std::string> user_payload = std::nullopt,
                                    AtAiMode mode = AtAiMode::Local);
+  /**
+   * A news item read in an AI thread (DEV/PLAN-news-inline-digest.md; brief preset only, else the turn fails).
+   * `request_text` is the item's URL and the fixed sentence (NewsReadRequestText). The request is stored with
+   * kNewsRequestGeneration; the answer with kNewsDigestGeneration, or kNewsFailedGeneration when brief_AI says the
+   * article could not be read (done.answer_kind). An error or a stop stores no answer (the item stays unread). Its
+   * text streams as AssistantDelta events for the reader (the chat screen keeps them out of the chat); only done's
+   * response is stored. `title` (the item's, from the list) goes as client.news_title, data the
+   * server checks the page against; never in the message. `retry`: started from the reader's "Try again" (counted in
+   * the "ai.news_read" metrics line only).
+   */
+  SubmitOutcome SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                               const std::string& title = {}, bool retry = false);
   /**
    * Resume a parked tool-permission confirm from an in-chat choice payload.
    * decision: allow_once | allow_always | deny

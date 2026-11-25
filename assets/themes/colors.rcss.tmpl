@@ -408,6 +408,32 @@ select selectbox option:hover {
   color: {{link}};
 }
 
+/* A news item already read (MarkNewsLinksRead): grey in its list, like a visited link. */
+.chat-link.news-read {
+  color: {{label-2}};
+}
+
+/* The news reader sheet (news_reader.rml). */
+.news-reader-spin {
+  border-color: {{label-3}} {{label-3}} {{label-3}} transparent;
+}
+
+.news-reader-note,
+.news-reader-translated {
+  color: {{label-2}};
+}
+
+.news-reader-open {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
+.news-reader-step,
+.news-reader-retry {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
 /* In our own (blue) bubble the link is blue on blue: it takes the bubble's white and keeps its underline; pressed / hovered
    it dims (colour alpha: the engine has no :not() or variables, so each state is spelled out). */
 .bubble-user .chat-link {

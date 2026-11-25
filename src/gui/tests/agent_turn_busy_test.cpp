@@ -2,6 +2,7 @@
 // checked: what the open thread shows as it switches, the queue of AI sends of other threads and how it drains,
 // the queued bubble, the stop key, and the fate of a held send.
 #include "gui/chat/AgentTurnController.h"
+#include "feature/presenters/NewsReader.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
@@ -37,6 +38,8 @@ public:
   bool messaging_ready = false;
   /** What ChatController does when a queued send starts a turn (marks that chat busy). */
   std::function<void(const std::string& thread_id)> on_started;
+  std::vector<std::string> ended;                             // OnAgentTurnEnded(thread), in order
+  std::vector<std::pair<std::string, std::string>> news_text; // OnNewsReadText(thread, text so far), in order
 
   ConversationsFacade* Facade() const override { return nullptr; }
   bool MessagingIsReady() const override { return messaging_ready; }
@@ -60,6 +63,10 @@ public:
   void HandleLocalAction(const std::string&, const std::optional<std::string>&, const std::string&) override {}
   void PutBackDraft(const std::string& thread_id, const std::string& text) override {
     put_back.push_back({thread_id, text});
+  }
+  void OnAgentTurnEnded(const std::string& thread_id) override { ended.push_back(thread_id); }
+  void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) override {
+    news_text.push_back({thread_id, text_so_far});
   }
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override {
     handed_over.push_back(item);
@@ -125,7 +132,7 @@ protected:
 
   FakeHost host_;
   ChatScreenState chat_;
-  std::map<std::string, std::vector<std::string>> chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>> chat_links_;
   ChatWidgetHost widgets_;
   bool ws_active_ = false;
   ui::String ws_title_, ws_subtitle_, ws_rml_;
@@ -1044,6 +1051,221 @@ TEST(HomeAttachMenuTest, ListsCameraPhotosThenFileUnconditionally) {
   EXPECT_EQ(camera, 1);
   EXPECT_EQ(photos, 1);
   EXPECT_EQ(file, 1);
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+// A news read (DEV/PLAN-news-inline-digest.md) is a turn of its AI thread like any other: "thinking" with the step
+// "Reading “title”", the stop key stops it, and a question there waits for it. Its answer is never stored or drawn
+// by the chat screen (the session stored it hidden), and its end reaches the screen, which updates the reader.
+TEST_F(AgentTurnBusyTest, ANewsReadShowsAsTheThreadsTurnAndStopsLikeOne) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  std::vector<std::pair<std::string, std::string>> submitted;
+  std::string sent_title;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string& text, const std::string& title, bool) {
+    submitted.push_back({thread_id, text});
+    sent_title = title;
+    return SubmitOutcome::Started;
+  };
+  ports.cancel = [this](const std::string& thread_id) {
+    ++cancel_calls_;
+    cancelled_thread_ = thread_id;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "Rates rise"),
+            SubmitOutcome::Started);
+  ASSERT_EQ(submitted.size(), 1u);
+  EXPECT_EQ(submitted[0].second, "https://n.example/a\nWhat's in the article");
+  EXPECT_EQ(sent_title, "Rates rise") << "the title goes beside the message, as data";
+  EXPECT_TRUE(controller_.ReadingNews("A"));
+  EXPECT_TRUE(chat_.loading) << "the composer shows the stop key";
+  EXPECT_EQ(std::string(chat_.status.c_str()), "Reading \u201cRates rise\u201d");
+  EXPECT_EQ(controller_.CanStart("A"), TurnStart::BusyHere) << "a question here waits for the read";
+
+  AgentEvent step;
+  step.type = AgentEventType::ToolActivity;
+  step.tool_name = "read_url";
+  step.status = "tool";
+  step.thread_id = "A";
+  controller_.HandleAgentEvent(step);
+  EXPECT_NE(std::string(chat_.status.c_str()).find("Rates rise"), std::string::npos) << "the label stays";
+
+  AgentEvent ready;
+  ready.type = AgentEventType::AssistantReady;
+  ready.thread_id = "A";
+  ready.entry_id = "digest-1";
+  ready.text = "Source: n.example";
+  ready.render_mode = RenderMode::Markdown;
+  ready.answer_kind = "news_digest";
+  controller_.HandleAgentEvent(ready);
+  EXPECT_TRUE(chat_links_.empty()) << "the chat screen never stores or draws the digest";
+
+  controller_.OnStopTurn();
+  EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "A");
+
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_FALSE(controller_.ReadingNews("A"));
+  EXPECT_FALSE(chat_.loading);
+  EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
+}
+
+// A news read's streamed text goes to the reader (the host), never into the chat as a streaming bubble; an ordinary
+// turn's text in another chat still streams as before.
+TEST_F(AgentTurnBusyTest, ANewsReadsStreamedTextGoesToTheReaderNotTheChat) {
+  host_.messaging_ready = true;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
+    return SubmitOutcome::Started;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "Rates rise"),
+            SubmitOutcome::Started);
+  const size_t rows_before = chat_.messages.size();
+
+  AgentEvent delta;
+  delta.type = AgentEventType::AssistantDelta;
+  delta.thread_id = "A";
+  delta.entry_id = "req-1";
+  delta.text = "n.example \u00b7 Nov 24\n\n";
+  controller_.HandleAgentEvent(delta);
+  delta.text += "The article says rates rose.";
+  controller_.HandleAgentEvent(delta);
+  controller_.Tick();
+
+  ASSERT_EQ(host_.news_text.size(), 2u);
+  EXPECT_EQ(host_.news_text[0], (std::pair<std::string, std::string>{"A", "n.example \u00b7 Nov 24\n\n"}));
+  EXPECT_EQ(host_.news_text[1].second, "n.example \u00b7 Nov 24\n\nThe article says rates rose.");
+  EXPECT_EQ(chat_.messages.size(), rows_before) << "no streaming bubble in the chat";
+  EXPECT_TRUE(chat_links_.empty());
+
+  // Once the read ended, a later turn of the chat streams into it as usual.
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  delta.entry_id = "q-2";
+  delta.text = "An ordinary answer";
+  controller_.HandleAgentEvent(delta);
+  EXPECT_EQ(host_.news_text.size(), 2u);
+  EXPECT_EQ(chat_.messages.size(), rows_before + 1) << "the ordinary answer's streaming bubble";
+}
+
+// "Try again" after a failed read takes the path of a tap on an unread item: read now (marked as a retry for the
+// metrics line), or, while the chat answers something else, the "wait" pill and no request.
+TEST_F(AgentTurnBusyTest, TryAgainReadsTheItemAgainOrWaits) {
+  std::vector<bool> retries;
+  bool running = false;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string&, const std::string&, const std::string&, const bool retry) {
+    retries.push_back(retry);
+    running = true;
+    return SubmitOutcome::Started;
+  };
+  ports.can_start = [&](const std::string&) { return running ? TurnStart::BusyHere : TurnStart::Yes; };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  const std::string url = "https://n.example/a";
+  ASSERT_EQ(controller_.StartNewsRead("A", url + "\nWhat's in the article", "One"), SubmitOutcome::Started);
+  running = false;
+  controller_.HandleAgentEvent(Loading(false, "A")); // ended with nothing stored: the failure line and the button
+  const NewsReads failed;                            // no digest for it
+
+  ASSERT_EQ(DecideNewsTapFor(failed, url, "", controller_.NewsReadMustWait("A")), NewsTap::StartRead);
+  ASSERT_EQ(controller_.StartNewsRead("A", url + "\nWhat's in the article", "One", /*retry=*/true),
+            SubmitOutcome::Started);
+  EXPECT_EQ(retries, (std::vector<bool>{false, true}));
+  EXPECT_TRUE(controller_.ReadingNews("A"));
+  running = false;
+  controller_.HandleAgentEvent(Loading(false, "A"));
+
+  // Another answer runs in this chat: the retry waits; nothing is asked.
+  controller_.MarkAgentBusy("A");
+  EXPECT_EQ(DecideNewsTapFor(failed, url, "", controller_.NewsReadMustWait("A")), NewsTap::Wait);
+  EXPECT_EQ(retries.size(), 2u);
+}
+
+// What a tap on a news item does, against the chat's real busy state (ChatController::ShowNewsItem asks exactly this).
+TEST_F(AgentTurnBusyTest, ATapOnANewsItemWaitsStartsOrShowsTheStoredDigest) {
+  std::set<std::string> running; // the sessions' threads with a turn
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [&](const std::string& thread_id, const std::string&, const std::string&, bool) {
+    running.insert(thread_id);
+    return SubmitOutcome::Started;
+  };
+  ports.can_start = [&](const std::string& thread_id) {
+    return running.count(thread_id) > 0 ? TurnStart::BusyHere : TurnStart::Yes;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  NewsReads reads;
+  reads.digests[NormalizeNewsUrl("https://n.example/read")] = {"d1", "digest"};
+  const auto tap = [&](const std::string& url, const std::string& reading_url) {
+    return DecideNewsTapFor(reads, url, reading_url, controller_.NewsReadMustWait("A"));
+  };
+
+  EXPECT_EQ(tap("https://n.example/new", ""), NewsTap::StartRead);
+  EXPECT_EQ(tap("https://n.example/read#comments", ""), NewsTap::ShowStored);
+
+  // Another answer runs in this chat: an unread item waits, a read one still shows at once.
+  controller_.MarkAgentBusy("A");
+  EXPECT_EQ(tap("https://n.example/new", ""), NewsTap::Wait);
+  EXPECT_EQ(tap("https://n.example/read", ""), NewsTap::ShowStored);
+  controller_.MarkAgentIdle("A");
+
+  // A read of item 1 runs (the sheet was closed): item 1 shows loading again, item 2 waits.
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/1\nWhat's in the article", "One"),
+            SubmitOutcome::Started);
+  EXPECT_EQ(tap("https://n.example/1?utm_source=x", "https://n.example/1"), NewsTap::ShowReading);
+  EXPECT_EQ(tap("https://n.example/2", "https://n.example/1"), NewsTap::Wait);
+  running.erase("A");
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_EQ(tap("https://n.example/2", ""), NewsTap::StartRead);
+}
+
+// The 2-second safety net for a turn end that was never heard also tells the reader (it stops waiting).
+TEST_F(AgentTurnBusyTest, ARecoveredNewsReadEndReachesTheReader) {
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
+    return SubmitOutcome::Started;
+  };
+  ports.is_busy = [](const std::string&) { return false; }; // the session's turn is over; its end was lost
+  ports.any_busy = [] { return false; };
+  controller_.BindPorts(std::move(ports));
+  controller_.SetUseLlm(true);
+  Open("A");
+  ASSERT_EQ(controller_.StartNewsRead("A", "https://n.example/1\nWhat's in the article", "One"),
+            SubmitOutcome::Started);
+  controller_.Tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+  controller_.Tick();
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
+  EXPECT_FALSE(controller_.ReadingNews("A"));
+  EXPECT_EQ(host_.ended, std::vector<std::string>{"A"});
+}
+
+TEST_F(AgentTurnBusyTest, ANewsReadTheSessionDidNotTakeLeavesNothingBusy) {
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit_news_read = [](const std::string&, const std::string&, const std::string&, bool) {
+    return SubmitOutcome::BusyHere;
+  };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+  EXPECT_EQ(controller_.StartNewsRead("A", "https://n.example/a\nWhat's in the article", "T"), SubmitOutcome::BusyHere);
+  EXPECT_FALSE(controller_.ReadingNews("A"));
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
 }
 
 } // namespace

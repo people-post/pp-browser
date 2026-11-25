@@ -13,6 +13,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "lib/ai/BriefAiClient.h"
+#include "lib/ai/MarkdownToRml.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/ai/TurnPlan.h"
 #include "lib/messaging/AtAiParser.h"
@@ -71,6 +72,11 @@ public:
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
   /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
   virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
+  /** The news read running in `thread_id` streamed more text: `text_so_far` is all of it (never stored). */
+  virtual void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) {
+    (void)thread_id;
+    (void)text_so_far;
+  }
   /** The ask-AI panel shows this thread now: an answer there is read, not unread. */
   virtual bool AskAiPanelShows(const std::string& thread_id) const {
     (void)thread_id;
@@ -124,7 +130,7 @@ public:
   static AgentConfig ProjectAgent(const AppConfig& config);
 
   AgentTurnController(AgentTurnHost& host, ChatScreenState& chat,
-                      std::map<std::string, std::vector<std::string>>& chat_links, ChatWidgetHost& widgets,
+                      std::map<std::string, std::vector<MarkdownLink>>& chat_links, ChatWidgetHost& widgets,
                       WorkingSetController& working_set, ShellFeedbackPorts& shell_feedback);
 
   // --- the agent -------------------------------------------------------------------------------
@@ -164,9 +170,22 @@ public:
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
                             RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
-                            const std::vector<BriefAiSource>& sources = {});
+                            const std::vector<BriefAiSource>& sources = {}, const std::string& answer_kind = {});
   /** The stop key / a double Escape: stops the turn of the open thread only. */
   void OnStopTurn();
+  /**
+   * Reads a news item in AI thread `thread_id` (NewsReader): busy there with the step label "Reading “title”" until
+   * the turn ends; its text streams to the reader (AgentTurnHost::OnNewsReadText), never into the chat, and an error
+   * is told by the reader, not by a banner.
+   */
+  SubmitOutcome StartNewsRead(const std::string& thread_id, const std::string& request_text, const std::string& title,
+                              bool retry = false);
+  /** A news item tapped in `thread_id` must wait: a turn runs there, or no turn may start now. */
+  bool NewsReadMustWait(const std::string& thread_id) const {
+    return busy_.BusyIn(thread_id) || CanStart(thread_id) != TurnStart::Yes;
+  }
+  /** A news read runs in `thread_id`. */
+  bool ReadingNews(const std::string& thread_id) const { return news_turns_.count(thread_id) > 0; }
   /**
    * The Home composer's question (no messaging router): busy in `thread_id` once the session took it; if it did
    * not (its turn still runs), the text goes back to that composer.
@@ -297,7 +316,7 @@ private:
   AgentTurnHost& host_;
   ChatScreenState& chat_;
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
-  std::map<std::string, std::vector<std::string>>& chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>>& chat_links_;
   ChatWidgetHost& widgets_;
   WorkingSetController& working_set_;
   ShellFeedbackPorts& shell_feedback_;
@@ -360,6 +379,7 @@ private:
   };
   std::map<std::string, StreamingRow> streaming_; // by thread
   std::set<std::string> forgotten_threads_;       // deleted conversations: their late events are dropped
+  std::set<std::string> news_turns_;              // threads whose running turn reads a news item
 };
 
 } // namespace pbr

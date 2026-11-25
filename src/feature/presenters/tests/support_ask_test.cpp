@@ -25,6 +25,19 @@ SupportMessage Theirs(const std::string& text, const int64_t at_ms) {
   return {.own = false, .text = text, .at_ms = at_ms};
 }
 
+// A news read's hidden rows (DEV/PLAN-news-inline-digest.md) are never shown, so the panel never lists them.
+TEST(SupportAskTest, HiddenNewsRowsAreNoPanelMessages) {
+  ThreadMessage message;
+  message.sender_contact_id = kLocalSelfContactId;
+  message.text = "https://n.example/a\n这篇讲了什么";
+  EXPECT_TRUE(SupportMessageOf(message, SendMark::None).has_value());
+  for (const char* generation :
+       {kNewsRequestGeneration, kNewsDigestGeneration, kNewsDigestTranslatedGeneration, kNewsFailedGeneration}) {
+    message.generation = generation;
+    EXPECT_FALSE(SupportMessageOf(message, SendMark::None).has_value()) << generation;
+  }
+}
+
 // --- ShouldAutoSend ----------------------------------------------------------------------------------
 
 TEST(SupportAskTest, TheSameQuestionWithinTenMinutesIsNotSentAgain) {

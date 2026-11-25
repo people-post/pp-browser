@@ -1,0 +1,33 @@
+<!-- The news reader (DEV/PLAN-news-inline-digest.md): a tap on a news item of an AI answer opens this page sheet over
+     the chat. The item's title on top (from the list, never from the model), then "Getting the article…" with a spinner
+     until the first of the digest arrives; the digest then grows as it is written (redrawn at most ten times a second)
+     and is replaced by the final text, or by the fixed "Couldn't get the article text. Try opening the original." with
+     "Try again" under it (reads the same item again, in place); under it all "Open original" (the system browser) and, for a list, Previous / Next (off at the ends and while a read
+     runs). The digest is bound only while it shows. The desktop's panel is a separate view (desktop branch); state and events:
+     news_reader_title, news_reader_translated, news_reader_loading, news_reader_failed, news_reader_can_retry,
+     news_reader_body_rml, news_reader_has_nav, news_reader_can_prev, news_reader_can_next; news_reader_prev(),
+     news_reader_next(), news_reader_open_original(), news_reader_retry(). -->
+<div class="news-reader" data-model="chat">
+  <div class="sheet-header">
+    <p class="sheet-title"></p>
+  </div>
+  <div class="news-reader-scroll">
+    <h2 class="news-reader-title" selectable="text">{{news_reader_title}}</h2>
+    <p class="news-reader-translated" data-if="news_reader_translated">{{i18n:chat.news.translated}}</p>
+    <div class="news-reader-loading" data-if="news_reader_loading">
+      <div class="news-reader-spin"></div>
+      <p class="news-reader-note">{{i18n:chat.news.loading}}</p>
+    </div>
+    <p class="news-reader-note" data-if="news_reader_failed">{{i18n:chat.news.unavailable}}</p>
+    <button class="news-reader-retry" type="button" data-if="news_reader_can_retry"
+            data-event-click="news_reader_retry()">{{i18n:chat.news.retry}}</button>
+    <div class="news-reader-body" selectable="text" data-rml="news_reader_body_rml"></div>
+  </div>
+  <div class="news-reader-bar">
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_prev" data-event-click="news_reader_prev()">{{i18n:chat.news.previous}}</button>
+    <button class="news-reader-open" type="button" data-event-click="news_reader_open_original()">{{i18n:chat.news.open_original}}</button>
+    <button class="news-reader-step" type="button" data-if="news_reader_has_nav"
+            data-class-news-reader-step--off="!news_reader_can_next" data-event-click="news_reader_next()">{{i18n:chat.news.next}}</button>
+  </div>
+</div>

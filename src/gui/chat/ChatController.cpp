@@ -1498,6 +1498,12 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
     picture_queue_->ChatDeleted(); // never revived in its draft
     SettlePictureQueue();
   }
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    CloseNewsReader(); // its digest went with the chat
+  }
+  news_reading_url_.erase(thread_id);
+  news_reads_.erase(thread_id);
+  news_streams_.erase(thread_id);
   if (was_open) {
     CloseSearch();
     chat_.draft = "";
@@ -1723,6 +1729,10 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
   ForgetComposerExtras(thread_id);
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    CloseNewsReader(); // its digest was cleared with the chat
+  }
+  news_reads_.erase(thread_id);
   // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
   if (thread_id == ActiveThreadId()) {
     chat_.draft = "";
@@ -1820,6 +1830,10 @@ void ChatController::OnProfileDataReset() {
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   picture_send_.CloseForExit();
+  CloseNewsReader();
+  news_reading_url_.clear();
+  news_reads_.clear();
+  news_streams_.clear();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();
@@ -4565,10 +4579,18 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     return mark;
   };
   // The picture being sent is drawn after the newest message as our own (kept aside, put back by the display sync).
-  std::vector<MessageDisplayRow> rows =
-      pending_uploads_.Render(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
-                              presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
+  std::vector<TranscriptRow> transcript = facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive);
+  // The stored text of each answer with news items: their link tables come from it, with no store read per row.
+  std::map<std::string, std::string> news_texts;
+  for (const TranscriptRow& entry : transcript) {
+    if (entry.message.content_rml && entry.message.content_rml->find(kNewsLinkClass) != std::string::npos) {
+      news_texts.emplace(entry.message.id, entry.message.text);
+    }
+  }
+  std::vector<MessageDisplayRow> rows = pending_uploads_.Render(
+      std::move(transcript), facts, presenter_.MentionRosterOf(thread_id), thread_id, !newest_inclusive.has_value());
   agent_.DecorateAiImageRows(rows, thread_id);
+  MarkReadNewsItems(rows, thread_id, news_texts);
   ArmSendMarkRedraw(next_mark_change);
   TellResentTurnedRed(thread_id, red_ids);
   return rows;
@@ -5093,27 +5115,305 @@ void ChatController::SyncDisplayFromThread() {
 // persisted assistant message id, so the live bubble is a synthetic last row that ClearStreamingRow
 // drops right before FinishAssistantReply rebuilds the rows.
 
-void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index) {
+const std::vector<MarkdownLink>* ChatController::ChatLinksOf(const std::string& thread_id,
+                                                             const std::string& entry_id) {
   auto links = chat_links_.find(entry_id);
   if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
-    // After a restart the map is empty: rebuild from the message's own stored text.
-    if (auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000)) {
-      for (const ThreadMessage& message : *messages) {
-        if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
-          links = chat_links_.emplace(entry_id, RecoverChatLinks(message.text)).first;
-          break;
-        }
-      }
+    // After a restart the map is empty: rebuild from the message's own stored text. A news item counts only in the AI
+    // assistant's own answers in an AI conversation (FinishAssistantReply decides the same), never in a hidden digest.
+    auto found = facade_->GetMessage(thread_id, entry_id);
+    if (found && *found && (*found)->sender_contact_id == kAiAssistantContactId) {
+      auto thread = facade_->GetThread(thread_id);
+      const bool news = thread && *thread && (*thread)->kind == ThreadKind::Ai && !IsHiddenNewsMessage(**found);
+      links = chat_links_.emplace(entry_id, RecoverChatLinks((*found)->text, news)).first;
     }
   }
-  if (links == chat_links_.end()) {
+  return links == chat_links_.end() ? nullptr : &links->second;
+}
+
+void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index,
+                                    const bool news_reader) {
+  const std::vector<MarkdownLink>* links = ChatLinksOf(thread_id, entry_id);
+  if (!links) {
     return;
   }
-  const std::optional<std::string> url = ResolveChatLink(links->second, link_index);
-  if (!url) {
+  const std::optional<MarkdownLink> link = ResolveChatLink(*links, link_index);
+  if (!link) {
     return;
   }
-  OpenTrustedUrl(*url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+  if (link->news && news_reader) {
+    OpenNewsReader(thread_id, entry_id, *links, *link);
+    return;
+  }
+  OpenTrustedUrl(link->url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+}
+
+void ChatController::OpenNewsReader(const std::string& thread_id, const std::string& entry_id,
+                                    const std::vector<MarkdownLink>& links, const MarkdownLink& tapped) {
+  if (!messaging_ready_ || !facade_ || !shell_navigation_.push_layer) {
+    return;
+  }
+  NewsReaderOpen reader;
+  reader.thread_id = thread_id;
+  for (const MarkdownLink& item : NewsItemsOf(links)) {
+    if (item.news_ordinal == tapped.news_ordinal) {
+      reader.index = reader.items.size();
+    }
+    reader.items.push_back({item.url, item.label});
+  }
+  if (reader.items.empty()) {
+    return;
+  }
+  if (reader.items.size() == 1) {
+    // A news pick: its link says "View details"; the title is the pick's own headline.
+    auto message = facade_->GetMessage(thread_id, entry_id);
+    reader.items[0].title = NewsPickTitle(message && *message ? (*message)->text : std::string(), reader.items[0].url);
+  }
+  const size_t index = reader.index;
+  news_reader_ = std::move(reader);
+  ShowNewsItem(index);
+  if (!news_reader_ || news_reader_layer_ >= 0) {
+    return; // "wait for this answer" (the sheet does not open), or the sheet is already up
+  }
+  PaneSpec spec;
+  spec.key = "news_reader";
+  spec.page_sheet = true;
+  news_reader_layer_ = shell_navigation_.push_layer(spec);
+  if (news_reader_layer_ < 0) {
+    news_reader_.reset(); // no sheet: a read that started goes on and is stored, the reader state goes
+    ApplyNewsReader();
+    return;
+  }
+  if (flow_coordinator_.begin_modal) {
+    // Closed by a swipe, its X or a notification tap: the read goes on and is stored; only the sheet goes.
+    flow_coordinator_.begin_modal(news_reader_layer_, {}, [this]() {
+      news_reader_layer_ = -1;
+      news_reader_.reset();
+      ApplyNewsReader();
+    });
+  }
+}
+
+void ChatController::ShowNewsItem(const size_t index, const bool retry) {
+  if (!news_reader_ || index >= news_reader_->items.size()) {
+    return;
+  }
+  const std::string thread_id = news_reader_->thread_id;
+  const NewsItem item = news_reader_->items[index];
+  const auto reading = news_reading_url_.find(thread_id);
+  switch (DecideNewsTapFor(NewsReadsOf(thread_id), item.url,
+                           reading == news_reading_url_.end() ? std::string() : reading->second,
+                           agent_.NewsReadMustWait(thread_id))) {
+    case NewsTap::Wait:
+      ShowToast(Tr("chat.news.wait")); // nothing is asked; an open sheet stays on the item it shows
+      if (news_reader_layer_ < 0) {
+        news_reader_.reset(); // never opened
+      }
+      return;
+    case NewsTap::StartRead:
+      if (agent_.StartNewsRead(thread_id,
+                               NewsReadRequestText(item.url, LocalizationService::Instance().ResolvedLanguage()),
+                               item.title, retry) != SubmitOutcome::Started) {
+        ShowToast(Tr("chat.news.wait"));
+        if (news_reader_layer_ < 0) {
+          news_reader_.reset(); // never opened
+        }
+        return;
+      }
+      news_reading_url_[thread_id] = item.url;
+      break;
+    case NewsTap::ShowStored:
+    case NewsTap::ShowReading:
+      break;
+  }
+  news_reader_->index = index;
+  ApplyNewsReader();
+}
+
+void ChatController::StepNewsReader(const int step) {
+  if (!news_reader_ || !chat_.news_reader_has_nav) {
+    return;
+  }
+  if ((step < 0 && !chat_.news_reader_can_prev) || (step > 0 && !chat_.news_reader_can_next)) {
+    return;
+  }
+  ShowNewsItem(step < 0 ? news_reader_->index - 1 : news_reader_->index + 1);
+}
+
+void ChatController::RetryNewsItem() {
+  if (!news_reader_ || !chat_.news_reader_can_retry) {
+    return;
+  }
+  if (!NewsRetryTakesTap(news_failed_since_, std::chrono::steady_clock::now())) {
+    log().debug << "news retry tap ignored: the failure showed less than 1 s ago";
+    return;
+  }
+  // The decision a tap on an unread item takes: read it now, or the "wait" pill (nothing asked, the sheet stays).
+  ShowNewsItem(news_reader_->index, /*retry=*/true);
+}
+
+void ChatController::OpenNewsOriginal() {
+  if (!news_reader_ || news_reader_->index >= news_reader_->items.size()) {
+    return;
+  }
+  OpenTrustedUrl(news_reader_->items[news_reader_->index].url); // a news item of the AI assistant's own answer
+}
+
+void ChatController::CloseNewsReader() {
+  news_reader_.reset();
+  if (news_reader_layer_ >= 0) {
+    const int layer = news_reader_layer_;
+    news_reader_layer_ = -1;
+    if (flow_coordinator_.end_modal) {
+      flow_coordinator_.end_modal();
+    }
+    if (shell_navigation_.close_layer) {
+      shell_navigation_.close_layer(layer);
+    }
+  }
+  ApplyNewsReader();
+}
+
+void ChatController::ApplyNewsReader() {
+  const bool was_failed = chat_.news_reader_failed;
+  chat_.news_reader_title = "";
+  chat_.news_reader_translated = false;
+  chat_.news_reader_loading = false;
+  chat_.news_reader_failed = false;
+  chat_.news_reader_can_retry = false;
+  chat_.news_reader_body_rml = ""; // the digest is bound only while it shows (and never kept under a lock)
+  chat_.news_reader_has_nav = false;
+  chat_.news_reader_can_prev = false;
+  chat_.news_reader_can_next = false;
+  if (news_reader_ && news_reader_->index < news_reader_->items.size()) {
+    const NewsItem& item = news_reader_->items[news_reader_->index];
+    chat_.news_reader_title = item.title.c_str();
+    const auto reading = news_reading_url_.find(news_reader_->thread_id);
+    const auto stream = news_streams_.find(news_reader_->thread_id);
+    const NewsReaderShows shows =
+        NewsReaderShowsFor(NewsReadsOf(news_reader_->thread_id), item.url,
+                           reading == news_reading_url_.end() ? std::string() : reading->second,
+                           stream == news_streams_.end() ? std::string_view() : std::string_view(stream->second.text));
+    if (stream != news_streams_.end()) {
+      stream->second.Drawn(std::chrono::steady_clock::now()); // the sheet is up to date with this read
+    }
+    // The digest is untrusted web text: nothing in it is tappable ("Open original" is the way to the article). The
+    // text a read streams is shown the same way, and replaced by the stored digest (done's text) when the read ends.
+    if (shows.digest) {
+      chat_.news_reader_body_rml = MarkdownToRml(shows.digest->text, MarkdownOptions{.links = false}).rml.c_str();
+    } else if (!shows.partial.empty()) {
+      chat_.news_reader_body_rml = MarkdownToRml(shows.partial, MarkdownOptions{.links = false}).rml.c_str();
+    }
+    chat_.news_reader_translated = shows.translated;
+    chat_.news_reader_loading = shows.loading;
+    chat_.news_reader_failed = shows.failed;
+    chat_.news_reader_can_retry = shows.can_retry;
+    const NewsNav nav = NewsNavFor(news_reader_->index, news_reader_->items.size(), shows.reading);
+    chat_.news_reader_has_nav = nav.shown;
+    chat_.news_reader_can_prev = nav.can_prev;
+    chat_.news_reader_can_next = nav.can_next;
+  }
+  if (!chat_.news_reader_failed) {
+    news_failed_since_.reset();
+  } else if (!was_failed || !news_failed_since_) {
+    news_failed_since_ = std::chrono::steady_clock::now(); // "Try again" takes taps 1 s from now
+  }
+  for (const char* field : {"news_reader_title", "news_reader_translated", "news_reader_loading", "news_reader_failed",
+                            "news_reader_can_retry", "news_reader_body_rml", "news_reader_has_nav",
+                            "news_reader_can_prev", "news_reader_can_next"}) {
+    DataModelHost::Instance().Dirty("chat", field);
+  }
+}
+
+const NewsReads& ChatController::NewsReadsOf(const std::string& thread_id) {
+  static const NewsReads kNone;
+  auto found = news_reads_.find(thread_id);
+  if (found != news_reads_.end()) {
+    return found->second;
+  }
+  if (!messaging_ready_ || !facade_ || !MessagingReady() || thread_id.empty()) {
+    return kNone; // locked or not set up: nothing is read, and nothing is remembered as "none read"
+  }
+  // Once per chat (until it is locked, cleared or deleted): only its hidden news rows are read and decrypted.
+  auto rows = facade_->GetMessagesByGeneration(thread_id, {kNewsRequestGeneration, kNewsDigestGeneration,
+                                                           kNewsDigestTranslatedGeneration, kNewsFailedGeneration});
+  if (!rows) {
+    return kNone;
+  }
+  return news_reads_.emplace(thread_id, ScanNewsReads(*rows)).first->second;
+}
+
+void ChatController::MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id,
+                                       const std::map<std::string, std::string>& news_texts) {
+  if (thread_id.empty() || news_texts.empty()) {
+    return;
+  }
+  const NewsReads& reads = NewsReadsOf(thread_id);
+  if (reads.digests.empty()) {
+    return;
+  }
+  for (MessageDisplayRow& row : rows) {
+    const auto text = news_texts.find(row.message_id.c_str());
+    if (text == news_texts.end()) {
+      continue;
+    }
+    // The link table the click uses when it is known; else parsed from the stored text (a bubble drawn with news
+    // items was stored as one; only the class changes here, a click still goes through ChatLinksOf).
+    const auto cached = chat_links_.find(text->first);
+    const std::vector<MarkdownLink> parsed =
+        cached == chat_links_.end() ? RecoverChatLinks(text->second, /*news_links=*/true) : std::vector<MarkdownLink>{};
+    const std::vector<MarkdownLink>& links = cached == chat_links_.end() ? parsed : cached->second;
+    row.content_rml = MarkNewsLinksRead(std::string(row.content_rml.c_str()), links, [&reads](const std::string& url) {
+                        return reads.IsRead(url);
+                      }).c_str();
+  }
+}
+
+void ChatController::OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) {
+  if (news_reading_url_.count(thread_id) == 0) {
+    return; // no read of this screen runs there (it ended, or the chat was deleted)
+  }
+  news_streams_[thread_id].Grow(text_so_far);
+  DrawNewsStream();
+}
+
+void ChatController::DrawNewsStream() {
+  if (!news_reader_) {
+    return; // the sheet is closed: the text gathers, and shows when it opens on that item again
+  }
+  const auto stream = news_streams_.find(news_reader_->thread_id);
+  if (stream != news_streams_.end() && stream->second.DrawDue(std::chrono::steady_clock::now())) {
+    ApplyNewsReader();
+  }
+}
+
+void ChatController::OnNewsReadEnded(const std::string& thread_id) {
+  const auto reading = news_reading_url_.find(thread_id);
+  if (reading == news_reading_url_.end()) {
+    return;
+  }
+  news_reading_url_.erase(reading);
+  // What was streamed is never kept: the stored answer (done's text, or none) is what the reader shows now.
+  news_streams_.erase(thread_id);
+  // What the read stored is among the newest rows (its request, then the answer): added to what the chat has read,
+  // with no rescan. A failed read adds nothing (the item stays unread).
+  if (const auto known = news_reads_.find(thread_id); known != news_reads_.end() && facade_ && MessagingReady()) {
+    constexpr size_t kTurnRows = 8;
+    if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, kTurnRows)) {
+      for (auto& [url, digest] : ScanNewsReads(*newest).digests) {
+        known->second.digests.insert_or_assign(url, std::move(digest));
+      }
+    } else {
+      news_reads_.erase(known); // read again when next needed
+    }
+  }
+  if (news_reader_ && news_reader_->thread_id == thread_id) {
+    ApplyNewsReader(); // the digest, or the fixed "couldn't get the article text" line
+  }
+  if (thread_id == ActiveThreadId()) {
+    SyncDisplayFromThread(); // the item turns grey in its list ...
+    DirtyChatTurns();        // ... drawn now, also with the sheet closed (nothing else redraws the rows then)
+  }
 }
 
 bool ChatController::MessageFromAssistant(const std::string& thread_id, const std::string& entry_id) {
@@ -5767,7 +6067,8 @@ void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
     int64_t best_order = -1;
     for (const ThreadMessage& candidate : *page) {
       if (candidate.id == reply_message_id || candidate.display_order >= reply_order ||
-          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
+          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation ||
+          IsHiddenNewsMessage(candidate)) { // a news read's hidden rows are never drawn: no quote lands there
         continue;
       }
       if (PlainTextOf(candidate).rfind(needle, 0) == 0) {
@@ -6721,6 +7022,10 @@ bool ChatController::Setup(ui::Context* context) {
                                DataEvent<std::string, int>(
                                    [this](const std::string& entry_id, int link) { OpenChatLink(entry_id, link); }));
         ctor.BindEventCallback("stop_turn", DataEvent([this] { agent_.OnStopTurn(); }));
+        ctor.BindEventCallback("news_reader_prev", DataEvent([this] { StepNewsReader(-1); }));
+        ctor.BindEventCallback("news_reader_next", DataEvent([this] { StepNewsReader(1); }));
+        ctor.BindEventCallback("news_reader_open_original", DataEvent([this] { OpenNewsOriginal(); }));
+        ctor.BindEventCallback("news_reader_retry", DataEvent([this] { RetryNewsItem(); }));
         ctor.BindEventCallback("cancel_queued", DataEvent([this] { CancelQueuedHere(); }));
         // The row of a picture being sent (pending-upload-…) is no message: none of the row events below acts on it.
         ctor.BindEventCallback("toggle_reaction", DataEvent<std::string, std::string>(
@@ -7159,8 +7464,9 @@ void ChatController::Update() {
     }
   }
 
-  agent_.Tick();  // the streamed row, a held send, the agent's events
-  ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
+  agent_.Tick();    // the streamed row, a held send, the agent's events
+  DrawNewsStream(); // a news read's text that came within the reader's last redraw interval
+  ask_ai_.Tick();   // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
   group_leave_.Tick(std::chrono::steady_clock::now());
   join_prompt_->Tick(std::chrono::steady_clock::now());
@@ -7195,6 +7501,11 @@ void ChatController::Update() {
   }
   if (messaging_ready_ && !MessagingReady()) {
     picture_send_.CloseForExit(); // an open preview page closes by itself (nothing else closes layers on a lock)
+    if (news_reader_layer_ >= 0 || news_reader_) {
+      CloseNewsReader(); // the digest on screen is plaintext: it goes with the lock
+    }
+    news_reads_.clear();
+    news_streams_.clear(); // so is a read's text streamed so far
   }
   if (messaging_ready_ && !MessagingReady()) {
     DropWaitingVoice(); // recordings that have not started are plaintext under the lock: they go, as the lock wipes them
@@ -7588,6 +7899,10 @@ void ChatController::Shutdown() {
   pending_uploads_.Drop(); // the lock check never sees this teardown: the plaintext thumbnail goes here
   AbandonPick();
   picture_send_.CloseForExit();
+  CloseNewsReader();
+  news_reading_url_.clear();
+  news_reads_.clear();
+  news_streams_.clear();
   if (picture_queue_) {
     picture_queue_->SignedOut(); // the rest released, the text dropped; an item in flight releases its own copy
     picture_queue_.reset();
@@ -7792,6 +8107,7 @@ void ChatController::OnSearchMessagesChanged() {
 }
 
 void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
+  OnNewsReadEnded(thread_id);
   if (!thread_id.empty() && thread_id == search_thread_) {
     OnSearchMessagesChanged(); // the answer is stored now
   }
@@ -7877,8 +8193,11 @@ bool ChatController::AskAiLastIsQuestion(const std::string& thread_id) {
   if (!messaging_ready_ || !facade_ || thread_id.empty()) {
     return false;
   }
-  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
-  return newest && !newest->empty() && newest->back().sender_contact_id == kLocalSelfContactId;
+  // A news read's hidden request is no question left unanswered: the newest message shown decides.
+  constexpr size_t kLookBack = 20;
+  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, kLookBack);
+  const ThreadMessage* shown = newest ? NewestShownMessage(*newest) : nullptr;
+  return shown && shown->sender_contact_id == kLocalSelfContactId;
 }
 
 std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, const std::string& text) {
