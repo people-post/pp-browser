@@ -22,6 +22,24 @@ struct QrDisplay {
 
 inline constexpr int kQrDesktopDp = 200;
 
+/**
+ * The link handshake's codes (version 29: 133 modules, 141 with the quiet zone) are read by a phone from another
+ * screen, so they are drawn as large as the page allows. A desktop gives each module at least 3dp (423dp) when the
+ * window has the height for it, and never less than the 280dp the pages always had.
+ */
+inline constexpr int kLinkQrDesktopMinDp = 280;
+inline constexpr int kLinkQrDesktopMaxDp = 423;
+/** Height, in dp, the link pages keep for everything but the code on a desktop (title, line, digits, buttons). */
+inline constexpr int kLinkQrDesktopReservedHeightDp = 470;
+/** Width the desktop page keeps beside the code (card padding and the window's own margin). */
+inline constexpr int kLinkQrDesktopReservedWidthDp = 96;
+
+/** Pure part: the link code's display on a page `width_dp` wide and `height_dp` tall (phones: the page's width). */
+QrDisplay LinkQrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio);
+
+/** The link code's display on `context`'s window (a null context counts as a 390dp phone / 1100dp desktop). */
+QrDisplay LinkQrDisplayFor(bool compact, ui::Context* context);
+
 /** Pure part: the display for a page `width_dp` wide and `height_dp` tall at `dp_ratio` pixels per dp. */
 QrDisplay QrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio);
 

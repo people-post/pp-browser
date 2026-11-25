@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/ui/ShellTypes.h"
+#include "gui/PinGateActionPorts.h"
 #include "gui/shell/ShellPinGatePorts.h"
 #include "gui/PinPromptPorts.h"
 #include "gui/UnlockGateCompletePorts.h"
@@ -181,5 +182,11 @@ private:
   /** Bumped on every verify / change check and on cancel: a late result only acts if it is still the current one. */
   uint64_t request_ = 0;
 };
+
+/**
+ * Every shell action of the gate wired to `controller` (Application binds the result to ShellHost). One place, so a
+ * button whose port nobody filled -- the link page's Scan did nothing for that reason -- fails a test instead of a device.
+ */
+PinGateActionPorts MakePinGateActionPorts(PinGateController& controller);
 
 } // namespace pbr

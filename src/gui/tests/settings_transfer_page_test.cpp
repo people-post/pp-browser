@@ -49,28 +49,26 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
                             "settings.security.link_device.check_ok", "settings.security.link_device.reply_title",
                             "settings.security.link_device.copy_reply", "settings.security.link_device.reply_copied",
                             "settings.security.link_device.lead", "settings.security.link_device.copied_valid",
-                            "settings.security.link_device.steps_head", "settings.security.link_device.step1",
-                            "settings.security.link_device.step2", "settings.security.link_device.step3",
-                            "settings.security.link_device.phone_note"}) {
+                            "settings.security.link_device.done", "settings.security.link_device.phone_note"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");
-  // The steps quote the new device's real strings.
+  // The lead quotes the new device's real string.
   EXPECT_NE(zh.find("\"pin.identity_link\": \"我在别的设备上已经有账号\""), std::string::npos);
-  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”\""), std::string::npos);
-  EXPECT_NE(en.find("“I already have an account on another device”\""), std::string::npos);
-  // Three short steps, then one grey line; the old long paragraphs are gone.
-  EXPECT_NE(zh.find("\"settings.security.link_device.step2\": \"设一个 PIN 码\""), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.security.link_device.step3\": \"核对数字后，扫描这台设备显示的码\""),
-            std::string::npos);
+  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”"), std::string::npos);
+  EXPECT_NE(en.find("“I already have an account on another device”"), std::string::npos);
+  // One lead line, one short help line (desktop) and one grey note; the three-step list and the two extra captions
+  // of the desktop are gone (the lead and the note say the same, and the page was too long).
   EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
                     "be reset first.\""),
             std::string::npos);
-  for (const char* gone : {"link_device.precondition", "link_device.change_phone", "link_device.copy_button",
-                           "link_device.export_confirm_message"}) {
+  for (const char* gone :
+       {"link_device.precondition", "link_device.change_phone", "link_device.copy_button",
+        "link_device.export_confirm_message", "link_device.step1", "link_device.step2", "link_device.step3",
+        "link_device.steps_head", "link_device.send_hint", "link_device.reset_hint"}) {
     EXPECT_EQ(zh.find(gone), std::string::npos) << gone;
     EXPECT_EQ(en.find(gone), std::string::npos) << gone;
   }
@@ -84,26 +82,22 @@ TEST(TransferPageMarkupTest, TheScanAndPasteButtonsAndTheReplyBoxAreOnThePage) {
   EXPECT_NE(rml.find("data-rml=\"link_reply_qr_rml\""), std::string::npos) << "the reply as a QR code";
   EXPECT_NE(rml.find("data-event-click=\"copy_link_reply()\""), std::string::npos) << "and as text to copy";
   EXPECT_EQ(rml.find("{{link_reply_text"), std::string::npos) << "the text is never bound (B166)";
-  // The three old captions stay for the desktop only; nothing displays the code.
-  for (const char* key : {"link_device.help", "link_device.reset_hint"}) {
-    const size_t at = rml.find(std::string("{{i18n:settings.security.") + key);
-    ASSERT_NE(at, std::string::npos);
-    const size_t open = rml.rfind("<p ", at);
-    EXPECT_NE(rml.substr(open, at - open).find("settings-desktop-only"), std::string::npos) << key;
-  }
+  // The one short help line is for the desktop only; nothing displays the code.
+  const size_t help = rml.find("{{i18n:settings.security.link_device.help}}");
+  ASSERT_NE(help, std::string::npos);
+  EXPECT_NE(rml.substr(rml.rfind("<p ", help), help - rml.rfind("<p ", help)).find("settings-desktop-only"),
+            std::string::npos);
   EXPECT_EQ(rml.find("{{recovery"), std::string::npos);
   EXPECT_EQ(rml.find("{{export"), std::string::npos);
-  // The phone page's end: the grey note with its one "?" (same event as the main device's hero), no precondition, no
-  // "one device at a time" line and no change-phones sentence; send_hint stays on the desktop only.
+  // The grey note with its one "?" (same event as the main device's hero); no steps list over the lead.
   const size_t note = rml.find("{{i18n:settings.security.link_device.phone_note}}");
   ASSERT_NE(note, std::string::npos);
   EXPECT_NE(rml.find("ask_setting_help('settings.security.transfer_row')", note), std::string::npos);
   EXPECT_EQ(rml.find("ask_setting_help", rml.find("ask_setting_help") + 1), std::string::npos) << "one \"?\"";
-  const size_t send = rml.find("link_device.send_hint");
-  ASSERT_NE(send, std::string::npos);
-  EXPECT_EQ(rml.find("link_device.send_hint", send + 1), std::string::npos) << "desktop only";
-  EXPECT_NE(rml.substr(rml.rfind("<p ", send), send - rml.rfind("<p ", send)).find("settings-desktop-only"),
-            std::string::npos);
+  EXPECT_EQ(rml.find("settings-transfer-steps"), std::string::npos);
+  // The reply ends in one main button, "Done"; the code takes its side from the page.
+  EXPECT_NE(rml.find("data-style-width=\"link_qr_side\""), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.security.link_device.done}}"), std::string::npos);
 }
 
 // --- the "copied" flag --------------------------------------------------------------------------------------------
@@ -233,6 +227,22 @@ protected:
 };
 
 // Default PIN: the digits check carries the line and a "?" that tells the PIN; an own PIN has neither.
+// "Scan" follows the machine's cameras: none listed, only Paste is left (and it is the main button, see the layout test).
+TEST_F(LinkReplyTest, ScanIsOfferedOnlyWhileACameraIsListed) {
+  bool camera = true;
+  commands.can_scan_link_offer = [&camera]() { return camera; };
+  actions->RefreshLinkCanScan();
+  EXPECT_TRUE(actions->LinkCanScanForTest());
+  camera = false;
+  actions->RefreshLinkCanScan();
+  EXPECT_FALSE(actions->LinkCanScanForTest()) << "no camera listed";
+  actions->ClearLinkReply();
+  EXPECT_FALSE(actions->LinkCanScanForTest()) << "leaving the reply keeps it";
+  camera = true;
+  actions->RefreshLinkCanScan();
+  EXPECT_TRUE(actions->LinkCanScanForTest());
+}
+
 TEST_F(LinkReplyTest, TheCheckOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
   ScanToTheCheck();
   ASSERT_EQ(noted_confirms, 1);

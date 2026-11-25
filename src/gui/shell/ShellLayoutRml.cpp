@@ -470,7 +470,10 @@ std::string ShellLayoutRml::PinGate() const {
       << (state_.call_ring.awaiting_invite ? " shell-pin-gate--over-call" : "") << "\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
   const bool frost = ChromeFrostEnabled();
-  out << "<div class=\"shell-dialog shell-pin-gate" << (frost ? " shell-pin-gate--frost" : "") << "\">";
+  const bool link_page = state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow;
+  out << "<div class=\"shell-dialog shell-pin-gate" << (frost ? " shell-pin-gate--frost" : "")
+      << (link_page ? " shell-pin-gate--link" : "")
+      << (link_page && state_.layout_mode == LayoutMode::Compact ? " shell-pin-gate--compact" : "") << "\">";
   if (frost) {
     out << "<div class=\"bar-material bar-material--frost shell-pin-gate-material\"></div>";
   }
@@ -494,26 +497,39 @@ std::string ShellLayoutRml::PinGate() const {
       << "</button>";
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back") << "</button>";
   out << "</div>";
-  // The link page (M027): this device's one-time offer as a QR code for the main device to scan, its 4 digits to
-  // compare, and the same offer as text; then the main device's reply, scanned or pasted (no field: it is over a
-  // kilobyte, B166/B167, and nobody types it).
-  out << "<div class=\"shell-pin-gate-link stack\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
+  // The link page (M027): this device's one-time offer as a QR code for the main device to scan, the 4 digits to
+  // compare under it, and the same offer as text; then, as a second step, the main device's reply, scanned or pasted
+  // (no field: it is over a kilobyte, B166/B167, and nobody types it). Exactly one primary button at a time: Scan
+  // when a camera is listed, else Paste, and Continue once a reply was pasted.
+  out << "<div class=\"shell-pin-gate-offer\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
          "pin_gate_link_offer_qr_rml != ''\">";
-  out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
-  out << "<p class=\"text shell-pin-gate-code\">" << Tr("pin.link_offer_code") << " {{pin_gate_link_offer_code}}</p>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_copy_offer()\">" << Tr("pin.link_copy_offer")
-      << "</button>";
+  out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-style-width=\"pin_gate_link_qr_side\" "
+         "data-style-height=\"pin_gate_link_qr_side\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+  out << "<p class=\"text muted shell-pin-gate-code-label\">" << Tr("pin.link_offer_code") << "</p>";
+  out << "<p class=\"shell-pin-gate-code\">{{pin_gate_link_offer_code}}</p>";
+  out << "<p class=\"text muted shell-pin-gate-valid\">{{pin_gate_link_valid}}</p>";
+  out << "<button class=\"btn btn-ghost shell-pin-gate-copy\" data-event-click=\"pin_gate_copy_offer()\">"
+      << Tr("pin.link_copy_offer") << "</button>";
   out << "</div>";
-  out << "<button class=\"btn btn-secondary shell-pin-gate-scan\" data-if=\"pin_gate_link_paste_mode && "
-         "!pin_gate_phrase_flow && pin_gate_link_can_scan && !pin_gate_payload_hidden\" "
+  out << "<div class=\"shell-pin-gate-return\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
+         "!pin_gate_payload_hidden\">";
+  out << "<p class=\"text shell-pin-gate-step\">" << Tr("pin.link_return_step") << "</p>";
+  out << "<button class=\"btn btn-primary shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" "
          "data-event-click=\"pin_gate_scan_reply()\">"
       << Tr("pin.link_scan_reply") << "</button>";
+  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_can_scan\" "
+         "data-event-click=\"pin_gate_paste()\">"
+      << Tr("pin.paste_button") << "</button>";
+  out << "<button class=\"btn btn-primary shell-pin-gate-paste\" data-if=\"!pin_gate_link_can_scan\" "
+         "data-event-click=\"pin_gate_paste()\">"
+      << Tr("pin.paste_button") << "</button>";
+  out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
   out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_paste_mode && "
-         "!pin_gate_payload_hidden\" "
+         "pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_paste()\">"
       << Tr("pin.paste_button") << "</button>";
   // B166/B167: a transfer code is a multi-KB blob; rendering it in the textarea froze the app. Once a paste is too big
@@ -590,8 +606,10 @@ void ShellLayoutRml::PinGateFields(std::ostringstream& out) const {
   out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("common.back") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
-      << "</button>";
+  // On the link page Continue exists only once a reply was pasted: before that it was a dead end.
+  out << "<button class=\"btn btn-primary\" data-if=\"!pin_gate_link_paste_mode || pin_gate_phrase_flow || "
+         "pin_gate_payload_hidden\" data-event-click=\"pin_gate_submit()\">"
+      << Tr("common.continue") << "</button>";
   out << "</div>";
   // Back to the number pad: a PIN known to be digits, or a new PIN on a phone.
   out << "<button class=\"btn btn-ghost shell-pin-gate-link\" "

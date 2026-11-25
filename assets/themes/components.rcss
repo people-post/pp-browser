@@ -7625,29 +7625,107 @@ input.checkbox {
 }
 
 /* The link page (M027): the new device's offer, a dense QR code (version 29) the main device's camera reads from this
-   screen, so as large as the card allows; dark on white whatever the theme. */
-.shell-pin-gate-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6dp;
-  margin-bottom: 10dp;
+   screen, so as large as the page allows (the shell binds its side, QrDisplay.h LinkQrDisplayFor); dark on white
+   whatever the theme. The card widens for it: on a desktop to 560dp, on a phone to the whole screen, and scrolls when
+   the second step does not fit under the code. */
+.shell-dialog.shell-pin-gate--link {
+  width: 94%;
+  max-width: 560dp;
+  max-height: 96%;
+  overflow-y: auto;
+  padding: 20dp 24dp;
+}
+
+.shell-dialog.shell-pin-gate--link.shell-pin-gate--compact {
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  transform: none;
+  border-radius: 0;
+  padding: 44dp 20dp 16dp 20dp;
+}
+
+.shell-pin-gate--link .shell-dialog-title,
+.shell-pin-gate--link .shell-dialog-message {
+  text-align: center;
+}
+
+/* No reserved empty lines on this page: the room goes to the code (the error line grows when it has words). */
+.shell-pin-gate--link .shell-pin-gate-error {
+  min-height: 0;
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.shell-pin-gate--link .shell-dialog-actions {
+  margin-top: 4dp;
+}
+
+.shell-pin-gate-offer {
+  display: block;
+  margin: 8dp 0 4dp 0;
+  text-align: center;
 }
 
 .shell-pin-gate-qr {
-  width: 260dp;
-  height: 260dp;
+  display: block;
+  width: 280dp;
+  height: 280dp;
+  margin: 0 auto;
   /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
   image-color: #ffffff;
 }
 
+.shell-pin-gate-code-label {
+  margin: 12dp 0 0 0;
+  font-size: 13dp;
+  text-align: center;
+}
+
 .shell-pin-gate-code {
+  margin: 0;
+  font-size: 30dp;
+  line-height: 38dp;
+  font-weight: bold;
+  letter-spacing: 6dp;
+  text-align: center;
+}
+
+.shell-pin-gate-valid {
+  margin: 0 0 4dp 0;
+  font-size: 12dp;
+  text-align: center;
+}
+
+.shell-pin-gate-copy {
+  display: block;
+  width: 100%;
+  min-height: 44dp;
+  text-align: center;
+}
+
+/* The second step, the main device's reply: its own block under the first, the main action full width. */
+.shell-pin-gate-return {
+  display: block;
+  margin: 8dp 0 4dp 0;
+}
+
+.shell-pin-gate-step {
+  margin: 0 0 8dp 0;
   font-weight: bold;
   text-align: center;
 }
 
-.shell-pin-gate-scan {
+.shell-pin-gate-return .btn {
+  display: block;
+  width: 100%;
+  min-height: 50dp;
+  line-height: 50dp;
   margin-bottom: 8dp;
+  text-align: center;
 }
 
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
@@ -14086,10 +14164,11 @@ textarea:composing ~ .prompt-composer-label,
 .settings-link-reply {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6dp;
 }
 
+/* The code's side is bound (link_qr_side: the page's width on a phone, up to 423dp on a desktop window). */
 .settings-link-qr {
   width: 280dp;
   height: 280dp;
@@ -14099,6 +14178,34 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .settings-link-reply {
+  align-items: center;
+}
+
+/* The reply's two buttons: "Copy as text" quiet, "Done" the one main button; 50dp rows, as wide as the code. */
+.settings-link-btn {
+  display: block;
+  width: 100%;
+  max-width: 360dp;
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 4dp 0 0 0;
+  text-align: center;
+}
+
+/* The link page's Scan / Paste buttons: 50dp rows, one under the other. */
+.settings-transfer-btn {
+  display: block;
+  width: 100%;
+  max-width: 360dp;
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 10dp 0 0 0;
+  text-align: center;
+}
+
+.settings-transfer-note {
+  display: flex;
+  flex-direction: row;
   align-items: center;
 }
 

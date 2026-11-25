@@ -22,7 +22,17 @@ unsupported-contact notice.
 
 The camera fills the preview, with a centered square guide, a darkened surrounding area,
 corner marks and an animated scan line. This guide is local UI; recognition sees the captured
-frame. Scanning requests a modest capture size independently of call video settings.
+frame. Scanning requests a 1920×1080 capture independently of call video settings (a camera
+without it delivers the closest size it has): the link handshake's codes are QR version 29
+(141 modules with the quiet zone), which need about 3 pixels per module. Recognition keeps
+frames up to 1920 on their long edge whole, and quirc is built with 16-bit region numbers
+(`third_party/quirc/CMakeLists.txt`): at its default of 254 blobs it never saw the finder
+pattern at the bottom of a dense code. A decode takes about 11 ms at 1080p on a Mac and runs on
+the scanner's worker, never more than half its time.
+
+**Scan only where it can work.** `QrScanController::CanScan()` asks the media backend whether the OS
+lists a camera (`IMediaDeviceBackend::HasCamera`; nothing is opened, no permission prompt). The
+link pages offer *Scan* only then; with no camera, *Paste* is their one main button.
 
 A detected but unreadable centered code can trigger automatic magnification up to 3x. Native
 iOS rear-camera zoom waits for actual ramp progress before increasing again; unsupported

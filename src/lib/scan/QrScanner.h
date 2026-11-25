@@ -26,6 +26,8 @@ public:
   ~QrScanner();
   QrScanner(const QrScanner&) = delete;
   QrScanner& operator=(const QrScanner&) = delete;
+  /** The OS lists a camera, so a scan could open one (nothing is opened to find out). */
+  bool CameraAvailable() const;
   /** Replaces any previous scan; rear camera preferred. Pass UI-thread display rotation. */
   void Start(int display_rotation_deg = 0);
   /** Cancels, clears pending updates, never waits on OS permission or camera close. */

@@ -28,6 +28,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
+#include "gui/QrDisplay.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/shell/MascotFigure.h"
 #include "gui/shell/MascotLook.h"
@@ -173,6 +174,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_link_offer_qr_rml", &host.state_.pin_gate.link_offer_qr);
     ctor.Bind("pin_gate_link_offer_code", &host.state_.pin_gate.link_offer_code);
     ctor.Bind("pin_gate_link_can_scan", &host.state_.pin_gate.link_can_scan);
+    ctor.Bind("pin_gate_link_valid", &host.state_.pin_gate.link_valid);
+    ctor.Bind("pin_gate_link_qr_side", &host.state_.pin_gate.link_qr_side);
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -1404,6 +1407,8 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_qr_rml");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_code");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_can_scan");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_valid");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
@@ -1691,6 +1696,9 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
+  if (state.link_paste_mode) {
+    state_.pin_gate.link_qr_side = LinkQrDisplayFor(state_.layout_mode == LayoutMode::Compact, context_).css.c_str();
+  }
   ReconcileStartupCover();
 }
 
