@@ -12,6 +12,11 @@ on:
     - cron: '17 7 * * *' # 07:17 UTC, past midnight in California
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Where the lab runs (empty: the repository variable PP_LAB_RUNNER, else codebuild)'
+        type: choice
+        options: ['', codebuild, github]
+        default: ''
       suites:
         description: 'Suites to run (space-separated)'
         default: 'app app-nat'
@@ -43,3 +48,4 @@ jobs:
       only: ${{ inputs.only || '' }}
       tags: ${{ inputs.tags || '' }}
       issues: true
+      runner: ${{ inputs.runner || '' }}

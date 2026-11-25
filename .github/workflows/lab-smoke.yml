@@ -19,6 +19,11 @@ on:
       - '**/*.md'
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Where the lab runs (empty: the repository variable PP_LAB_RUNNER, else codebuild)'
+        type: choice
+        options: ['', codebuild, github]
+        default: ''
       tags:
         description: 'Scenarios with any of these tags (a,b)'
         default: 'smoke'
@@ -53,3 +58,4 @@ jobs:
       issues: false
       suite_timeout_minutes: 30 # the tier's budget is 15 min of scenarios; the rest is building and the stack
       job_timeout_minutes: 75
+      runner: ${{ inputs.runner || '' }}
