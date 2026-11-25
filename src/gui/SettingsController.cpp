@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+#include "gui/QrDisplay.h"
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -1540,6 +1541,7 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
+  security_actions_.RefreshLinkCanScan();
   FlushPending();
   ResetSecurityPage();
 
@@ -1702,7 +1704,14 @@ void SettingsController::RefreshBlockedCount() {
   DataModelHost::Instance().Dirty("settings", "blocked_count");
 }
 
+std::string SettingsController::LinkQrSide() const {
+  return LinkQrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_,
+                          kLinkQrDesktopSettingsReservedWidthDp)
+      .css;
+}
+
 void SettingsController::OpenSecurityPage(const std::string& page) {
+  security_actions_.RefreshLinkCanScan();
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;

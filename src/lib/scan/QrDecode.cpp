@@ -5,6 +5,9 @@
 #include <memory>
 
 namespace pbr {
+namespace {
+constexpr int kQrMaxDecodeEdge = 1920;
+} // namespace
 QrDetection InspectQr(const VideoFrameRgba& frame) {
   if (frame.width <= 0 || frame.height <= 0 || frame.width > 8192 || frame.height > 8192 ||
       frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
@@ -12,7 +15,8 @@ QrDetection InspectQr(const VideoFrameRgba& frame) {
   }
   std::unique_ptr<quirc, decltype(&quirc_destroy)> decoder(quirc_new(), quirc_destroy);
   // Keep scanning bounded even when a camera ignores the requested capture resolution.
-  const int step = std::max(1, (std::max(frame.width, frame.height) + 1279) / 1280);
+  // (1920 keeps a 1080p frame whole: a lower cap would halve it and throw the extra detail away.)
+  const int step = std::max(1, (std::max(frame.width, frame.height) + kQrMaxDecodeEdge - 1) / kQrMaxDecodeEdge);
   const int width = frame.width / step;
   const int height = frame.height / step;
   if (!decoder || width <= 0 || height <= 0 || quirc_resize(decoder.get(), width, height) < 0) {

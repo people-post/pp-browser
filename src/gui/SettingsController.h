@@ -422,6 +422,7 @@ private:
   void RequestSyncLayout(const char* reason) override;
   Roe<void> ForgetToolPermissions() override;
   void OpenChangePin() override;
+  std::string LinkQrSide() const override;
   bool RecoveryOnOwnPage() const override { return compact_layout_; }
   void OpenRecoveryPage() override;
   void CloseRecoveryPage() override;

@@ -29,6 +29,7 @@ VideoFrameRgba QrFrame(const char* text) {
   return frame;
 }
 struct FakeState {
+  bool has_camera = true; // what the fake OS lists
   std::mutex mutex;
   std::condition_variable cv;
   bool block_open = false;
@@ -135,6 +136,7 @@ public:
                                             std::string*) override {
     return nullptr;
   }
+  bool HasCamera() const override { return state_.has_camera; }
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string*) override {
     const int open = ++state_.opens;
     state_.rear_requested = !format.prefer_front_facing;
@@ -168,6 +170,50 @@ TEST(QrDecodeTest, DecodesRawPayloadAndRotatedFrame) {
   truncated.rgba.resize(5);
   EXPECT_FALSE(DecodeQr(truncated));
 }
+// The link handshake's codes are dense (version 29 and up): on a 1080p frame at 3 pixels per module a decoder that
+// halves the frame first sees 1.5 and reads nothing.
+TEST(QrDecodeTest, ADenseCodeOnA1080pFrameIsRead) {
+  std::string text;
+  for (int i = 0; i < 1300; ++i) {
+    text += static_cast<char>('a' + (i * 7 + i / 13) % 26); // varied, so the modules do not repeat
+  }
+  const auto qr = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+  ASSERT_GE(qr.getVersion(), 28) << "as dense as the link handshake's codes";
+  // 3 pixels per module: a code filling 40% of a 1080p frame. It needs the whole frame (a decoder that halves it first
+  // sees 1.5), and a decoder that numbers at most 254 blobs never sees the finder pattern at the bottom of a code
+  // with this many modules, whatever the resolution.
+  const int scale = 3;
+  VideoFrameRgba frame;
+  frame.width = 1920;
+  frame.height = 1080;
+  frame.rgba.assign(static_cast<size_t>(frame.width) * frame.height * 4, 255);
+  const int origin_x = 600, origin_y = 100;
+  for (int y = 0; y < qr.getSize() * scale; ++y) {
+    for (int x = 0; x < qr.getSize() * scale; ++x) {
+      if (qr.getModule(x / scale, y / scale)) {
+        const size_t i = (static_cast<size_t>(origin_y + y) * frame.width + origin_x + x) * 4;
+        frame.rgba[i] = frame.rgba[i + 1] = frame.rgba[i + 2] = 0;
+      }
+    }
+  }
+  EXPECT_EQ(DecodeQr(frame), text);
+}
+
+TEST(QrScannerTest, ScanIsOfferedOnlyWhereTheOsListsACamera) {
+  FakeState none;
+  none.has_camera = false;
+  MediaDeviceArbiter without(std::make_unique<FakeBackend>(none));
+  QrScanner no_camera(without);
+  EXPECT_FALSE(no_camera.CameraAvailable());
+  EXPECT_EQ(none.opens, 0) << "listing cameras must not open one";
+
+  FakeState some;
+  MediaDeviceArbiter with(std::make_unique<FakeBackend>(some));
+  QrScanner has_camera(with);
+  EXPECT_TRUE(has_camera.CameraAvailable());
+  EXPECT_EQ(some.opens, 0);
+}
+
 TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   FakeState state;
   MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
@@ -181,8 +227,8 @@ TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   EXPECT_EQ(result.text, "old payload");
   ASSERT_TRUE(result.preview);
   EXPECT_TRUE(state.rear_requested);
-  EXPECT_EQ(state.requested_format.capture_width, 1280);
-  EXPECT_EQ(state.requested_format.capture_height, 720);
+  EXPECT_EQ(state.requested_format.capture_width, 1920);
+  EXPECT_EQ(state.requested_format.capture_height, 1080);
   EXPECT_EQ(state.requested_format.fps, 30);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
   EXPECT_TRUE(devices.Holders(MediaDeviceKind::Camera).empty());

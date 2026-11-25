@@ -1,41 +1,37 @@
-<!-- Me > Security > Link a new device (multi-device M027; inline on desktop, its own page on phones, where the page
+<!-- Me > Linked devices > Link a new device (multi-device M027; inline on desktop, its own page on phones, where the page
      title says what the heading says): the new device's code, scanned or pasted; the 4 digits checked against the new
-     device's (a dialog); then the reply as a QR code for the new device, and the same as text to copy. The desktop keeps
-     its heading and captions, the phone the steps to do on the new device. -->
+     device's (a dialog); then the reply as a QR code for the new device, and the same as text to copy. One main button
+     at a time: Scan when a camera is listed (Paste is then the second choice), else Paste; "Done" on the reply. -->
 <div class="stack settings-actions settings-transfer">
   <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
   <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
   <div class="settings-transfer-copy" data-if="security_can_export_link && !own_devices_not_main && !link_reply_shown">
     <p class="text muted settings-transfer-lead">{{move_lead_label}}</p>
-    <button class="btn btn-primary settings-transfer-btn" type="button" data-if="link_can_scan"
-            data-event-click="link_scan_offer()">{{i18n:settings.security.link_device.scan_button}}</button>
-    <button class="btn settings-transfer-btn" type="button"
-            data-event-click="link_paste_offer()">{{i18n:settings.security.link_device.paste_button}}</button>
+    <div class="link-btn-row">
+      <button class="btn btn-primary settings-transfer-btn" type="button" data-if="link_can_scan"
+              data-event-click="link_scan_offer()">{{i18n:settings.security.link_device.scan_button}}</button>
+      <button class="btn btn-secondary settings-transfer-btn" type="button" data-if="link_can_scan"
+              data-event-click="link_paste_offer()">{{i18n:settings.security.link_device.paste_button}}</button>
+      <button class="btn btn-primary settings-transfer-btn" type="button" data-if="!link_can_scan"
+              data-event-click="link_paste_offer()">{{i18n:settings.security.link_device.paste_button}}</button>
+    </div>
   </div>
   <!-- The reply: dark on white whatever the theme (lib/ui/QrSvg). Only the new device's one-time key opens it, so the
        text may go anywhere. -->
   <div class="settings-copied-box settings-link-reply" data-if="link_reply_shown">
     <p class="settings-copied-title">{{i18n:settings.security.link_device.reply_title}}</p>
-    <svg class="settings-link-qr" viewBox="0 0 100 100" data-rml="link_reply_qr_rml"></svg>
+    <svg class="settings-link-qr" viewBox="0 0 100 100" data-style-width="link_qr_side" data-style-height="link_qr_side"
+         data-rml="link_reply_qr_rml"></svg>
     <p class="settings-copied-sub">{{move_valid_label}}</p>
-    <button class="settings-text-btn settings-copied-again" type="button"
+    <button class="btn btn-ghost settings-link-btn" type="button"
             data-event-click="copy_link_reply()">{{i18n:settings.security.link_device.copy_reply}}</button>
-    <button class="settings-text-btn" type="button" data-event-click="clear_link_reply()">{{i18n:common.ok}}</button>
+    <button class="btn btn-primary settings-link-btn" type="button"
+            data-event-click="clear_link_reply()">{{i18n:settings.security.link_device.done}}</button>
   </div>
   <p class="text muted group-foot" data-if="link_reply_shown">{{i18n:settings.security.link_device.handover_after}}</p>
-  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.help}}</p>
-  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.send_hint}}</p>
-  <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.link_device.reset_hint}}</p>
-  <div class="settings-transfer-steps settings-phone-only">
-    <p class="text group-head">{{i18n:settings.security.link_device.steps_head}}</p>
-    <div class="group-card settings-steps-card">
-      <div class="settings-step"><span class="settings-step-num">1</span><p class="settings-step-text">{{i18n:settings.security.link_device.step1}}</p></div>
-      <div class="settings-step"><span class="settings-step-num">2</span><p class="settings-step-text">{{i18n:settings.security.link_device.step2}}</p></div>
-      <div class="settings-step"><span class="settings-step-num">3</span><p class="settings-step-text">{{i18n:settings.security.link_device.step3}}</p></div>
-    </div>
-    <div class="settings-note-row">
-      <p class="text muted group-foot">{{i18n:settings.security.link_device.phone_note}}</p>
-      <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
-    </div>
+  <p class="text muted settings-help group-foot settings-desktop-only" data-if="!link_reply_shown">{{i18n:settings.security.link_device.help}}</p>
+  <div class="settings-note-row settings-transfer-note" data-if="!link_reply_shown">
+    <p class="text muted group-foot">{{i18n:settings.security.link_device.phone_note}}</p>
+    <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
   </div>
 </div>

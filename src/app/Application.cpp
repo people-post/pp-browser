@@ -1236,6 +1236,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.scan_link_offer = [this](std::function<void(std::string)> done) {
     qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md): binary, as the code shows it
   };
+  settings_commands.can_scan_link_offer = [this]() { return qr_scan_->CanScan(); };
   // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
   settings_commands.set_grace_minutes = [this](const int minutes) {
@@ -1834,6 +1835,7 @@ void Application::WireUnlockPinAndFlow() {
     gate_complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
       qr_scan_->Open(std::move(done), std::move(closed));
     };
+    gate_complete.can_scan_link_reply = [this]() { return qr_scan_->CanScan(); };
     gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
                                                    const std::vector<std::string>& saved_copies) {
@@ -2173,25 +2175,7 @@ void Application::WireUnlockPinAndFlow() {
     shell_->BindShellMessaging(std::move(shell_messaging));
   }
   {
-    PinGateActionPorts pin_actions;
-    pin_actions.on_submit = [this]() { pin_gate_->OnSubmit(); };
-    pin_actions.on_cancel = [this]() { pin_gate_->OnCancel(); };
-    pin_actions.on_set_pin = [this]() { pin_gate_->OnSetPin(); };
-    pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
-    pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
-    pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
-    pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
-    pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
-    pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
-    pin_actions.on_note_toggle = [this]() { pin_gate_->OnNoteToggle(); };
-    pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
-    pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
-    pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
-    pin_actions.on_keypad_ok = [this]() { pin_gate_->OnKeypadOk(); };
-    pin_actions.on_use_text = [this]() { pin_gate_->OnUseText(); };
-    pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
-    pin_actions.on_biometric = [this]() { pin_gate_->OnBiometric(); };
-    pin_actions.on_use_pin = [this]() { pin_gate_->OnUsePin(); };
+    PinGateActionPorts pin_actions = MakePinGateActionPorts(*pin_gate_);
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {

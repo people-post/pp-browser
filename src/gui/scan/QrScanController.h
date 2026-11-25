@@ -55,6 +55,8 @@ public:
    */
   void Open(QrScanResultCallback on_result, std::function<void()> on_closed);
   void Close();
+  /** A camera is listed, so a scan could open one: pages offer "Scan" only then (nothing is opened to find out). */
+  bool CanScan() const { return scanner_.CameraAvailable(); }
   bool IsOpen() const { return layer_id_ >= 0; }
   void Tick();
   /** After Context::Update: keep capture preview responsive during power-save. */

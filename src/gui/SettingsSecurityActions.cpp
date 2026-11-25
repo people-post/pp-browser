@@ -16,6 +16,7 @@
 #include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
@@ -62,6 +63,8 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   SetTransferLabels();
   ctor.Bind("link_reply_shown", &link_reply_shown_);
   ctor.Bind("link_reply_qr_rml", &link_reply_qr_rml_);
+  link_qr_side_ = "280dp";
+  ctor.Bind("link_qr_side", &link_qr_side_);
   ctor.Bind("link_can_scan", &link_can_scan_);
   ctor.Bind("move_lead_label", &move_lead_label_);
   ctor.Bind("move_valid_label", &move_valid_label_);
@@ -249,7 +252,15 @@ void SettingsSecurityActions::ToggleBiometric() {
       });
 }
 
+namespace {
+logging::Logger& LinkLog() {
+  static logging::Logger log = logging::getLogger("Gui.Settings.Link");
+  return log;
+}
+} // namespace
+
 void SettingsSecurityActions::LinkDevice(const bool scan) {
+  LinkLog().info << "Link a new device pressed (" << (scan ? "scan" : "paste") << ")";
   EnsureUnlocked(Tr("settings.security.link_device.not_ready"), [this, scan]() {
     if (!commands_.link_offer_code || !commands_.seal_link_reply) {
       host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
@@ -276,6 +287,7 @@ void SettingsSecurityActions::LinkDevice(const bool scan) {
 void SettingsSecurityActions::ReadLinkOffer(const bool scan) {
   if (scan) {
     if (!commands_.scan_link_offer) {
+      LinkLog().warning << "Scan ignored: no scan port";
       return;
     }
     const uint64_t request = link_request_;
@@ -347,10 +359,12 @@ void SettingsSecurityActions::SealLinkReply(std::string offer) {
           return;
         }
         link_reply_qr_rml_ = qr->c_str();
+        link_qr_side_ = host_.LinkQrSide().c_str();
         link_reply_text_ = LinkPayloadText(kLinkReplyTextPrefix, *reply);
         link_reply_shown_ = true;
         DataModelHost& model = DataModelHost::Instance();
         model.Dirty("settings", "link_reply_qr_rml");
+        model.Dirty("settings", "link_qr_side");
         model.Dirty("settings", "link_reply_shown");
         host_.ShowStatus("");
       });
@@ -380,7 +394,21 @@ void SettingsSecurityActions::SetTransferLabels() {
   const std::string minutes = std::to_string(kLinkWindowMs / 60000);
   move_lead_label_ = Tr("settings.security.link_device.lead").c_str();
   move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
-  link_can_scan_ = static_cast<bool>(commands_.scan_link_offer);
+  link_can_scan_ = static_cast<bool>(commands_.scan_link_offer); // the cameras are asked when the page opens
+}
+
+bool SettingsSecurityActions::CanScanLink() const {
+  return static_cast<bool>(commands_.scan_link_offer) &&
+         (!commands_.can_scan_link_offer || commands_.can_scan_link_offer());
+}
+
+void SettingsSecurityActions::RefreshLinkCanScan() {
+  const bool can = CanScanLink();
+  if (can == link_can_scan_) {
+    return;
+  }
+  link_can_scan_ = can;
+  DataModelHost::Instance().Dirty("settings", "link_can_scan");
 }
 
 void SettingsSecurityActions::ClearLinkReply() {
@@ -390,6 +418,7 @@ void SettingsSecurityActions::ClearLinkReply() {
   std::fill(link_reply_text_.begin(), link_reply_text_.end(), '\0');
   link_reply_text_.clear();
   SetTransferLabels();
+  link_can_scan_ = CanScanLink();
   DataModelHost& model = DataModelHost::Instance();
   model.Dirty("settings", "link_reply_shown");
   model.Dirty("settings", "link_reply_qr_rml");
