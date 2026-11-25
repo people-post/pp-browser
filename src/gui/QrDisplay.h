@@ -35,10 +35,14 @@ inline constexpr int kLinkQrDesktopReservedHeightDp = 470;
 inline constexpr int kLinkQrDesktopReservedWidthDp = 96;
 
 /** Pure part: the link code's display on a page `width_dp` wide and `height_dp` tall (phones: the page's width). */
-QrDisplay LinkQrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio);
+QrDisplay LinkQrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio,
+                           int reserved_width_dp = kLinkQrDesktopReservedWidthDp);
 
 /** The link code's display on `context`'s window (a null context counts as a 390dp phone / 1100dp desktop). */
-QrDisplay LinkQrDisplayFor(bool compact, ui::Context* context);
+QrDisplay LinkQrDisplayFor(bool compact, ui::Context* context, int reserved_width_dp = kLinkQrDesktopReservedWidthDp);
+
+/** Width a desktop window keeps beside the settings page's own column: the navigation rail and the section list. */
+inline constexpr int kLinkQrDesktopSettingsReservedWidthDp = 500;
 
 /** Pure part: the display for a page `width_dp` wide and `height_dp` tall at `dp_ratio` pixels per dp. */
 QrDisplay QrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio);

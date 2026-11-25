@@ -1705,7 +1705,9 @@ void SettingsController::RefreshBlockedCount() {
 }
 
 std::string SettingsController::LinkQrSide() const {
-  return LinkQrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_).css;
+  return LinkQrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_,
+                          kLinkQrDesktopSettingsReservedWidthDp)
+      .css;
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {

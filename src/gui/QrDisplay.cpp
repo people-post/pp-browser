@@ -29,14 +29,15 @@ QrDisplay QrDisplayFor(const bool compact, ui::Context* context) {
   return QrDisplayFor(compact, width_dp, height_dp, ratio);
 }
 
-QrDisplay LinkQrDisplayFor(const bool compact, const float width_dp, const float height_dp, const float dp_ratio) {
+QrDisplay LinkQrDisplayFor(const bool compact, const float width_dp, const float height_dp, const float dp_ratio,
+                           const int reserved_width_dp) {
   QrDisplay display;
   if (compact) {
     // The page scrolls, so only its width limits the code: the margins and cap QrPhoneDisplayDp keeps.
     display.side_dp = QrPhoneDisplayDp(width_dp, 100000.f);
   } else {
     const int by_height = static_cast<int>(height_dp) - kLinkQrDesktopReservedHeightDp;
-    const int by_width = static_cast<int>(width_dp) - kLinkQrDesktopReservedWidthDp;
+    const int by_width = static_cast<int>(width_dp) - reserved_width_dp;
     display.side_dp = std::max(kLinkQrDesktopMinDp, std::min({kLinkQrDesktopMaxDp, by_height, by_width}));
   }
   display.side_px = static_cast<int>(std::lround(display.side_dp * (dp_ratio > 0.f ? dp_ratio : 1.f)));
@@ -44,14 +45,14 @@ QrDisplay LinkQrDisplayFor(const bool compact, const float width_dp, const float
   return display;
 }
 
-QrDisplay LinkQrDisplayFor(const bool compact, ui::Context* context) {
+QrDisplay LinkQrDisplayFor(const bool compact, ui::Context* context, const int reserved_width_dp) {
   if (context == nullptr) {
     return compact ? LinkQrDisplayFor(true, 390.f, 844.f, 1.f) : LinkQrDisplayFor(false, 1100.f, 800.f, 1.f);
   }
   const float ratio = context->GetDensityIndependentPixelRatio();
   const float scale = ratio > 0.f ? ratio : 1.f;
   return LinkQrDisplayFor(compact, static_cast<float>(context->GetDimensions().x) / scale,
-                          static_cast<float>(context->GetDimensions().y) / scale, ratio);
+                          static_cast<float>(context->GetDimensions().y) / scale, ratio, reserved_width_dp);
 }
 
 void ReportQrShown(const QrShape& shape, const QrDisplay& display) {

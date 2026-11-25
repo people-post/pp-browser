@@ -428,6 +428,10 @@ TEST(LinkPagesDisplayTest, TheCodeIsDrawnAsLargeAsThePageAllows) {
   EXPECT_EQ(LinkQrDisplayFor(false, 1100.f, 800.f, 1.f).side_dp, 330);
   EXPECT_EQ(LinkQrDisplayFor(false, 1100.f, 500.f, 1.f).side_dp, kLinkQrDesktopMinDp);
   EXPECT_EQ(LinkQrDisplayFor(false, 360.f, 900.f, 1.f).side_dp, kLinkQrDesktopMinDp);
+  // The settings page's column is what is left of the window beside the rail and the list.
+  EXPECT_EQ(LinkQrDisplayFor(false, 1100.f, 900.f, 1.f, kLinkQrDesktopSettingsReservedWidthDp).side_dp,
+            kLinkQrDesktopMaxDp);
+  EXPECT_EQ(LinkQrDisplayFor(false, 900.f, 900.f, 1.f, kLinkQrDesktopSettingsReservedWidthDp).side_dp, 400);
   // Phones: the page's width less 20dp a side, at most 340dp (2.4 dp per module, about 7 physical pixels at 3x).
   EXPECT_EQ(LinkQrDisplayFor(true, 390.f, 844.f, 1.f).side_dp, 340);
   EXPECT_EQ(LinkQrDisplayFor(true, 360.f, 640.f, 1.f).side_dp, 320);
