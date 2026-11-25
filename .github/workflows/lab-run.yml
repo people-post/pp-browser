@@ -142,6 +142,20 @@ jobs:
             echo 0 | sudo tee /proc/sys/net/bridge/bridge-nf-call-iptables
           fi
 
+      # Anonymous pulls from outside AWS are throttled (toomanyrequests: Rate exceeded) when compose pulls the
+      # images in parallel: fetch them one at a time, with retries, so compose finds them in place.
+      - name: Pull the lab images
+        run: |
+          images="public.ecr.aws/docker/library/node:lts-alpine public.ecr.aws/docker/library/node:22-alpine"
+          images="$images $(grep -h '^[[:space:]]*image:' "$PP_RELAY_APIS_ROOT/local-stack/compose.yaml" | awk '{print $2}' | grep -v ':dev$')"
+          for img in $images; do
+            for attempt in 1 2 3 4 5 6; do
+              docker pull -q "$img" >/dev/null && break
+              [ "$attempt" = 6 ] && { echo "::error::could not pull $img"; exit 1; }
+              sleep $((attempt * 10))
+            done
+          done
+
       - name: Run the suites
         env:
           LAB_SUITES: ${{ inputs.suites }}
