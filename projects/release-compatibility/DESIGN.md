@@ -396,7 +396,7 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
 | Fix or backport to a release branch | All unit tests, the frozen-data compatibility tests, every platform build that ships, the lab scenarios the fix touches (`--only`); for the relay, its integration tests and the local-stack end-to-end test |
 | Version tag | No new build: deploy the tested artifact to staging / canary, then production after approval |
 
-The nightly lab and the full lab run on main and before each `.0` release; a fix does not wait for them.
+The lab nightly and the full lab run on main and before each `.0` release; a fix does not wait for them.
 
 ### Libraries and numbering
 
@@ -538,7 +538,7 @@ by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the 
 - [ ] Full CI on every shipped platform, frozen-data tests and the app ↔ relay behaviour suite green
 - [ ] Staging: the relay candidate deployed; the store app (N−1) and the candidate tested against it; relay rollback
   rehearsed
-- [ ] Lab scenarios the release touches, and the latest nightly lab, green
+- [ ] Lab scenarios the release touches, and the latest lab nightly, green
 - [ ] On real devices from internal testing: register, message, call, push and VoIP wake, link a device, account
   deletion
 - [ ] Release notes and TestFlight "What to Test" written

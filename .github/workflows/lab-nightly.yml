@@ -1,8 +1,8 @@
 name: lab-nightly
 
-# The app lab every night on main (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
+# The app lab every night on main (docs/ops/TEST_STRATEGY.md § Lab nightly): `--suite app` and
 # `--suite app-nat` on a CodeBuild-hosted runner (lab-run.yml: build, run, report). A scenario that fails twice (one
-# retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
+# retry) opens or updates an issue labelled lab-nightly; one that passes again closes it.
 #
 # Never on pull requests: the lab runs only what this workflow, from the default branch, gives it. Idle (a notice)
 # until the secret PP_LAB_RELAY_APIS_DEPLOY_KEY (a read-only deploy key of people-post/pp-relay-apis, which is private) is set.
@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/lab-run.yml
     secrets: inherit
     with:
-      name: Nightly lab
+      name: Lab nightly
       artifact: lab-nightly
       suites: ${{ inputs.suites || 'app app-nat' }}
       only: ${{ inputs.only || '' }}

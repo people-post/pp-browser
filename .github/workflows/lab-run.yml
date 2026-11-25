@@ -3,7 +3,7 @@ name: lab-run
 # One app-lab run on a GitHub-hosted runner, or, with the `runner` input or repository variable PP_LAB_RUNNER set to
 # codebuild, on a CodeBuild one (pp-runners-infra: project pp-browser, privileged, LARGE); called by
 # lab-nightly.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
-# docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
+# docs/ops/TEST_STRATEGY.md § Lab nightly, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
 # (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
 # from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).
 #
@@ -39,7 +39,7 @@ on:
         type: string
         default: ''
       issues:
-        description: 'Keep one issue per failing scenario (nightly_lab_report.py); otherwise the summary only'
+        description: 'Keep one issue per failing scenario (lab_nightly_report.py); otherwise the summary only'
         type: boolean
         default: false
       suite_timeout_minutes:
@@ -67,7 +67,7 @@ jobs:
           RELAY_APIS_KEY: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
         run: |
           if [ -z "$RELAY_APIS_KEY" ]; then
-            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Nightly lab)."
+            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Lab nightly)."
             echo "::notice title=$RUN_NAME idle::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -220,5 +220,5 @@ jobs:
           args=()
           for suite in $LAB_SUITES; do args+=(--summary "$suite=lab/$suite.json"); done
           if [ "$ISSUES" != true ]; then args+=(--no-issues); fi
-          python3 scripts/test/nightly_lab_report.py "${args[@]}" --name "$RUN_NAME" --sha "$GITHUB_SHA" \
+          python3 scripts/test/lab_nightly_report.py "${args[@]}" --name "$RUN_NAME" --sha "$GITHUB_SHA" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

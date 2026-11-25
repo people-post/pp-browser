@@ -44,7 +44,7 @@ the date) and the INVENTORY item it names, in one PR, and drop the row from the 
   - the operator set: its keys, threshold and holders, and whether relay certificates expire (O4, C7);
   - where versions are counted (O1), and how `RELAY_VERSION` reaches the functions (A1);
   - deploys: tags, Lambda versions and aliases (X11);
-  - checks before deploy, and the nightly lab's variables (O3);
+  - checks before deploy, and the lab nightly's variables (O3);
   - prod's update links on the release day (C3);
   - Support retention and the S3 lifecycle days (O5);
   - the crash-report endpoint (O6);
