@@ -507,8 +507,8 @@ Release 1 accepts only the forms in § 2 and § 3, on every side. The order:
 5. **Prod ceremony** (Leo): the prod operator set signs certificate 1 for the prod relay's **current** transport key
    (no rotation needed) and a new signing seed; the relay id and certificate go into the release build's
    configuration.
-6. **Release day**, in this order: app 1.0 and pp-node 10.0.0 approved and held; relay 1.0 deployed to prod from
-   its tag with the certificate, `min_client_version` 1.0.0 and `min_node_version` 10.0.0, and the cutover data job
+6. **Release day**, in this order: app 1.1.0 (RC024) and pp-node 10.0.0 approved and held; relay 1.0 deployed to prod from
+   its tag with the certificate, `min_client_version` 1.1.0 and `min_node_version` 10.0.0, and the cutover data job
    (Q12); then the apps released. Between the deploy and the release, older apps get `426` and say *update*.
    Testers delete the app and install release 1 (RC017); restoring from the phrase finds no pre-release locker
    (Q12) and starts with an empty locker under the same Account ID.

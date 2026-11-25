@@ -5,8 +5,9 @@ list(APPEND CMAKE_MODULE_PATH
 include(CompilerCache)
 pp_browser_configure_compiler_cache()
 
-set(PP_BROWSER_VERSION "1.0.0" CACHE STRING "Numeric application version for CMake project()")
-set(PP_BROWSER_RELEASE_VERSION "1.0.0-rc16" CACHE STRING "Full release version (e.g. 1.0.0-rc14); defaults to PP_BROWSER_VERSION")
+# App release 1 is 1.1.0 (release-compatibility RC024). A release build passes both from its tag (release.yml).
+set(PP_BROWSER_VERSION "1.1.0" CACHE STRING "Numeric application version for CMake project()")
+set(PP_BROWSER_RELEASE_VERSION "" CACHE STRING "Full release version (e.g. 1.1.0); empty: PP_BROWSER_VERSION")
 if(PP_BROWSER_RELEASE_VERSION STREQUAL "")
   set(PP_BROWSER_RELEASE_VERSION "${PP_BROWSER_VERSION}")
 endif()

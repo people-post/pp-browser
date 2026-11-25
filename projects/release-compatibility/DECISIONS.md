@@ -410,8 +410,8 @@ leaves for them.
    "registered or guest" from the key's slot (`brief_llm_api_key` / `brief_llm_guest_api_key`), not its prefix.
 3. **The relay's version** (RC006 item 3, A1): its own semver `vX.Y.Z` on `release/X.Y`, starting at 1.0, reported in
    `client-compat` at `schema_version` 1 as `relay_version`, `app_range` and `node_range`.
-4. **Floors at release** (A2, C3): `min_client_version` `1.0.0`, and a new `min_node_version` `10.0.0`.
-5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.0: the sign window, the `blobs/*`, `files/*` and
+4. **Floors at release** (A2, C3): `min_client_version` `1.1.0` (app release 1 is 1.1.0, [RC024](#rc024--app-release-1-is-version-110); `1.0.0` before it), and a new `min_node_version` `10.0.0`.
+5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.1 (RC024): the sign window, the `blobs/*`, `files/*` and
    `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping. Testers reinstall that day
    (RC017), so no supported app needs them and no window is kept.
 6. **The version header** (O1): `X-PP-Client: <product>/<version> <os>` on every relay call from the app and pp-node.
@@ -608,3 +608,12 @@ launches the chain's formats are frozen and rule changes switch on at a signed e
 would make every fix to a running network carry everything since its release.
 **Alternatives:** Keep pp-ledger with the libraries (main plus tags); a library release branch only when a product
 branch needs one (the current rule for pp-cpp-*: too late for a network's first fix).
+
+## RC024 — App release 1 is version 1.1.0
+
+**Date:** 2026-11-25
+**Status:** Accepted (Hongwei, on Leo's proposal, 2026-11-25). Amends [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) and [RC018](#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 4 for the app only: pp-node stays 10.0 and the relay 1.0.
+**Decision:** Release 1 of the app is **1.1.0**: branch `release/app-1.1`, candidates `v1.1.0-rc.<n>`, the release `v1.1.0`. Its relay floor `min_client_version` is `1.1.0`. `main`'s `PP_BROWSER_VERSION` is 1.1.0 from now on, and the tree no longer sets a release-version default (the stale `1.0.0-rc16`): a dev build reports its version, a candidate the version its tag names.
+**Rationale:** `v1.0.0-rc14`…`rc16` (the older tag form) and TestFlight builds marketed 1.0.0 already exist, all from before the signed-format cutover, and tags never move: a release 1.0.0 would share its version with builds that cannot reach the cutover relays. The app's own version line (RC016) lets it skip 1.0 at no cost. With the floor at 1.1.0 those builds, which report 1.0.0, get the relay's *update* answer instead of failing on the signed formats.
+**Alternatives:** Keep 1.0.0 (the same version as pre-cutover builds; the floor cannot tell them apart); 2.0.0 (no format reason for a major).
+

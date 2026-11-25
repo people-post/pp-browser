@@ -2,7 +2,7 @@ name: release-issue
 
 # When a product's release branch is cut (release/app-X.Y, release/node-X.Y), open its release issue ("Release app
 # 1.0", "Release pp-node 10.0") from .github/ISSUE_TEMPLATE/release.md, assigned to whoever pushed the branch, and
-# create the branch's backport label (`backport release/app-1.0`) for the backport bot.
+# create the branch's backport label (`backport release/app-1.1`) for the backport bot.
 # projects/release-compatibility DESIGN § Release checklist; docs/ops/RELEASE.md § Release branches and backports.
 
 on: create

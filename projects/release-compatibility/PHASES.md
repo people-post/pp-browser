@@ -100,7 +100,7 @@ Written up in [INVENTORY.md](INVENTORY.md) (2026-11-19); its work list is agreed
 
 ## P4 — Release 1 shipped
 
-- [ ] Release 1's branches cut and tagged: `release/app-1.0` (app 1.0) and `release/node-10.0` (pp-node 10.0) in
+- [ ] Release 1's branches cut and tagged: `release/app-1.1` (app 1.1, RC024) and `release/node-10.0` (pp-node 10.0) in
   pp-browser, `release/1.0` (relay 1.0) in pp-relay-apis.
 - [ ] The version table lists, for each of the three, the format versions it writes and reads.
 - [ ] Relay on staging, then the app lab and the mixed-version check there; app, pp-node and relay to prod together.
