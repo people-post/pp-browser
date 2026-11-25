@@ -6,6 +6,7 @@
 #include "common/Utilities.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/platform/IAssetLocator.h"
 #include "lib/content/testing/InMemoryObjectIndex.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/calls/CallSessionQueries.h"
@@ -37,9 +38,21 @@ ByteVector TestDek() {
 
 constexpr int64_t kSomeDay = 1'760'000'000'000LL; // any instant; the seeder is told "today 00:00" explicitly
 
+/**
+ * The source tree's assets (this target's PP_BROWSER_ASSETS_DIR). The default locator of a packaged build points into
+ * the app bundle, which a test run from the build folder (release.yml) does not have.
+ */
+class AssetsLocator : public IAssetLocator {
+public:
+  std::string Resolve(const std::string& relative) const override {
+    return (std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative).string();
+  }
+};
+
 class DemoDataSeederTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    IAssetLocator::SetInstance(&locator_);
     dir_ = std::filesystem::temp_directory_path() / ("pp_demo_seed_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     threads_ = std::make_unique<SqliteThreadStore>(dir_.string());
@@ -53,6 +66,7 @@ protected:
     groups_.reset();
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
+    IAssetLocator::SetInstance(nullptr);
   }
 
   DemoSeedDeps Deps(const int64_t midnight = kSomeDay) {
@@ -120,6 +134,7 @@ protected:
     }
   }
 
+  AssetsLocator locator_;
   std::filesystem::path dir_;
   std::unique_ptr<SqliteThreadStore> threads_;
   std::unique_ptr<ContactsStore> contacts_;
