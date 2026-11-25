@@ -2,8 +2,8 @@
 # one relay or miner per node, on the node's mesh runtime. Target: pp_server (pp::server, with
 # RoleRunner); only pp_domain_node_ledger links it, privately.
 #
-# At its pin (cmake/PpPins.cmake; PP_LEDGER_GIT_TAG, a release tag on pp-ledger's main line, its `release/vX.Y.Z`
-# names), a local checkout (PP_LEDGER_SOURCE_DIR) or a sibling (PP_SIBLINGS_DIR). Include after pp-cpp-common,
+# At its pin (cmake/PpPins.cmake; PP_LEDGER_GIT_TAG: a pp-ledger release `vX.Y.Z` or, on main, a candidate
+# `vX.Y.Z-rc.N`, RC023; the `release/vX.Y.Z` tags before 2.0.0 were development pins), a local checkout (PP_LEDGER_SOURCE_DIR) or a sibling (PP_SIBLINGS_DIR). Include after pp-cpp-common,
 # pp-cpp-crypto and pp-cpp-amp: pp-ledger takes those targets from here. Off on mobile (no pp-node there).
 
 if(PP_BROWSER_IS_MOBILE)

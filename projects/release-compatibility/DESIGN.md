@@ -401,7 +401,9 @@ The nightly lab and the full lab run on main and before each `.0` release; a fix
 ### Libraries and numbering
 
 **Libraries stay simpler.** pp-cpp-* keep main plus version tags. A library release branch is cut only when a
-product's release branch needs a library fix without taking a newer major version.
+product's release branch needs a library fix without taking a newer major version. pp-ledger is not one of them: it is
+a network's software too, with its own `release/X.Y` branches and `vX.Y.Z` releases, the first 2.0.0
+([RC023](DECISIONS.md#rc023--pp-ledger-has-release-branches-its-pins-are-vxyz)).
 
 **App, pp-node and the relay each have their own version** ([RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)), as the repo's two trains already do (`v*` for
 the app, `pp-node/v*` for the node, `docs/ops/RELEASE.md`):

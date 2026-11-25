@@ -390,7 +390,16 @@ public:
     result.next_cursor = "c" + std::to_string(++polls_);
     return result;
   }
-  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return RelayDeleteResult{}; }
+  Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override {
+    std::lock_guard lock(mu_);
+    ++acks_;
+    return RelayDeleteResult{};
+  }
+  /** How many polls were taken in and acked: a test waits on it (a drain does not wait for the poll's lanes). */
+  int Acks() {
+    std::lock_guard lock(mu_);
+    return acks_;
+  }
   Roe<RelayDeleteResult> ClearInbox(const std::string&, const std::string&) override { return Error("unused"); }
   /** Stream history (a gap repair asks it): always an empty answer, as a sender that holds nothing in the range. */
   Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) override {
@@ -410,6 +419,7 @@ private:
   std::vector<RelayEnvelope> inbox_;
   std::vector<ChatHistoryRequest> history_asks_;
   int polls_ = 0;
+  int acks_ = 0;
   std::mutex mu_;
   std::condition_variable entered_;
   std::condition_variable released_;
@@ -662,7 +672,15 @@ TEST_F(StoredResendTest, ADevicePairHoleIsAskedAboutOnEveryLaterMessageAndNeverC
   };
   auto poll = [&](RelayEnvelope envelope) {
     relay_->Deliver(std::move(envelope));
+    const int acks_before = relay_->Acks();
     mesh_->SyncInboxFromWake(true);
+    // The poll runs on a background worker and the batch is taken in from it, neither of which a drain waits for
+    // (Background work is not counted): wait for the batch to be taken in and acked, then drain what the ingest
+    // started. Without the wait a slow runner reached the check before the message (Windows CI, 2026-11-24).
+    for (int i = 0; i < 10000 && relay_->Acks() == acks_before; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_GT(relay_->Acks(), acks_before) << "the mailbox was never taken in";
     Drain();
     Drain(); // the repair the ingest started, on its own worker turn
   };

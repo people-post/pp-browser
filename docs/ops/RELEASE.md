@@ -30,7 +30,7 @@ main ──cut──► release/app-1.0 ──tag──► v1.0.0-rc.1 … v1.0.
 
 A release branch takes fixes only. Fixes land on main first and are then backported to each live release branch that needs them (DESIGN [§ Release lines are first-class](../../projects/release-compatibility/DESIGN.md#release-lines-are-first-class)); release branches are never merged back. A `backport release/app-X.Y` label on the merged main PR has the backport bot open the cherry-pick PR ([§ Release branches and backports](#release-branches-and-backports)).
 
-The libraries (pp-cpp-*) and pp-ledger have only `main`: pins are release tags cut on their `main`.
+The libraries (pp-cpp-*) have only `main`: pins are release tags cut on their `main`. pp-ledger has release branches of its own (`release/X.Y`, tags `vX.Y.Z-rc.N` and `vX.Y.Z`, [RC023](../../projects/release-compatibility/DECISIONS.md#rc023--pp-ledger-has-release-branches-its-pins-are-vxyz)): `main` may pin a pp-ledger candidate or release, a release branch pins a release.
 
 ## Tags
 
