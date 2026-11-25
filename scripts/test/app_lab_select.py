@@ -92,7 +92,7 @@ PATH_RULES = [
     (("scripts/test/pp_app_lab.py", "scripts/test/app_lab_select.py", "scripts/test/pp_local_test.sh",
       "packaging/pp-node/docker-compose.app-lab*", "packaging/pp-node/app-lab-*",
       "src/app/node/tools/app_probe/*"), ALL, "the app lab and its probe"),
-    ((".github/workflows/lab-run.yml", ".github/workflows/lab-smoke.yml", ".github/workflows/nightly-lab.yml"),
+    ((".github/workflows/lab-run.yml", ".github/workflows/lab-smoke.yml", ".github/workflows/lab-nightly.yml"),
      ("smoke",), "the lab's workflows"),
     (("docs/*", "projects/*", "design/*", "reports/*", "*.md", "LICENSE*"), NONE, "docs"),
     (("*/tests/*", "*/testing/*", "scripts/test/*"), NONE, "unit tests and other suites (not the app lab)"),

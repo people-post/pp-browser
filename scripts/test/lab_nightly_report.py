@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Nightly lab report: one GitHub issue per failing scenario, kept up to date.
+"""Lab nightly report: one GitHub issue per failing scenario, kept up to date.
 
 Reads the summaries pp_app_lab.py --summary wrote (one per suite), then with the `gh` CLI:
-  - a scenario that failed (twice: --retry-failed) gets an issue "Nightly lab: <suite>/<scenario> fails"
-    (label nightly-lab), or a comment on the one already open;
+  - a scenario that failed (twice: --retry-failed) gets an issue "Lab nightly: <suite>/<scenario> fails"
+    (label lab-nightly), or a comment on the one already open;
   - a scenario with an open issue that passed (or only flaked) gets a comment and the issue closed;
   - a suite whose summary is missing (the lab did not finish) is reported like a failing scenario.
 Flakes are listed in the run's step summary only. Issue text is the scenario, the first line of its
 error, the commit and the run link — nothing more (the logs stay in the run's artifacts).
 
-  nightly_lab_report.py --summary app=app.json --summary app-nat=app-nat.json \\
+  lab_nightly_report.py --summary app=app.json --summary app-nat=app-nat.json \\
       --sha <commit> --run-url <url> [--dry-run]
 
 With --no-issues (lab smoke, an on-demand run) it writes the summary only, touches no issue, and still exits 1 when a
@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 
-LABEL = "nightly-lab"
+LABEL = "lab-nightly"
 
 
 def gh(*args, dry_run=False):
@@ -37,8 +37,8 @@ SUITE = "(suite)"  # the whole suite did not finish
 
 def title_for(suite, scenario):
     if scenario == SUITE:
-        return "Nightly lab: --suite %s does not finish" % suite
-    return "Nightly lab: %s/%s fails" % (suite, scenario)
+        return "Lab nightly: --suite %s does not finish" % suite
+    return "Lab nightly: %s/%s fails" % (suite, scenario)
 
 
 def reproduce(suite, scenario):
@@ -54,7 +54,7 @@ def main():
     ap.add_argument("--run-url", required=True)
     ap.add_argument("--dry-run", action="store_true", help="print what would change; read-only gh calls only")
     ap.add_argument("--no-issues", action="store_true", help="the summary only: no gh calls, no issues")
-    ap.add_argument("--name", default="Nightly lab", help="the summary's heading")
+    ap.add_argument("--name", default="Lab nightly", help="the summary's heading")
     args = ap.parse_args()
 
     failing, passing, flaky, lines = {}, set(), [], []
@@ -88,7 +88,7 @@ def main():
         by_title = {i["title"]: i["number"] for i in open_issues}
     if failing and not args.no_issues:
         gh("label", "create", LABEL, "--force", "--color", "B60205",
-           "--description", "A scenario the nightly lab finds failing", dry_run=args.dry_run)
+           "--description", "A scenario the lab nightly finds failing", dry_run=args.dry_run)
 
     short = args.sha[:9]
     for (suite, scenario), detail in sorted(failing.items()) if not args.no_issues else ():
@@ -98,7 +98,7 @@ def main():
                "Still failing on `%s`: %s\n\n%s" % (short, detail, args.run_url), dry_run=args.dry_run)
         else:
             what = ("`--suite %s` did not finish" % suite if scenario == SUITE else
-                    "The nightly lab finds `%s` failing in `--suite %s` (it failed again on its retry)" % (scenario, suite))
+                    "The lab nightly finds `%s` failing in `--suite %s` (it failed again on its retry)" % (scenario, suite))
             body = ("%s.\n\n"
                     "- First seen on: `%s`\n- Error: %s\n- Run (logs in its artifacts): %s\n\n"
                     "Reproduce: `%s`\n\nThis issue closes itself the night it passes again."
@@ -113,7 +113,7 @@ def main():
 
     report = ["## %s on `%s`" % (args.name, short), ""] + lines
     if failing:
-        report += ["", "**Failing**"] + ["- %s: %s" % (title_for(s, n)[len("Nightly lab: "):], d) for (s, n), d in sorted(failing.items())]
+        report += ["", "**Failing**"] + ["- %s: %s" % (title_for(s, n)[len("Lab nightly: "):], d) for (s, n), d in sorted(failing.items())]
     if flaky:
         report += ["", "**Flaky** (failed, then passed on the retry)"] + ["- %s" % f for f in flaky]
     text = "\n".join(report) + "\n"

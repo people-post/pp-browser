@@ -88,7 +88,7 @@ backport, and tag `v1.0.0-rc.2`.
 
 Mark these items "not yet" in the issue instead of ticking them: the frozen-data tests (PHASES § P3); the app ↔ relay
 behaviour suite (INVENTORY O3); staging and the store app (N−1) against the relay candidate there (PHASES § P2,
-Environments); the nightly lab (idle until its repo variables are set, PHASES § P2, Regression suites).
+Environments); the lab nightly (idle until its repo variables are set, PHASES § P2, Regression suites).
 
 ## 4. Go / no-go
 

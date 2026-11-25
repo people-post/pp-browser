@@ -23,7 +23,7 @@ Nothing in our tests would have caught it. The lab's 127 scenarios cover the net
 | The five invariants as checks, in gtest and in the app lab | Automating real phones (device farms, XCUITest) |
 | A device backend that injects faults at open / read / write / close | Video and the camera (a later round may reuse the matrix) |
 | An emulator of the phone's audio system (iOS session, Android audio focus) behind a seam in `AudioSession` | Changing iOS behaviour itself; CallKit for calls placed in the app (a product change, tracked apart) |
-| Lab commands for OS events; seeded random sequences in the nightly lab | Desktop audio devices beyond what the fault backend models |
+| Lab commands for OS events; seeded random sequences in the lab nightly | Desktop audio devices beyond what the fault backend models |
 | A short device check list for what only a phone can show | |
 
 ## Documents

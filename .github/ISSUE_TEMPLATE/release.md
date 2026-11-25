@@ -24,7 +24,7 @@ is Leo's, in pp-relay-apis: link it. -->
 - [ ] `<tag>X.Y.Z-rc.N` tagged on `<branch>`; artifacts built once (iOS, Android, desktop, pp-node image)
 - [ ] Full CI on every shipped platform, frozen-data tests and the app ↔ relay behaviour suite green
 - [ ] Staging: the relay candidate deployed; the store app (N−1) and the candidate tested against it; relay rollback rehearsed
-- [ ] Lab scenarios the release touches, and the latest nightly lab, green
+- [ ] Lab scenarios the release touches, and the latest lab nightly, green
 - [ ] Real devices from internal testing: register, message, call, push and VoIP wake, link a device, account deletion
 - [ ] Release notes and TestFlight "What to Test" written
 

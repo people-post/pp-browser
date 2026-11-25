@@ -396,7 +396,7 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
 | Fix or backport to a release branch | All unit tests, the frozen-data compatibility tests, every platform build that ships, the lab scenarios the fix touches (`--only`); for the relay, its integration tests and the local-stack end-to-end test |
 | Version tag | No new build: deploy the tested artifact to staging / canary, then production after approval |
 
-The nightly lab and the full lab run on main and before each `.0` release; a fix does not wait for them.
+The lab nightly and the full lab run on main and before each `.0` release; a fix does not wait for them.
 
 ### Libraries and numbering
 
@@ -538,7 +538,7 @@ by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the 
 - [ ] Full CI on every shipped platform, frozen-data tests and the app ↔ relay behaviour suite green
 - [ ] Staging: the relay candidate deployed; the store app (N−1) and the candidate tested against it; relay rollback
   rehearsed
-- [ ] Lab scenarios the release touches, and the latest nightly lab, green
+- [ ] Lab scenarios the release touches, and the latest lab nightly, green
 - [ ] On real devices from internal testing: register, message, call, push and VoIP wake, link a device, account
   deletion
 - [ ] Release notes and TestFlight "What to Test" written
@@ -604,7 +604,7 @@ in the same rehearsal once identity rotation exists (RC011). A runbook never run
 
 The lab is too long for a developer to run whole (about 20 suites in `scripts/test/pp_local_test.sh`; the app lab
 alone, `scripts/test/pp_app_lab.py`, has 103 scenarios), and nothing ran it on a schedule: on 2026-11-18 the last 24
-nightly runs (`.github/workflows/nightly-lab.yml`) were all skipped, because the repo variables `PP_LAB_INSTANCE_ID`
+nightly runs (`.github/workflows/lab-nightly.yml`) were all skipped, because the repo variables `PP_LAB_INSTANCE_ID`
 and `PP_LAB_AWS_ROLE` that start the lab machine were never set. Tiers, each with a time budget
 ([RC013](DECISIONS.md#rc013--regression-suites-in-tiers-picked-by-capability-run-remotely)):
 

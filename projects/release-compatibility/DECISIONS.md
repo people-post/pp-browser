@@ -454,7 +454,7 @@ leaves for them.
 | Where versions are counted (O1) | Leo | a CloudWatch metric by product, version and OS; no account id, no table |
 | How `RELAY_VERSION` reaches the functions; an `x-pp-relay-version` header | Leo | injected by the deploy workflow from the tag; header optional |
 | Deploys (RC006 item 8, X11) | Leo | `dev/<date>.<n>` tags; a Lambda version per tag and one alias per function |
-| Checks before deploy (O3) | Leo | `deploy` needs `integration`; the behaviour suite on PRs in both repos; the nightly lab's variables set |
+| Checks before deploy (O3) | Leo | `deploy` needs `integration`; the behaviour suite on PRs in both repos; the lab nightly's variables set |
 | Prod's update links (C3) | Leo | the App Store and Play links and the desktop download page, set on the release day |
 | Support retention, S3 lifecycle days (item 8) | Leo | 90 days each, stated in SPECS and the privacy text |
 | The crash-report endpoint (O6) | Leo | as SPECS plans: a bucket with a 90-day expiry, no account id, rate-limited |
