@@ -37,7 +37,7 @@ void ConfigApplyBridge::InstallListeners() {
   // a saved "off" must reach it now, not only on the next change.
   ApplyMessageBanners(ILocalNotifier::Instance(), *last_notifications_);
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
-  last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
+  last_locale_ = LocalizationService::Prefs{.language = "en"}; // English only for now: see OnProfilePrefs
   last_agent_ = ChatController::ProjectAgent(snap.config);
 
   store_->AddConfigListener([this](const AppConfig& config) { OnConfig(config); });
@@ -99,7 +99,9 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
     });
   }
 
-  const LocalizationService::Prefs locale{.language = prefs.language};
+  // Release 1 ships in English only (temporary, Hongwei 2026-11-25): a changed preference does not change the UI's
+  // language (Application::InitializeUiHost applies "en"). To bring the choice back: `.language = prefs.language`.
+  const LocalizationService::Prefs locale{.language = "en"};
   if (!last_locale_ || locale != *last_locale_) {
     last_locale_ = locale;
     // SaveProfilePrefs may run on a worker (agent settings tools). Locale listeners

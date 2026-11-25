@@ -150,7 +150,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Appearance (light/dark):** `profiles/{id}/preferences.json` → `appearance` (`system`, `light`, or `dark`). System follows `SDL_GetSystemTheme` and live-updates on `SDL_EVENT_SYSTEM_THEME_CHANGED`.
 
-**Language (UI):** `preferences.json` → `language` (`system`, `en`, or `zh-Hans`). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`.
+**Language (UI):** `preferences.json` → `language` (`system`, `en`, or `zh-Hans`). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`. **Release 1 ships in English only (temporary):** the app applies `en` whatever `language` or the system says (`Application::InitializeUiHost`, `ConfigApplyBridge::OnProfilePrefs`); Me → Appearance shows no Language row, the AI's `list_locales` / `set_language` offer English alone, and the Android build packages only its English native strings. The stored `language` is left as it is, and the Chinese catalog stays in the app.
 
 **Secondary pane (expanded layout):** `preferences.json` → `sidebar_width_dp` (default 240, clamped 200–480) and `sidebar_collapsed` (default false). Written by `ShellHost` after a splitter drag ends or the collapse button is used; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 

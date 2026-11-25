@@ -940,7 +940,11 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;
     }
-    LocalizationService::Instance().SetPreferredLanguage(bootstrap.profile_prefs.language);
+    // Release 1 ships in English only (temporary, Hongwei 2026-11-25): the UI is English whatever the stored choice or the
+    // system language says. The stored preference is left as it is. To bring the choice back, apply
+    // bootstrap.profile_prefs.language here again (and in ConfigApplyBridge::OnProfilePrefs, the Appearance page,
+    // available_locales below).
+    LocalizationService::Instance().SetPreferredLanguage("en");
   }
 
   context = ui::CreateContext("main", ui::Vector2i(window_width, window_height));
@@ -1142,7 +1146,16 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
   };
-  settings_commands.available_locales = []() { return LocalizationService::Instance().AvailableLocales(); };
+  // Release 1 ships in English only (temporary, Hongwei 2026-11-25): the AI's list_locales / set_language offer English alone.
+  settings_commands.available_locales = []() {
+    std::vector<LocaleInfo> english;
+    for (const LocaleInfo& info : LocalizationService::Instance().AvailableLocales()) {
+      if (info.tag == "en") {
+        english.push_back(info);
+      }
+    }
+    return english;
+  };
   settings_commands.apply_appearance = [](const std::string& appearance_pref) {
     // Settings tools run on the worker pool; RmlUi theme activation is UI-thread only.
     AppRuntime::PostUI([appearance_pref]() {
