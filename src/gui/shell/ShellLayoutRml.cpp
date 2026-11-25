@@ -520,9 +520,9 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<div class=\"link-step shell-pin-gate-step\"><div class=\"settings-step-num\">2</div>"
          "<p class=\"text settings-step-text\">"
       << Tr("pin.link_return_step") << "</p></div>";
-  // A computer (the expanded layout): its camera cannot read a phone screen, so Paste leads and Scan is the second
+  // A desktop computer (not an iPad, and a narrow window still is one): its camera cannot read a phone screen, so Paste leads and Scan is the second
   // choice, with the way to carry the text over in one caption. A phone keeps Scan first.
-  const bool computer = state_.layout_mode != LayoutMode::Compact;
+  const bool computer = state_.desktop_computer;
   const std::string scan_button =
       std::string("<button class=\"btn ") + (computer ? "btn-secondary" : "btn-primary") +
       " shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" data-event-click=\"pin_gate_scan_reply()\">" +

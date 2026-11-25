@@ -49,6 +49,7 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
                             "settings.security.link_device.check_ok", "settings.security.link_device.step_1",
                             "settings.security.link_device.step_2", "settings.security.link_device.step_3",
                             "settings.security.link_device.send_reply", "settings.security.link_device.reply_note",
+                            "settings.security.link_device.new_device_hint", "settings.security.link_device.reset_hint",
                             "settings.security.link_device.copy_reply", "settings.security.link_device.reply_copied",
                             "settings.security.link_device.copied_valid", "settings.security.link_device.done",
                             "settings.security.link_device.phone_note"}) {
@@ -57,6 +58,22 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   }
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");
+  // The line over the steps quotes the new device's real button, in both languages.
+  EXPECT_NE(zh.find("\"pin.identity_link\": \"我在别的设备上已经有账号\""), std::string::npos);
+  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”。\""), std::string::npos);
+  EXPECT_NE(en.find("“I already have an account on another device”.\""), std::string::npos);
+  EXPECT_NE(en.find("\"pin.identity_link\": \"I already have an account on another device\""), std::string::npos);
+  // The new device's step 1 names the real menus: the Settings tab, the Linked devices section, the Link a new device row.
+  EXPECT_NE(en.find("\"nav.me\": \"Settings\""), std::string::npos);
+  EXPECT_NE(en.find("\"settings.devices.title\": \"Linked devices\""), std::string::npos);
+  EXPECT_NE(en.find("\"settings.security.transfer_row\": \"Link a new device\""), std::string::npos);
+  EXPECT_NE(en.find("open Settings → Linked devices → Link a new device, and scan this code"), std::string::npos);
+  EXPECT_NE(zh.find("\"nav.me\": \"设置\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.devices.title\": \"关联的设备\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.transfer_row\": \"关联新设备\""), std::string::npos);
+  EXPECT_NE(zh.find("打开 设置 → 关联的设备 → 关联新设备，扫描这个码"), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.reset_hint\": \"新设备上已有别的账号？先在“存储”里重置。\""),
+            std::string::npos);
   // Three one-line steps (numbered by the page), one short help line (desktop) and one grey note; the old lead, the
   // reply box's title and the old step keys are gone.
   for (const char* orphan : {"link_device.lead\"", "link_device.reply_title\""}) {
@@ -67,10 +84,9 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
                     "be reset first.\""),
             std::string::npos);
-  for (const char* gone :
-       {"link_device.precondition", "link_device.change_phone", "link_device.copy_button",
-        "link_device.export_confirm_message", "link_device.step1", "link_device.step2", "link_device.step3",
-        "link_device.steps_head", "link_device.send_hint", "link_device.reset_hint"}) {
+  for (const char* gone : {"link_device.precondition", "link_device.change_phone", "link_device.copy_button",
+                           "link_device.export_confirm_message", "link_device.step1", "link_device.step2",
+                           "link_device.step3", "link_device.steps_head", "link_device.send_hint"}) {
     EXPECT_EQ(zh.find(gone), std::string::npos) << gone;
     EXPECT_EQ(en.find(gone), std::string::npos) << gone;
   }
@@ -84,6 +100,14 @@ TEST(TransferPageMarkupTest, TheScanAndPasteButtonsAndTheReplyBoxAreOnThePage) {
   EXPECT_NE(rml.find("data-rml=\"link_reply_qr_rml\""), std::string::npos) << "the reply as a QR code";
   EXPECT_NE(rml.find("data-event-click=\"copy_link_reply()\""), std::string::npos) << "and as text to copy";
   EXPECT_EQ(rml.find("{{link_reply_text"), std::string::npos) << "the text is never bound (B166)";
+  // The help line and the reset hint are for the desktop only (the phone has the grey note); nothing displays the code.
+  {
+    const size_t hint = rml.find("{{i18n:settings.security.link_device.reset_hint}}");
+    ASSERT_NE(hint, std::string::npos);
+    EXPECT_NE(rml.substr(rml.rfind("<p ", hint), hint - rml.rfind("<p ", hint)).find("settings-desktop-only"),
+              std::string::npos);
+    EXPECT_NE(rml.find("{{i18n:settings.security.link_device.new_device_hint}}"), std::string::npos);
+  }
   // The one short help line is for the desktop only; nothing displays the code.
   const size_t help = rml.find("{{i18n:settings.security.link_device.help}}");
   ASSERT_NE(help, std::string::npos);
@@ -230,7 +254,6 @@ protected:
   int pin_prompts = 0;
 };
 
-// Default PIN: the digits check carries the line and a "?" that tells the PIN; an own PIN has neither.
 // "Scan" follows the machine's cameras: none listed, only Paste is left (and it is the main button, see the layout test).
 TEST_F(LinkReplyTest, ScanIsOfferedOnlyWhileACameraIsListed) {
   bool camera = true;
@@ -247,6 +270,7 @@ TEST_F(LinkReplyTest, ScanIsOfferedOnlyWhileACameraIsListed) {
   EXPECT_TRUE(actions->LinkCanScanForTest());
 }
 
+// Default PIN: the digits check carries the line and a "?" that tells the PIN; an own PIN has neither.
 TEST_F(LinkReplyTest, TheCheckOnTheDefaultPinCarriesTheLineAndTheNoteWithThePin) {
   ScanToTheCheck();
   ASSERT_EQ(noted_confirms, 1);

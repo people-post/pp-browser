@@ -5,6 +5,7 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
+#include "gui/AccountInvite.h"
 #include "gui/DefaultPinNote.h"
 #include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
@@ -60,7 +61,8 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("link_scan_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/true); }));
   ctor.BindEventCallback("link_paste_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/false); }));
   ctor.BindEventCallback("copy_link_reply", DataEvent<>([this]() { CopyLinkReply(); }));
-  ctor.BindEventCallback("send_link_reply", DataEvent<>([this]() { SendLinkReply(); }));
+  ctor.BindEventCallback("send_link_reply",
+                         DataEventAt([this](ui::Event& ev) { SendLinkReply(ShareAnchorFromEvent(ev)); }));
   ctor.BindEventCallback("clear_link_reply", DataEvent<>([this]() { ClearLinkReply(); }));
   SetTransferLabels();
   ctor.Bind("link_reply_shown", &link_reply_shown_);
@@ -383,12 +385,12 @@ void SettingsSecurityActions::CopyLinkReply() {
   UserFeedback::Ok(Tr("settings.security.link_device.reply_copied"));
 }
 
-void SettingsSecurityActions::SendLinkReply() {
+void SettingsSecurityActions::SendLinkReply(const ShareAnchor anchor) {
   if (!link_reply_shown_ || link_reply_text_.empty()) {
     return;
   }
   // The system sheet first; where it cannot show, the text is copied and the person is told, as Copy does.
-  if (PlatformShareText(Backend::GetWindow(), link_reply_text_)) {
+  if (PlatformShareText(Backend::GetWindow(), link_reply_text_, anchor)) {
     return;
   }
   CopyLinkReply();

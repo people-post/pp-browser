@@ -14241,21 +14241,6 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
 }
 
-.shell-layer-compact .settings-steps-card {
-  padding: 0 16dp 0 0;
-}
-
-.shell-layer-compact .settings-step {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 12dp 0;
-}
-
-.shell-layer-compact .settings-step:first-child {
-  border-top-width: 0;
-}
-
 /* A numbered step: a small round marker and one short line (the link pages: the new device's two steps, the main
    device's three, the reply's step 3). The main device's list is left-aligned; on the new device's card it is centred. */
 .link-step {
@@ -14286,12 +14271,22 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 21dp;
 }
 
+.settings-transfer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-transfer-hint {
+  margin: 20dp 32dp 0 32dp;
+}
+
 .settings-transfer-steps {
   margin: 12dp 0 0 0;
 }
 
 .shell-layer-compact .settings-transfer-steps {
-  margin: 20dp 32dp 0 32dp;
+  margin: 12dp 32dp 0 32dp;
 }
 
 .settings-transfer-steps .link-step {

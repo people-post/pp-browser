@@ -7,6 +7,7 @@
   <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
   <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
   <div class="settings-transfer-copy" data-if="security_can_export_link && !own_devices_not_main && !link_reply_shown">
+    <p class="text muted settings-transfer-hint">{{i18n:settings.security.link_device.new_device_hint}}</p>
     <div class="settings-transfer-steps">
       <div class="link-step">
         <div class="settings-step-num">1</div>
@@ -52,6 +53,7 @@
   </div>
   <p class="text muted group-foot" data-if="link_reply_shown">{{i18n:settings.security.link_device.handover_after}}</p>
   <p class="text muted settings-help group-foot settings-desktop-only" data-if="!link_reply_shown">{{i18n:settings.security.link_device.help}}</p>
+  <p class="text muted settings-help group-foot settings-desktop-only" data-if="!link_reply_shown">{{i18n:settings.security.link_device.reset_hint}}</p>
   <div class="settings-note-row settings-transfer-note" data-if="!link_reply_shown">
     <p class="text muted group-foot">{{i18n:settings.security.link_device.phone_note}}</p>
     <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>

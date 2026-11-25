@@ -617,6 +617,9 @@ struct NavBadgeState {
 };
 
 struct ShellState {
+  /** A desktop computer (Platform::IsDesktop; an iPad is not, even full screen, and a narrow desktop window is). Set by
+   *  ShellHost; the link pages use it to put Paste before Scan (a computer's camera cannot read a phone screen). */
+  bool desktop_computer = false;
   LayoutMode layout_mode = LayoutMode::Expanded;
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;

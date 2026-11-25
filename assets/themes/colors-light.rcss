@@ -3226,10 +3226,6 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.shell-layer-compact .settings-step {
-  border-top: 1dp #3c3c434a;
-}
-
 /* Linked devices: the quiet icon, the sentence, the grey lines. */
 .shell-layer-compact .settings-dev-ill {
   image-color: #3c3c434c;

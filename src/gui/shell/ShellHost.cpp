@@ -14,6 +14,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
@@ -103,6 +104,7 @@ constexpr bool kSystemBackLeavesSettingsHome = true;
 
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
+  state_.desktop_computer = Platform::IsDesktop();
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -3727,7 +3729,19 @@ void ShellHost::PinGatePaste() {
   }
   ui::String text;
   system->GetClipboardText(text);
-  if (text.empty()) {
+  // The link page's reply: an empty clipboard, or text holding no reply code, is said so on the page (an error line)
+  // instead of nothing happening; the paste is not kept.
+  if (state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow) {
+    const char* refused = text.empty() ? "pin.link_paste_empty"
+                          : FindLinkPayload(kLinkReplyTextPrefix, std::string(text.c_str(), text.size()))
+                              ? nullptr
+                              : "pin.link_err_unreadable";
+    state_.pin_gate.error = refused != nullptr ? Tr(refused).c_str() : "";
+    DataModelHost::Instance().Dirty("window", "pin_gate_error");
+    if (refused != nullptr) {
+      return;
+    }
+  } else if (text.empty()) {
     return;
   }
   // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a

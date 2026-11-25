@@ -341,13 +341,17 @@ protected:
   int height_ = 0;
 };
 
+// `computer`: a desktop computer (Platform::IsDesktop; ShellState::desktop_computer), whatever the window's layout. A
+// phone and an iPad (even expanded, 1024x768) are not; a narrow desktop window (500 wide, the compact layout) is.
 struct WindowSize {
   bool compact;
   int width;
   int height;
+  bool computer;
 };
 
-constexpr WindowSize kWindowSizes[] = {{true, 390, 844}, {true, 430, 932}, {false, 1100, 900}, {false, 900, 640}};
+constexpr WindowSize kWindowSizes[] = {{true, 390, 844, false}, {true, 430, 932, false},   {false, 1100, 900, true},
+                                       {false, 900, 640, true}, {false, 1024, 768, false}, {true, 500, 800, true}};
 
 // --- the new device's page ----------------------------------------------------------------------------------------
 
@@ -368,12 +372,17 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
     LocalizationService::Instance().SetPreferredLanguage(lang);
     for (const WindowSize& size : kWindowSizes) {
       const bool compact = size.compact;
+      const bool computer = size.computer;
       const int width = size.width;
       const int height = size.height;
       for (const GateCase& state_case : kGateCases) {
-        const std::string where = std::string(lang) + (compact ? " phone " : " desktop ") + std::to_string(width) +
-                                  "x" + std::to_string(height) + " " + state_case.name;
+        const std::string where = std::string(lang) +
+                                  (computer  ? " computer "
+                                   : compact ? " phone "
+                                             : " tablet ") +
+                                  std::to_string(width) + "x" + std::to_string(height) + " " + state_case.name;
         ShellState state;
+        state.desktop_computer = computer;
         state.layout_mode = compact ? LayoutMode::Compact : LayoutMode::Expanded;
         state.pin_gate.active = true;
         state.pin_gate.link_paste_mode = true;
@@ -423,7 +432,7 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
           EXPECT_NEAR(Box(card).MidX(), width / 2.f, 1.f) << where;
         }
         // A short desktop window (640dp) keeps the code's 280dp minimum and scrolls the card; its scrollbar takes 8dp.
-        const bool scrolls = !compact && height < 700;
+        const bool scrolls = (!compact && height < 700) || (compact && computer);
         const float centre = ContentMidX(card);
         const float centre_slack = scrolls ? 9.f : 1.f;
         EXPECT_LE(Box(card).right - Box(card).left, compact ? width + 0.5f : 560.5f) << where;
@@ -435,14 +444,15 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
         } else {
           EXPECT_EQ(Visible("shell-pin-gate-scan").size(), state_case.can_scan ? 1U : 0U) << where;
           EXPECT_EQ(Visible("shell-pin-gate-paste").size(), 1U) << where;
-          // A computer's return leg: Paste first and the main one, Scan second, one caption; a phone: Scan first.
-          EXPECT_EQ(Visible("shell-pin-gate-computer-note").size(), compact ? 0U : 1U) << where;
+          // A computer's return leg: Paste first and the main one, Scan second, one caption; a phone or a tablet: Scan
+          // first and no caption.
+          EXPECT_EQ(Visible("shell-pin-gate-computer-note").size(), computer ? 1U : 0U) << where;
           if (state_case.can_scan) {
             ui::Element* scan = One("shell-pin-gate-scan");
             ui::Element* paste = One("shell-pin-gate-paste");
-            ExpectOneRow(compact ? scan : paste, compact ? paste : scan, where);
-            EXPECT_TRUE((compact ? scan : paste)->IsClassSet("btn-primary")) << where << ": the first button is main";
-            EXPECT_FALSE((compact ? paste : scan)->IsClassSet("btn-primary")) << where;
+            ExpectOneRow(computer ? paste : scan, computer ? scan : paste, where);
+            EXPECT_TRUE((computer ? paste : scan)->IsClassSet("btn-primary")) << where << ": the first button is main";
+            EXPECT_FALSE((computer ? scan : paste)->IsClassSet("btn-primary")) << where;
           }
         }
         ui::Element* qr = One("shell-pin-gate-qr");
@@ -468,7 +478,7 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
         if (!state_case.reply_pasted) {
           stack.push_back(One("shell-pin-gate-step"));
           inside.push_back(One("shell-pin-gate-step"));
-          if (!compact) {
+          if (computer) {
             ui::Element* note = One("shell-pin-gate-computer-note");
             inside.push_back(note);
             // Not clipped: the whole caption is inside the card (a card that scrolls shows the rest on scrolling).
