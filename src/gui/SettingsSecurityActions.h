@@ -3,6 +3,7 @@
 #include "feature/settings/SettingsCommands.h"
 #include "gui/PinPromptPorts.h"
 #include "gui/SettingsHost.h"
+#include "foundation/platform/PlatformShare.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 
@@ -106,7 +107,7 @@ private:
   void SealLinkReply(std::string offer);
   /** The reply's "Copy as text": the reply to the clipboard (safe: only the new device opens it). */
   void CopyLinkReply();
-  void SendLinkReply();
+  void SendLinkReply(ShareAnchor anchor);
   /** The page's lead and validity lines, with the link's window in minutes (kLinkWindowMs). */
   void SetTransferLabels();
   bool CanScanLink() const;

@@ -7875,6 +7875,138 @@ input.checkbox {
   text-align: center;
 }
 
+/* The link page on a desktop computer (ShellLayoutRml::PinGate; QrDisplay.h LinkComputerLayoutFor sizes the code from the
+   window). The layer centres the card by layout instead of a transform, so the card is never taller than the window
+   and its footer (Back, Continue) is always on screen: the title and the footer keep their height, the body between
+   them scrolls only when even the 280dp code does not fit. Two columns (the class --two-columns, a wide window): the code and
+   Copy as text on the left, the steps, the 4 digits and the Paste / Scan row on the right; one column otherwise.
+   Text is a size smaller than the phone's page; buttons keep their 44dp. Kept here rather than in a wide sheet: it is
+   one page, generated in C++, and no wide stylesheet exists yet. */
+.shell-pin-gate-layer--computer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-pin-gate-layer--computer .shell-dialog.shell-pin-gate--computer {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  width: 96%;
+  max-width: 960dp;
+  max-height: 96%;
+  padding: 16dp 24dp;
+  overflow: hidden;
+}
+
+.shell-pin-gate--computer .shell-dialog-title {
+  flex-shrink: 0;
+  margin: 0 0 8dp 0;
+  font-size: 17dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-body {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-pin-gate--computer .shell-dialog-actions {
+  flex-shrink: 0;
+  margin-top: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-error {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-pin-gate--computer .settings-step-text {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-offer {
+  margin: 4dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code-label {
+  margin-top: 8dp;
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code {
+  font-size: 26dp;
+  line-height: 32dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-valid {
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return {
+  margin: 4dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return .btn {
+  min-height: 46dp;
+  line-height: 46dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-computer-note {
+  margin-top: 8dp;
+  font-size: 12dp;
+  line-height: 17dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-cols {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-code {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* Content width, not 100%: a percentage width would make the column as wide as the whole row. */
+.shell-pin-gate--two-columns .shell-pin-gate-copy {
+  display: inline-block;
+  width: auto;
+  padding: 0 24dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-steps {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.shell-pin-gate--two-columns .link-step {
+  justify-content: flex-start;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-error,
+.shell-pin-gate--two-columns .shell-pin-gate-note,
+.shell-pin-gate--two-columns .shell-pin-gate-digits,
+.shell-pin-gate--two-columns .shell-pin-gate-code-label,
+.shell-pin-gate--two-columns .shell-pin-gate-code,
+.shell-pin-gate--two-columns .shell-pin-gate-valid,
+.shell-pin-gate--two-columns .shell-pin-gate-computer-note {
+  text-align: left;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-code {
+  letter-spacing: 8dp;
+}
+
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
 .shell-note-line {
   display: flex;
@@ -11388,6 +11520,78 @@ input.checkbox {
   line-height: 18dp;
 }
 
+/* Desktop computer scanner (ShellLayoutRml: .shell-layer-computer, the same full-screen layer as the phone's): the camera
+   fills the window and the picture is the whole frame, aspect-fit (ElementScanPreview draws it, the dimming and the guide
+   square on it); the back is a round button at the top left, the hint (or the failure line) and Cancel / Try again sit at
+   the bottom, always inside the window. */
+.qr-scan-computer-bar {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.shell-layer-computer .qr-scan-title,
+.shell-layer-computer .qr-scan-status {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan-camera {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 0;
+}
+
+.shell-layer-computer .qr-scan-back {
+  position: absolute;
+  top: 16dp;
+  left: 16dp;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-computer .qr-scan-back svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-computer .qr-scan-computer-bar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 12dp 32dp 4dp 32dp;
+  text-align: center;
+}
+
+.shell-layer-computer .qr-scan-computer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-computer .qr-scan-actions {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  padding: 8dp 32dp 16dp 32dp;
+}
+
 /* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
    account id; the detail page is a centred 96dp avatar, round action button and grouped cards. Desktop keeps its layout;
    the phone-only elements are hidden until the compact layer. */
@@ -14385,21 +14589,6 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
 }
 
-.shell-layer-compact .settings-steps-card {
-  padding: 0 16dp 0 0;
-}
-
-.shell-layer-compact .settings-step {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 12dp 0;
-}
-
-.shell-layer-compact .settings-step:first-child {
-  border-top-width: 0;
-}
-
 /* A numbered step: a small round marker and one short line (the link pages: the new device's two steps, the main
    device's three, the reply's step 3). The main device's list is left-aligned; on the new device's card it is centred. */
 .link-step {
@@ -14430,12 +14619,22 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 21dp;
 }
 
+.settings-transfer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-transfer-hint {
+  margin: 20dp 32dp 0 32dp;
+}
+
 .settings-transfer-steps {
   margin: 12dp 0 0 0;
 }
 
 .shell-layer-compact .settings-transfer-steps {
-  margin: 20dp 32dp 0 32dp;
+  margin: 12dp 32dp 0 32dp;
 }
 
 .settings-transfer-steps .link-step {

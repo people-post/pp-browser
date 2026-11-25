@@ -423,6 +423,7 @@ private:
   /** SyncLayout rebuilt the DOM: put every MountOverlayBody body back into its (now empty) mount. */
   void RemountOverlayBodiesNow();
   void FlushRemountPinGateChrome();
+  void ResizeComputerLinkPage(ui::Context* context);
   /** The AI drawer's host (#shell-ai-drawer-host): deferred (safe from a click), or now (SyncLayout). */
   void RemountAiDrawer();
   void FlushRemountAiDrawer();

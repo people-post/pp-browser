@@ -1541,7 +1541,9 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
-  security_actions_.RefreshLinkCanScan();
+  if (section_id == "devices") {
+    security_actions_.RefreshLinkCanScan(); // the first camera enumeration: only where the link page can show
+  }
   FlushPending();
   ResetSecurityPage();
 
@@ -1711,7 +1713,9 @@ std::string SettingsController::LinkQrSide() const {
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
-  security_actions_.RefreshLinkCanScan();
+  if (page == "transfer") {
+    security_actions_.RefreshLinkCanScan();
+  }
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;

@@ -2029,6 +2029,7 @@ input.checkbox:checked {
 }
 
 .qr-scan-hint,
+.qr-scan-computer-hint,
 .qr-scan-tool-label {
   color: #ffffff;
 }
@@ -3252,10 +3253,6 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.shell-layer-compact .settings-step {
-  border-top: 1dp #3c3c434a;
-}
-
 /* Linked devices: the quiet icon, the sentence, the grey lines. */
 .shell-layer-compact .settings-dev-ill {
   image-color: #3c3c434c;
@@ -3994,14 +3991,23 @@ input.checkbox:checked {
 
 /* On the camera the disc is a dark glass with a white chevron, in both themes. */
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face,
-.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {
+.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face,
+.shell-layer-computer .qr-scan-back .shell-circle-btn-face,
+.shell-layer-computer .qr-scan-back:active .shell-circle-btn-face {
   background-color: #00000066;
   decorator: none;
   box-shadow: none;
 }
 
-.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg,
+.shell-layer-computer .qr-scan-back .shell-circle-btn-face svg {
   image-color: #ffffff;
+}
+
+/* A computer's scan layer: the hint and the buttons sit on a dark band over the camera, in both themes. */
+.shell-layer-computer .qr-scan-computer-bar,
+.shell-layer-computer .qr-scan-actions {
+  background-color: #000000b3;
 }
 
 .context-menu-layer--popover-left .context-menu-panel {

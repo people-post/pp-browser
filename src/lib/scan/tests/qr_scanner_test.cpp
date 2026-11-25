@@ -41,6 +41,7 @@ struct FakeState {
   std::string error;
   bool no_frames = false;
   int rotate_cw = 0;        // geometry the fake camera reports
+  bool mirror_preview = false;
   bool pre_rotated = false; // frames arrive rotated so that rotate_cw makes them upright
   std::atomic<bool> permission_pending{false};
   bool permission_denied = false; // the OS refused access (what SDL reports as permission state < 0)
@@ -67,6 +68,7 @@ public:
   CameraGeometry Geometry() const override {
     CameraGeometry geometry;
     geometry.rotate_cw = state_.rotate_cw;
+    geometry.mirror_preview = state_.mirror_preview;
     return geometry;
   }
   std::string CaptureError() const override { return state_.error; }
@@ -507,6 +509,48 @@ TEST(QrScannerTest, CameraWithoutNativeZoomUsesBoundedSoftwarePreview) {
   EXPECT_LT(result.preview->height, 480);
   EXPECT_EQ(state.zoom_requests, 0);
   EXPECT_FALSE(result.text);
+  scanner.Stop();
+  EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
+}
+// A computer's scan layer (ElementScanPreview, a window-sized aspect-fit picture): the preview is the whole frame, and
+// the mirror is a flag for the page. The pixels are the camera's, byte for byte (what the decoder reads is the same
+// frame), and the code is read as before.
+TEST(QrScannerTest, TheFullFramePreviewIsTheCamerasOwnPixelsAndOnlyFlagsTheMirror) {
+  for (const bool mirror : {false, true}) {
+    FakeState state;
+    state.mirror_preview = mirror;
+    MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+    QrScanner scanner(devices);
+    scanner.Start(0, /*full_frame_preview=*/true);
+    QrScanner::Update result;
+    ASSERT_TRUE(WaitFor([&] {
+      result = scanner.Poll();
+      return result.text.has_value();
+    }));
+    EXPECT_EQ(result.text, "old payload");
+    ASSERT_TRUE(result.preview);
+    const VideoFrameRgba camera = QrFrame("old payload");
+    EXPECT_EQ(result.preview->width, camera.width);
+    EXPECT_EQ(result.preview->height, camera.height);
+    EXPECT_EQ(result.preview->rgba, camera.rgba) << "never flipped here: the page mirrors only what it draws";
+    EXPECT_EQ(result.mirror_preview, mirror);
+  }
+}
+
+TEST(QrScannerTest, TheFullFramePreviewDoesNotFollowTheHuntsCentreCrop) {
+  FakeState state;
+  state.zoom_required = true;
+  state.native_zoom_supported = false; // the zoom is a software viewport: the default preview shows its crop
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start(0, /*full_frame_preview=*/true);
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.preview.has_value();
+  }));
+  EXPECT_EQ(result.preview->width, 640);
+  EXPECT_EQ(result.preview->height, 480);
   scanner.Stop();
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
 }

@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <string>
 
 namespace pbr {
@@ -98,17 +99,26 @@ TEST_P(LinkPasteTest, APasteWithoutACodeIsRefusedWithThePlainWords) {
 // the rest is dropped, the decoded bytes are the truncated head and are not the payload. The caller then fails on the
 // truncated payload (ReadLinkOffer / link_offer_.Open) instead of finding "no code". To raise with the handshake's
 // owner; not fixed here.
-TEST_P(LinkPasteTest, DISABLED_ACodeWrappedByAChatAppIsAccepted) {
+TEST_P(LinkPasteTest, DISABLED_ACodeWithLineBreaksInsideIsAccepted) {
   EXPECT_TRUE(Accepts(Wrapped(text, 76, "\n"))) << "newline every 76 characters";
   EXPECT_TRUE(Accepts(Wrapped(text, 40, "\r\n"))) << "CRLF every 40 characters";
   EXPECT_TRUE(Accepts(Wrapped(text, 60, " "))) << "a space every 60 characters";
   EXPECT_TRUE(Accepts("> " + Wrapped(text, 70, "\n> "))) << "wrapped and quoted line by line";
 }
 
-// What does happen today with a wrapped code, so the report is exact: the first line is read as if it were the code.
-TEST_P(LinkPasteTest, AWrappedCodeIsNotTakenForTheWholeCode) {
-  const auto found = FindLinkPayload(prefix, Wrapped(text, 76, "\n"));
-  EXPECT_FALSE(found && *found == payload);
+// What happens today with a code that has a line break inside it (documented in LINK_DEVICE.md and LinkHandshake.h):
+// the text up to the first break is taken as the whole code. When that head is not a whole number of base64url groups
+// the decoder refuses it (nothing found, the callers say "not a code"); when it is, the result is a shorter payload that
+// is the head of the real one, and the caller then fails on that.
+TEST_P(LinkPasteTest, ACodeWithALineBreakInsideIsReadOnlyUpToTheBreak) {
+  const size_t prefix_size = std::string(prefix).size();
+  // A first line whose code part is 54 characters (2 mod 4): refused.
+  EXPECT_FALSE(FindLinkPayload(prefix, Wrapped(text, prefix_size + 54, "\n")));
+  // A first line whose code part is 56 characters (a whole number of groups): its 42 bytes, a prefix of the payload.
+  const auto head = FindLinkPayload(prefix, Wrapped(text, prefix_size + 56, "\n"));
+  ASSERT_TRUE(head.has_value());
+  EXPECT_EQ(head->size(), 42U);
+  EXPECT_TRUE(std::equal(head->begin(), head->end(), payload.begin()));
 }
 
 INSTANTIATE_TEST_SUITE_P(BothCodes, LinkPasteTest, testing::Values(kLinkOfferTextPrefix, kLinkReplyTextPrefix));

@@ -14,6 +14,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
@@ -103,6 +104,7 @@ constexpr bool kSystemBackLeavesSettingsHome = true;
 
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
+  state_.desktop_computer = Platform::IsDesktop();
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -1696,10 +1698,37 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
-  if (state.link_paste_mode) {
+  if (state.link_paste_mode && state_.desktop_computer) {
+    // A desktop computer's link page is sized from the window's height and width (QrDisplay.h LinkComputerLayoutFor).
+    const LinkComputerLayout layout = LinkComputerLayoutFor(context_);
+    state_.link_two_columns = layout.two_columns;
+    state_.pin_gate.link_qr_side = (std::to_string(layout.side_dp) + "dp").c_str();
+  } else if (state.link_paste_mode) {
     state_.pin_gate.link_qr_side = LinkQrDisplayFor(state_.layout_mode == LayoutMode::Compact, context_).css.c_str();
   }
   ReconcileStartupCover();
+}
+
+// A window resized under the link page: the code's side follows the new height and width, and a window that crossed
+// the two-column width gets the other markup. (The page is mounted once; nothing else would redo it.)
+void ShellHost::ResizeComputerLinkPage(ui::Context* context) {
+  if (!state_.desktop_computer || !state_.pin_gate.active || !state_.pin_gate.link_paste_mode ||
+      state_.pin_gate.phrase_flow) {
+    return;
+  }
+  const LinkComputerLayout layout = LinkComputerLayoutFor(context);
+  const ui::String side = (std::to_string(layout.side_dp) + "dp").c_str();
+  const bool columns_changed = layout.two_columns != state_.link_two_columns;
+  if (!columns_changed && side == state_.pin_gate.link_qr_side) {
+    return;
+  }
+  state_.link_two_columns = layout.two_columns;
+  state_.pin_gate.link_qr_side = side;
+  if (columns_changed) {
+    RemountPinGateChrome();
+  } else {
+    DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
+  }
 }
 
 void ShellHost::ReconcileStartupCover() {
@@ -3554,6 +3583,7 @@ void ShellHost::Update(ui::Context* context) {
     if (on_viewport_resized_) {
       on_viewport_resized_();
     }
+    ResizeComputerLinkPage(context);
   }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
@@ -3727,7 +3757,19 @@ void ShellHost::PinGatePaste() {
   }
   ui::String text;
   system->GetClipboardText(text);
-  if (text.empty()) {
+  // The link page's reply: an empty clipboard, or text holding no reply code, is said so on the page (an error line)
+  // instead of nothing happening; the paste is not kept.
+  if (state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow) {
+    const char* refused = text.empty() ? "pin.link_paste_empty"
+                          : FindLinkPayload(kLinkReplyTextPrefix, std::string(text.c_str(), text.size()))
+                              ? nullptr
+                              : "pin.link_err_unreadable";
+    state_.pin_gate.error = refused != nullptr ? Tr(refused).c_str() : "";
+    DataModelHost::Instance().Dirty("window", "pin_gate_error");
+    if (refused != nullptr) {
+      return;
+    }
+  } else if (text.empty()) {
     return;
   }
   // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a

@@ -321,12 +321,16 @@ std::string ShellLayoutRml::TransientLayer() const {
 std::string ShellLayoutRml::Overlays() const {
   std::ostringstream out;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
-    if (overlay.full_screen && state_.layout_mode == LayoutMode::Compact) {
+    // The scanner is also edge to edge on a desktop computer, in any window width (the camera shows larger; an iPad's
+    // expanded layout keeps the framed panel). Its own class: the phone's rules do not apply there.
+    const bool computer_scan = overlay.full_screen && overlay.key == "qr_scan" && state_.desktop_computer;
+    if (overlay.full_screen && (state_.layout_mode == LayoutMode::Compact || computer_scan)) {
       // Phone full-screen page (the scanner): no scrim, frame or close button; the view has its own back. ShellHost
       // lifts the layer under the status bar and pads the body by the safe areas.
       out << "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\" id=\"shell-full-screen-"
           << overlay.id << "\" data-model=\"window\">";
-      out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      out << "<div class=\"shell-overlay-body " << (computer_scan ? "shell-layer-computer" : "shell-layer-compact")
+          << "\" id=\"overlay-body-" << overlay.id << "\"></div>";
       out << "</div>";
       continue;
     }
@@ -466,18 +470,41 @@ std::string ShellLayoutRml::PinGate() const {
   }
   std::ostringstream out;
   // Over the "Incoming call, connecting…" page: the scrim goes clear and the card steps below its title (rcss).
+  // The link page on a desktop computer (any window width): a card that fits the window, its own footer, and, in a wide
+  // window, the code beside the steps. A phone and an iPad keep the page below as it was.
+  const bool link_page = state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow;
+  const bool computer_link = link_page && state_.desktop_computer;
+  const bool two_columns = computer_link && state_.link_two_columns;
   out << "<div class=\"shell-layer shell-layer-dialog"
-      << (state_.call_ring.awaiting_invite ? " shell-pin-gate--over-call" : "") << "\" data-model=\"window\">";
+      << (state_.call_ring.awaiting_invite ? " shell-pin-gate--over-call" : "")
+      << (computer_link ? " shell-pin-gate-layer--computer" : "") << "\" data-model=\"window\">";
   out << "<div class=\"shell-scrim\"></div>";
   const bool frost = ChromeFrostEnabled();
-  const bool link_page = state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow;
   out << "<div class=\"shell-dialog shell-pin-gate" << (frost ? " shell-pin-gate--frost" : "")
       << (link_page ? " shell-pin-gate--link" : "")
-      << (link_page && state_.layout_mode == LayoutMode::Compact ? " shell-pin-gate--compact" : "") << "\">";
+      << (link_page && !computer_link && state_.layout_mode == LayoutMode::Compact ? " shell-pin-gate--compact" : "")
+      << (computer_link ? " shell-pin-gate--computer" : "") << (two_columns ? " shell-pin-gate--two-columns" : "")
+      << "\">";
   if (frost) {
     out << "<div class=\"bar-material bar-material--frost shell-pin-gate-material\"></div>";
   }
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
+  if (computer_link) {
+    out << "<div class=\"shell-pin-gate-body\">";
+  }
+  if (two_columns) {
+    // Left: the code and Copy as text. Right (opened here, closed before the footer): everything else.
+    out << "<div class=\"shell-pin-gate-cols\">";
+    // The column is as wide as the code (a column left to size itself took the whole row).
+    out << "<div class=\"shell-pin-gate-offer shell-pin-gate-col-code\" data-style-width=\"pin_gate_link_qr_side\" "
+           "data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && pin_gate_link_offer_qr_rml != ''\">";
+    out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-style-width=\"pin_gate_link_qr_side\" "
+           "data-style-height=\"pin_gate_link_qr_side\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+    out << "<button class=\"btn btn-ghost shell-pin-gate-copy\" data-event-click=\"pin_gate_copy_offer()\">"
+        << Tr("pin.link_copy_offer") << "</button>";
+    out << "</div>";
+    out << "<div class=\"shell-pin-gate-col-steps\">";
+  }
   // The link page's message is its step 1 (a numbered line); every other page keeps the plain message.
   out << "<p class=\"text shell-dialog-message\" data-if=\"!pin_gate_link_paste_mode || pin_gate_phrase_flow\">"
          "{{pin_gate_message}}</p>";
@@ -505,24 +532,28 @@ std::string ShellLayoutRml::PinGate() const {
   // compare under it, and the same offer as text; then, as a second step, the main device's reply, scanned or pasted
   // (no field: it is over a kilobyte, B166/B167, and nobody types it). Exactly one primary button at a time: Scan
   // when a camera is listed, else Paste, and Continue once a reply was pasted.
-  out << "<div class=\"shell-pin-gate-offer\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
-         "pin_gate_link_offer_qr_rml != ''\">";
-  out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-style-width=\"pin_gate_link_qr_side\" "
-         "data-style-height=\"pin_gate_link_qr_side\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+  out << "<div class=\"shell-pin-gate-offer" << (two_columns ? " shell-pin-gate-digits" : "")
+      << "\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && pin_gate_link_offer_qr_rml != ''\">";
+  if (!two_columns) {
+    out << "<svg class=\"shell-pin-gate-qr\" viewBox=\"0 0 100 100\" data-style-width=\"pin_gate_link_qr_side\" "
+           "data-style-height=\"pin_gate_link_qr_side\" data-rml=\"pin_gate_link_offer_qr_rml\"></svg>";
+  }
   out << "<p class=\"text muted shell-pin-gate-code-label\">" << Tr("pin.link_offer_code") << "</p>";
   out << "<p class=\"shell-pin-gate-code\">{{pin_gate_link_offer_code}}</p>";
   out << "<p class=\"text muted shell-pin-gate-valid\">{{pin_gate_link_valid}}</p>";
-  out << "<button class=\"btn btn-ghost shell-pin-gate-copy\" data-event-click=\"pin_gate_copy_offer()\">"
-      << Tr("pin.link_copy_offer") << "</button>";
+  if (!two_columns) {
+    out << "<button class=\"btn btn-ghost shell-pin-gate-copy\" data-event-click=\"pin_gate_copy_offer()\">"
+        << Tr("pin.link_copy_offer") << "</button>";
+  }
   out << "</div>";
   out << "<div class=\"shell-pin-gate-return\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\">";
   out << "<div class=\"link-step shell-pin-gate-step\"><div class=\"settings-step-num\">2</div>"
          "<p class=\"text settings-step-text\">"
       << Tr("pin.link_return_step") << "</p></div>";
-  // A computer (the expanded layout): its camera cannot read a phone screen, so Paste leads and Scan is the second
+  // A desktop computer (not an iPad, and a narrow window still is one): its camera cannot read a phone screen, so Paste leads and Scan is the second
   // choice, with the way to carry the text over in one caption. A phone keeps Scan first.
-  const bool computer = state_.layout_mode != LayoutMode::Compact;
+  const bool computer = state_.desktop_computer;
   const std::string scan_button =
       std::string("<button class=\"btn ") + (computer ? "btn-secondary" : "btn-primary") +
       " shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" data-event-click=\"pin_gate_scan_reply()\">" +
@@ -575,6 +606,9 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<p class=\"text muted shell-note-text\" "
          "data-if=\"pin_gate_default_note_line != '' && pin_gate_default_note_open\">"
          "{{pin_gate_default_note_text}}</p>";
+  if (computer_link) {
+    out << (two_columns ? "</div></div></div>" : "</div>"); // the right column, the columns, the body
+  }
   if (state_.pin_gate.biometric_first) {
     PinGateBiometricFirst(out);
   } else if (state_.pin_gate.keypad) {
