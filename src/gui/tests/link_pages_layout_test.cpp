@@ -170,6 +170,15 @@ std::string Bind(std::string rml, const Vars& vars) {
     out = match.suffix();
   }
   sized += out;
+  static const std::regex width_only(R"re( data-style-width="(\w+)")re");
+  out = sized;
+  sized.clear();
+  while (std::regex_search(out, match, width_only)) {
+    sized += match.prefix();
+    sized += " style=\"width: " + at(match[1]) + ";\"";
+    out = match.suffix();
+  }
+  sized += out;
   static const std::regex drop(R"re( (data-event-[a-z]+|data-value|data-rml|data-model)="[^"]*")re");
   sized = std::regex_replace(sized, drop, "");
   static const std::regex text_var(R"re(\{\{(?!i18n:)(\w+)\}\})re");
@@ -181,6 +190,41 @@ std::string Bind(std::string rml, const Vars& vars) {
   }
   text += sized;
   return LocalizationService::Instance().LocalizeText(text);
+}
+
+
+// The new device's page as the shell binds it: the code's side, whether a camera is listed, whether a reply was pasted,
+// and the error line (empty: none).
+Vars GateVars(const std::string& side, const bool can_scan, const bool reply_pasted, const std::string& error) {
+  return {{"pin_gate_title", Tr("pin.link_paste_title")},
+          {"pin_gate_message", Tr("pin.link_paste_message")},
+          {"pin_gate_error", error},
+          {"pin_gate_biometric_hint", ""},
+          {"pin_gate_identity_fork_mode", "0"},
+          {"pin_gate_chooser_mode", "0"},
+          {"pin_gate_link_paste_mode", "1"},
+          {"pin_gate_phrase_flow", "0"},
+          {"pin_gate_link_offer_qr_rml", "x"},
+          {"pin_gate_link_offer_code", "0427"},
+          {"pin_gate_link_valid", Tr("settings.security.link_device.copied_valid", {{"minutes", "15"}})},
+          {"pin_gate_link_qr_side", side},
+          {"pin_gate_link_can_scan", can_scan ? "1" : "0"},
+          {"pin_gate_payload_hidden", reply_pasted ? "1" : "0"},
+          {"pin_gate_saved_copy_name", ""},
+          {"pin_gate_default_note_line", ""},
+          {"pin_gate_default_note_open", "0"},
+          {"pin_gate_default_note_text", ""},
+          {"pin_gate_waiting_device_unlock", "0"},
+          {"pin_gate_unlock_mode", "0"},
+          {"pin_gate_forgot_open", "0"},
+          {"pin_gate_create_mode", "0"},
+          {"pin_gate_verify_mode", "0"},
+          {"pin_gate_change_mode", "0"},
+          {"pin_gate_ask_confirm", "0"},
+          {"pin_gate_keypad_offered", "0"},
+          {"pin_gate_biometric_key", "0"},
+          {"pin_gate_biometric_kind", ""},
+          {"pin_gate_link_payload", ""}};
 }
 
 // --- the page ---------------------------------------------------------------------------------------------------------
@@ -373,6 +417,9 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
     for (const WindowSize& size : kWindowSizes) {
       const bool compact = size.compact;
       const bool computer = size.computer;
+      if (computer) {
+        continue; // a computer's page is its own layout: TheNewDevicesPageOnAComputerFitsTheWindowInEveryState
+      }
       const int width = size.width;
       const int height = size.height;
       for (const GateCase& state_case : kGateCases) {
@@ -388,35 +435,7 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
         state.pin_gate.link_paste_mode = true;
         const QrDisplay display = LinkQrDisplayFor(compact, static_cast<float>(width), static_cast<float>(height), 1.f);
         const std::string rml = ShellLayoutRml(state, false, "").PinGate();
-        Vars vars{{"pin_gate_title", Tr("pin.link_paste_title")},
-                  {"pin_gate_message", Tr("pin.link_paste_message")},
-                  {"pin_gate_error", ""},
-                  {"pin_gate_biometric_hint", ""},
-                  {"pin_gate_identity_fork_mode", "0"},
-                  {"pin_gate_chooser_mode", "0"},
-                  {"pin_gate_link_paste_mode", "1"},
-                  {"pin_gate_phrase_flow", "0"},
-                  {"pin_gate_link_offer_qr_rml", "x"},
-                  {"pin_gate_link_offer_code", "0427"},
-                  {"pin_gate_link_valid", Tr("settings.security.link_device.copied_valid", {{"minutes", "15"}})},
-                  {"pin_gate_link_qr_side", display.css},
-                  {"pin_gate_link_can_scan", state_case.can_scan ? "1" : "0"},
-                  {"pin_gate_payload_hidden", state_case.reply_pasted ? "1" : "0"},
-                  {"pin_gate_saved_copy_name", ""},
-                  {"pin_gate_default_note_line", ""},
-                  {"pin_gate_default_note_open", "0"},
-                  {"pin_gate_default_note_text", ""},
-                  {"pin_gate_waiting_device_unlock", "0"},
-                  {"pin_gate_unlock_mode", "0"},
-                  {"pin_gate_forgot_open", "0"},
-                  {"pin_gate_create_mode", "0"},
-                  {"pin_gate_verify_mode", "0"},
-                  {"pin_gate_change_mode", "0"},
-                  {"pin_gate_ask_confirm", "0"},
-                  {"pin_gate_keypad_offered", "0"},
-                  {"pin_gate_biometric_key", "0"},
-                  {"pin_gate_biometric_kind", ""},
-                  {"pin_gate_link_payload", ""}};
+        const Vars vars = GateVars(display.css, state_case.can_scan, state_case.reply_pasted, "");
         // The card is laid out as the shell lays a dialog: a layer over the whole window.
         Mount("<div class=\"shell-layer shell-layer-dialog\" style=\"position: absolute; top: 0; left: 0; width: " +
                   std::to_string(width) + "dp; height: " + std::to_string(height) + "dp;\">" +
@@ -524,6 +543,185 @@ TEST(LinkPagesDisplayTest, TheCodeIsDrawnAsLargeAsThePageAllows) {
   EXPECT_GT(LinkQrDisplayFor(true, 390.f, 844.f, 1.f).side_dp, 280) << "bigger than either old size";
 }
 
+// --- the new device's page on a desktop computer ------------------------------------------------------------------------
+//
+// The first version of this page was checked only against its card, and the card scrolled: on a 1024x640 window the
+// caption and Back sat below the window and no assertion saw it. Here every element is checked against the WINDOW.
+
+struct DesktopWindow {
+  int width;
+  int height;
+};
+constexpr DesktopWindow kDesktopWindows[] = {{1280, 800}, {1100, 700}, {1024, 640}, {900, 600}, {800, 560}, {500, 800}};
+
+const char* const kGateErrorKeys[] = {"pin.link_offer_failed",   "pin.link_err_expired",   "pin.link_err_not_for_this_device",
+                                      "pin.link_err_unreadable", "pin.link_err_newer",     "pin.link_paste_empty"};
+
+// Every shown element under `root` (text nodes have no box of their own and are left out).
+void CollectShown(ui::Element* root, std::vector<ui::Element*>& out) {
+  for (int i = 0; i < root->GetNumChildren(); ++i) {
+    ui::Element* child = root->GetChild(i);
+    if (child->GetTagName().empty() || child->GetTagName()[0] == '#') {
+      continue;
+    }
+    if (child->GetComputedValues().display() == ui::Style::Display::None) {
+      continue;
+    }
+    out.push_back(child);
+    CollectShown(child, out);
+  }
+}
+
+TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryState) {
+  struct Case {
+    const char* name;
+    bool can_scan;
+    bool reply_pasted;
+    const char* error_key; // nullptr: no error line
+  };
+  std::vector<Case> cases{{"no camera", false, false, nullptr},
+                          {"camera", true, false, nullptr},
+                          {"reply pasted", true, true, nullptr}};
+  for (const char* key : kGateErrorKeys) {
+    cases.push_back({key, true, false, key});
+  }
+  for (const char* lang : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(lang);
+    for (const DesktopWindow& window : kDesktopWindows) {
+      const LinkComputerLayout layout =
+          LinkComputerLayoutFor(static_cast<float>(window.width), static_cast<float>(window.height));
+      for (const Case& state_case : cases) {
+        const std::string where = std::string(lang) + " computer " + std::to_string(window.width) + "x" +
+                                  std::to_string(window.height) + " " + state_case.name +
+                                  (layout.two_columns ? " (two columns)" : " (one column)");
+        ShellState state;
+        state.desktop_computer = true;
+        state.link_two_columns = layout.two_columns;
+        state.layout_mode = window.width < 600 ? LayoutMode::Compact : LayoutMode::Expanded;
+        state.pin_gate.active = true;
+        state.pin_gate.link_paste_mode = true;
+        const std::string rml = ShellLayoutRml(state, false, "").PinGate();
+        const Vars vars = GateVars(std::to_string(layout.side_dp) + "dp", state_case.can_scan, state_case.reply_pasted,
+                                   state_case.error_key ? Tr(state_case.error_key) : "");
+        Mount(Bind(rml, vars), window.width, window.height);
+        ASSERT_NE(document, nullptr) << where;
+        ui::Element* card = One("shell-pin-gate");
+        ASSERT_NE(card, nullptr) << where;
+        ui::Element* body = One("shell-pin-gate-body");
+        ASSERT_NE(body, nullptr) << where;
+        EXPECT_EQ(PrimaryCount(), 1) << where << ": one primary button";
+
+        // EVERY shown element lies inside the window: this is the assertion the card-only checks lacked.
+        std::vector<ui::Element*> shown;
+        CollectShown(card, shown);
+        const float w = static_cast<float>(window.width);
+        const float h = static_cast<float>(window.height);
+        for (ui::Element* e : shown) {
+          const Edges box = Box(e);
+          const std::string who = where + ": " + std::string(e->GetTagName().c_str()) + "." +
+                                  std::string(e->GetClassNames().c_str());
+          EXPECT_GE(box.left, -0.5f) << who << " is left of the window";
+          EXPECT_GE(box.top, -0.5f) << who << " is above the window";
+          EXPECT_LE(box.right, w + 0.5f) << who << " is right of the window";
+          EXPECT_LE(box.bottom, h + 0.5f) << who << " is below the window";
+        }
+        EXPECT_LE(Box(card).bottom, h + 0.5f) << where;
+        EXPECT_LE(Box(card).right, w + 0.5f) << where;
+        // No scrolling anywhere on a window the layout calls normal (1024x640 and larger) -- and on the smaller ones
+        // here too, which fit.
+        EXPECT_LE(body->GetScrollHeight(), body->GetClientHeight() + 1.f) << where << ": the body needs scrolling";
+        EXPECT_LE(card->GetScrollHeight(), card->GetClientHeight() + 1.f) << where << ": the card needs scrolling";
+
+        // The footer: Back always, Continue only once a reply was pasted; both below everything else.
+        ui::Element* actions = One("shell-dialog-actions");
+        ASSERT_NE(actions, nullptr) << where;
+        EXPECT_GE(Box(actions).top + 0.5f, Box(body).bottom) << where << ": the footer is under the body";
+        int back = 0;
+        for (ui::Element* button : Buttons()) {
+          if (button->IsClassSet("btn-secondary") && Box(button).top >= Box(actions).top - 0.5f) {
+            ++back;
+          }
+        }
+        EXPECT_EQ(back, 1) << where << ": Back is in the footer";
+        // Targets of at least 44dp, and the code is the size the layout computed.
+        for (ui::Element* button : Buttons()) {
+          EXPECT_GE(Box(button).bottom - Box(button).top, 43.9f) << where << " target too small";
+        }
+        ui::Element* qr = One("shell-pin-gate-qr");
+        ASSERT_NE(qr, nullptr) << where;
+        EXPECT_FLOAT_EQ(Box(qr).right - Box(qr).left, static_cast<float>(layout.side_dp)) << where;
+        EXPECT_GE(layout.side_dp, kLinkQrDesktopMinDp) << where;
+        EXPECT_LE(layout.side_dp, kLinkQrDesktopMaxDp) << where << ": never larger than the cap the page always had";
+        ui::Element* digits = One("shell-pin-gate-code");
+        ASSERT_NE(digits, nullptr) << where;
+        EXPECT_EQ(Visible("shell-pin-gate-computer-note").size(), state_case.reply_pasted ? 0U : 1U) << where;
+        if (layout.two_columns) {
+          // Code on the left, everything of the steps on the right of it, the footer under both.
+          EXPECT_EQ(Visible("shell-pin-gate-cols").size(), 1U) << where;
+          for (ui::Element* e : Visible("shell-pin-gate-col-steps")) {
+            EXPECT_GE(Box(e).left + 0.5f, Box(qr).right) << where << ": the steps are right of the code";
+          }
+          EXPECT_GE(Box(digits).left + 0.5f, Box(qr).right) << where << ": the digits are right of the code";
+          EXPECT_LE(Box(One("shell-pin-gate-copy")).bottom, Box(body).bottom + 0.5f) << where;
+          EXPECT_NEAR(Box(One("shell-pin-gate-copy")).MidX(), Box(qr).MidX(), 1.f) << where << ": Copy is under the code";
+        } else {
+          EXPECT_TRUE(Visible("shell-pin-gate-cols").empty()) << where;
+          EXPECT_NEAR(Box(qr).MidX(), ContentMidX(body), 1.f) << where << ": the code is centred";
+          EXPECT_GE(Box(digits).top, Box(qr).bottom) << where << ": the digits are under the code";
+        }
+      }
+    }
+  }
+}
+
+// A window too small for the 280dp code: the body scrolls, the footer does not move.
+TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAVeryShortWindowScrollsItsBodyAndKeepsBack) {
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  for (const DesktopWindow& window : {DesktopWindow{900, 380}, DesktopWindow{600, 420}}) {
+    const LinkComputerLayout layout =
+        LinkComputerLayoutFor(static_cast<float>(window.width), static_cast<float>(window.height));
+    ShellState state;
+    state.desktop_computer = true;
+    state.link_two_columns = layout.two_columns;
+    state.pin_gate.active = true;
+    state.pin_gate.link_paste_mode = true;
+    const std::string where = std::to_string(window.width) + "x" + std::to_string(window.height);
+    Mount(Bind(ShellLayoutRml(state, false, "").PinGate(),
+               GateVars(std::to_string(layout.side_dp) + "dp", true, false, "")),
+          window.width, window.height);
+    ASSERT_NE(document, nullptr) << where;
+    ui::Element* card = One("shell-pin-gate");
+    ui::Element* body = One("shell-pin-gate-body");
+    ASSERT_NE(card, nullptr) << where;
+    ASSERT_NE(body, nullptr) << where;
+    EXPECT_LE(Box(card).bottom, window.height + 0.5f) << where << ": the card is inside the window";
+    EXPECT_GT(body->GetScrollHeight(), body->GetClientHeight()) << where << ": the body scrolls";
+    ui::Element* actions = One("shell-dialog-actions");
+    ASSERT_NE(actions, nullptr) << where;
+    EXPECT_LE(Box(actions).bottom, window.height + 0.5f) << where << ": Back stays on screen";
+    EXPECT_GE(Box(actions).top, Box(body).bottom - 0.5f) << where;
+    EXPECT_GE(Box(One("shell-dialog-title")).top, -0.5f) << where;
+  }
+}
+
+TEST(LinkPagesDisplayTest, TheComputerPageFollowsTheWindow) {
+  // Wide and tall enough: the code beside the steps, at most the cap the page always had.
+  const LinkComputerLayout big = LinkComputerLayoutFor(1280.f, 800.f);
+  EXPECT_TRUE(big.two_columns);
+  EXPECT_EQ(big.side_dp, kLinkQrDesktopMaxDp);
+  // Never taller than the window and never under the minimum.
+  for (const DesktopWindow& window : kDesktopWindows) {
+    const LinkComputerLayout layout =
+        LinkComputerLayoutFor(static_cast<float>(window.width), static_cast<float>(window.height));
+    EXPECT_GE(layout.side_dp, kLinkQrDesktopMinDp);
+    EXPECT_LE(layout.side_dp, kLinkQrDesktopMaxDp);
+  }
+  // A narrow window stacks the page; a short one shrinks the code to 280dp.
+  EXPECT_FALSE(LinkComputerLayoutFor(500.f, 800.f).two_columns);
+  EXPECT_TRUE(LinkComputerLayoutFor(800.f, 560.f).two_columns);
+  EXPECT_EQ(LinkComputerLayoutFor(1100.f, 300.f).side_dp, kLinkQrDesktopMinDp);
+}
+
 // --- the main device's page ---------------------------------------------------------------------------------------
 
 struct MainCase {
@@ -627,6 +825,64 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
             EXPECT_LE(Box(button).bottom - Box(button).top, 56.f) << where << ": one line";
           }
           EXPECT_TRUE(buttons[0]->IsClassSet("btn-primary")) << where << ": the first button is the main one";
+        }
+      }
+    }
+  }
+}
+
+// The main device's page in the settings pane of a desktop window: the pane is the window less the title bar (36dp) and
+// the status bar (24dp) and the section list (340dp). Every shown element of the page lies inside that pane (the
+// pane may scroll; what is asked is that a normal window does not need it).
+TEST_F(LinkPagesLayoutTest, TheMainDevicesPageOnAComputerFitsTheSettingsPane) {
+  for (const char* lang : {"en", "zh-Hans"}) {
+    LocalizationService::Instance().SetPreferredLanguage(lang);
+    for (const DesktopWindow& window : kDesktopWindows) {
+      if (window.width < 600) {
+        continue; // a narrow window is the phone's layout (the test above)
+      }
+      const int pane_width = window.width - 340;
+      const int pane_height = window.height - 60;
+      for (const MainCase& state_case : kMainCases) {
+        const std::string where = std::string(lang) + " desktop pane " + std::to_string(pane_width) + "x" +
+                                  std::to_string(pane_height) + " " + state_case.name;
+        const QrDisplay display =
+            LinkQrDisplayFor(false, static_cast<float>(window.width), static_cast<float>(pane_height + 60), 1.f,
+                             kLinkQrDesktopSettingsReservedWidthDp);
+        Vars vars{{"security_can_export_link", "1"},
+                  {"own_devices_not_main", "0"},
+                  {"link_reply_shown", state_case.reply_shown ? "1" : "0"},
+                  {"link_can_scan", state_case.can_scan ? "1" : "0"},
+                  {"link_can_share", state_case.can_share ? "1" : "0"},
+                  {"move_valid_label", Tr("settings.security.link_device.copied_valid", {{"minutes", "15"}})},
+                  {"link_qr_side", display.css},
+                  {"link_reply_qr_rml", "x"}};
+        const std::string page = Bind(ReadAll(AssetPath("views/settings_security_transfer.rml")), vars);
+        Mount("<div class=\"settings-detail-view\" style=\"position: absolute; top: 0; left: 0; width: " +
+                  std::to_string(pane_width) + "dp; height: " + std::to_string(pane_height) +
+                  "dp; overflow-y: auto;\">" + page + "</div>",
+              pane_width, pane_height);
+        ASSERT_NE(document, nullptr) << where;
+        ui::Element* pane = One("settings-detail-view");
+        ASSERT_NE(pane, nullptr) << where;
+        const bool fits = !state_case.reply_shown || window.height >= 700;
+        std::vector<ui::Element*> shown;
+        CollectShown(pane, shown);
+        for (ui::Element* e : shown) {
+          const Edges box = Box(e);
+          const std::string who = where + ": " + std::string(e->GetTagName().c_str()) + "." +
+                                  std::string(e->GetClassNames().c_str());
+          EXPECT_LE(box.right, static_cast<float>(pane_width) + 0.5f) << who << " is right of the pane";
+          if (fits) {
+            EXPECT_LE(box.bottom, static_cast<float>(pane_height) + 0.5f) << who << " is below the pane";
+          } else {
+            // A short window: the reply (a 280dp code and three 50dp buttons) is taller than the pane even at the
+            // smallest code, so the settings pane scrolls, as every settings page does; all of it is reachable.
+            EXPECT_LE(box.bottom, pane->GetScrollHeight() + 0.5f) << who << " is outside the scrollable pane";
+          }
+        }
+        if (fits) {
+          EXPECT_LE(pane->GetScrollHeight(), pane->GetClientHeight() + 1.f) << where << ": the pane needs scrolling";
         }
       }
     }

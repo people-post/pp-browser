@@ -11,14 +11,10 @@
 
 namespace pbr {
 namespace {
-float ViewfinderSide(ui::Vector2f box) {
-  return std::min(box.x, box.y) * .68f;
-}
 
 // Dimming around the finder and its four corner marks: they depend on the box size only.
-ui::Mesh ViewfinderFrameMesh(ui::Vector2f box) {
+ui::Mesh ViewfinderFrameMesh(ui::Vector2f box, float side) {
   ui::Mesh mesh;
-  const float side = ViewfinderSide(box);
   const ui::Vector2f corner((box.x - side) * .5f, (box.y - side) * .5f);
   const ui::ColourbPremultiplied shade(0, 0, 0, 140);
   const ui::ColourbPremultiplied white(255, 255, 255, 255);
@@ -40,9 +36,8 @@ ui::Mesh ViewfinderFrameMesh(ui::Vector2f box) {
 }
 
 // The one moving part: the scan line.
-ui::Mesh ScanLineMesh(ui::Vector2f box) {
+ui::Mesh ScanLineMesh(ui::Vector2f box, float side) {
   ui::Mesh mesh;
-  const float side = ViewfinderSide(box);
   const ui::Vector2f corner((box.x - side) * .5f, (box.y - side) * .5f);
   const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
   const float phase = static_cast<float>(std::abs(std::fmod(seconds, 2.4) / 1.2 - 1.0));
@@ -51,6 +46,21 @@ ui::Mesh ScanLineMesh(ui::Vector2f box) {
   return mesh;
 }
 } // namespace
+
+ScanPreviewLayout LayoutScanPreview(const ui::Vector2f box, const int frame_width, const int frame_height,
+                                    const bool whole_frame) {
+  ScanPreviewLayout layout;
+  if (frame_width <= 0 || frame_height <= 0) {
+    return layout;
+  }
+  const float scale = whole_frame ? std::min(box.x / frame_width, box.y / frame_height)
+                                  : std::max(box.x / frame_width, box.y / frame_height);
+  layout.image_size = ui::Vector2f(frame_width * scale, frame_height * scale);
+  layout.image_offset = ui::Vector2f((box.x - layout.image_size.x) * .5f, (box.y - layout.image_size.y) * .5f);
+  layout.guide_side = whole_frame ? std::min(layout.image_size.x, layout.image_size.y) * kScanGuideShare
+                                  : std::min(box.x, box.y) * .68f;
+  return layout;
+}
 
 ElementScanPreview::ElementScanPreview(const ui::String& tag) : ui::Element(tag) {}
 
@@ -79,26 +89,31 @@ void ElementScanPreview::OnRender() {
   if (box.x <= 0 || box.y <= 0) {
     return;
   }
-  const float scale = std::max(box.x / width_, box.y / height_);
-  const ui::Vector2f size(width_ * scale, height_ * scale);
-  const ui::Vector2f inset((box.x - size.x) * .5f, (box.y - size.y) * .5f);
+  // A computer's scan layer shows the whole frame, aspect-fit, the guide on the picture, mirrored when asked; the phone's
+  // layer and the framed panel keep the covering picture. (The guide on the phone is drawn by the view.)
+  const bool computer = Closest(".shell-layer-computer") != nullptr;
+  const ScanPreviewLayout layout = LayoutScanPreview(box, width_, height_, computer);
+  const bool mirrored = computer && mirrored_;
   ui::Mesh mesh;
-  ui::MeshUtilities::GenerateQuad(mesh, inset, size, ui::ColourbPremultiplied(255, 255, 255, 255));
+  ui::MeshUtilities::GenerateQuad(mesh, layout.image_offset, layout.image_size, ui::ColourbPremultiplied(255, 255, 255, 255),
+                                  ui::Vector2f(mirrored ? 1.f : 0.f, 0.f), ui::Vector2f(mirrored ? 0.f : 1.f, 1.f));
   geometry_ = manager->MakeGeometry(std::move(mesh));
   geometry_.Render(GetAbsoluteOffset(ui::BoxArea::Content), texture_);
   // Phones draw the viewfinder in the view instead (qr_scan.rml: a fixed square, its corners and a moving line over
-  // the full-screen camera); the desktop panel keeps this one, sized to the preview.
+  // the full-screen camera); the framed panel and a computer's layer draw this one, on the picture.
   if (Closest(".shell-layer-compact")) {
     return;
   }
-  if (manager != frame_manager_ || box != frame_box_) {
+  const ui::Vector2f finder_box = computer ? layout.image_size : box;
+  const ui::Vector2f finder_at = computer ? layout.image_offset : ui::Vector2f(0, 0);
+  if (manager != frame_manager_ || finder_box != frame_box_) {
     frame_manager_ = manager;
-    frame_box_ = box;
-    frame_ = manager->MakeGeometry(ViewfinderFrameMesh(box));
+    frame_box_ = finder_box;
+    frame_ = manager->MakeGeometry(ViewfinderFrameMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
   }
-  frame_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
-  scan_line_ = manager->MakeGeometry(ScanLineMesh(box));
-  scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
+  frame_.Render(GetAbsoluteOffset(ui::BoxArea::Content) + finder_at);
+  scan_line_ = manager->MakeGeometry(ScanLineMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
+  scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content) + finder_at);
 }
 
 // Pixel sizes derive from the dp ratio, so the cached finder geometry is stale after it changes.

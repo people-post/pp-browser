@@ -620,6 +620,9 @@ struct ShellState {
   /** A desktop computer (Platform::IsDesktop; an iPad is not, even full screen, and a narrow desktop window is). Set by
    *  ShellHost; the link pages use it to put Paste before Scan (a computer's camera cannot read a phone screen). */
   bool desktop_computer = false;
+  /** The new device's link page on a desktop computer: the window is wide enough for the code beside the steps
+   *  (QrDisplay.h LinkComputerLayoutFor; ShellHost refreshes it when the window is resized). */
+  bool link_two_columns = false;
   LayoutMode layout_mode = LayoutMode::Expanded;
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;

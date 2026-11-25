@@ -44,6 +44,36 @@ QrDisplay LinkQrDisplayFor(bool compact, ui::Context* context, int reserved_widt
 /** Width a desktop window keeps beside the settings page's own column: the navigation rail and the section list. */
 inline constexpr int kLinkQrDesktopSettingsReservedWidthDp = 500;
 
+/**
+ * The new device's link page on a desktop computer (ShellState::desktop_computer; an iPad and a phone keep their own
+ * page): one card in the window, as large as the window's own height allows and never taller than it. A window wide
+ * enough puts the code on the left and the steps, the 4 digits and the buttons on the right; a narrower one stacks them
+ * and shrinks the code to what is left of the height. Below the 280dp minimum the card's body scrolls and Back stays
+ * in a footer that never does.
+ */
+struct LinkComputerLayout {
+  bool two_columns = false;
+  int side_dp = kLinkQrDesktopMinDp;
+};
+
+/** Card: 96% of the window wide up to 960dp, 24dp padding a side, 24dp between the columns. */
+inline constexpr int kLinkComputerCardMaxWidthDp = 960;
+inline constexpr int kLinkComputerPaddingDp = 24;
+inline constexpr int kLinkComputerGapDp = 24;
+/** The right column's least width (the steps and the Paste / Scan row). */
+inline constexpr int kLinkComputerRightMinDp = 380;
+/** Height, in dp, kept for everything but the code: two columns (title, Copy, footer, padding), one column (all that). */
+inline constexpr int kLinkComputerReservedTwoColumnsHeightDp = 190;
+inline constexpr int kLinkComputerReservedOneColumnHeightDp = 490;
+/** Two columns need at least this much window height (the right column's own height, measured by the layout test). */
+inline constexpr int kLinkComputerTwoColumnsMinHeightDp = 520;
+
+/** Pure part: the layout for a window `width_dp` by `height_dp`. */
+LinkComputerLayout LinkComputerLayoutFor(float width_dp, float height_dp);
+
+/** The same for `context`'s window (a null context counts as 1100 x 800). */
+LinkComputerLayout LinkComputerLayoutFor(ui::Context* context);
+
 /** Pure part: the display for a page `width_dp` wide and `height_dp` tall at `dp_ratio` pixels per dp. */
 QrDisplay QrDisplayFor(bool compact, float width_dp, float height_dp, float dp_ratio);
 

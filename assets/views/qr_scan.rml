@@ -36,6 +36,12 @@
       <span class="qr-scan-tool-label">{{i18n:contacts.my_qr}}</span>
     </button>
   </div>
+  <!-- A desktop computer (.shell-layer-computer): the camera fills the window, the guide is drawn on the picture
+       (ElementScanPreview), the back is at the top left and this bar is at the bottom with Cancel. -->
+  <div class="qr-scan-computer-bar">
+    <p class="qr-scan-computer-hint" data-if="!failed">{{i18n:scan.computer_hint}}</p>
+    <p class="qr-scan-computer-hint" role="status" data-if="failed">{{status}}</p>
+  </div>
   <p class="text muted qr-scan-status" role="status">{{status}}</p>
   <div class="row qr-scan-actions">
     <button class="btn btn-secondary" type="button" data-event-click="cancel_scan()">{{i18n:common.cancel}}</button>
