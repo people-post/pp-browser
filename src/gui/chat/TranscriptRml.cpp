@@ -1366,6 +1366,13 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       prev_ms = message.timestamp;
     }
     const bool plain = !entry.control && message.content_type != ChatContentType::System;
+    row.has_actions = plain && !call_row && content.find("bubble-deleted") == std::string::npos;
+    row.can_edit = row.has_actions && facts.can_edit && facts.can_edit(message.id);
+    if (row.has_actions && facts.bar_offer) {
+      const TranscriptFacts::MessageBarOffer offer = facts.bar_offer(message.id);
+      row.bar_react = offer.react;
+      row.bar_reply = offer.reply;
+    }
     const bool continues_run = plain && !new_day && run_sender == message.sender_contact_id &&
                                message.timestamp - run_start_ms <= kRunGapMs && message.timestamp >= run_start_ms;
     row.run_start = !continues_run;

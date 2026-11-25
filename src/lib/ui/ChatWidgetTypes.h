@@ -73,6 +73,14 @@ struct MessageDisplayRow {
   bool mentions_me = false;
   /** The message has reaction chips: drawn over its bubble's bottom edge, so the row keeps room below for them. */
   bool has_reactions = false;
+  /** The row is a message the pointer menu works on (not a system line, a call record or a deleted one): the wide layout
+   *  shows its hover bar. */
+  bool has_actions = false;
+  /** The message menu would offer Edit for it: the wide layout's hover bar shows a pencil. */
+  bool can_edit = false;
+  /** The message menu would offer a reaction row (with its "+") / Reply: the wide layout's hover bar shows them. */
+  bool bar_react = false;
+  bool bar_reply = false;
   /** Search inside the chat: the row contains the query, and the row the search is on (its matches are marked). */
   bool search_hit = false;
   bool search_current = false;

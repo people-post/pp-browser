@@ -20,6 +20,9 @@ struct ShareAnchor {
  */
 bool PlatformShareText(SDL_Window* window, const std::string& text, ShareAnchor anchor = {});
 
+/** Whether PlatformShareText can show a sheet on this platform (macOS, iOS); false elsewhere, so a page hides "Send…". */
+bool PlatformCanShareText();
+
 /**
  * Whether a system modal (a share sheet, the Files / photo picker) is presented over `window` now; never closed around.
  * iOS only; false elsewhere. UI thread only.

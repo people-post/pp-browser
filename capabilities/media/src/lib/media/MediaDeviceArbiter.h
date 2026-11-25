@@ -151,6 +151,11 @@ public:
   /** An audio lease is still granted without a device. `still_wanted` aborts platform open retries. */
   virtual std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& format,
                                                     const std::function<bool()>& still_wanted, std::string* error) = 0;
+  /**
+   * The OS lists at least one camera. Only asks the OS for its list (never opens a camera, no permission prompt), so
+   * the UI can hide "Scan" on a machine that has none. Any thread.
+   */
+  virtual bool HasCamera() const { return false; }
   /** A camera lease is refused without a device. */
   virtual std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) {
     (void)format;
@@ -362,6 +367,9 @@ public:
   Roe<VoiceDuplexLeases> AcquireVoiceDuplex(const AudioLeaseRequest& request);
   /** Blocking like AcquireAudio. Refused by policy ("camera held by …") or when no camera opens. */
   Roe<std::unique_ptr<CameraDeviceLease>> AcquireCamera(const CameraLeaseRequest& request);
+
+  /** The backend lists at least one camera (see IMediaDeviceBackend::HasCamera); nothing is opened. */
+  bool HasCamera() const;
 
   /** Current holders of `kind` (empty when free). */
   std::vector<std::string> Holders(MediaDeviceKind kind) const;

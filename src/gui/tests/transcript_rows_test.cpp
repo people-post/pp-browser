@@ -354,6 +354,24 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   EXPECT_FALSE(direct[1].run_start);
 }
 
+// The hover bar's reaction row and Reply are drawn from what the menu offers for the message (TranscriptFacts::bar_offer);
+// with nothing set, neither (a row with no actions never has them whatever the offer says).
+TEST(TranscriptRmlTest, TheBarsReactionRowAndReplyFollowTheMenusOffer) {
+  using namespace phone_rows;
+  TranscriptFacts facts = NamedFacts();
+  const std::vector<TranscriptRow> entries{TextRow("1", "account:a", kNoon)};
+  EXPECT_FALSE(RenderTranscript(entries, facts)[0].bar_react) << "no offer set: nothing";
+  facts.bar_offer = [](const std::string&) { return TranscriptFacts::MessageBarOffer{.react = true, .reply = true}; };
+  const auto direct = RenderTranscript(entries, facts);
+  EXPECT_TRUE(direct[0].has_actions);
+  EXPECT_TRUE(direct[0].bar_react);
+  EXPECT_TRUE(direct[0].bar_reply);
+  facts.bar_offer = [](const std::string&) { return TranscriptFacts::MessageBarOffer{.react = false, .reply = true}; };
+  const auto ai = RenderTranscript(entries, facts);
+  EXPECT_FALSE(ai[0].bar_react) << "an AI conversation: no reactions";
+  EXPECT_TRUE(ai[0].bar_reply);
+}
+
 TEST(TranscriptRmlTest, TheTimeSitsInsideTheBubble) {
   using namespace phone_rows;
   const auto rows = RenderTranscript({TextRow("1", "account:a", phone_rows::kNoon)}, NamedFacts());

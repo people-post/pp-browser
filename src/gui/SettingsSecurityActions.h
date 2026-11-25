@@ -3,6 +3,7 @@
 #include "feature/settings/SettingsCommands.h"
 #include "gui/PinPromptPorts.h"
 #include "gui/SettingsHost.h"
+#include "foundation/platform/PlatformShare.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 
@@ -41,6 +42,8 @@ public:
   SettingsSecurityActions(const SettingsSecurityActions&) = delete;
   SettingsSecurityActions& operator=(const SettingsSecurityActions&) = delete;
 
+  /** A camera may have come or gone: "Scan" on the link page follows the machine's cameras. */
+  void RefreshLinkCanScan();
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
   /** A reveal still being checked (the PIN is being verified) is void: it opens nothing when it finishes. */
@@ -69,6 +72,7 @@ public:
   /** The reply is on the page (set by the sealing only), with its QR code. */
   bool LinkReplyShown() const { return link_reply_shown_; }
   /** The reply's QR code (SVG content) while it is shown, else "". */
+  bool LinkCanScanForTest() const { return link_can_scan_; }
   std::string LinkReplyQrForTest() const { return link_reply_qr_rml_.c_str(); }
   /** Drops the reply and re-reads the page's lines (on opening and on leaving the page, and its "Done"). */
   void ClearLinkReply();
@@ -103,8 +107,10 @@ private:
   void SealLinkReply(std::string offer);
   /** The reply's "Copy as text": the reply to the clipboard (safe: only the new device opens it). */
   void CopyLinkReply();
+  void SendLinkReply(ShareAnchor anchor);
   /** The page's lead and validity lines, with the link's window in minutes (kLinkWindowMs). */
   void SetTransferLabels();
+  bool CanScanLink() const;
   /** A link step failed: its words (LinkErrorText), else the error's own. */
   void ReportLinkFailure(const Error& error);
   /** The words and the shown flag redrawn. */
@@ -166,11 +172,14 @@ private:
   bool link_reply_shown_ = false;
   /** The page offers the camera for the new device's code. */
   bool link_can_scan_ = false;
+  /** The system has a text share sheet: "Send…" shows beside "Copy as text". */
+  bool link_can_share_ = false;
   ui::String link_reply_qr_rml_;
+  /** The reply code's side as CSS ("340dp"), taken from the page when the reply is made. */
+  ui::String link_qr_side_;
   std::string link_reply_text_;
   /** Bumped by ClearLinkReply: a check or seal still running for an older visit shows nothing. */
   uint64_t link_request_ = 0;
-  ui::String move_lead_label_;
   ui::String move_valid_label_;
 
   bool show_change_pin_ = true;

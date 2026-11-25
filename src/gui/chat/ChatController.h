@@ -9,6 +9,7 @@
 #include "feature/presenters/DeviceRemovedNotice.h"
 #include "feature/presenters/HomeBrief.h"
 #include "feature/presenters/HomeToday.h"
+#include "feature/presenters/NewsReader.h"
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -108,9 +109,10 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
-  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
-   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
-  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Keeps `overlay`'s transcript end spacer, fade and "new messages" pill clear of its floating composer bar (the
+   *  element `mount_id` inside it), whatever the bar's height: the phone's #shell-chat-overlay, or the wide layout's
+   *  conversation column (#pane-chat, mount #pane-composer-chat). Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay, const char* mount_id = "shell-composer-mount");
   /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
   static constexpr float kComposerClearGapDp = 12.f;
   static constexpr float kJumpLatestGapDp = 16.f;
@@ -473,6 +475,12 @@ private:
   void OnPhotoBatchItem(uint64_t pick_serial, size_t index, size_t total, std::string path);
   /** The library has handed over every picture of the pick (or none: it was cancelled). */
   void OnPhotoBatchDone(uint64_t pick_serial);
+  /**
+   * Pictures and videos that are already files (the computer's picker, and later files dropped on the window): opens
+   * the send-preview page with them, up to PictureSendQueue::kMaxItems, the same way the phone's library pick does.
+   * UI thread; `paths` are the user's own files (never deleted).
+   */
+  void OpenPictureSendWithPaths(std::vector<std::string> paths);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
   void ShowPictureProgress();
   /** How the queue ended: the pill's last word, and the metrics line. */
@@ -634,8 +642,44 @@ private:
   void OpenChatLink(const std::string& entry_id, int link_index) {
     OpenChatLinkIn(ActiveThreadId(), entry_id, link_index);
   }
-  /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
-  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
+  /**
+   * Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). A news item
+   * opens the news reader when `news_reader` (the chat page); otherwise, like any link, the browser.
+   */
+  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index,
+                      bool news_reader = true);
+  /** The link table of answer `entry_id` (rebuilt from its stored text after a restart); null when there is none. */
+  const std::vector<MarkdownLink>* ChatLinksOf(const std::string& thread_id, const std::string& entry_id);
+
+  // --- the news reader (DEV/PLAN-news-inline-digest.md; view "news_reader") -----------------------------------
+  /** A tap on news item `tapped` of answer `entry_id` whose links are `links`, in AI thread `thread_id`. */
+  void OpenNewsReader(const std::string& thread_id, const std::string& entry_id, const std::vector<MarkdownLink>& links,
+                      const MarkdownLink& tapped);
+  /** Shows item `index` of the open reader's list: its stored digest, or reads it (NewsReader decides); `retry`: from
+   *  "Try again" (the metrics line says so). */
+  void ShowNewsItem(size_t index, bool retry = false);
+  /** "Try again" under the failure line: the same item read again in place (ignored just after the failure showed). */
+  void RetryNewsItem();
+  /** Previous / Next under the reader (`step` -1 / +1); ignored while it is off. */
+  void StepNewsReader(int step);
+  /** "Open original": the item's own URL in the system browser (the trusted path). */
+  void OpenNewsOriginal();
+  /** Closes the reader sheet if it is open (lock, sign-out, the chat deleted or cleared). */
+  void CloseNewsReader();
+  /** The reader's state into the data model. */
+  void ApplyNewsReader();
+  /** The news items `thread_id` has read (read once, dropped when a read ends or the chat is cleared). */
+  const NewsReads& NewsReadsOf(const std::string& thread_id);
+  /** Greys the news items already read in `rows` of `thread_id`; `news_texts`: message id -> stored text of the
+   *  answers drawn with news items. */
+  void MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id,
+                         const std::map<std::string, std::string>& news_texts);
+  /** A news read of `thread_id` ended (digest, failure, error or stop): the reader and the list show what it left. */
+  void OnNewsReadEnded(const std::string& thread_id);
+  /** The running news read of `thread_id` streamed more text: kept in memory, drawn when a redraw is due. */
+  void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) override;
+  /** Redraws the open reader with its read's streamed text when NewsStreamText says a redraw is due (per tick too). */
+  void DrawNewsStream();
   /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
    *  asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
@@ -647,6 +691,8 @@ private:
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
+  /** The hover bar's reactions follow the recently used emoji (the same row the message menu opens with). */
+  void RefreshBarEmojis();
   void ResetChatPanelState();
   std::string failed_record_id_;
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
@@ -756,6 +802,10 @@ private:
                         std::vector<TextSpan> spans);
   /** Enter / Tab choose the `@` picker's first line while it is open over the composer. */
   void RegisterMentionPickerKeys();
+  /** Tab / Shift+Tab stay inside the modal desktop news reader. */
+  void RegisterNewsReaderKeys();
+  /** Moves the focus to the next (previous) button of the reader panel; false when there is no such panel. */
+  bool CycleNewsReaderFocus(bool backwards);
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
@@ -805,7 +855,8 @@ private:
   void AskAiLater(std::function<void()> fn) override;
   void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
-    OpenChatLinkIn(thread_id, entry_id, link_index);
+    // The panel holds one sheet at a time: a news item there opens the browser, as before.
+    OpenChatLinkIn(thread_id, entry_id, link_index, /*news_reader=*/false);
   }
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
@@ -1039,7 +1090,7 @@ private:
   std::optional<PendingReply> pending_reply_;
 
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
-  std::map<std::string, std::vector<std::string>> chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
@@ -1100,10 +1151,22 @@ private:
   HomeBriefCache home_brief_;
   std::string home_brief_dir_; // the profile directory the cache was read from
   bool home_brief_fetching_ = false;
-  int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
-  int reactors_layer_ = -1;             // the reactions sheet while it is open
-  std::string reactors_message_id_;     // the message it lists
-  int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
+  int64_t home_brief_failed_ms_ = 0; // the last fetch that failed; 0 none
+  int reactors_layer_ = -1;          // the reactions sheet while it is open
+  std::string reactors_message_id_;  // the message it lists
+  /** The news reader while it is open: its chat, the list it walks (one item for a news pick) and where it is. */
+  struct NewsReaderOpen {
+    std::string thread_id;
+    std::vector<NewsItem> items;
+    size_t index = 0;
+  };
+  std::optional<NewsReaderOpen> news_reader_;
+  int news_reader_layer_ = -1;
+  std::optional<std::chrono::steady_clock::time_point> news_failed_since_; // the failure line appeared (retry guard)
+  std::map<std::string, std::string> news_reading_url_; // AI thread -> the URL its running news read reads
+  std::map<std::string, NewsReads> news_reads_;         // AI thread -> its read items (NewsReadsOf)
+  std::map<std::string, NewsStreamText> news_streams_;  // AI thread -> its running read's text so far (never stored)
+  int home_edit_layer_ = -1;                            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_;          // a second Escape within kDoubleEscapeWindowMs stops the turn

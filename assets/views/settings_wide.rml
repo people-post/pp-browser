@@ -1,0 +1,99 @@
+<!-- The Settings list column of the wide layout (desktop, wide iPad): the phone's Settings page (settings.rml) -- the
+     card with the avatar, name and Copy / Share / QR code, then the same three groups of rows in the same order. A tap
+     (click) on a row opens its page in the right column (settings_detail.rml) instead of pushing it. The phone's bar title
+     is the column's title. The older desktop list (My profile, Preferences) of settings.rml is not used here. -->
+<div class="settings-panel settings-panel--wide stack" data-model="settings">
+  <div class="sidebar-header settings-wide-header row">
+    <p class="sidebar-header-title">{{i18n:settings.title}}</p>
+  </div>
+  <div class="settings-list-view settings-wide-scroll root-scroll">
+    <div class="me-home">
+      <div class="group-card group-card--top me-card">
+        <div class="me-card-row">
+          <button class="me-card-main" type="button" data-event-click="select_section('profile')"
+                  data-class-me-card-main--active="selected_id == 'profile'">
+            <div class="me-card-avatar"
+                 data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+                 data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+                 data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+                 data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+                 data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+                 data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+                 data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+                 data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+              <img class="me-card-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+              <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+            </div>
+            <div class="me-card-text">
+              <p class="me-card-name">{{profile_nickname}}</p>
+              <p class="me-card-meta">{{i18n:settings.card.caption}}</p>
+            </div>
+          </button>
+          <div class="me-card-acts row">
+            <button class="me-card-act" type="button" data-event-click="copy_profile_id()">
+              <svg class="cd-icon" src="../icons/v2/copy.svg" width="22" height="22"></svg>
+              <p class="cd-act-label">{{i18n:settings.card.copy}}</p>
+            </button>
+            <button class="me-card-act" type="button" data-event-click="share_profile()">
+              <svg class="cd-icon" src="../icons/share.svg" width="22" height="22"></svg>
+              <p class="cd-act-label">{{i18n:settings.card.share}}</p>
+            </button>
+            <button class="me-card-act" type="button" data-event-click="show_my_qr()">
+              <svg class="cd-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
+              <p class="cd-act-label">{{i18n:settings.card.qr}}</p>
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="group-foot" data-if="status != ''">{{status}}</p>
+
+      <div class="group-card">
+        <button data-for="section : sections" data-if="section.group == 1"
+                class="group-row" type="button"
+                data-class-group-row--active="section.id == selected_id && selected_id != ''"
+                data-event-click="select_section(section.id)">
+          <span class="group-row-body">
+            <span class="group-row-label">
+              <span class="group-row-text">{{section.title}}</span>
+              <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+            </span>
+            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+            <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+
+      <div class="group-card">
+        <button data-for="section : sections" data-if="section.group == 2"
+                class="group-row" type="button"
+                data-class-group-row--active="section.id == selected_id && selected_id != ''"
+                data-event-click="select_section(section.id)">
+          <span class="group-row-body">
+            <span class="group-row-label">
+              <span class="group-row-text">{{section.title}}</span>
+              <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+            </span>
+            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+            <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+
+      <div class="group-card">
+        <button data-for="section : sections" data-if="section.group == 3"
+                class="group-row" type="button"
+                data-class-group-row--active="section.id == selected_id && selected_id != ''"
+                data-event-click="select_section(section.id)">
+          <span class="group-row-body">
+            <span class="group-row-label">
+              <span class="group-row-text">{{section.title}}</span>
+              <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
+            </span>
+            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
+            <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

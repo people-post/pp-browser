@@ -121,7 +121,14 @@ struct Harness {
       }
     };
     ports.eligible = [this]() { return eligible; };
-    ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
+    ports.dirty = [this]() {
+      saw_finishing = saw_finishing || state.voice_finishing;
+      ++dirty_calls;
+      // The controller's own port: the model changed, so the composer's input state is synced, which refreshes the mic.
+      if (refresh_on_dirty && composer && dirty_calls < 1000) {
+        composer->Refresh();
+      }
+    };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
     ports.queue_full = [this](const std::string& tid) { return tid == full_thread; };
@@ -182,6 +189,8 @@ struct Harness {
   float overlay_top_dp = 0.f;
   /** voice_finishing was true at some point (it is cleared again by the time a test looks). */
   bool saw_finishing = false;
+  int dirty_calls = 0;
+  bool refresh_on_dirty = false;
   std::vector<uint64_t> fingers;
   bool defer_playback_stop = false;
   std::vector<std::function<void()>> pending_then;
@@ -753,6 +762,127 @@ TEST(VoiceComposer, ALateProgressTickAfterTheResultDoesNotSetSendingAgain) {
   ASSERT_FALSE(h.state.voice_finishing);
   VoiceComposerTestAccess::Progress(*h.composer, 1, 1000); // the recording's own generation, past the limit
   EXPECT_FALSE(h.state.voice_finishing);
+}
+
+// The wide layout's microphone: one click records, the next click sends (OnToggleButton). A fake source throughout.
+TEST(VoiceComposer, AToggleClickStartsAndTheNextClickSendsToTheChatItWasRecordedIn) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->OnToggleButton();
+  EXPECT_TRUE(h.state.voice_recording) << "the microphone is lit from the first click";
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.thread = "B";
+  h.composer->OnToggleButton();
+  EXPECT_FALSE(h.state.voice_recording);
+  EXPECT_TRUE(h.state.voice_finishing) << "Sending... until the file is written";
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_EQ(h.sent.size(), 1u);
+  EXPECT_EQ(h.sent[0].first, "A");
+  EXPECT_NE(h.sent[0].second.find("voice-3000.ogg"), std::string::npos);
+  EXPECT_FALSE(h.state.voice_finishing);
+}
+
+TEST(VoiceComposer, EscapeCancelsAToggleRecordingAndNothingIsSent) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_TRUE(h.composer->OnEscape());
+  EXPECT_FALSE(h.state.voice_recording);
+  EXPECT_FALSE(h.state.voice_finishing);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_EQ(h.dir.FileCount(), 0);
+}
+
+TEST(VoiceComposer, TheCancelButtonEndsAToggleRecordingSilently) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnCancelButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_TRUE(h.said.empty());
+}
+
+TEST(VoiceComposer, AClickWhileTheFileIsBeingWrittenStartsNothingNew) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnToggleButton(); // sends
+  h.composer->OnToggleButton(); // a double click: the recording is over, the file is still being written
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_EQ(h.opens.load(), 1);
+  EXPECT_EQ(h.sent.size(), 1u);
+}
+
+TEST(VoiceComposer, AToggleRecordingUnderTheMinimumSaysTooShortAndSendsNothing) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(300));
+  };
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(WaitFor([&] { return h.opens.load() == 1; }));
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_TRUE(h.sent.empty());
+  EXPECT_TRUE(h.Said("chat.voice.too_short"));
+}
+
+TEST(VoiceComposer, ACallRefusesAToggleRecording) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.call_live = true;
+  h.composer->OnToggleButton();
+  h.ui.RunAll();
+  EXPECT_EQ(h.opens.load(), 0);
+  EXPECT_FALSE(h.state.voice_recording);
+  EXPECT_TRUE(h.Said("chat.voice.busy_call"));
+}
+
+TEST(VoiceComposer, TheLevelBarMovesWithTheVoiceAndIsEmptyAgainAfterTheEnd) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  EXPECT_EQ(std::string(h.state.voice_level_width), "0%");
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return std::string(h.state.voice_level_width) != "0%"; })) << "the tone has a level";
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_EQ(std::string(h.state.voice_level_width), "0%");
+}
+
+// The change callback (the controller's refreshes the composer's input state, which calls Refresh again) must fire only
+// when the button's state changed, or Refresh would call itself without end.
+TEST(VoiceComposer, RefreshCallsTheChangeCallbackOnlyWhenTheStateChanged) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.refresh_on_dirty = true;
+  h.composer->Refresh();
+  const int first = h.dirty_calls;
+  EXPECT_GE(first, 1) << "the first Refresh shows the button";
+  EXPECT_LT(first, 5) << "and does not loop";
+  h.composer->Refresh();
+  h.composer->Refresh();
+  EXPECT_EQ(h.dirty_calls, first) << "nothing changed: the callback stays quiet";
+}
+
+TEST(VoiceComposer, TheToggleRecordingNeverReEntersRefreshThroughTheChangeCallback) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.refresh_on_dirty = true;
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  const int during = h.dirty_calls;
+  EXPECT_LT(during, 200) << "a bounded number of model updates for a 3 s recording (progress, level, hint)";
+  h.composer->OnToggleButton();
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_LT(h.dirty_calls, 400);
+  EXPECT_EQ(h.sent.size(), 1u);
 }
 
 // A tap on the bar is not a message: under 250 ms it only says how the bar works; 250 ms to 1 s is "too short". Neither

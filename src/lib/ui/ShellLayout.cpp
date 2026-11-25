@@ -54,6 +54,14 @@ bool ShellLayout::TabHasSecondary(NavTab tab) {
   return NavContentKey(tab) != nullptr;
 }
 
+const char* ShellLayout::ExpandedNavContentKey(NavTab tab) {
+  return tab == NavTab::Home ? "ai_list" : NavContentKey(tab);
+}
+
+bool ShellLayout::ExpandedTabHasSecondary(NavTab tab) {
+  return ExpandedNavContentKey(tab) != nullptr;
+}
+
 bool ShellLayout::IsHiddenTabOnCompact(const NavTab tab) {
   return tab == NavTab::Me || tab == NavTab::Contacts;
 }
@@ -98,11 +106,12 @@ int ShellLayout::ClampAuxiliaryWidthDp(int width_dp) {
 }
 
 bool ShellLayout::SecondaryPaneShown(const ShellState& state) {
-  return state.layout_mode == LayoutMode::Expanded && TabHasSecondary(state.nav_tab) && !state.sidebar_collapsed;
+  return state.layout_mode == LayoutMode::Expanded && ExpandedTabHasSecondary(state.nav_tab) &&
+         !state.sidebar_collapsed;
 }
 
 bool ShellLayout::SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab) {
-  return TabHasSecondary(tab) ? false : collapsed;
+  return ExpandedTabHasSecondary(tab) ? false : collapsed;
 }
 
 bool ShellLayout::OpenChatSwitchesToChats(const LayoutMode mode, const NavTab tab) {
@@ -174,6 +183,12 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
     layout.toast_bottom_dp = layout.content_bottom_inset_dp + layout.bottom_surface_padding_dp + bar + kToastGapDp;
   }
   return layout;
+}
+
+void ShellLayout::ExtendExpandedToWindowBottom(CompactChromeLayout& layout, int safe_area_bottom_dp) {
+  const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
+  layout.shell_bottom_dp = 0.f;
+  layout.content_bottom_inset_dp = std::max(layout.content_bottom_inset_dp, safe_bottom);
 }
 
 bool ShellLayout::PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len) {

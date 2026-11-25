@@ -32,6 +32,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     HomeToday.cpp
     MessageEdit.cpp
     MessageResend.cpp
+    NewsReader.cpp
     NewCallGuard.cpp
     PendingUpload.cpp
     PictureSendQueue.cpp

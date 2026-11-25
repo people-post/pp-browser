@@ -114,6 +114,7 @@ void ShellStatusbar::Dirty() {
   DataModelHost::Instance().Dirty("window", "titlebar_visible");
   DataModelHost::Instance().Dirty("window", "titlebar_traffic_lights");
   DataModelHost::Instance().Dirty("window", "window_maximized");
+  DataModelHost::Instance().Dirty("window", "window_corners_small");
   DataModelHost::Instance().Dirty("window", "fonts_ready");
 }
 

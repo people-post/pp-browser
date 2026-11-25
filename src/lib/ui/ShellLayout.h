@@ -18,6 +18,10 @@ struct ShellLayout {
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
   static bool TabHasSecondary(NavTab tab);
+  /** The list column of a tab in the wide layout: NavContentKey's, and for AI (Home) the AI conversations ("ai_list"),
+   *  which the phone shows in a drawer. The phone layout keeps NavContentKey (Home has no list there). */
+  static const char* ExpandedNavContentKey(NavTab tab);
+  static bool ExpandedTabHasSecondary(NavTab tab);
   /** Phones: Me and Contacts are tabs with no button in the tab bar (DEV/PLAN-minimal-nav.md A). They are entered
    *  from an avatar or an invite, show no tab bar, and their root page's back returns to the tab they came from. */
   static bool IsHiddenTabOnCompact(NavTab tab);
@@ -35,9 +39,9 @@ struct ShellLayout {
    *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
   static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);
 
-  static constexpr int kSidebarMinWidthDp = 200;
+  static constexpr int kSidebarMinWidthDp = 280;
   static constexpr int kSidebarMaxWidthDp = 480;
-  static constexpr int kSidebarDefaultWidthDp = 240;
+  static constexpr int kSidebarDefaultWidthDp = 320;
   static int ClampSidebarWidthDp(int width_dp);
   static constexpr int kAuxiliaryMinWidthDp = 280;
   static constexpr int kAuxiliaryMaxWidthDp = 640;
@@ -59,6 +63,11 @@ struct ShellLayout {
   static CompactChromeLayout ComputeCompactChromeLayout(
       const ShellConfig& config, int safe_area_top_dp, int safe_area_bottom_dp, float titlebar_height_dp = 0.f,
       CompactBottomSurface bottom_surface = CompactBottomSurface::None, bool bottom_chrome_open = false);
+  /** The wide layout on a touch device (iPad): a bottom safe-area inset (home indicator; on an iPad window the
+   *  system's rounded bottom edge) must not shrink the document, or the window's black clear colour shows as a band
+   *  under the page. The document runs to the window's bottom edge and #shell-root clears the inset instead (the
+   *  keyboard branch of ComputeCompactChromeLayout does the same). No inset (desktop): nothing changes. */
+  static void ExtendExpandedToWindowBottom(CompactChromeLayout& layout, int safe_area_bottom_dp);
 };
 
 } // namespace pbr

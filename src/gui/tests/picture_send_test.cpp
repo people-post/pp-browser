@@ -872,6 +872,153 @@ std::string BodyOf(const std::string& source, const std::string& signature) {
   return source.substr(start, end == std::string::npos ? std::string::npos : end - start);
 }
 
+// The wide window (views/picture_send_wide.rml): a card centred over the conversation, the field, the "original" check,
+// Cancel and Send in one row. The real page, the real stylesheets, in the shell's frame at computer-window sizes.
+class PictureSendWidePageTest : public PictureSendControllerTest,
+                                public ::testing::WithParamInterface<std::pair<int, int>> {
+protected:
+  void SetUp() override {
+    PictureSendControllerTest::SetUp();
+    ViewCatalog::ClearCache();
+    IAssetLocator::SetInstance(nullptr);
+    IAssetLocator::SetInstance(&locator_);
+    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    LocalizationService::Instance().SetPreferredLanguage("en");
+    ui::SetRenderInterface(&render_);
+    ASSERT_TRUE(ui::Initialise());
+    ASSERT_TRUE(ui::LoadFontFace(AssetPath("fonts/Inter-Regular.ttf"), /*fallback_face=*/true));
+    context_ = ui::CreateContext("picture-send-wide-test", {width(), height()});
+    ASSERT_NE(context_, nullptr);
+    ASSERT_TRUE(controller_.RegisterModel(context_));
+    ASSERT_NE(ViewCatalog::KeyForLayout("picture_send", true), "picture_send") << "the wide page is registered";
+    const std::string body = LocalizationService::Instance().LocalizeText(
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("picture_send", true)));
+    ASSERT_FALSE(body.empty());
+    ASSERT_EQ(body.find("{{include:"), std::string::npos);
+    const std::string rml =
+        "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/wide.rcss")) +
+        ReadAll(AssetPath("themes/colors-light.rcss")) +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(width()) + "dp; height: " + std::to_string(height()) +
+        "dp;\"><div class=\"shell-layer shell-layer-overlay\"><div class=\"shell-frame shell-frame--picture_send\">"
+        "<div class=\"shell-overlay-body\">" +
+        body + "</div></div></div></div></body></rml>";
+    document_ = context_->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    Frames();
+  }
+  void TearDown() override {
+    DataModelHost::Instance().Clear();
+    if (context_) {
+      ui::RemoveContext("picture-send-wide-test");
+    }
+    ui::Shutdown();
+    ui::SetRenderInterface(nullptr);
+    IAssetLocator::SetInstance(nullptr);
+    ViewCatalog::ClearCache();
+  }
+  int width() const { return GetParam().first; }
+  int height() const { return GetParam().second; }
+  void Frames() {
+    for (int i = 0; i < 3; ++i) {
+      controller_.Update();
+      context_->Update();
+    }
+  }
+  ui::Element* One(const char* selector) {
+    ui::ElementList found;
+    document_->QuerySelectorAll(found, selector);
+    return found.empty() ? nullptr : found.front();
+  }
+  void Fill(const int count) {
+    for (int i = 0; i < count; ++i) {
+      Arrive("p" + std::to_string(i) + ".jpg", 2 * kMb);
+    }
+    Frames();
+  }
+  AssetsLocator locator_;
+  NullRender render_;
+  ui::Context* context_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+};
+
+INSTANTIATE_TEST_SUITE_P(ComputerWindows, PictureSendWidePageTest,
+                         ::testing::Values(std::make_pair(900, 640), std::make_pair(1280, 800)));
+
+TEST_P(PictureSendWidePageTest, TheCardIsCentredAndInsideTheWindowWithOneRowOfControls) {
+  for (const int count : {1, 9}) {
+    SCOPED_TRACE("pictures: " + std::to_string(count));
+    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+    Fill(count);
+    const float dp = context_->GetDensityIndependentPixelRatio();
+    const float window_w = static_cast<float>(width()) * dp;
+    const float window_h = static_cast<float>(height()) * dp;
+    const Edges card = BorderEdges(One(".shell-frame--picture_send"));
+    EXPECT_NEAR(card.left, window_w - card.right, 1.f) << "centred sideways";
+    EXPECT_GE(card.left, 8.f * dp) << "at least 8dp from the window's edge";
+    EXPECT_GE(card.top, 8.f * dp);
+    EXPECT_LE(card.bottom, window_h - 8.f * dp);
+    EXPECT_LT(card.right - card.left, window_w * 0.9f) << "a card, not the whole window";
+    for (const char* selector : {".ps-stage", ".ps-field", "#ps-text", ".ps-original", ".ps-cancel", ".ps-send"}) {
+      ui::Element* element = One(selector);
+      ASSERT_NE(element, nullptr) << selector;
+      const Edges edges = BorderEdges(element);
+      EXPECT_GE(edges.left, card.left - 0.5f) << selector;
+      EXPECT_LE(edges.right, card.right + 0.5f) << selector;
+      EXPECT_GE(edges.top, card.top - 0.5f) << selector;
+      EXPECT_LE(edges.bottom, card.bottom + 0.5f) << selector;
+    }
+    // The field, the original check, Cancel and Send share one row.
+    const Edges field = BorderEdges(One(".ps-field"));
+    const Edges original = BorderEdges(One(".ps-original"));
+    const Edges cancel = BorderEdges(One(".ps-cancel"));
+    const Edges send = BorderEdges(One(".ps-send"));
+    EXPECT_LT(field.right, original.left + 0.5f);
+    EXPECT_LT(original.right, cancel.left + 0.5f);
+    EXPECT_LT(cancel.right, send.left + 0.5f);
+    const float centre = (send.top + send.bottom) / 2.f;
+    for (const Edges& edges : {field, original, cancel}) {
+      EXPECT_NEAR((edges.top + edges.bottom) / 2.f, centre, 2.f * dp) << "on the row's centre line";
+    }
+    EXPECT_GE(send.bottom - send.top, 44.f * dp - 0.5f);
+    EXPECT_GE(cancel.bottom - cancel.top, 44.f * dp - 0.5f);
+    // The picture stays in proportion inside its stage.
+    ui::Element* image = One(".ps-image");
+    ASSERT_NE(image, nullptr);
+    ASSERT_TRUE(IsShown(image));
+    const ui::Vector2f image_size = image->GetBox().GetSize(ui::BoxArea::Border);
+    const ui::Vector2f stage_size = One(".ps-stage")->GetBox().GetSize(ui::BoxArea::Border);
+    EXPECT_NEAR(image_size.x / image_size.y, 4.f / 3.f, 0.03f);
+    EXPECT_LE(image_size.x, stage_size.x + 0.5f);
+    EXPECT_LE(image_size.y, stage_size.y + 0.5f);
+    controller_.OnBack();
+    Frames();
+    EXPECT_FALSE(controller_.IsOpen());
+    fakes_ = Fakes{};
+    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  }
+}
+
+TEST_P(PictureSendWidePageTest, CancelClosesThePageAndSendSendsWithTheTextAndTheOriginalChoice) {
+  Fill(2);
+  ASSERT_TRUE(controller_.IsOpen());
+  One(".ps-cancel")->DispatchEvent(ui::EventId::Click, {});
+  Frames();
+  EXPECT_FALSE(controller_.IsOpen()) << "Cancel is Back";
+  fakes_ = Fakes{};
+  queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  Fill(2);
+  ASSERT_TRUE(controller_.IsOpen());
+  controller_.SetTextForTest("hello");
+  Frames();
+  One(".ps-send")->DispatchEvent(ui::EventId::Click, {});
+  Frames();
+  EXPECT_FALSE(controller_.IsOpen()) << "Send closes the page";
+  EXPECT_TRUE(queue_->Started());
+}
+
 TEST(PictureSendWiringPinTest, EveryExitClosesThePageBeforeTheQueueLeaves) {
   const std::string source = ControllerSource();
   // Lock (Update), chat deleted, sign-out and teardown: the page's own close first, so it is not a Back that would put
