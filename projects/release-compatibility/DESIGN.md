@@ -410,7 +410,7 @@ the app, `pp-node/v*` for the node, `docs/ops/RELEASE.md`):
 
 | Product | Tags | Release branch | Release 1 |
 |---------|------|----------------|-----------|
-| App | `vX.Y.Z` (pp-browser) | `release/app-X.Y` | **1.0** (its first public release; 1.0.0 today) |
+| App | `vX.Y.Z` (pp-browser) | `release/app-X.Y` | **1.1** (its first public release; 1.1.0, [RC024](DECISIONS.md#rc024--app-release-1-is-version-110): 1.0.0 was taken by pre-cutover builds) |
 | pp-node | `pp-node/vX.Y.Z` (pp-browser) | `release/node-X.Y` | **10.0** (the next major after v9) |
 | Relay | `vX.Y.Z` (pp-relay-apis) | `release/X.Y` | **1.0** |
 
@@ -516,11 +516,11 @@ has none.
 
 ## Release checklist
 
-**The release owner for release 1 (app 1.0, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
+**The release owner for release 1 (app 1.1, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
 
 Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
 release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
-a product's release branch is cut, a workflow opens an issue for it ("Release app 1.0", "Release pp-node 10.0") from a template (`.github/ISSUE_TEMPLATE/release.md`)
+a product's release branch is cut, a workflow opens an issue for it ("Release app 1.1", "Release pp-node 10.0") from a template (`.github/ISSUE_TEMPLATE/release.md`)
 and assigns the release owner, who ticks the boxes, links results and records the go/no-go there. What CI and the
 workflows already check (tests, frozen data, the mixed-version lab, the staging deploy) is linked, not re-checked
 by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the issue.
@@ -658,7 +658,7 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
 6. **The version table:** one table in pp-browser's `docs/contracts/`; pp-relay-apis `SPECS.md` links to it and
    lists only the relay's own formats.
 7. **One number for app and pp-node:** no, superseded by [RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version) (2026-11-19): each product has its own version;
-   release 1 is app 1.0, pp-node 10.0, relay 1.0.
+   release 1 is app 1.1 ([RC024](DECISIONS.md#rc024--app-release-1-is-version-110)), pp-node 10.0, relay 1.0.
 8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
    `dev/<date>.<n>` (relay dev deploys; `qa/` before RC009); none for CI builds nobody installs. *(Leo, for the
    relay's)*

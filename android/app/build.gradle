@@ -4,8 +4,8 @@ plugins {
 
 def googleServicesFile = file('google-services.json')
 def enableFcm = googleServicesFile.exists()
-def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '1.0.0'
-def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: '1.0.0-rc14'
+def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '1.1.0'
+def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: ppBrowserVersion
 def ppBrowserCompilerCache = (project.findProperty('ppBrowserCompilerCache') ?: 'OFF').toString().toUpperCase()
 def ppBrowserAbiFilters = (project.findProperty('ppBrowserAbiFilters') ?: 'armeabi-v7a,arm64-v8a,x86_64').toString().split(',')
 def ppBrowserCmakeArgs = [
