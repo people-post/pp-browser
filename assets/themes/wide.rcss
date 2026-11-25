@@ -2033,12 +2033,6 @@
   margin: 8dp 32dp 0 32dp;
 }
 
-.shell-body--wide .settings-transfer-lead {
-  margin: 20dp 32dp 0 32dp;
-  font-size: 15dp;
-  line-height: 21dp;
-}
-
 .shell-body--wide .settings-copied-box {
   margin: 16dp 16dp 0 16dp;
   padding: 16dp 18dp 8dp 18dp;
@@ -2066,39 +2060,12 @@
   text-align: left;
 }
 
-.shell-body--wide .settings-steps-card {
-  padding: 0 16dp 0 0;
+.shell-body--wide .settings-transfer-hint {
+  margin: 20dp 32dp 0 32dp;
 }
 
-.shell-body--wide .settings-step {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  padding: 12dp 0;
-}
-
-.shell-body--wide .settings-step:first-child {
-  border-top-width: 0;
-}
-
-.shell-body--wide .settings-step-num {
-  flex: 0 0 26dp;
-  width: 26dp;
-  height: 26dp;
-  margin: 0 12dp 0 16dp;
-  border-radius: 13dp;
-  font-size: 14dp;
-  line-height: 26dp;
-  font-weight: bold;
-  text-align: center;
-}
-
-.shell-body--wide .settings-step-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 16dp;
-  line-height: 22dp;
+.shell-body--wide .settings-transfer-steps {
+  margin: 12dp 32dp 0 32dp;
 }
 
 .shell-body--wide .settings-note-row {

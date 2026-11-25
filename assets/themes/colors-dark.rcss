@@ -4972,23 +4972,6 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
-.shell-body--wide .settings-step-num {
-  background-color: #0a84ff;
-  color: #ffffff;
-}
-
-.shell-body--wide .settings-step-text {
-  color: #ffffff;
-}
-
-.shell-body--wide .settings-step {
-  border-top: 1dp #54545899;
-}
-
-.shell-body--wide .settings-transfer-lead {
-  color: #ebebf599;
-}
-
 .shell-body--wide .settings-dev-ill {
   image-color: #ebebf54c;
 }
