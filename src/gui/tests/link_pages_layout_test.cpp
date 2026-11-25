@@ -281,6 +281,33 @@ protected:
     }
     return shown;
   }
+  // The room inside an element's padding: its content box.
+  static Edges ContentBox(ui::Element* element) {
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Content);
+    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Content);
+    return {at.x, at.y, at.x + size.x, at.y + size.y};
+  }
+  // Every visible button, and the given extra blocks, lies inside the card's content box.
+  void ExpectInside(ui::Element* card, const std::vector<ui::Element*>& extra, const std::string& where) {
+    const Edges room = ContentBox(card);
+    std::vector<ui::Element*> all = Buttons();
+    all.insert(all.end(), extra.begin(), extra.end());
+    for (ui::Element* e : all) {
+      const Edges box = Box(e);
+      const std::string who = where + ": " + e->GetClassNames() + " [" + std::string(e->GetInnerRML().c_str()) + "]";
+      EXPECT_GE(box.left + 0.5f, room.left) << who << " sticks out on the left";
+      EXPECT_LE(box.right, room.right + 0.5f) << who << " sticks out on the right";
+    }
+  }
+  // Two buttons in one row: same top and height, same width, side by side with a gap.
+  void ExpectOneRow(ui::Element* first, ui::Element* second, const std::string& where) {
+    const Edges a = Box(first);
+    const Edges b = Box(second);
+    EXPECT_NEAR(a.top, b.top, 0.5f) << where << ": one row";
+    EXPECT_NEAR(a.bottom, b.bottom, 0.5f) << where << ": same height";
+    EXPECT_NEAR(a.right - a.left, b.right - b.left, 1.f) << where << ": equal widths";
+    EXPECT_GE(b.left - a.right, 4.f) << where << ": a gap between them";
+  }
   int PrimaryCount() {
     int count = 0;
     for (ui::Element* button : Buttons()) {
@@ -302,7 +329,8 @@ protected:
       EXPECT_GE(box.top + 0.5f, previous_bottom) << where << " overlaps the block above: " << block->GetClassNames();
       previous_bottom = box.bottom;
     }
-    EXPECT_LE(Box(stack.back()).right, static_cast<float>(width_) + 0.5f) << where;
+    // (A desktop card's translate(-50%) is a transform the offsets leave out, so the width is what is compared.)
+    EXPECT_LE(Box(stack.back()).right - Box(stack.back()).left, static_cast<float>(width_) + 0.5f) << where;
   }
 
   NullRender renderer;
@@ -312,6 +340,14 @@ protected:
   int width_ = 0;
   int height_ = 0;
 };
+
+struct WindowSize {
+  bool compact;
+  int width;
+  int height;
+};
+
+constexpr WindowSize kWindowSizes[] = {{true, 390, 844}, {true, 430, 932}, {false, 1100, 900}, {false, 900, 640}};
 
 // --- the new device's page ----------------------------------------------------------------------------------------
 
@@ -330,11 +366,13 @@ constexpr GateCase kGateCases[] = {
 TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeInEveryState) {
   for (const char* lang : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(lang);
-    for (const bool compact : {true, false}) {
-      const int width = compact ? 390 : 1100;
-      const int height = compact ? 844 : 900;
+    for (const WindowSize& size : kWindowSizes) {
+      const bool compact = size.compact;
+      const int width = size.width;
+      const int height = size.height;
       for (const GateCase& state_case : kGateCases) {
-        const std::string where = std::string(lang) + (compact ? " phone " : " desktop ") + state_case.name;
+        const std::string where = std::string(lang) + (compact ? " phone " : " desktop ") + std::to_string(width) +
+                                  "x" + std::to_string(height) + " " + state_case.name;
         ShellState state;
         state.layout_mode = compact ? LayoutMode::Compact : LayoutMode::Expanded;
         state.pin_gate.active = true;
@@ -384,25 +422,34 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
         if (compact) {
           EXPECT_NEAR(Box(card).MidX(), width / 2.f, 1.f) << where;
         }
+        // A short desktop window (640dp) keeps the code's 280dp minimum and scrolls the card; its scrollbar takes 8dp.
+        const bool scrolls = !compact && height < 700;
         const float centre = ContentMidX(card);
+        const float centre_slack = scrolls ? 9.f : 1.f;
         EXPECT_LE(Box(card).right - Box(card).left, compact ? width + 0.5f : 560.5f) << where;
         if (state_case.reply_pasted) {
           EXPECT_TRUE(Visible("shell-pin-gate-scan").empty()) << where;
         } else {
           EXPECT_EQ(Visible("shell-pin-gate-scan").size(), state_case.can_scan ? 1U : 0U) << where;
           EXPECT_EQ(Visible("shell-pin-gate-paste").size(), 1U) << where;
+          if (state_case.can_scan) {
+            ExpectOneRow(One("shell-pin-gate-scan"), One("shell-pin-gate-paste"), where);
+            EXPECT_TRUE(One("shell-pin-gate-scan")->IsClassSet("btn-primary")) << where;
+          }
         }
         ui::Element* qr = One("shell-pin-gate-qr");
         ASSERT_NE(qr, nullptr) << where;
         EXPECT_FLOAT_EQ(Box(qr).right - Box(qr).left, static_cast<float>(display.side_dp)) << where;
         EXPECT_FLOAT_EQ(Box(qr).bottom - Box(qr).top, static_cast<float>(display.side_dp)) << where;
-        EXPECT_NEAR(Box(qr).MidX(), centre, 1.f) << where << ": the code is centred";
+        EXPECT_NEAR(Box(qr).MidX(), centre, centre_slack) << where << ": the code is centred";
         EXPECT_LE(Box(qr).right - Box(qr).left, Box(card).right - Box(card).left) << where;
         // The 4 digits sit directly under the code, labelled, centred.
         ui::Element* digits = One("shell-pin-gate-code");
         ASSERT_NE(digits, nullptr) << where;
-        EXPECT_NEAR(Box(digits).MidX(), centre, 1.f) << where;
-        EXPECT_LE(card->GetScrollHeight(), card->GetClientHeight() + 1.f) << where << ": nothing needs scrolling";
+        EXPECT_NEAR(Box(digits).MidX(), centre, centre_slack) << where;
+        if (!scrolls) {
+          EXPECT_LE(card->GetScrollHeight(), card->GetClientHeight() + 1.f) << where << ": nothing needs scrolling";
+        }
         EXPECT_LT(Box(digits).top - Box(qr).bottom, 60.f) << where << ": the digits are right under the code";
         std::vector<ui::Element*> stack{
             One("shell-dialog-title"),   One("shell-dialog-message"), qr, One("shell-pin-gate-code-label"), digits,
@@ -411,6 +458,12 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageHasOnePrimaryButtonAndACentredCodeI
           stack.push_back(One("shell-pin-gate-step"));
         }
         ExpectTargetsAndNoOverlap(stack, where);
+        ExpectInside(card, {qr, digits}, where);
+        if (!state_case.reply_pasted) {
+          for (ui::Element* button : Buttons()) {
+            EXPECT_EQ(button->GetInnerRML().find('\n'), std::string::npos) << where;
+          }
+        }
       }
     }
   }
@@ -457,13 +510,17 @@ constexpr MainCase kMainCases[] = {
 TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredReplyCodeInEveryState) {
   for (const char* lang : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(lang);
-    for (const bool compact : {true, false}) {
-      const int width = compact ? 390 : 760; // the desktop's detail pane beside the section list
-      const int height = compact ? 844 : 900;
+    for (const WindowSize& size : kWindowSizes) {
+      const bool compact = size.compact;
+      const int window_width = size.width;
+      const int width = compact ? window_width : window_width - 340; // the desktop's detail pane beside the list
+      const int height = size.height;
       for (const MainCase& state_case : kMainCases) {
-        const std::string where = std::string(lang) + (compact ? " phone " : " desktop ") + state_case.name;
+        const std::string where = std::string(lang) + (compact ? " phone " : " desktop ") +
+                                  std::to_string(window_width) + "x" + std::to_string(height) + " " + state_case.name;
         const QrDisplay display =
-            LinkQrDisplayFor(compact, static_cast<float>(compact ? 390 : 1100), static_cast<float>(height), 1.f);
+            LinkQrDisplayFor(compact, static_cast<float>(window_width), static_cast<float>(height), 1.f,
+                             kLinkQrDesktopSettingsReservedWidthDp);
         const std::string minutes = "15";
         Vars vars{{"security_can_export_link", "1"},
                   {"own_devices_not_main", "0"},
@@ -474,12 +531,14 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
                   {"link_qr_side", display.css},
                   {"link_reply_qr_rml", "x"}};
         const std::string page = Bind(ReadAll(AssetPath("views/settings_security_transfer.rml")), vars);
-        const std::string wrapper = compact
-                                        ? "<div class=\"shell-layer shell-layer-compact\">"
-                                          "<div class=\"settings-subpage-view\" style=\"position: absolute; top: 0; "
-                                          "left: 0; width: 390dp; height: 844dp; overflow-y: auto;\">"
-                                        : "<div class=\"settings-detail-view\" style=\"position: absolute; top: 0; "
-                                          "left: 0; width: 760dp; height: 900dp; overflow-y: auto;\">";
+        const std::string wrapper =
+            compact ? "<div class=\"shell-layer shell-layer-compact\">"
+                      "<div class=\"settings-subpage-view\" style=\"position: absolute; top: 0; "
+                      "left: 0; width: " +
+                          std::to_string(width) + "dp; height: " + std::to_string(height) + "dp; overflow-y: auto;\">"
+                    : "<div class=\"settings-detail-view\" style=\"position: absolute; top: 0; "
+                      "left: 0; width: " +
+                          std::to_string(width) + "dp; height: " + std::to_string(height) + "dp; overflow-y: auto;\">";
         Mount(wrapper + page + (compact ? "</div></div>" : "</div>"), width, height);
         ASSERT_NE(document, nullptr) << where;
         EXPECT_EQ(PrimaryCount(), 1) << where << ": one primary button";
@@ -494,6 +553,9 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
           EXPECT_TRUE(Visible("settings-transfer-btn").empty()) << where;
           EXPECT_TRUE(Visible("settings-transfer-lead").empty()) << where << ": no lead over the reply";
           ExpectTargetsAndNoOverlap({One("settings-copied-title"), qr, One("settings-copied-sub")}, where);
+          ExpectInside(box, {qr}, where);
+          ui::Element* copy = Visible("settings-link-btn").front();
+          EXPECT_NEAR(Box(copy).MidX(), Box(box).MidX(), 1.f) << where << ": copy is centred under the code";
         } else {
           const auto buttons = Visible("settings-transfer-btn");
           ASSERT_EQ(buttons.size(), state_case.can_scan ? 2U : 1U) << where << ": scan and paste, or paste alone";
@@ -501,7 +563,13 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageHasOnePrimaryButtonAndACentredRepl
           EXPECT_TRUE(Visible("settings-link-qr").empty()) << where;
           ExpectTargetsAndNoOverlap({One("settings-transfer-lead")}, where);
           if (buttons.size() == 2) {
-            EXPECT_GE(Box(buttons[1]).top + 0.5f, Box(buttons[0]).bottom) << where << ": the buttons do not overlap";
+            ExpectOneRow(buttons[0], buttons[1], where);
+          } else {
+            EXPECT_GE(Box(buttons[0]).bottom - Box(buttons[0]).top, 44.f) << where;
+          }
+          ExpectInside(One("settings-transfer-copy"), {}, where);
+          for (ui::Element* button : buttons) {
+            EXPECT_LE(Box(button).bottom - Box(button).top, 56.f) << where << ": one line";
           }
           EXPECT_TRUE(buttons[0]->IsClassSet("btn-primary")) << where << ": the first button is the main one";
         }

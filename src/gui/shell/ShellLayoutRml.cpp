@@ -514,6 +514,7 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<div class=\"shell-pin-gate-return\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\">";
   out << "<p class=\"text shell-pin-gate-step\">" << Tr("pin.link_return_step") << "</p>";
+  out << "<div class=\"link-btn-row\">";
   out << "<button class=\"btn btn-primary shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" "
          "data-event-click=\"pin_gate_scan_reply()\">"
       << Tr("pin.link_scan_reply") << "</button>";
@@ -523,6 +524,7 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-primary shell-pin-gate-paste\" data-if=\"!pin_gate_link_can_scan\" "
          "data-event-click=\"pin_gate_paste()\">"
       << Tr("pin.paste_button") << "</button>";
+  out << "</div>";
   out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\" "

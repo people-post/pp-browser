@@ -7720,11 +7720,8 @@ input.checkbox {
 }
 
 .shell-pin-gate-return .btn {
-  display: block;
-  width: 100%;
   min-height: 50dp;
   line-height: 50dp;
-  margin-bottom: 8dp;
   text-align: center;
 }
 
@@ -14168,6 +14165,12 @@ textarea:composing ~ .prompt-composer-label,
   gap: 6dp;
 }
 
+/* On a phone the box leaves the code (up to the page's width less 40dp) its full width: slim margin and padding. */
+.shell-layer-compact .settings-link-reply {
+  margin: 16dp 10dp 0 10dp;
+  padding: 16dp 6dp 8dp 6dp;
+}
+
 /* The code's side is bound (link_qr_side: the page's width on a phone, up to 423dp on a desktop window). */
 .settings-link-qr {
   width: 280dp;
@@ -14186,20 +14189,35 @@ textarea:composing ~ .prompt-composer-label,
   display: block;
   width: 100%;
   max-width: 360dp;
+  box-sizing: border-box;
   min-height: 50dp;
   line-height: 50dp;
   margin: 4dp 0 0 0;
   text-align: center;
 }
 
-/* The link page's Scan / Paste buttons: 50dp rows, one under the other. */
-.settings-transfer-btn {
-  display: block;
+/* The link pages' Scan / Paste pair: one row, equal widths sharing the card's content width (Paste alone: all of it). */
+.link-btn-row {
+  display: flex;
+  flex-direction: row;
+  gap: 10dp;
   width: 100%;
-  max-width: 360dp;
+  margin: 10dp 0 0 0;
+}
+
+.link-btn-row .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  display: block;
+  white-space: nowrap;
+}
+
+/* The link page's Scan / Paste buttons: 50dp, in the row above. */
+.settings-transfer-btn {
   min-height: 50dp;
   line-height: 50dp;
-  margin: 10dp 0 0 0;
+  margin: 0;
   text-align: center;
 }
 
