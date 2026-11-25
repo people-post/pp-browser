@@ -17,7 +17,6 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
-  os/OsRestart.cpp
   os/KeychainStatus.cpp
   AssetIO.cpp
   IAssetLocator.cpp
@@ -117,7 +116,6 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsLocale_Win32.cpp
     os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
-    os/OsRestart_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsFolderName_Default.cpp
     os/OsProcessStats_Default.cpp
@@ -153,11 +151,9 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/PathProvider_Darwin.cpp
   )
   if(PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp os/OsFolderName_Default.cpp
-         os/OsRestart_Default.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Default.cpp os/OsFolderName_Default.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp os/OsFolderName_Darwin.mm
-         os/OsRestart_Darwin.cpp)
+    list(APPEND _pp_platform_core_sources os/OsDownloadMark_Darwin.cpp os/OsFolderName_Darwin.mm)
   endif()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
@@ -201,9 +197,9 @@ else()
     PlatformScreenBrightness_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp os/OsDeviceName_Android.cpp os/OsRestart_Default.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp os/OsDeviceName_Android.cpp)
   else()
-    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp os/OsDeviceName_Posix.cpp os/OsRestart_Linux.cpp)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp os/OsDeviceName_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
