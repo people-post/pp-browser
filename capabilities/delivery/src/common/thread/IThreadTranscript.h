@@ -28,6 +28,26 @@ inline constexpr int64_t kRemovedMessageIdKeepMs = 91LL * 24 * 60 * 60 * 1000;
  */
 inline constexpr int64_t kRemovedMessageRowHorizonMs = 120LL * 24 * 60 * 60 * 1000;
 
+/**
+ * The sender WasMessageRemoved takes for an envelope from `envelope_sender` (an Account ID): ours, from another of our
+ * devices, is kLocalSelfContactId.
+ */
+inline std::string RemovedMessageSender(const std::string& envelope_sender, const std::string& local_account_id) {
+  return !local_account_id.empty() && envelope_sender == local_account_id ? std::string(kLocalSelfContactId)
+                                                                          : envelope_sender;
+}
+
+/**
+ * The same for a row of `thread` whose sender is `row_sender`: a 1:1 chat's rows name the peer by its contact id, so
+ * any row but ours is the chat's peer (its Account ID); a group's rows name the member by its Account ID.
+ */
+inline std::string RemovedMessageSenderOfRow(const Thread& thread, const std::string& row_sender) {
+  if (row_sender == kLocalSelfContactId || thread.kind != ThreadKind::Direct || thread.peer_identity_value.empty()) {
+    return row_sender;
+  }
+  return thread.peer_identity_value;
+}
+
 class IThreadTranscript {
 public:
   virtual ~IThreadTranscript() = default;
@@ -144,12 +164,15 @@ public:
   }
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
   /**
-   * Whether `message_id` was a message of a chat cleared (ClearMessages) or deleted (DeleteThread) here, while the
-   * relay may still hold its record (kRemovedMessageIdKeepMs): such a message has no row left for HasMessageId to
-   * find, so a copy that comes again — a mailbox read from its start, a sibling's sent copy, a peer's history — would
-   * be new. Ids only. A store that keeps none: never.
+   * Whether `sender`'s message `message_id` was a message of a chat cleared (ClearMessages) or deleted (DeleteThread)
+   * here, while the relay may still hold its record (kRemovedMessageIdKeepMs): such a message has no row left for
+   * HasMessageId to find, so a copy that comes again — a mailbox read from its start, a sibling's sent copy, a peer's
+   * history — would be new. Per sender (D107): a message id is its sender's (D005), so one contact's ids never drop
+   * another's message; `sender` as a row holds it, an Account ID or kLocalSelfContactId (RemovedMessageSender). A
+   * store that keeps none: never.
    */
-  virtual Roe<bool> WasMessageRemoved(const std::string& message_id) const {
+  virtual Roe<bool> WasMessageRemoved(const std::string& sender, const std::string& message_id) const {
+    (void)sender;
     (void)message_id;
     return false;
   }

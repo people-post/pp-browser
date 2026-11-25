@@ -1,5 +1,6 @@
-// A 1:1 or group chat cleared or deleted here: the ids of its messages are kept (profile.db `removed_messages`), so a
-// copy the relay still holds is not stored again. Ids only, pruned after the relay's window, gone with the profile.
+// A 1:1 or group chat cleared or deleted here: the ids of its messages are kept per sender (profile.db
+// `removed_message_ids`, chat-storage D107), so a copy the relay still holds is not stored again. Pruned after the
+// relay's window, gone with the profile.
 #include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
 
@@ -40,11 +41,12 @@ protected:
     return *thread;
   }
 
-  ThreadMessage Received(const Thread& thread, const std::string& id, const int64_t timestamp = util::NowUnixMs()) {
+  ThreadMessage Received(const Thread& thread, const std::string& id, const int64_t timestamp = util::NowUnixMs(),
+                         const std::string& sender = "peer-contact") {
     ThreadMessage message;
     message.id = id;
     message.thread_id = thread.id;
-    message.sender_contact_id = "peer";
+    message.sender_contact_id = sender; // a 1:1 row names the peer by its contact id, a group's by its Account ID
     message.text = "hello " + id;
     message.timestamp = timestamp;
     message.delivery = MessageDelivery::Relayed;
@@ -52,8 +54,8 @@ protected:
     return message;
   }
 
-  bool Removed(const std::string& id) {
-    auto removed = store_->WasMessageRemoved(id);
+  bool Removed(const std::string& sender, const std::string& id) {
+    auto removed = store_->WasMessageRemoved(sender, id);
     EXPECT_TRUE(removed);
     return removed && *removed;
   }
@@ -92,11 +94,11 @@ TEST_F(RemovedMessagesStoreTest, AClearedChatsIdsAreRememberedAndNotStoredAgainW
   const Thread chat = PublicChat("peer-a");
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "m1")));
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "m2")));
-  EXPECT_FALSE(Removed("m1")) << "a message that is still there is not removed";
+  EXPECT_FALSE(Removed("peer-a", "m1")) << "a message that is still there is not removed";
 
   ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
-  EXPECT_TRUE(Removed("m1"));
-  EXPECT_TRUE(Removed("m2"));
+  EXPECT_TRUE(Removed("peer-a", "m1"));
+  EXPECT_TRUE(Removed("peer-a", "m2"));
   auto has = store_->HasMessageId(chat.id, "m1");
   ASSERT_TRUE(has);
   EXPECT_FALSE(*has) << "HasMessageId still answers for rows only";
@@ -115,12 +117,12 @@ TEST_F(RemovedMessagesStoreTest, ADeletedChatsIdsAreRememberedAGroupsToo) {
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "d1")));
   auto group = store_->FindOrCreateGroupThread("g1", "Group", {});
   ASSERT_TRUE(group);
-  ASSERT_TRUE(store_->AppendMessage(Received(*group, "g-msg")));
+  ASSERT_TRUE(store_->AppendMessage(Received(*group, "g-msg", util::NowUnixMs(), "member-account")));
 
   ASSERT_TRUE(store_->DeleteThread(chat.id));
   ASSERT_TRUE(store_->DeleteThread(group->id));
-  EXPECT_TRUE(Removed("d1"));
-  EXPECT_TRUE(Removed("g-msg"));
+  EXPECT_TRUE(Removed("peer-b", "d1"));
+  EXPECT_TRUE(Removed("member-account", "g-msg"));
 }
 
 TEST_F(RemovedMessagesStoreTest, AnAiChatsClearRemembersNothing) {
@@ -138,7 +140,7 @@ TEST_F(RemovedMessagesStoreTest, AnAiChatsClearRemembersNothing) {
   message.timestamp = util::NowUnixMs();
   ASSERT_TRUE(store_->AppendMessage(message));
   ASSERT_TRUE(store_->ClearMessages(ai.id, ClearMessagesOptions{}));
-  EXPECT_FALSE(Removed("ai-1")) << "nobody sends an AI chat's messages again";
+  EXPECT_FALSE(Removed(kLocalSelfContactId, "ai-1")) << "nobody sends an AI chat's messages again";
 }
 
 TEST_F(RemovedMessagesStoreTest, RowsOlderThanAnyRelayRecordAreNotRemembered) {
@@ -147,8 +149,8 @@ TEST_F(RemovedMessagesStoreTest, RowsOlderThanAnyRelayRecordAreNotRemembered) {
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "ancient", old)));
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "recent")));
   ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
-  EXPECT_FALSE(Removed("ancient"));
-  EXPECT_TRUE(Removed("recent"));
+  EXPECT_FALSE(Removed("peer-c", "ancient"));
+  EXPECT_TRUE(Removed("peer-c", "recent"));
 }
 
 TEST_F(RemovedMessagesStoreTest, IdsPastTheRelaysWindowArePrunedOnOpenAndAtTheNextRemoval) {
@@ -156,47 +158,84 @@ TEST_F(RemovedMessagesStoreTest, IdsPastTheRelaysWindowArePrunedOnOpenAndAtTheNe
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "kept")));
   ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
   const int64_t past_window = util::NowUnixMs() - kRemovedMessageIdKeepMs - 60'000;
-  Exec("INSERT INTO removed_messages (message_id, removed_at) VALUES ('expired-1', " + std::to_string(past_window) +
-       ");");
-  EXPECT_TRUE(Removed("expired-1"));
+  Exec("INSERT INTO removed_message_ids (sender, message_id, removed_at) VALUES ('peer-d', 'expired-1', " +
+       std::to_string(past_window) + ");");
+  EXPECT_TRUE(Removed("peer-d", "expired-1"));
 
   store_.reset(); // a restart
   store_ = test::MakeUnlockedThreadStore(dir_.string());
-  EXPECT_FALSE(Removed("expired-1")) << "pruned when profile.db opens";
-  EXPECT_TRUE(Removed("kept"));
+  EXPECT_FALSE(Removed("peer-d", "expired-1")) << "pruned when profile.db opens";
+  EXPECT_TRUE(Removed("peer-d", "kept"));
 
-  Exec("INSERT INTO removed_messages (message_id, removed_at) VALUES ('expired-2', " + std::to_string(past_window) +
-       ");");
+  Exec("INSERT INTO removed_message_ids (sender, message_id, removed_at) VALUES ('peer-d', 'expired-2', " +
+       std::to_string(past_window) + ");");
   const Thread other = PublicChat("peer-e");
   ASSERT_TRUE(store_->AppendMessage(Received(other, "x1")));
   ASSERT_TRUE(store_->DeleteThread(other.id));
-  EXPECT_FALSE(Removed("expired-2")) << "pruned at the next removal";
-  EXPECT_TRUE(Removed("x1"));
+  EXPECT_FALSE(Removed("peer-d", "expired-2")) << "pruned at the next removal";
+  EXPECT_TRUE(Removed("peer-e", "x1"));
 }
 
 TEST_F(RemovedMessagesStoreTest, AProfileResetTakesThemAway) {
   const Thread chat = PublicChat("peer-f");
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "r1")));
   ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
-  EXPECT_TRUE(Removed("r1"));
+  EXPECT_TRUE(Removed("peer-f", "r1"));
   // Reset my profile (Application::ResetActiveProfile): the profile directory goes, the stores open anew.
   store_.reset();
   std::filesystem::remove_all(dir_);
   std::filesystem::create_directories(dir_);
   store_ = test::MakeUnlockedThreadStore(dir_.string());
-  EXPECT_FALSE(Removed("r1"));
+  EXPECT_FALSE(Removed("peer-f", "r1"));
 }
 
 TEST_F(RemovedMessagesStoreTest, AnExistingProfileGetsTheTableWithoutAVersionStep) {
   ASSERT_TRUE(store_->ListThreads()); // opened at this build's schema
   store_.reset();
-  Exec("DROP TABLE removed_messages;"); // a file from before the table
+  Exec("DROP TABLE removed_message_ids;"); // a file from before the table
   store_ = test::MakeUnlockedThreadStore(dir_.string());
   const Thread chat = PublicChat("peer-g");
   ASSERT_TRUE(store_->AppendMessage(Received(chat, "n1")));
   ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
-  EXPECT_TRUE(Removed("n1"));
+  EXPECT_TRUE(Removed("peer-g", "n1"));
   EXPECT_EQ(ProfileUserVersion(), kSqliteThreadProfileUserVersion) << "an older app opens the file as before";
+}
+
+TEST_F(RemovedMessagesStoreTest, AnIdCountsOnlyForItsSender) {
+  const Thread chat = PublicChat("peer-h");
+  ASSERT_TRUE(store_->AppendMessage(Received(chat, "same-id")));
+  ThreadMessage ours = Received(chat, "ours-1", util::NowUnixMs(), kLocalSelfContactId);
+  ASSERT_TRUE(store_->AppendMessage(ours));
+  ASSERT_TRUE(store_->ClearMessages(chat.id, ClearMessagesOptions{}));
+  EXPECT_TRUE(Removed("peer-h", "same-id")) << "the peer's row: kept under the peer's Account ID, not its contact id";
+  EXPECT_TRUE(Removed(kLocalSelfContactId, "ours-1")) << "ours: kept as ours (another device's copy maps to it)";
+  EXPECT_FALSE(Removed("peer-i", "same-id")) << "another contact's message with that id is not dropped";
+  EXPECT_FALSE(Removed("peer-h", "ours-1"));
+
+  const Thread other = PublicChat("peer-i");
+  EXPECT_TRUE(store_->AppendMessage(Received(other, "same-id"))) << "stored: it is another sender's";
+  EXPECT_FALSE(store_->AppendMessage(Received(chat, "same-id"))) << "the cleared chat's own copy is still refused";
+}
+
+TEST_F(RemovedMessagesStoreTest, TheGlobalListFromBeforeIsDroppedOnOpen) {
+  ASSERT_TRUE(store_->ListThreads());
+  store_.reset();
+  Exec(
+      "CREATE TABLE removed_messages (message_id TEXT PRIMARY KEY, removed_at INTEGER NOT NULL);"
+      "INSERT INTO removed_messages VALUES ('old-1', 1);"); // a file written by #724's build
+  store_ = test::MakeUnlockedThreadStore(dir_.string());
+  ASSERT_TRUE(store_->ListThreads());
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open(SqliteThreadProfileDbFile(dir_.string()).c_str(), &db), SQLITE_OK);
+  sqlite3_stmt* stmt = nullptr;
+  ASSERT_EQ(
+      sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sqlite_master WHERE name = 'removed_messages';", -1, &stmt, nullptr),
+      SQLITE_OK);
+  ASSERT_EQ(sqlite3_step(stmt), SQLITE_ROW);
+  EXPECT_EQ(sqlite3_column_int(stmt, 0), 0);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  EXPECT_EQ(ProfileUserVersion(), kSqliteThreadProfileUserVersion);
 }
 
 } // namespace
