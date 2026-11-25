@@ -98,6 +98,7 @@ bool QrScanController::RegisterModel(ui::Context* context) {
 }
 
 void QrScanController::Open(QrScanResultCallback on_result, std::function<void()> on_closed) {
+  ScanLog().info << "Open requested (camera permission " << static_cast<int>(camera_.state()) << ")";
   Close();
   const auto ignored = [&on_closed](const char* why) {
     ScanLog().warning << "Open ignored: " << why;

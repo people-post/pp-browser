@@ -9,6 +9,8 @@
 
 #include <ui/base/SystemInterface.h>
 
+#include "foundation/crypto/LinkHandshake.h"
+#include "foundation/i18n/LocalizationService.h"
 #include <gtest/gtest.h>
 #include <fstream>
 #include <memory>
@@ -1260,6 +1262,37 @@ TEST(RunLogSentinelPasteTest, TextPastedOnThePinGateIsNeverLogged) {
   ShellHostTestAccess::PinGateClearPayload(host);
   ui::SetSystemInterface(nullptr);
   capture.ExpectNoSentinel();
+}
+
+// The new device's link page: Paste with an empty clipboard, or with text that holds no reply code, says so on the page
+// (the existing "paste is empty" / "not a code from your main device" lines); a pasted reply clears the line, and an
+// offer pasted where a reply is wanted is refused.
+TEST(LinkPagePasteTest, AnEmptyOrCodelessPasteShowsTheMessageAndAReplyIsKept) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  ClipboardSystem system;
+  ui::SetSystemInterface(&system);
+  ShellHost host;
+  host.State().pin_gate.link_paste_mode = true;
+  const ByteVector payload(40, 0x01);
+  system.clipboard = "";
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_EQ(std::string(host.State().pin_gate.error.c_str()), Tr("pin.link_paste_empty"));
+  EXPECT_FALSE(host.State().pin_gate.payload_hidden);
+  system.clipboard = "hello, here is nothing";
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_EQ(std::string(host.State().pin_gate.error.c_str()), Tr("pin.link_err_unreadable"));
+  EXPECT_FALSE(host.State().pin_gate.payload_hidden);
+  EXPECT_TRUE(host.State().pin_gate.link_payload.empty() && host.State().pin_gate.link_payload_full.empty());
+  system.clipboard = LinkPayloadText(kLinkOfferTextPrefix, payload); // an offer where a reply is wanted
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_EQ(std::string(host.State().pin_gate.error.c_str()), Tr("pin.link_err_unreadable"));
+  system.clipboard = "Here it is: " + LinkPayloadText(kLinkReplyTextPrefix, payload) + "\nthanks";
+  ShellHostTestAccess::PinGatePaste(host);
+  EXPECT_TRUE(host.State().pin_gate.error.empty());
+  EXPECT_TRUE(host.State().pin_gate.payload_hidden) << "kept for Continue";
+  ShellHostTestAccess::PinGateClearPayload(host);
+  ui::SetSystemInterface(nullptr);
 }
 
 } // namespace pbr

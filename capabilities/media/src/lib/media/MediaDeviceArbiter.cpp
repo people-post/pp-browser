@@ -871,6 +871,10 @@ bool MediaDeviceArbiter::DrainAudio(std::chrono::milliseconds budget) {
   return core_->audio.RunAndWait("drain audio", budget, MediaDeviceKind::Mic, MediaDeviceOp::Close, []() {});
 }
 
+bool MediaDeviceArbiter::HasCamera() const {
+  return core_->backend->HasCamera();
+}
+
 bool MediaDeviceArbiter::CanResetAudio() const {
   return core_->backend->SupportsAudioReset();
 }

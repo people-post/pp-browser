@@ -234,6 +234,10 @@ struct PinGateState {
   /** The link page: the offer as a QR code (SVG content; "" none) and its 4 digits to compare. */
   ui::String link_offer_qr;
   ui::String link_offer_code;
+  /** Small caption under the digits ("Valid for 15 minutes"). */
+  ui::String link_valid;
+  /** The code's side as CSS ("340dp"), set by the shell from the page it is drawn on (QrDisplay.h). */
+  ui::String link_qr_side;
   /** The same offer as text, for "Copy as text" only: never bound to an element (it is over a kilobyte, B166). */
   ui::String link_offer_text;
   /** The link page can read the main device's reply with the camera. */
@@ -613,6 +617,9 @@ struct NavBadgeState {
 };
 
 struct ShellState {
+  /** A desktop computer (Platform::IsDesktop; an iPad is not, even full screen, and a narrow desktop window is). Set by
+   *  ShellHost; the link pages use it to put Paste before Scan (a computer's camera cannot read a phone screen). */
+  bool desktop_computer = false;
   LayoutMode layout_mode = LayoutMode::Expanded;
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;

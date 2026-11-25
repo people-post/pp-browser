@@ -107,6 +107,7 @@ public:
                                             const std::function<bool()>& still_wanted, std::string* error) override {
     return inner_->OpenAudio(kind, format, still_wanted, error);
   }
+  bool HasCamera() const override { return true; }
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& /*format*/, std::string* /*error*/) override {
     return std::make_unique<SyntheticCamera>();
   }

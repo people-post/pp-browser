@@ -14,6 +14,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
@@ -28,6 +29,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
+#include "gui/QrDisplay.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/shell/MascotFigure.h"
 #include "gui/shell/MascotLook.h"
@@ -102,6 +104,7 @@ constexpr bool kSystemBackLeavesSettingsHome = true;
 
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
+  state_.desktop_computer = Platform::IsDesktop();
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -173,6 +176,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_link_offer_qr_rml", &host.state_.pin_gate.link_offer_qr);
     ctor.Bind("pin_gate_link_offer_code", &host.state_.pin_gate.link_offer_code);
     ctor.Bind("pin_gate_link_can_scan", &host.state_.pin_gate.link_can_scan);
+    ctor.Bind("pin_gate_link_valid", &host.state_.pin_gate.link_valid);
+    ctor.Bind("pin_gate_link_qr_side", &host.state_.pin_gate.link_qr_side);
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -1404,6 +1409,8 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_qr_rml");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_code");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_can_scan");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_valid");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
@@ -1691,6 +1698,9 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
+  if (state.link_paste_mode) {
+    state_.pin_gate.link_qr_side = LinkQrDisplayFor(state_.layout_mode == LayoutMode::Compact, context_).css.c_str();
+  }
   ReconcileStartupCover();
 }
 
@@ -3719,7 +3729,19 @@ void ShellHost::PinGatePaste() {
   }
   ui::String text;
   system->GetClipboardText(text);
-  if (text.empty()) {
+  // The link page's reply: an empty clipboard, or text holding no reply code, is said so on the page (an error line)
+  // instead of nothing happening; the paste is not kept.
+  if (state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow) {
+    const char* refused = text.empty() ? "pin.link_paste_empty"
+                          : FindLinkPayload(kLinkReplyTextPrefix, std::string(text.c_str(), text.size()))
+                              ? nullptr
+                              : "pin.link_err_unreadable";
+    state_.pin_gate.error = refused != nullptr ? Tr(refused).c_str() : "";
+    DataModelHost::Instance().Dirty("window", "pin_gate_error");
+    if (refused != nullptr) {
+      return;
+    }
+  } else if (text.empty()) {
     return;
   }
   // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a
