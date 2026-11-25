@@ -177,7 +177,7 @@ std::vector<LocaleInfo> LocalizationService::UserSelectableLocales() const {
 }
 
 bool LocalizationService::IsUserSelectable(std::string_view tag) {
-  return NormalizeTag(tag) == "en";
+  return PrimaryLanguage(NormalizeTag(tag)) == "en";
 }
 
 std::string LocalizationService::EffectivePreference(std::string_view pref) {

@@ -1985,9 +1985,13 @@ std::vector<SettingsChoicePage::Option> SettingsController::LanguageChoiceOption
   // A stored language the picker no longer offers (an earlier build's Chinese) follows the system: show System.
   const std::string current = LocalizationService::EffectivePreference(bindings_.language.c_str());
   std::vector<SettingsChoicePage::Option> options;
-  options.push_back({"system", commands_.language_display_label("system").c_str(), current == "system"});
+  const bool system = current == "system";
+  const std::string wanted = LocalizationService::PrimaryLanguage(LocalizationService::NormalizeTag(current));
+  options.push_back({"system", commands_.language_display_label("system").c_str(), system});
   for (const LocaleInfo& info : commands_.available_locales()) {
-    options.push_back({info.tag.c_str(), commands_.language_display_label(info.tag).c_str(), current == info.tag});
+    const bool selected =
+        !system && LocalizationService::PrimaryLanguage(LocalizationService::NormalizeTag(info.tag)) == wanted;
+    options.push_back({info.tag.c_str(), commands_.language_display_label(info.tag).c_str(), selected});
   }
   return options;
 }

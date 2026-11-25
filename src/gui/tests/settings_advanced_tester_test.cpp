@@ -309,7 +309,7 @@ TEST_F(SettingsAdvancedTesterTest, TheLanguageChooserOffersSystemAndEnglishOnly)
   commands.available_locales = []() { return LocalizationService::Instance().UserSelectableLocales(); };
   settings.BindCommands(commands);
 
-  for (const char* stored : {"system", "en", "zh-Hans"}) {
+  for (const char* stored : {"system", "en", "zh-Hans", "en-US", "EN", ""}) {
     host().UiState().language = stored;
     host().PushToView(false);
     const std::vector<SettingsChoicePage::Option> options = settings.LanguageChoiceOptions();
@@ -318,7 +318,7 @@ TEST_F(SettingsAdvancedTesterTest, TheLanguageChooserOffersSystemAndEnglishOnly)
     EXPECT_STREQ(options[0].label.c_str(), "System");
     EXPECT_STREQ(options[1].id.c_str(), "en");
     EXPECT_STREQ(options[1].label.c_str(), "English");
-    const bool english = std::string(stored) == "en";
+    const bool english = std::string(stored) == "en" || std::string(stored) == "en-US" || std::string(stored) == "EN";
     EXPECT_EQ(options[0].selected, !english) << "a stored zh-Hans is shown as System: " << stored;
     EXPECT_EQ(options[1].selected, english) << stored;
   }
