@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Where the lab runs (empty: the repository variable PP_LAB_RUNNER, else codebuild)'
+        description: 'Where the lab runs (empty: the repository variable PP_LAB_RUNNER, else github)'
         type: choice
-        options: ['', codebuild, github]
+        options: ['', github, codebuild]
         default: ''
       suites:
         description: 'Suites to run (space-separated)'

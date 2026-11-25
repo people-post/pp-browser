@@ -1,7 +1,7 @@
 name: lab-run
 
-# One app-lab run on a CodeBuild-hosted runner (pp-runners-infra: project pp-browser, privileged, LARGE) or, with the
-# `runner` input or repository variable PP_LAB_RUNNER set to github, a GitHub-hosted one; called by
+# One app-lab run on a GitHub-hosted runner, or, with the `runner` input or repository variable PP_LAB_RUNNER set to
+# codebuild, on a CodeBuild one (pp-runners-infra: project pp-browser, privileged, LARGE); called by
 # nightly-lab.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
 # docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
 # (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
@@ -49,7 +49,7 @@ on:
         type: number
         default: 220
       runner:
-        description: 'Where the lab job runs: codebuild or github (empty: the repository variable PP_LAB_RUNNER, else codebuild)'
+        description: 'Where the lab job runs: github or codebuild (empty: the repository variable PP_LAB_RUNNER, else github)'
         type: string
         default: ''
 
@@ -79,7 +79,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.enabled == 'true'
     # codebuild: the pp-runners-infra project (privileged, LARGE); github: a hosted ubuntu-24.04 runner.
-    runs-on: ${{ (inputs.runner || vars.PP_LAB_RUNNER) == 'github' && 'ubuntu-24.04' || format('codebuild-pp-browser-{0}-{1}', github.run_id, github.run_attempt) }}
+    runs-on: ${{ (inputs.runner || vars.PP_LAB_RUNNER) == 'codebuild' && format('codebuild-pp-browser-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-24.04' }}
     timeout-minutes: ${{ inputs.job_timeout_minutes }}
     env:
       # Outside the workspace: checkout cleans the workspace.
