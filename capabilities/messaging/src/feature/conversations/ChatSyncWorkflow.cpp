@@ -128,7 +128,9 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
     if (taken++ >= cap) {
       break;
     }
-    if (auto removed = store_.WasMessageRemoved(envelope.message_id); removed && *removed) {
+    if (auto removed = store_.WasMessageRemoved(RemovedMessageSender(envelope.sender_contact_id, local_account_id),
+                                                envelope.message_id);
+        removed && *removed) {
       continue; // its chat was cleared or deleted here: history brings none of it back
     }
     const RelayReceiveOutcome outcome =

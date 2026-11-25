@@ -67,7 +67,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # `drain` polls on from the kept cursor unfiltered, as the older app would, until an empty page with no cursor (a page of unreadable records
                             # alone carries one and goes on); `backfill` then reads the inbox from its
                             # start until an empty page, skipping records the relay stored (created_at) before reread_floor_ms = the file's last write less 10 min
-                            # (chats cleared or deleted before removed_messages existed do not come back; a record with no created_at is taken in); no floor — the file
+                            # (chats cleared or deleted before removed message ids were kept do not come back; a record with no created_at is taken in); no floor — the file
                             # time unreadable, in the future or extreme — takes everything. Never delivers less than keeping the cursor; the keys go when it ends;
                             # no schema_version (a file from before it): 1; a newer one is not read (those inboxes fetch from their oldest message) and never written over
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock; each device its own DEK, also when linked or restored — M027)
@@ -108,11 +108,13 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 9, floor 9 — § Schema
                             # versions; restart_pending: a public session kept through a chat reset — Reset chats, or a profile.db below its floor — starts its next epoch on the next send);
                             # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext)
-                            # removed_messages (message_id PRIMARY KEY, removed_at unix ms) — the ids of the messages of a 1:1 or group
-                            # chat cleared or deleted here (rows newer than 120 days), written before the rows go; a copy that comes
-                            # again (a relay mailbox read from its start, a sibling's sent copy, a peer's history) is dropped before the
-                            # receive pipeline and never stored again. Ids only, plaintext like the other metadata; pruned 91 days after
-                            # removed_at (the relay keeps a record 90 days). Device-only; created on open (additive, no version step);
+                            # removed_message_ids (sender, message_id, removed_at unix ms; PRIMARY KEY (sender, message_id)) — per sender
+                            # (chat-storage D107), the messages of a 1:1 or group chat cleared or deleted here (rows newer than 120 days),
+                            # written before the rows go; sender = the writer's Account ID (in a 1:1 chat, any row but ours is the peer's)
+                            # or local:self for ours. A copy that comes again from that sender (a relay mailbox read from its start, a
+                            # sibling's sent copy, a peer's history) is dropped before the receive pipeline and never stored again.
+                            # Plaintext like the other metadata; pruned 91 days after removed_at (the relay keeps a record 90 days).
+                            # Device-only; created on open (additive, no version step); #724's global removed_messages is dropped on open;
                             # gone with Reset chats and Reset my profile. Delete-for-me / for-everyone keep their row as a tombstone instead
                             # thread_mentions (thread_id, message_id, created_at; PRIMARY KEY (thread_id, message_id)) — a live group message
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
