@@ -374,6 +374,34 @@ TEST(ShellLayoutRmlTest, AFullScreenLayerHasNoScrimFrameOrCloseButtonOnPhones) {
   EXPECT_TRUE(Has(rml, "close_layer(9)"));
 }
 
+// A desktop computer's scanner is edge to edge too, in any window width and with its own class (the phone's rules do
+// not apply); an iPad's expanded layout keeps the framed panel, and another full-screen page (a photo) keeps its frame
+// on a computer.
+TEST(ShellLayoutRmlTest, TheScannerFillsTheWindowOnADesktopComputerOnly) {
+  ShellState state = WithChatPane(LayoutMode::Expanded);
+  OverlayEntry scan;
+  scan.id = 9;
+  scan.key = "qr_scan";
+  scan.full_screen = true;
+  state.overlay_stack.push_back(scan);
+  state.desktop_computer = true;
+  for (const LayoutMode mode : {LayoutMode::Expanded, LayoutMode::Compact}) {
+    state.layout_mode = mode;
+    const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(rml, "shell-layer-full-screen\" id=\"shell-full-screen-9\""));
+    EXPECT_TRUE(Has(rml, "<div class=\"shell-overlay-body shell-layer-computer\" id=\"overlay-body-9\">"));
+    EXPECT_FALSE(Has(rml, "close_layer(9)"));
+  }
+  state.overlay_stack.back().key = "avatar_view";
+  state.layout_mode = LayoutMode::Expanded;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-layer-full-screen"));
+  state.overlay_stack.back().key = "qr_scan";
+  state.desktop_computer = false; // an iPad
+  const std::string ipad = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(ipad, "shell-layer-full-screen"));
+  EXPECT_TRUE(Has(ipad, "close_layer(9)"));
+}
+
 TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;

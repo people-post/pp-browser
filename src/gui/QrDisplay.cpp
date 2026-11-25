@@ -55,6 +55,30 @@ QrDisplay LinkQrDisplayFor(const bool compact, ui::Context* context, const int r
                           static_cast<float>(context->GetDimensions().y) / scale, ratio, reserved_width_dp);
 }
 
+LinkComputerLayout LinkComputerLayoutFor(const float width_dp, const float height_dp) {
+  const int card_height = static_cast<int>(height_dp * 0.96f);
+  const int content_width =
+      std::min(kLinkComputerCardMaxWidthDp, static_cast<int>(width_dp * 0.96f)) - 2 * kLinkComputerPaddingDp;
+  LinkComputerLayout layout;
+  const int room_for_two = content_width - kLinkComputerGapDp - kLinkComputerRightMinDp;
+  layout.two_columns = room_for_two >= kLinkQrDesktopMinDp && card_height >= kLinkComputerTwoColumnsMinHeightDp;
+  const int by_height =
+      card_height - (layout.two_columns ? kLinkComputerReservedTwoColumnsHeightDp : kLinkComputerReservedOneColumnHeightDp);
+  const int by_width = layout.two_columns ? room_for_two : content_width;
+  layout.side_dp = std::max(kLinkQrDesktopMinDp, std::min({kLinkQrDesktopMaxDp, by_height, by_width}));
+  return layout;
+}
+
+LinkComputerLayout LinkComputerLayoutFor(ui::Context* context) {
+  if (context == nullptr) {
+    return LinkComputerLayoutFor(1100.f, 800.f);
+  }
+  const float ratio = context->GetDensityIndependentPixelRatio();
+  const float scale = ratio > 0.f ? ratio : 1.f;
+  return LinkComputerLayoutFor(static_cast<float>(context->GetDimensions().x) / scale,
+                               static_cast<float>(context->GetDimensions().y) / scale);
+}
+
 void ReportQrShown(const QrShape& shape, const QrDisplay& display) {
   MetricsLine("qr.shown")
       .Add("version", shape.version)

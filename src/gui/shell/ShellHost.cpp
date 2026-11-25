@@ -1732,10 +1732,37 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
-  if (state.link_paste_mode) {
+  if (state.link_paste_mode && state_.desktop_computer) {
+    // A desktop computer's link page is sized from the window's height and width (QrDisplay.h LinkComputerLayoutFor).
+    const LinkComputerLayout layout = LinkComputerLayoutFor(context_);
+    state_.link_two_columns = layout.two_columns;
+    state_.pin_gate.link_qr_side = (std::to_string(layout.side_dp) + "dp").c_str();
+  } else if (state.link_paste_mode) {
     state_.pin_gate.link_qr_side = LinkQrDisplayFor(state_.layout_mode == LayoutMode::Compact, context_).css.c_str();
   }
   ReconcileStartupCover();
+}
+
+// A window resized under the link page: the code's side follows the new height and width, and a window that crossed
+// the two-column width gets the other markup. (The page is mounted once; nothing else would redo it.)
+void ShellHost::ResizeComputerLinkPage(ui::Context* context) {
+  if (!state_.desktop_computer || !state_.pin_gate.active || !state_.pin_gate.link_paste_mode ||
+      state_.pin_gate.phrase_flow) {
+    return;
+  }
+  const LinkComputerLayout layout = LinkComputerLayoutFor(context);
+  const ui::String side = (std::to_string(layout.side_dp) + "dp").c_str();
+  const bool columns_changed = layout.two_columns != state_.link_two_columns;
+  if (!columns_changed && side == state_.pin_gate.link_qr_side) {
+    return;
+  }
+  state_.link_two_columns = layout.two_columns;
+  state_.pin_gate.link_qr_side = side;
+  if (columns_changed) {
+    RemountPinGateChrome();
+  } else {
+    DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
+  }
 }
 
 void ShellHost::ReconcileStartupCover() {
@@ -3637,6 +3664,7 @@ void ShellHost::Update(ui::Context* context) {
     if (on_viewport_resized_) {
       on_viewport_resized_();
     }
+    ResizeComputerLinkPage(context);
   }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();

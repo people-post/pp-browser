@@ -34,6 +34,16 @@ the scanner's worker, never more than half its time.
 lists a camera (`IMediaDeviceBackend::HasCamera`; nothing is opened, no permission prompt). The
 link pages offer *Scan* only then; with no camera, *Paste* is their one main button.
 
+**On a desktop computer** (`ShellState::desktop_computer`, any window width; an iPad keeps the framed panel) the scan
+page is the same full-screen layer as the phone's, with its own class (`shell-layer-computer`): the camera fills the
+window, the picture is the whole frame aspect-fit (black bars on the spare sides) with a 70% guide square drawn on it
+(`ElementScanPreview`, `LayoutScanPreview`), the back is a round button at the top left, and one hint line and Cancel sit
+at the bottom. The preview is always the whole frame (up to 1280 on its long edge), also while the scanner hunts at 2x:
+the decoder still alternates between the whole frame and the centre crop, so a code smaller than the crop is read at 1x
+and the guide is a framing aid, not the decoded region. A front or built-in camera's picture is drawn mirrored (the
+camera's `mirror_preview`, as the call's self-view); the pixels handed to the decoder are never mirrored. The larger
+view helps aiming; it does not change the camera's optics or focus.
+
 A detected but unreadable centered code can trigger automatic magnification up to 3x. Native
 iOS rear-camera zoom waits for actual ramp progress before increasing again; unsupported
 cameras use a software viewport. The target retains the code and its quiet-zone margin, and
