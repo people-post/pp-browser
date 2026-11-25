@@ -127,7 +127,8 @@ void SettingsSecurityActions::ChangePin() {
       return;
     }
     // The gate checks the current PIN first (a wrong one stays on that step) and compares the new one with its
-    // repeat; the engine's change is the same as before. The app default PIN is public: no step asks for it.
+    // repeat; the engine's change is the same as before. On "No PIN" the current PIN is the app's known one
+    // (the translation layer, PinDefaults.h): no step asks for it.
     std::optional<SecretText> current_pin;
     if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
       current_pin = SecretText(std::string(kDefaultProfilePin));
@@ -182,7 +183,8 @@ void SettingsSecurityActions::RemovePin() {
         PinVerifyPurpose::RemovePin,
         [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
           AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
-            // A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
+            // "Remove PIN" is a change back to the app's known PIN, which the UI calls "No PIN" (the translation
+            // layer, PinDefaults.h). A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
             Roe<void> changed = commands_.change_pin(pin, SecretText(std::string(kDefaultProfilePin)));
             AppRuntime::PostUI([done, changed = std::move(changed)]() { done(changed); });
           });

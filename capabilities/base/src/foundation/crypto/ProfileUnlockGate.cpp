@@ -407,6 +407,7 @@ void ProfileUnlockGate::CompleteWithPin(const SecretText& pin, const bool create
   RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode, /*remember_grace=*/true);
 }
 
+// "No PIN" chosen (Just continue): the vault is sealed with the app's known PIN — the translation layer, PinDefaults.h.
 void ProfileUnlockGate::CompleteWithDefaultPin() {
   RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/true,
                          /*clear_default_pin=*/false, /*remember_grace=*/false);

@@ -119,6 +119,7 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
   } else {
     state.pin_protection_status = Tr("settings.security.pin_status.custom");
   }
+  // On the app's known PIN the person sees "No PIN" (the translation layer, PinDefaults.h).
   state.pin_protection_is_default = bootstrap.profile_prefs.pin_is_default;
   state.pin_protection_not_setup = false;
   state.security_can_change_pin = pin.unlocked;

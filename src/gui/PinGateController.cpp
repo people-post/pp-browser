@@ -618,6 +618,7 @@ void PinGateController::OnUseDefaultPin() {
     return;
   }
   if (link_flow_) {
+    // "No PIN" at a link: this device's vault gets the app's known PIN (the translation layer, PinDefaults.h).
     pending_link_pin_ = std::string(kDefaultProfilePin);
     pending_link_default_pin_ = true;
     ShowLinkPaste();
