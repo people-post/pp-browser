@@ -3208,21 +3208,26 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.shell-layer-compact .settings-step-num {
+.settings-step-num {
   background-color: #007aff;
   color: #ffffff;
 }
 
-.shell-layer-compact .settings-step-text {
+.link-step--later .settings-step-num {
+  background-color: #7878801f;
+  color: #3c3c4399;
+}
+
+.settings-step-text {
   color: #000000;
+}
+
+.link-step--later .settings-step-text {
+  color: #3c3c4399;
 }
 
 .shell-layer-compact .settings-step {
   border-top: 1dp #3c3c434a;
-}
-
-.shell-layer-compact .settings-transfer-lead {
-  color: #3c3c4399;
 }
 
 /* Linked devices: the quiet icon, the sentence, the grey lines. */

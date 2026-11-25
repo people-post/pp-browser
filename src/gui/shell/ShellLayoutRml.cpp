@@ -478,7 +478,11 @@ std::string ShellLayoutRml::PinGate() const {
     out << "<div class=\"bar-material bar-material--frost shell-pin-gate-material\"></div>";
   }
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
-  out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
+  // The link page's message is its step 1 (a numbered line); every other page keeps the plain message.
+  out << "<p class=\"text shell-dialog-message\" data-if=\"!pin_gate_link_paste_mode || pin_gate_phrase_flow\">"
+         "{{pin_gate_message}}</p>";
+  out << "<div class=\"link-step\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow\">"
+         "<div class=\"settings-step-num\">1</div><p class=\"text settings-step-text\">{{pin_gate_message}}</p></div>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
   out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_biometric_hint != ''\">"
          "{{pin_gate_biometric_hint}}</p>";
@@ -513,18 +517,29 @@ std::string ShellLayoutRml::PinGate() const {
   out << "</div>";
   out << "<div class=\"shell-pin-gate-return\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\">";
-  out << "<p class=\"text shell-pin-gate-step\">" << Tr("pin.link_return_step") << "</p>";
+  out << "<div class=\"link-step shell-pin-gate-step\"><div class=\"settings-step-num\">2</div>"
+         "<p class=\"text settings-step-text\">"
+      << Tr("pin.link_return_step") << "</p></div>";
+  // A computer (the expanded layout): its camera cannot read a phone screen, so Paste leads and Scan is the second
+  // choice, with the way to carry the text over in one caption. A phone keeps Scan first.
+  const bool computer = state_.layout_mode != LayoutMode::Compact;
+  const std::string scan_button =
+      std::string("<button class=\"btn ") + (computer ? "btn-secondary" : "btn-primary") +
+      " shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" data-event-click=\"pin_gate_scan_reply()\">" +
+      Tr("pin.link_scan_reply") + "</button>";
+  const std::string paste_with_scan =
+      std::string("<button class=\"btn ") + (computer ? "btn-primary" : "btn-secondary") +
+      " shell-pin-gate-paste\" data-if=\"pin_gate_link_can_scan\" data-event-click=\"pin_gate_paste()\">" +
+      Tr("pin.paste_button") + "</button>";
   out << "<div class=\"link-btn-row\">";
-  out << "<button class=\"btn btn-primary shell-pin-gate-scan\" data-if=\"pin_gate_link_can_scan\" "
-         "data-event-click=\"pin_gate_scan_reply()\">"
-      << Tr("pin.link_scan_reply") << "</button>";
-  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_can_scan\" "
-         "data-event-click=\"pin_gate_paste()\">"
-      << Tr("pin.paste_button") << "</button>";
+  out << (computer ? paste_with_scan + scan_button : scan_button + paste_with_scan);
   out << "<button class=\"btn btn-primary shell-pin-gate-paste\" data-if=\"!pin_gate_link_can_scan\" "
          "data-event-click=\"pin_gate_paste()\">"
       << Tr("pin.paste_button") << "</button>";
   out << "</div>";
+  if (computer) {
+    out << "<p class=\"text muted shell-pin-gate-computer-note\">" << Tr("pin.link_computer_note") << "</p>";
+  }
   out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && "
          "!pin_gate_payload_hidden\" "

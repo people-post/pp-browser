@@ -7715,7 +7715,13 @@ input.checkbox {
 
 .shell-pin-gate-step {
   margin: 0 0 8dp 0;
-  font-weight: bold;
+}
+
+/* The computer's caption under Paste / Scan: small, grey, centred; it wraps. */
+.shell-pin-gate-computer-note {
+  margin: 10dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
   text-align: center;
 }
 
@@ -14120,14 +14126,8 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
-/* Me > Devices & transfer > Link a new device (phones): lead line, the 50dp scan and paste buttons (the grouped-page
+/* Me > Devices & transfer > Link a new device (phones): the numbered steps, the 50dp scan and paste buttons (the grouped-page
    .btn), the framed reply box with its QR code and small "copy" button, then the numbered steps and the reset note. */
-.shell-layer-compact .settings-transfer-lead {
-  margin: 20dp 32dp 0 32dp;
-  font-size: 15dp;
-  line-height: 21dp;
-}
-
 .shell-layer-compact .settings-copied-box {
   margin: 16dp 16dp 0 16dp;
   padding: 16dp 18dp 8dp 18dp;
@@ -14182,6 +14182,20 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .settings-link-reply {
   align-items: center;
+}
+
+/* The reply's note: one grey line (two on a narrow phone) under the validity line, centred. */
+.settings-link-note {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+/* Copy as text and Send… side by side, as wide as the code. */
+.link-btn-row--reply {
+  max-width: 360dp;
+  margin: 4dp 0 0 0;
 }
 
 /* The reply's two buttons: "Copy as text" quiet, "Done" the one main button; 50dp rows, as wide as the code. */
@@ -14242,24 +14256,57 @@ textarea:composing ~ .prompt-composer-label,
   border-top-width: 0;
 }
 
-.shell-layer-compact .settings-step-num {
-  flex: 0 0 26dp;
-  width: 26dp;
-  height: 26dp;
-  margin: 0 12dp 0 16dp;
-  border-radius: 13dp;
-  font-size: 14dp;
-  line-height: 26dp;
+/* A numbered step: a small round marker and one short line (the link pages: the new device's two steps, the main
+   device's three, the reply's step 3). The main device's list is left-aligned; on the new device's card it is centred. */
+.link-step {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 6dp 0 0 0;
+}
+
+.settings-step-num {
+  flex: 0 0 24dp;
+  width: 24dp;
+  height: 24dp;
+  margin: 0 10dp 0 0;
+  border-radius: 12dp;
+  font-size: 13dp;
+  line-height: 24dp;
   font-weight: bold;
   text-align: center;
 }
 
-.shell-layer-compact .settings-step-text {
-  flex: 1;
+.settings-step-text {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 16dp;
-  line-height: 22dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.settings-transfer-steps {
+  margin: 12dp 0 0 0;
+}
+
+.shell-layer-compact .settings-transfer-steps {
+  margin: 20dp 32dp 0 32dp;
+}
+
+.settings-transfer-steps .link-step {
+  justify-content: flex-start;
+}
+
+/* The reply box's step 3 is its title. */
+.link-step--title {
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.link-step--title .settings-copied-title {
+  font-size: 17dp;
+  line-height: 24dp;
 }
 
 /* A grey line with its "?" right after it (the link page's note, a linked phone's card). */

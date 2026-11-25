@@ -22,6 +22,10 @@
 
 namespace pbr {
 
+bool PlatformCanShareText() {
+  return true;
+}
+
 bool PlatformShareText(SDL_Window* window, const std::string& text, const ShareAnchor anchor) {
   if (window == nullptr || text.empty()) {
     return false;

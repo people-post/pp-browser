@@ -46,21 +46,23 @@ TEST(TransferPageMarkupTest, TheNewStringsExistInBothLanguagesAndQuoteTheRealOne
     const std::string text = Asset(locale);
     for (const char* key : {"settings.security.link_device.scan_button", "settings.security.link_device.paste_button",
                             "settings.security.link_device.check_title", "settings.security.link_device.check_message",
-                            "settings.security.link_device.check_ok", "settings.security.link_device.reply_title",
+                            "settings.security.link_device.check_ok", "settings.security.link_device.step_1",
+                            "settings.security.link_device.step_2", "settings.security.link_device.step_3",
+                            "settings.security.link_device.send_reply", "settings.security.link_device.reply_note",
                             "settings.security.link_device.copy_reply", "settings.security.link_device.reply_copied",
-                            "settings.security.link_device.lead", "settings.security.link_device.copied_valid",
-                            "settings.security.link_device.done", "settings.security.link_device.phone_note"}) {
+                            "settings.security.link_device.copied_valid", "settings.security.link_device.done",
+                            "settings.security.link_device.phone_note"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
   const std::string zh = Asset("locales/zh-Hans.json");
   const std::string en = Asset("locales/en.json");
-  // The lead quotes the new device's real string.
-  EXPECT_NE(zh.find("\"pin.identity_link\": \"我在别的设备上已经有账号\""), std::string::npos);
-  EXPECT_NE(zh.find("选“我在别的设备上已经有账号”"), std::string::npos);
-  EXPECT_NE(en.find("“I already have an account on another device”"), std::string::npos);
-  // One lead line, one short help line (desktop) and one grey note; the three-step list and the two extra captions
-  // of the desktop are gone (the lead and the note say the same, and the page was too long).
+  // Three one-line steps (numbered by the page), one short help line (desktop) and one grey note; the old lead, the
+  // reply box's title and the old step keys are gone.
+  for (const char* orphan : {"link_device.lead\"", "link_device.reply_title\""}) {
+    EXPECT_EQ(zh.find(orphan), std::string::npos) << orphan;
+    EXPECT_EQ(en.find(orphan), std::string::npos) << orphan;
+  }
   EXPECT_NE(zh.find("\"新设备上看不到以前的聊天记录。已有别的账号的设备要先重置。\""), std::string::npos);
   EXPECT_NE(en.find("\"Earlier chats do not appear on the new device. A device that already has another account must "
                     "be reset first.\""),
@@ -89,12 +91,14 @@ TEST(TransferPageMarkupTest, TheScanAndPasteButtonsAndTheReplyBoxAreOnThePage) {
             std::string::npos);
   EXPECT_EQ(rml.find("{{recovery"), std::string::npos);
   EXPECT_EQ(rml.find("{{export"), std::string::npos);
-  // The grey note with its one "?" (same event as the main device's hero); no steps list over the lead.
+  // The grey note with its one "?" (same event as the main device's hero); the three steps over the buttons.
   const size_t note = rml.find("{{i18n:settings.security.link_device.phone_note}}");
   ASSERT_NE(note, std::string::npos);
   EXPECT_NE(rml.find("ask_setting_help('settings.security.transfer_row')", note), std::string::npos);
   EXPECT_EQ(rml.find("ask_setting_help", rml.find("ask_setting_help") + 1), std::string::npos) << "one \"?\"";
-  EXPECT_EQ(rml.find("settings-transfer-steps"), std::string::npos);
+  EXPECT_NE(rml.find("settings-transfer-steps"), std::string::npos) << "the three numbered steps";
+  EXPECT_NE(rml.find("data-event-click=\"send_link_reply()\""), std::string::npos) << "Send… beside Copy";
+  EXPECT_NE(rml.find("data-if=\"link_can_share\""), std::string::npos) << "only where the system has a share sheet";
   // The reply ends in one main button, "Done"; the code takes its side from the page.
   EXPECT_NE(rml.find("data-style-width=\"link_qr_side\""), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:settings.security.link_device.done}}"), std::string::npos);

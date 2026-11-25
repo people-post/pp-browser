@@ -1,12 +1,26 @@
 <!-- Me > Linked devices > Link a new device (multi-device M027; inline on desktop, its own page on phones, where the page
      title says what the heading says): the new device's code, scanned or pasted; the 4 digits checked against the new
      device's (a dialog); then the reply as a QR code for the new device, and the same as text to copy. One main button
-     at a time: Scan when a camera is listed (Paste is then the second choice), else Paste; "Done" on the reply. -->
+     at a time: Scan when a camera is listed (Paste is then the second choice), else Paste; "Done" on the reply. The three
+     steps are numbered (the first is the one the person is on until the reply shows, which is step 3 in its box). -->
 <div class="stack settings-actions settings-transfer">
   <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
   <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
   <div class="settings-transfer-copy" data-if="security_can_export_link && !own_devices_not_main && !link_reply_shown">
-    <p class="text muted settings-transfer-lead">{{move_lead_label}}</p>
+    <div class="settings-transfer-steps">
+      <div class="link-step">
+        <div class="settings-step-num">1</div>
+        <p class="text settings-step-text">{{i18n:settings.security.link_device.step_1}}</p>
+      </div>
+      <div class="link-step link-step--later">
+        <div class="settings-step-num">2</div>
+        <p class="text settings-step-text">{{i18n:settings.security.link_device.step_2}}</p>
+      </div>
+      <div class="link-step link-step--later">
+        <div class="settings-step-num">3</div>
+        <p class="text settings-step-text">{{i18n:settings.security.link_device.step_3}}</p>
+      </div>
+    </div>
     <div class="link-btn-row">
       <button class="btn btn-primary settings-transfer-btn" type="button" data-if="link_can_scan"
               data-event-click="link_scan_offer()">{{i18n:settings.security.link_device.scan_button}}</button>
@@ -19,12 +33,20 @@
   <!-- The reply: dark on white whatever the theme (lib/ui/QrSvg). Only the new device's one-time key opens it, so the
        text may go anywhere. -->
   <div class="settings-copied-box settings-link-reply" data-if="link_reply_shown">
-    <p class="settings-copied-title">{{i18n:settings.security.link_device.reply_title}}</p>
+    <div class="link-step link-step--title">
+      <div class="settings-step-num">3</div>
+      <p class="settings-copied-title settings-step-text">{{i18n:settings.security.link_device.step_3}}</p>
+    </div>
     <svg class="settings-link-qr" viewBox="0 0 100 100" data-style-width="link_qr_side" data-style-height="link_qr_side"
          data-rml="link_reply_qr_rml"></svg>
     <p class="settings-copied-sub">{{move_valid_label}}</p>
-    <button class="btn btn-ghost settings-link-btn" type="button"
-            data-event-click="copy_link_reply()">{{i18n:settings.security.link_device.copy_reply}}</button>
+    <p class="text muted settings-link-note">{{i18n:settings.security.link_device.reply_note}}</p>
+    <div class="link-btn-row link-btn-row--reply">
+      <button class="btn btn-ghost settings-link-btn" type="button"
+              data-event-click="copy_link_reply()">{{i18n:settings.security.link_device.copy_reply}}</button>
+      <button class="btn btn-ghost settings-link-btn" type="button" data-if="link_can_share"
+              data-event-click="send_link_reply()">{{i18n:settings.security.link_device.send_reply}}</button>
+    </div>
     <button class="btn btn-primary settings-link-btn" type="button"
             data-event-click="clear_link_reply()">{{i18n:settings.security.link_device.done}}</button>
   </div>
