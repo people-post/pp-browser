@@ -591,3 +591,20 @@ profile:
   `internal/<n>` upload is the store app's build and shares its container; the guard costs nothing once it does.
 **Cost:** a tester build offers no Production row; a tester with prod data on the device starts in a new staging (or
 dev) profile and has to reinstall the store app to see that data.
+
+## RC023 — pp-ledger has release branches; its pins are vX.Y.Z
+
+**Date:** 2026-11-24
+**Status:** Accepted (Hongwei, 2026-11-24). Amends [DESIGN § Libraries and numbering](DESIGN.md#libraries-and-numbering)
+for pp-ledger; the pp-cpp-* libraries are unchanged. Its own record:
+[pp-ledger projects/release](https://github.com/people-post/pp-ledger/blob/main/projects/release/DECISIONS.md) (RL001–RL007).
+**Decision:** pp-ledger releases as a product, as pp-node does: `main` and one `release/X.Y` per minor, candidates
+`vX.Y.Z-rc.N` built once and promoted to `vX.Y.Z`, the same backport bot and release-branch checks. Its first release
+is **2.0.0**; the `release/vX.Y.Z` tags before it were development pins and are retired. pp-browser's `main` may pin a
+pp-ledger candidate or release; a pp-node release branch pins a pp-ledger release, and a ledger fix it needs comes as
+a pp-ledger patch release from the branch it pins.
+**Rationale:** pp-ledger is a network's software as well as a library: operators run its nodes, and once its network
+launches the chain's formats are frozen and rule changes switch on at a signed epoch (pp-ledger RL006). Main plus tags
+would make every fix to a running network carry everything since its release.
+**Alternatives:** Keep pp-ledger with the libraries (main plus tags); a library release branch only when a product
+branch needs one (the current rule for pp-cpp-*: too late for a network's first fix).
