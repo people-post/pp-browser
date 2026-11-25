@@ -3,7 +3,7 @@ name: lab-smoke
 # Lab smoke (docs/ops/TEST_STRATEGY.md § Lab smoke; release-compatibility RC013): the app lab's `smoke` scenarios
 # (`pp_local_test.sh run --suite app --tags smoke`: register, find someone, a first message, a group, a call, a
 # group call, a push wake, a linked device, a restore, the relay's identity) on a CodeBuild runner after every merge to
-# main, as nightly-lab.yml runs its suites (lab-run.yml). On demand (Run workflow) it takes any tags or a --changed
+# main, as lab-nightly.yml runs its suites (lab-run.yml). On demand (Run workflow) it takes any tags or a --changed
 # range instead: the scenarios a branch touches.
 #
 # Never on pull requests and never a required check: it runs after the merge and blocks nothing; a failure shows on

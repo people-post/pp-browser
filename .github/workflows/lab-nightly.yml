@@ -1,4 +1,4 @@
-name: nightly-lab
+name: lab-nightly
 
 # The app lab every night on main (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
 # `--suite app-nat` on a CodeBuild-hosted runner (lab-run.yml: build, run, report). A scenario that fails twice (one
@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nightly-lab
+  group: lab-nightly
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
     secrets: inherit
     with:
       name: Nightly lab
-      artifact: nightly-lab
+      artifact: lab-nightly
       suites: ${{ inputs.suites || 'app app-nat' }}
       only: ${{ inputs.only || '' }}
       tags: ${{ inputs.tags || '' }}

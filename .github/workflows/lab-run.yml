@@ -2,7 +2,7 @@ name: lab-run
 
 # One app-lab run on a GitHub-hosted runner, or, with the `runner` input or repository variable PP_LAB_RUNNER set to
 # codebuild, on a CodeBuild one (pp-runners-infra: project pp-browser, privileged, LARGE); called by
-# nightly-lab.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
+# lab-nightly.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
 # docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
 # (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
 # from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).

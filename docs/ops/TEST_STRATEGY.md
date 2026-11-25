@@ -139,7 +139,7 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 
 ### Nightly lab
 
-[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report.
+[`lab-nightly.yml`](../../.github/workflows/lab-nightly.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → lab-nightly → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report.
 
 - **Runner:** an ephemeral CodeBuild-hosted runner (project `pp-browser` in pp-runners-infra: privileged for Docker, `BUILD_GENERAL1_LARGE`, 240 min job timeout), started by the `codebuild-pp-browser-<run id>-<attempt>` label. Nothing is kept on the runner between runs: ccache lives in the Actions cache (saved by the nightly only) and the relay checkout and build are fresh each time.
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
@@ -302,7 +302,7 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 | Paths | Tags |
 |-------|------|
 | the lab: `pp_app_lab.py`, `app_lab_select.py`, `pp_local_test.sh`, `docker-compose.app-lab*`, `app-lab-*`, `src/app/node/tools/app_probe/` | all |
-| `lab-run.yml`, `lab-smoke.yml`, `nightly-lab.yml` | `smoke` |
+| `lab-run.yml`, `lab-smoke.yml`, `lab-nightly.yml` | `smoke` |
 | docs: `docs/`, `projects/`, `design/`, `reports/`, `*.md` | none |
 | unit tests and other suites: `*/tests/*`, `*/testing/*`, other `scripts/test/` | none |
 | GUI and AI: `src/gui/`, `src/lib/ui/`, `src/common/ui/`, `src/lib/ai/`, `src/feature/ai/`, `src/lib/scan/`, `assets/` | none |
