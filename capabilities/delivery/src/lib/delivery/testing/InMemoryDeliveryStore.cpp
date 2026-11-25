@@ -96,10 +96,9 @@ Thread InMemoryDeliveryStore::UpsertThreadLocked(const Thread& thread) {
 }
 
 Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessage& message) {
-  const auto thread = threads_.find(message.thread_id);
-  const std::string sender = thread != threads_.end()
-                                 ? RemovedMessageSenderOfRow(thread->second, message.sender_contact_id)
-                                 : message.sender_contact_id;
+  const auto chat = threads_.find(message.thread_id);
+  const std::string sender = chat != threads_.end() ? RemovedMessageSenderOfRow(chat->second, message.sender_contact_id)
+                                                    : message.sender_contact_id;
   if (removed_.count({sender, message.id}) > 0) {
     return Error("Message was removed here with its chat");
   }
