@@ -280,6 +280,7 @@ void ChatPresenter::BindFacade(ConversationsFacade* facade) {
     AbortForward(); // the messaging it sends through is gone or replaced
   }
   facade_ = facade;
+  facade_ports_.reset();
   prefs_.reset();
 }
 
@@ -1738,6 +1739,11 @@ ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
   ports.send_group = [facade](const std::string& thread_id, const std::string& text, SendRelayOptions options) {
     return facade->SendGroupMessage(thread_id, text, std::move(options));
   };
+  ports.messaging_ready = [facade]() { return facade->Snapshot().messaging_ready; };
+  ports.contact_can_receive = [facade](const std::string& contact_id) {
+    auto contact = facade->GetContact(contact_id);
+    return contact && *contact && (*contact)->trust != TrustLevel::Blocked;
+  };
   return ports;
 }
 
@@ -1746,15 +1752,22 @@ constexpr size_t kForwardSendsPerBatch = 10;
 
 } // namespace
 
-ForwardPorts ChatPresenter::ForwardPortsNow() {
+const ForwardPorts& ChatPresenter::ForwardPortsNow() {
+  static const ForwardPorts kNone;
   if (forward_ports_) {
     return *forward_ports_;
   }
-  return facade_ ? FacadeForwardPorts(facade_) : ForwardPorts{};
+  if (!facade_) {
+    return kNone;
+  }
+  if (!facade_ports_) {
+    facade_ports_ = FacadeForwardPorts(facade_);
+  }
+  return *facade_ports_;
 }
 
 std::vector<ForwardTarget> ChatPresenter::ForwardTargets() {
-  const ForwardPorts ports = ForwardPortsNow();
+  const ForwardPorts& ports = ForwardPortsNow();
   std::vector<ForwardTarget> targets;
   if (!ports.candidates) {
     return targets;
@@ -1776,22 +1789,8 @@ std::vector<ForwardTarget> ChatPresenter::ForwardTargets() {
   return OrderForwardTargets(std::move(targets));
 }
 
-std::vector<std::string> ChatPresenter::ForwardTargetThreads(const std::vector<ForwardTarget>& chosen) {
-  const ForwardPorts ports = ForwardPortsNow();
-  std::vector<std::string> threads;
-  for (const ForwardTarget& target : chosen) {
-    if (!target.thread_id.empty()) {
-      threads.push_back(target.thread_id);
-    } else {
-      // A contact with no chat yet: the chat is made now. Empty when it cannot be (counted as a chat not reached).
-      threads.push_back(ports.direct_thread_of ? ports.direct_thread_of(target.contact_id) : std::string());
-    }
-  }
-  return threads;
-}
-
 std::string ChatPresenter::ForwardPreview(const std::function<std::string(size_t count)>& count_text) {
-  const ForwardPorts ports = ForwardPortsNow();
+  const ForwardPorts& ports = ForwardPortsNow();
   std::vector<ThreadMessage> messages;
   for (const std::string& id : forward_selection_.Ids()) {
     if (std::optional<ThreadMessage> row =
@@ -1803,7 +1802,7 @@ std::string ChatPresenter::ForwardPreview(const std::function<std::string(size_t
 }
 
 bool ChatPresenter::CanForward(const std::string& message_id) {
-  const ForwardPorts ports = ForwardPortsNow();
+  const ForwardPorts& ports = ForwardPortsNow();
   if (message_id.empty() || !ports.active_thread || !ports.get_message) {
     return false;
   }
@@ -1829,7 +1828,7 @@ ChatPresenter::ForwardTick ChatPresenter::ToggleForwardSelection(const std::stri
     return ForwardTick::Deselected;
   }
   // Chosen from the chat that choosing began in, whatever else is open now.
-  const ForwardPorts ports = ForwardPortsNow();
+  const ForwardPorts& ports = ForwardPortsNow();
   const std::optional<ThreadMessage> row =
       ports.get_message ? ports.get_message(forward_selection_.Thread(), message_id) : std::nullopt;
   if (!row || !CanForwardMessage(*row)) {
@@ -1840,6 +1839,17 @@ ChatPresenter::ForwardTick ChatPresenter::ToggleForwardSelection(const std::stri
 }
 
 void ChatPresenter::ForwardSelected(std::vector<std::string> targets, std::function<void(const ForwardResult&)> done) {
+  std::vector<ForwardTarget> chats;
+  for (std::string& id : targets) {
+    ForwardTarget target;
+    target.thread_id = std::move(id);
+    chats.push_back(std::move(target));
+  }
+  ForwardSelectedTo(std::move(chats), std::move(done));
+}
+
+void ChatPresenter::ForwardSelectedTo(std::vector<ForwardTarget> targets,
+                                      std::function<void(const ForwardResult&)> done) {
   const auto refuse = [&done]() {
     ForwardResult none;
     none.nothing_sent = true;
@@ -1855,7 +1865,8 @@ void ChatPresenter::ForwardSelected(std::vector<std::string> targets, std::funct
     return;
   }
   ForwardPorts ports = ForwardPortsNow();
-  if (!ports.get_message || !ports.target_of || !ports.send_user || !ports.send_group) {
+  if (!ports.get_message || !ports.target_of || !ports.send_user || !ports.send_group ||
+      (ports.messaging_ready && !ports.messaging_ready())) {
     refuse();
     return;
   }
@@ -1870,14 +1881,30 @@ void ChatPresenter::PostForwardBatch(const uint64_t epoch, std::shared_ptr<Forwa
     if (!alive.lock() || epoch != forward_epoch_) {
       return; // stopped from outside: no port is called, and nobody is told (AbortForward kept what to say)
     }
-    const auto valid = [this, epoch]() { return epoch == forward_epoch_; };
+    // Asked before every send, not only when a screen noticed: a lock or a teardown that came before this queued
+    // batch got its turn stops it here, and no send is called into a messaging that cannot take it.
+    bool messaging_lost = false;
+    const auto valid = [this, epoch, &messaging_lost]() {
+      if (epoch != forward_epoch_) {
+        return false;
+      }
+      const ForwardPorts& now = ForwardPortsNow();
+      if (now.messaging_ready && !now.messaging_ready()) {
+        messaging_lost = true;
+        return false;
+      }
+      return true;
+    };
     const ForwardRun::State state = run->Step(kForwardSendsPerBatch, valid);
     if (state == ForwardRun::State::Running) {
       PostForwardBatch(epoch, std::move(run), std::move(done));
       return;
     }
     if (state == ForwardRun::State::Aborted) {
-      return; // AbortForward has already taken the run away
+      if (messaging_lost) {
+        AbortForward(); // what was sent stays, "only part was forwarded" is told on the next chat
+      }
+      return; // else AbortForward has already taken the run away
     }
     const ForwardResult result = run->Result();
     forward_run_.reset();
@@ -1916,7 +1943,7 @@ bool ChatPresenter::TakeForwardInterrupted() {
   if (!forward_interrupted_) {
     return false;
   }
-  const ForwardPorts ports = ForwardPortsNow();
+  const ForwardPorts& ports = ForwardPortsNow();
   const std::string account = ports.account_id ? ports.account_id() : std::string();
   if (account != forward_interrupted_account_) {
     return false; // another account (or none yet) is looking: it stays for the account it belongs to

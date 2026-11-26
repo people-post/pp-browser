@@ -80,6 +80,10 @@ void ForwardFlow::Changed() {
 }
 
 void ForwardFlow::Begin(const std::string& message_id) {
+  if (presenter_.Forwarding()) {
+    Show(Tr("chat.send.still_trying")); // the earlier forward is still being queued: the reason, not "cannot"
+    return;
+  }
   if (!presenter_.BeginForwardSelection(message_id)) {
     Show(Tr("chat.forward.cannot"));
     return;
@@ -147,8 +151,8 @@ void ForwardFlow::OnChosen(std::vector<ForwardTarget> chosen) {
     Changed();
     return;
   }
-  presenter_.ForwardSelected(presenter_.ForwardTargetThreads(chosen),
-                             [this](const ForwardResult& result) { Show(ForwardResultText(result)); });
+  presenter_.ForwardSelectedTo(std::move(chosen),
+                               [this](const ForwardResult& result) { Show(ForwardResultText(result)); });
   Changed(); // choosing is over at once; the pill follows when everything is queued
 }
 
@@ -175,7 +179,9 @@ void ForwardFlow::Leave() {
 }
 
 void ForwardFlow::OnThreadGone(const std::string& thread_id) {
-  if ((Selecting() || picker_open_) && source_thread_ == thread_id) {
+  // The presenter has usually forgotten the selection already (it does so when it closes the chat), so this goes by the
+  // chat the flow began in and always draws the bars again.
+  if (source_thread_ == thread_id) {
     Leave();
   }
 }

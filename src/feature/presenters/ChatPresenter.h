@@ -654,8 +654,6 @@ public:
    * conversation, no PP support chat, not ourselves, no blocked contact, no group we cannot post in.
    */
   std::vector<ForwardTarget> ForwardTargets();
-  /** The chat ids of `chosen`, in order; a person with no chat yet gets one made now (empty id: it could not be made). */
-  std::vector<std::string> ForwardTargetThreads(const std::vector<ForwardTarget>& chosen);
   /** The open chat's message can be forwarded (CanForwardMessage on the row as stored now). */
   bool CanForward(const std::string& message_id);
   /** Starts choosing messages in the open chat with `message_id` ticked; false (nothing started) when it cannot be forwarded. */
@@ -678,6 +676,11 @@ public:
    * stopped (AbortForward, sign-out, messaging torn down): then it never runs and nothing more is sent.
    */
   void ForwardSelected(std::vector<std::string> targets, std::function<void(const ForwardResult&)> done);
+  /**
+   * The same for the picker's answer: a person with no chat yet gets one only when the send reaches them, after the
+   * send-time re-check (a refused forward makes no chat).
+   */
+  void ForwardSelectedTo(std::vector<ForwardTarget> targets, std::function<void(const ForwardResult&)> done);
   /** A forward is being sent now. */
   bool Forwarding() const { return forward_run_ != nullptr; }
   /**
@@ -738,7 +741,9 @@ private:
   std::string forward_interrupted_account_;
   std::optional<ForwardPorts> forward_ports_;
   std::function<void(std::function<void()>)> forward_post_;
-  ForwardPorts ForwardPortsNow();
+  /** The facade's ports, built once (every row and every redraw asks); a test's own ports win. */
+  const ForwardPorts& ForwardPortsNow();
+  std::optional<ForwardPorts> facade_ports_;
   void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run,
                         std::function<void(const ForwardResult&)> done);
 };

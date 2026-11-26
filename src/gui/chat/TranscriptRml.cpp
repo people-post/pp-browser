@@ -5,6 +5,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
+#include "feature/presenters/MessageForward.h"
 #include "gui/chat/VoiceBubble.h"
 #include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
@@ -1355,6 +1356,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
                              : RowClass(message.sender_contact_id).c_str();
     row.mentions_me = mentions_me;
     row.has_reactions = !entry.reactions.empty();
+    row.forwardable = CanForwardMessage(message); // choosing messages to forward reads this, not the store
     if (!entry.control) {
       row.time_label = EditedTimeLabel(message, MessageTimeLabel(message.timestamp, now_ms)).c_str();
     }

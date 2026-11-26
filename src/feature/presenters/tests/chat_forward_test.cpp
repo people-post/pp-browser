@@ -70,6 +70,13 @@ struct FakeMessaging {
   std::function<void(size_t)> during_send;
   /** Message texts the messaging layer refuses in every chat. */
   std::set<std::string> refused_texts;
+  /** Messaging can take a send (false: locked or torn down). */
+  bool ready = true;
+  /** Contacts we may no longer write to (blocked meanwhile). */
+  std::set<std::string> blocked_contacts;
+  /** The chats made for people who had none, and the order against the sends: "made:<contact>" / "send:<thread>". */
+  std::vector<std::string> made;
+  std::vector<std::string> log;
 
   void Add(const ThreadMessage& row) { rows[row.id] = row; }
 
@@ -85,6 +92,17 @@ struct FakeMessaging {
       return it == targets.end() ? ForwardTargetKind::Unavailable : it->second;
     };
     ports.account_id = [this]() { return account; };
+    ports.messaging_ready = [this]() { return ready; };
+    ports.contact_can_receive = [this](const std::string& contact) { return blocked_contacts.count(contact) == 0; };
+    ports.direct_thread_of = [this](const std::string& contact) {
+      if (contact.rfind("c-bad", 0) == 0) {
+        return std::string();
+      }
+      made.push_back(contact);
+      log.push_back("made:" + contact);
+      targets["made-" + contact] = ForwardTargetKind::Direct;
+      return "made-" + contact;
+    };
     ports.send_user = [this](const std::string& thread, const std::string& text, SendRelayOptions options) {
       return Record("user", thread, text, options);
     };
@@ -97,6 +115,7 @@ struct FakeMessaging {
   Roe<ThreadMessage> Record(const std::string& method, const std::string& thread, const std::string& text,
                             const SendRelayOptions& options) {
     calls.push_back({method, thread, text, options.content_type, options.payload_json});
+    log.push_back("send:" + thread);
     if (during_send) {
       during_send(calls.size());
     }
@@ -668,13 +687,113 @@ TEST_F(ChatForwardTest, TheSupportChatIsRefusedAtSendTimeToo) {
   EXPECT_EQ(chats.TextsTo("t-bob").size(), 1u);
 }
 
-TEST_F(ChatForwardTest, APersonWithNoChatYetGetsOneWhenChosenAndAFailureIsAnEmptyId) {
-  ForwardPorts ports = chats.Ports();
-  ports.direct_thread_of = [](const std::string& contact) { return contact == "c-ok" ? std::string("made") : ""; };
-  presenter.SetForwardPortsForTest(ports);
-  EXPECT_EQ(presenter.ForwardTargetThreads(
-                {Chat("t1", "c1", "A", false, 1), Chat("", "c-ok", "B", false, 0), Chat("", "c-bad", "C", false, 0)}),
-            (std::vector<std::string>{"t1", "made", ""}));
+TEST_F(ChatForwardTest, APersonWithNoChatYetGetsOneRightBeforeTheSendsToThem) {
+  AddTexts(2);
+  std::optional<ForwardResult> result;
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  presenter.ToggleForwardSelection("m2");
+  presenter.ForwardSelectedTo({Chat("bob", "c1", "A", false, 1), Chat("", "c-ok", "B", false, 0)},
+                              [&result](const ForwardResult& r) { result = r; });
+  EXPECT_TRUE(chats.made.empty()) << "nothing is made while the forward is only asked for";
+  Drain();
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->forwarded, 4u);
+  EXPECT_EQ(chats.log,
+            (std::vector<std::string>{"send:bob", "send:bob", "made:c-ok", "send:made-c-ok", "send:made-c-ok"}))
+      << "the chat is made after the earlier chats are done and right before the sends to it";
+}
+
+TEST_F(ChatForwardTest, ARefusedForwardMakesNoChatForAnyone) {
+  AddTexts(1);
+  // More than nine chats: refused before anything.
+  std::vector<ForwardTarget> ten;
+  for (int i = 0; i < 10; ++i) {
+    ten.push_back(Chat("", "c-new" + std::to_string(i), "P", false, 0));
+  }
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  std::optional<ForwardResult> refused;
+  presenter.ForwardSelectedTo(ten, [&refused](const ForwardResult& r) { refused = r; });
+  Drain();
+  ASSERT_TRUE(refused);
+  EXPECT_TRUE(refused->nothing_sent);
+  EXPECT_TRUE(chats.made.empty()) << "ten chats: no chat is made for any of them";
+
+  // One forward still sending: a second is refused and makes nothing either.
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  presenter.ForwardSelectedTo({Chat("bob", "c1", "A", false, 1)}, nullptr); // runs on the posted batch
+  chats.Add(TextRow("m2", "text 2", 2));
+  ASSERT_FALSE(presenter.BeginForwardSelection("m2")) << "no new choosing while one is sending";
+  Drain();
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1")); // the first is done now
+  presenter.ForwardSelectedTo({Chat("bob", "c1", "A", false, 1), Chat("bob", "c1", "A", false, 1)}, nullptr);
+  Drain();
+
+  // A contact blocked while choosing: skipped, no chat made.
+  chats.made.clear();
+  chats.blocked_contacts = {"c-blocked"};
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  std::optional<ForwardResult> result;
+  presenter.ForwardSelectedTo({Chat("", "c-blocked", "Blocked", false, 0), Chat("bob", "c1", "A", false, 1)},
+                              [&result](const ForwardResult& r) { result = r; });
+  Drain();
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->skipped_targets, 1u);
+  EXPECT_TRUE(chats.made.empty()) << "no chat for someone blocked meanwhile";
+}
+
+TEST_F(ChatForwardTest, TwoPeopleWhoseChatsCouldNotBeMadeAreTwoChatsNotReached) {
+  AddTexts(1);
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  std::optional<ForwardResult> result;
+  presenter.ForwardSelectedTo(
+      {Chat("", "c-bad1", "A", false, 0), Chat("", "c-bad2", "B", false, 0), Chat("bob", "c1", "C", false, 1)},
+      [&result](const ForwardResult& r) { result = r; });
+  Drain();
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->skipped_targets, 2u) << "each person is counted";
+  EXPECT_EQ(result->forwarded, 1u);
+}
+
+TEST_F(ChatForwardTest, NoSendIsMadeOnceMessagingIsNotReadyEvenWithABatchAlreadyQueued) {
+  AddTexts(3);
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  presenter.ForwardSelected({"bob"}, nullptr); // the first batch is queued, not run
+  ASSERT_EQ(posted.size(), 1u);
+  chats.ready = false; // locked or torn down before the queued batch gets its turn
+  EXPECT_EQ(Drain(), 1u);
+  EXPECT_TRUE(chats.calls.empty()) << "the queued batch sent nothing";
+  EXPECT_FALSE(presenter.Forwarding());
+}
+
+TEST_F(ChatForwardTest, MessagingGoingAwayMidBatchStopsAtOnceAndSaysOnlyPartWentOut) {
+  AddTexts(5);
+  chats.during_send = [this](const size_t sends) {
+    if (sends == 3) {
+      chats.ready = false;
+    }
+  };
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  for (const char* id : {"m2", "m3", "m4", "m5"}) {
+    presenter.ToggleForwardSelection(id);
+  }
+  bool told = false;
+  presenter.ForwardSelected({"bob", "carol", "club"}, [&told](const ForwardResult&) { told = true; });
+  Drain();
+  EXPECT_EQ(chats.calls.size(), 3u) << "no send after messaging stopped being ready";
+  EXPECT_FALSE(told);
+  EXPECT_TRUE(presenter.TakeForwardInterrupted());
+}
+
+TEST_F(ChatForwardTest, AForwardIsRefusedWhileMessagingIsNotReady) {
+  AddTexts(1);
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  chats.ready = false;
+  std::optional<ForwardResult> result;
+  presenter.ForwardSelected({"bob"}, [&result](const ForwardResult& r) { result = r; });
+  Drain();
+  ASSERT_TRUE(result);
+  EXPECT_TRUE(result->nothing_sent);
+  EXPECT_TRUE(chats.calls.empty());
 }
 
 struct MetricsCapture : logging::Handler {

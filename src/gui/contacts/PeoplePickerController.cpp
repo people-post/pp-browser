@@ -436,6 +436,13 @@ void PeoplePickerController::OpenForCallMakeGroup(const std::string& call_id) {
 
 void PeoplePickerController::OpenForResult(PeoplePickerChooseOptions options, PeoplePickerChooseDone done,
                                            std::function<void()> cancel) {
+  if (!MessagingInitialized()) {
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
+    if (cancel) {
+      cancel(); // the caller's Forward button must not wait for a picker that never opened
+    }
+    return;
+  }
   Open(PeoplePickerMode::ChooseTargets, {},
        [this, options = std::move(options), done = std::move(done), cancel = std::move(cancel)]() mutable {
          choose_options_ = std::move(options);

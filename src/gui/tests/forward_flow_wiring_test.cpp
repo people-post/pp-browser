@@ -72,9 +72,40 @@ TEST(ForwardFlowWiringTest, AnotherChatOrAGoneChatEndsTheChoosingButNotAForwardB
   EXPECT_NE(forget.find("forward_flow_->OnThreadGone(key)"), std::string::npos);
 }
 
+TEST(ForwardFlowWiringTest, SelectingAChatAlwaysSyncsTheForwardBarsAndTheTeardownStopsAForward) {
+  const std::string select = Body(Controller(), "void ChatController::OnSelectThread(");
+  const size_t leave = select.find("forward_flow_->Leave()");
+  const size_t sync = select.find("OnForwardChanged();", leave);
+  ASSERT_NE(sync, std::string::npos) << "a chat opening must re-sync the bar, whatever the presenter forgot before";
+  EXPECT_LT(sync, select.find("presenter_.SelectThread(thread_id)"));
+  const std::string torn = Body(Controller(), "void ChatController::OnMessagingTornDownForRegistration(");
+  EXPECT_NE(torn.find("forward_flow_->Stop()"), std::string::npos)
+      << "a forward still sending must not call into a torn-down messaging";
+}
+
+TEST(ForwardFlowWiringTest, StartingToChooseStopsAPlayingVoiceMessageAndARefusedPickerAnswersCancel) {
+  const std::string begin = Body(Controller(), "void ChatController::BeginForward(");
+  EXPECT_NE(begin.find("voice_playback_->Stop()"), std::string::npos);
+  const size_t ports = Controller().find("forward_ports.open_picker =");
+  ASSERT_NE(ports, std::string::npos);
+  const std::string open = Controller().substr(ports, 700);
+  EXPECT_NE(open.find("cancel()"), std::string::npos) << "no picker to open: the flow is told, not left waiting";
+}
+
+TEST(ForwardFlowWiringTest, TheRowsDecideForwardableFromTheMessageTheyWereBuiltFromNotAStoreRead) {
+  const std::string decorate = Body(Controller(), "void ChatController::InstallRowDecorator(");
+  EXPECT_EQ(decorate.find("presenter_.CanForward("), std::string::npos) << "one store read per row per redraw";
+  EXPECT_NE(decorate.find("row.forwardable"), std::string::npos);
+  const std::string presenter = ReadFile(std::string(PP_SOURCE_DIR) + "/src/feature/presenters/ChatPresenter.cpp");
+  const std::string can = Body(presenter, "bool ChatPresenter::CanForward(");
+  EXPECT_EQ(can.find("FacadeForwardPorts("), std::string::npos);
+  const std::string now = Body(presenter, "const ForwardPorts& ChatPresenter::ForwardPortsNow(");
+  EXPECT_NE(now.find("facade_ports_"), std::string::npos) << "the facade's ports are built once";
+}
+
 TEST(ForwardFlowWiringTest, TheRowsGetTheirFlagsFromThePresenterAndTheEventsGoToTheFlow) {
   const std::string decorate = Body(Controller(), "void ChatController::InstallRowDecorator(");
-  EXPECT_NE(decorate.find("row.forward_ok = choosing && !IsPendingUploadRowId(id) && presenter_.CanForward(id)"),
+  EXPECT_NE(decorate.find("row.forward_ok = choosing && !IsPendingUploadRowId(id) && row.forwardable"),
             std::string::npos);
   EXPECT_NE(decorate.find("row.forward_ticked = choosing && forward_flow_->Ticked(id)"), std::string::npos);
   for (const char* event : {"\"forward_tap\"", "\"forward_cancel\"", "\"forward_next\""}) {

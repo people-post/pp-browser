@@ -3,6 +3,8 @@
 // The menu's entry is read from ChatMenus.cpp (ForRequest needs a live messaging facade, as in the other menu tests).
 #include "gui/chat/ChatController.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/TranscriptRml.h"
+#include "lib/ai/MarkdownToRml.h"
 #include "gui/shell/DataModelHost.h"
 
 #include "feature/presenters/MessageForward.h"
@@ -192,6 +194,65 @@ TEST_F(ChatForwardViewTest, InSelectionModeALinkOrPhoneNumberOrCardTapOnlyToggle
   Tap(document->GetElementById("the-card"));
   EXPECT_EQ(link_opens, 0) << "no browser, no dial";
   EXPECT_EQ(taps, (std::vector<std::string>{"m1", "m2", "m3"})) << "each tap ticked its own row";
+
+  // The bubbles as the transcript really draws them: the last one of a run carries a tail host, a bubble with reactions
+  // a reaction host, an assistant answer a list; all of them sit later in the markup than the cover and must not
+  // take the tap from it.
+  taps.clear();
+  TranscriptRow first;
+  first.message.id = "r1";
+  first.message.sender_contact_id = "account:a";
+  first.message.content_type = ChatContentType::Text;
+  first.message.text = "first of a run";
+  first.message.timestamp = 1700049600000;
+  TranscriptRow last = first; // the last of the run: its bubble has the tail
+  last.message.id = "r2";
+  last.message.text = "last of a run, see https://example.test/last";
+  last.message.timestamp += 1000;
+  TranscriptRow reacted = first;
+  reacted.message.id = "r3";
+  reacted.message.sender_contact_id = "account:b";
+  reacted.message.text = "with reactions https://example.test/reacted";
+  reacted.message.timestamp += 5 * 60 * 1000;
+  reacted.reactions.push_back(TranscriptReaction{"\xF0\x9F\x91\x8D", 2, true, {}});
+  TranscriptRow answer = first;
+  answer.message.id = "r4";
+  answer.message.sender_contact_id = kAiAssistantContactId;
+  answer.message.text = "1. one https://example.test/one\n2. two";
+  answer.message.content_rml = MarkdownToRml(answer.message.text).rml;
+  answer.message.timestamp += 10 * 60 * 1000;
+  TranscriptFacts facts;
+  facts.sender_label = [](const std::string& id) { return id; };
+  facts.sender_stable_id = [](const std::string& id) { return id; };
+  state.messages = RenderTranscript({first, last, reacted, answer}, facts);
+  for (MessageDisplayRow& row : state.messages) {
+    row.forward_mode = true;
+    row.forward_ok = true;
+  }
+  Refresh();
+  ASSERT_NE(std::string(state.messages[1].content_rml.c_str()).find("bubble-tail-host"), std::string::npos)
+      << "the fixture really has a tail";
+  ASSERT_NE(std::string(state.messages[2].content_rml.c_str()).find("chat-reaction-host"), std::string::npos);
+  ASSERT_NE(std::string(state.messages[3].content_rml.c_str()).find("<li"), std::string::npos);
+  size_t tapped = 0;
+  for (const char* cls : {"bubble", "chat-link", "chat-reaction-host", "bubble-tail-host"}) {
+    for (ui::Element* element : Shown(cls)) {
+      const size_t before = taps.size();
+      Tap(element);
+      ASSERT_EQ(taps.size(), before + 1) << cls << ": a tap on it must tick its row";
+      ++tapped;
+    }
+  }
+  ui::ElementList items;
+  document->GetElementsByTagName(items, "li");
+  for (ui::Element* element : items) {
+    const size_t before = taps.size();
+    Tap(element);
+    ASSERT_EQ(taps.size(), before + 1) << "a list item";
+    ++tapped;
+  }
+  EXPECT_GE(tapped, 8u);
+  EXPECT_EQ(link_opens, 0) << "no link opened in selection mode";
 }
 
 TEST_F(ChatForwardViewTest, OutsideSelectionALinkStillOpens) {

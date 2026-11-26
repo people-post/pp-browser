@@ -115,6 +115,10 @@ struct ForwardPorts {
       send_user;
   std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text, SendRelayOptions options)>
       send_group;
+  /** The messaging layer can take a send now (not torn down, not locked). Unset: always. */
+  std::function<bool()> messaging_ready;
+  /** A saved contact we may still write to (not blocked meanwhile); asked before a chat is made for them. Unset: yes. */
+  std::function<bool(const std::string& contact_id)> contact_can_receive;
 };
 
 /** What a forward did, for the one line the user gets and the metric. Counts of messages unless said. */
@@ -136,8 +140,12 @@ struct ForwardResult {
 /** One forward being sent: the chosen messages to the chosen chats, one chat completely before the next. */
 class ForwardRun {
 public:
+  /**
+   * `targets`: a chat by its id, or a person with no chat yet by contact id: that chat is made when the run reaches
+   * them (after the re-check, right before the sends), never before.
+   */
   ForwardRun(ForwardPorts ports, std::string source_thread, std::vector<std::string> message_ids,
-             std::vector<std::string> targets);
+             std::vector<ForwardTarget> targets);
 
   enum class State { Running, Done, Aborted };
 
@@ -158,7 +166,9 @@ private:
   ForwardPorts ports_;
   std::string source_thread_;
   std::vector<std::string> message_ids_;
-  std::vector<std::string> targets_;
+  std::vector<ForwardTarget> targets_;
+  /** The chat the open target sends to (its own id, or the one made for its person). */
+  std::string target_thread_;
   size_t message_count_ = 0;
   bool prepared_ = false;
   /** The messages that survived the re-check, in the chat's order. */
