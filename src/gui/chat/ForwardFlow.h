@@ -87,7 +87,7 @@ private:
 
 /**
  * The one line after a forward: "Forwarded", the same with how many messages / chats were left out (both sentences when
- * both happened), or "Forwarding failed" when nothing went out.
+ * both happened), or "Couldn't forward" when nothing went out.
  */
 std::string ForwardResultText(const ForwardResult& result);
 
