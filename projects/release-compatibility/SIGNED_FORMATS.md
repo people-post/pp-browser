@@ -450,6 +450,9 @@ Release 1 ships the set-change **reader**; using it waits for its runbook (**Q8*
 functions do not switch at one instant, so the relay accepts the previous transport PeerId as audience for a short
 window after deploying a new certificate, never after a compromise (**Q11**, Leo).
 
+While an environment's set is 1 of 1, a lost or stolen operator key cannot be recovered from without a new relay id
+(a new relay link and a new build); the move to 2 of 3 waits on the Q8 runbook.
+
 ## 4. What changes on the relay (pp-relay-apis)
 
 | Item | Change | Files |
