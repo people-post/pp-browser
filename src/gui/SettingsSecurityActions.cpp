@@ -5,6 +5,7 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
+#include "gui/AccountInvite.h"
 #include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
