@@ -2481,6 +2481,14 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+.people-picker-preview {
+  background-color: #7878803d;
+}
+
+.people-picker-preview-text {
+  color: #ebebf599;
+}
+
 .people-picker-member-chip {
   background-color: #0a84ff2e;
   color: #0a84ff;

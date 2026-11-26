@@ -25,6 +25,8 @@ enum class PeoplePickerMode {
    * people met in the call need not be contacts. Next names the group; Create makes it and invites them.
    */
   CallMakeGroup,
+  /** Choose and return: tick up to a limit of chats and people, and hand them back (the forward's "Forward to"). */
+  ChooseTargets,
 };
 
 enum class PeoplePickerCta {
@@ -34,12 +36,17 @@ enum class PeoplePickerCta {
   StartCall,
   Invite,
   Inviting,
+  /** Choose and return: the confirm button hands the ticked ones back. */
+  Send,
 };
 
 /** free_selected_count excludes locked rows. `sending`: invites to an existing group are going out. */
 inline PeoplePickerCta ComputePeoplePickerCta(PeoplePickerMode mode, int free_selected_count, bool sending = false) {
   if (mode == PeoplePickerMode::GroupMembers) {
     return PeoplePickerCta::Disabled;
+  }
+  if (mode == PeoplePickerMode::ChooseTargets) {
+    return free_selected_count >= 1 ? PeoplePickerCta::Send : PeoplePickerCta::Disabled;
   }
   if (mode == PeoplePickerMode::GroupAddMember) {
     if (free_selected_count < 1) {

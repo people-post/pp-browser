@@ -10206,6 +10206,24 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Choose and return (Forward to): the chats that cannot be ticked any more are greyed; the strip says what is sent. */
+.people-picker--choose .people-picker-row--locked {
+  opacity: 0.4;
+}
+
+.people-picker-preview {
+  padding: 8dp 12dp;
+  border-radius: 10dp;
+}
+
+.people-picker-preview-text {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 18dp;
+  max-height: 36dp;
+  overflow: hidden;
+}
+
 .people-picker-footer {
   flex-shrink: 0;
   justify-content: flex-end;
