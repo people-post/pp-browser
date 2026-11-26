@@ -22,7 +22,7 @@ struct ForwardFlowPorts {
 };
 
 /**
- * What a user sees of a forward, in order (DEV/PLAN-message-forward-text.md): "Forward several" in a message's menu starts choosing
+ * What a user sees of a forward, in order (DEV/PLAN-message-forward-text.md): "Select" in a message's menu starts choosing
  * messages in the chat (while "Forward" on a message goes straight to "Forward to"), a tap on a row ticks it, the bottom button opens "Forward to", its Send queues everything and the
  * chat is back with one pill saying what happened. Every decision is the presenter's (ChatPresenter); this is the thread
  * between it and the screen, and the one place that ends it all (lock, sign-out, the chat gone). UI thread.
@@ -44,7 +44,7 @@ public:
    * The presenter's selection only carries the message; Cancel, a refused picker, lock and sign-out all clear it.
    */
   void BeginSingle(const std::string& message_id);
-  /** The menu's "Forward several" on `message_id`: starts choosing with it ticked. */
+  /** The menu's "Select" on `message_id`: starts choosing with it ticked. */
   void BeginSelecting(const std::string& message_id);
   /** A tap on a row while choosing: ticks or unticks it, or says (pill) why not. */
   void Tap(const std::string& message_id);

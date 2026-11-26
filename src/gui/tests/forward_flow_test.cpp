@@ -327,7 +327,7 @@ TEST_F(ForwardFlowTest, ARefusedPickerLeavesTheForwardButtonWorking) {
 }
 
 // "Forward" on one message (WeChat style): the picker opens at once with that message, and the chat never shows the
-// selection bars; "Forward several" is the old multi-select (BeginSelecting).
+// selection bars; "Select" is the old multi-select (BeginSelecting).
 TEST_F(ForwardFlowTest, ForwardOnOneMessageOpensThePickerAtOnceWithNoSelectionBars) {
   flow->BeginSingle("m2");
   ASSERT_TRUE(picker_open);
@@ -370,8 +370,8 @@ TEST_F(ForwardFlowTest, SingleForwardSendsExactlyThatMessageToTheChosenChats) {
   EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.done")}));
 }
 
-TEST_F(ForwardFlowTest, ForwardSeveralEntersSelectionModeWithTheMessageTicked) {
-  flow->BeginSelecting("m2"); // the menu's "Forward several"
+TEST_F(ForwardFlowTest, SelectEntersSelectionModeWithTheMessageTicked) {
+  flow->BeginSelecting("m2"); // the menu's "Select"
   EXPECT_TRUE(flow->Selecting());
   EXPECT_TRUE(flow->Ticked("m2"));
   EXPECT_EQ(pickers_opened, 0) << "the picker waits for the bottom button";
