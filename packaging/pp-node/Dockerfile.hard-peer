@@ -1,7 +1,7 @@
 # Hard-lab peer sidecar (probe runner).
 # glibc must match the host-built pp-node-probe / pp-call-probe.
 # Default: Debian trixie (matches current dogfood hosts). Override image in compose if needed.
-FROM public.ecr.aws/docker/library/debian:trixie-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
             ca-certificates \

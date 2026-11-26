@@ -12,7 +12,7 @@ namespace pbr {
  * version on, so the release bump that reaches it removes the cleanup. The iOS Keychain store itself stays: the
  * recovery seed's easy tier keeps it in the synced keychain (multi-device M023 §3).
  */
-inline constexpr const char kRetiredKeychainBackupRemoveAt[] = "1.1.0";
+inline constexpr const char kRetiredKeychainBackupRemoveAt[] = "1.2.0";
 
 /**
  * at-rest A011: delete the account backup item earlier builds left in the iOS Keychain. Restore is unsupported,

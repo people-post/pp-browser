@@ -75,7 +75,7 @@ public:
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
   /** As SQLite's: the ids of a cleared or deleted chat with a peer or a group (no pruning: a test's process is short). */
-  Roe<bool> WasMessageRemoved(const std::string& message_id) const override;
+  Roe<bool> WasMessageRemoved(const std::string& sender, const std::string& message_id) const override;
   /** Forgets every removed id: a chat cleared or deleted by an app from before removed ids were kept. */
   void ForgetRemovedIds();
   Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) override;
@@ -173,7 +173,7 @@ private:
   std::vector<std::pair<std::string, std::string>> outbox_;
   std::function<bool(const ThreadMessage&)> hidden_in_direct_;
   std::map<std::tuple<std::string, uint32_t, std::string>, PeerSyncState> sync_;
-  std::set<std::string> removed_;
+  std::set<std::pair<std::string, std::string>> removed_; // (sender, message id)
 };
 
 /**

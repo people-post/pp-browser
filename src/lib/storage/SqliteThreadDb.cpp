@@ -170,7 +170,7 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   }
   // The ids no relay can still hold a record of go (they are also pruned at every removal).
   sqlite3_stmt* prune = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM removed_messages WHERE removed_at < ?;", -1, &prune, nullptr) ==
+  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM removed_message_ids WHERE removed_at < ?;", -1, &prune, nullptr) ==
       SQLITE_OK) {
     sqlite3_bind_int64(prune, 1, util::NowUnixMs() - kRemovedMessageIdKeepMs);
     (void)sqlite3_step(prune);

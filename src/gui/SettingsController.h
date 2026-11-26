@@ -112,8 +112,6 @@ public:
    * `text_key`'s as its body (both `settings.*` locale keys) and one OK. Local only: no AI, no support chat, no network.
    */
   void OnShowSettingNote(const std::string& title_key, const std::string& text_key);
-  /** The "?" after the default-PIN line on Security: a local note that tells the default PIN. */
-  void OnShowDefaultPinNote();
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
@@ -331,7 +329,7 @@ private:
     /** PIN grace window (#21): the minutes (not bound) and the row's label; the row shows when grace_shown. */
     int unlock_grace_minutes = 15;
     ui::String unlock_grace_label;
-    ui::String pin_page_note; // the PIN page caption, with the default PIN filled in from the constant
+    bool pin_calls_note_shown = false; // PIN page caption about calls: an own PIN on an iPhone
     bool security_grace_shown = false;
     /** Face / fingerprint unlock (at-rest A014): the switch shows, its state, its title. */
     bool security_biometric_shown = false;

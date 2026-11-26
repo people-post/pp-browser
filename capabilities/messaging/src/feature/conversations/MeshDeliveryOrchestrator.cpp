@@ -1057,7 +1057,7 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
 
 void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const std::string& from_peer_id) {
   auto identity = identity_.Get();
-  if (!identity || RemovedHere(envelope)) {
+  if (!identity || RemovedHere(envelope, identity->account_id)) {
     return;
   }
   const RelayReceiveOutcome outcome =
@@ -2644,7 +2644,7 @@ void MeshDeliveryOrchestrator::TakeRelayBatch(const RelayInboxCoordinator::Batch
 
 void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope, const std::string& local_account_id,
                                                    RelayIngestNotes& notes) {
-  if (RemovedHere(envelope)) {
+  if (RemovedHere(envelope, local_account_id)) {
     return;
   }
   const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
@@ -2705,8 +2705,9 @@ void MeshDeliveryOrchestrator::IngestRelayEnvelope(const RelayEnvelope& envelope
   }
 }
 
-bool MeshDeliveryOrchestrator::RemovedHere(const RelayEnvelope& envelope) const {
-  auto removed = store_.WasMessageRemoved(envelope.message_id);
+bool MeshDeliveryOrchestrator::RemovedHere(const RelayEnvelope& envelope, const std::string& local_account_id) const {
+  auto removed =
+      store_.WasMessageRemoved(RemovedMessageSender(envelope.sender_contact_id, local_account_id), envelope.message_id);
   if (!removed || !*removed) {
     return false;
   }

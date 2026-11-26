@@ -133,25 +133,25 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
 | **Every merge to main** | Lab smoke — the app lab's `smoke` scenarios on a CodeBuild runner, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
-| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Nightly lab](#nightly-lab)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
+| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Lab nightly](#lab-nightly)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 
-### Nightly lab
+### Lab nightly
 
-[`nightly-lab.yml`](../../.github/workflows/nightly-lab.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → nightly-lab → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report.
+[`lab-nightly.yml`](../../.github/workflows/lab-nightly.yml) runs the app lab every night (07:17 UTC) on main, and on demand (Actions → lab-nightly → Run workflow: suites, scenarios, tags). Never on pull requests. It and [lab smoke](#lab-smoke) call one reusable workflow, [`lab-run.yml`](../../.github/workflows/lab-run.yml): build `pp-app-probe` and `pp-node`, run the suites (`--retry-failed --summary`), report.
 
 - **Runner:** an ephemeral CodeBuild-hosted runner (project `pp-browser` in pp-runners-infra: privileged for Docker, `BUILD_GENERAL1_LARGE`, 240 min job timeout), started by the `codebuild-pp-browser-<run id>-<attempt>` label. Nothing is kept on the runner between runs: ccache lives in the Actions cache (saved by the nightly only) and the relay checkout and build are fresh each time.
 - **Relay:** pp-relay-apis's local stack (below), from a checkout of [`people-post/pp-relay-apis`](https://github.com/people-post/pp-relay-apis) at `PP_LAB_RELAY_APIS_REF` (repository variable, default `main`: what prod runs) beside the workspace; the run records its commit.
 - **Flakes:** `pp_app_lab.py --retry-failed` runs each failed scenario once more; passing then is a flake (listed in the run's summary), failing again a failure. `--summary <file>` writes every outcome as JSON.
-- **Reporting:** [`nightly_lab_report.py`](../../scripts/test/nightly_lab_report.py) keeps one issue per failing scenario (label `nightly-lab`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
+- **Reporting:** [`lab_nightly_report.py`](../../scripts/test/lab_nightly_report.py) keeps one issue per failing scenario (label `lab-nightly`: opened, commented while it fails, closed the night it passes) and one per suite that did not finish. Issues carry the scenario, the first line of its error, the commit and the run link; profiles and logs of what failed are the run's artifact (14 days).
 - **Idle until configured:** the secret `PP_LAB_RELAY_APIS_DEPLOY_KEY` (a read-only deploy key of the private pp-relay-apis) switches it on. Until then each run's first job says so in a notice and starts nothing.
 
 ### Lab smoke
 
 [`lab-smoke.yml`](../../.github/workflows/lab-smoke.yml) runs the app lab's `smoke` scenarios ([§ Scenario tags](#scenario-tags-and-selection)) on a CodeBuild runner after every merge to main — `pp_local_test.sh run --suite app --tags smoke`, as the nightly runs its suites — with the same `--retry-failed` and artifact (`lab-smoke`, 14 days). The tier's budget is 15 min of scenarios ([release-compatibility § Regression suites](../../projects/release-compatibility/DESIGN.md#regression-suites)).
 
-- **Blocks nothing:** it runs on the push to main, never on a pull request, and is not a required check. A failure shows on the commit and in the run's summary (`nightly_lab_report.py --no-issues`); the nightly keeps the issues.
+- **Blocks nothing:** it runs on the push to main, never on a pull request, and is not a required check. A failure shows on the commit and in the run's summary (`lab_nightly_report.py --no-issues`); the nightly keeps the issues.
 - **One at a time:** a newer push replaces one still waiting for the run before it (`concurrency`, not cancelled once running). Merges that touch only docs (`docs/`, `projects/`, `*.md`) do not run it.
 - **On demand** (Actions → lab-smoke → Run workflow): any tags, and `changed` — `origin/main` from your branch, a range, or paths — for the scenarios a branch touches; the two add up (clear tags to run only the change's).
 - **Idle until configured,** as the nightly.
@@ -302,7 +302,7 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 | Paths | Tags |
 |-------|------|
 | the lab: `pp_app_lab.py`, `app_lab_select.py`, `pp_local_test.sh`, `docker-compose.app-lab*`, `app-lab-*`, `src/app/node/tools/app_probe/` | all |
-| `lab-run.yml`, `lab-smoke.yml`, `nightly-lab.yml` | `smoke` |
+| `lab-run.yml`, `lab-smoke.yml`, `lab-nightly.yml` | `smoke` |
 | docs: `docs/`, `projects/`, `design/`, `reports/`, `*.md` | none |
 | unit tests and other suites: `*/tests/*`, `*/testing/*`, other `scripts/test/` | none |
 | GUI and AI: `src/gui/`, `src/lib/ui/`, `src/common/ui/`, `src/lib/ai/`, `src/feature/ai/`, `src/lib/scan/`, `assets/` | none |

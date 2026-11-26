@@ -1,8 +1,9 @@
 name: lab-run
 
-# One app-lab run on a CodeBuild-hosted runner (pp-runners-infra: project pp-browser, privileged, LARGE), called by
-# nightly-lab.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
-# docs/ops/TEST_STRATEGY.md § Nightly lab, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
+# One app-lab run on a GitHub-hosted runner, or, with the `runner` input or repository variable PP_LAB_RUNNER set to
+# codebuild, on a CodeBuild one (pp-runners-infra: project pp-browser, privileged, LARGE); called by
+# lab-nightly.yml (every suite, nightly) and lab-smoke.yml (the smoke set, every merge to main) —
+# docs/ops/TEST_STRATEGY.md § Lab nightly, § Lab smoke. The runner is ephemeral: it builds pp-app-probe and pp-node
 # (ccache from the Actions cache), runs the suites and a hosted job reports. The relay is pp-relay-apis's local stack,
 # from a checkout of that repository (PP_LAB_RELAY_APIS_REF, default main: what prod runs).
 #
@@ -38,7 +39,7 @@ on:
         type: string
         default: ''
       issues:
-        description: 'Keep one issue per failing scenario (nightly_lab_report.py); otherwise the summary only'
+        description: 'Keep one issue per failing scenario (lab_nightly_report.py); otherwise the summary only'
         type: boolean
         default: false
       suite_timeout_minutes:
@@ -47,6 +48,10 @@ on:
       job_timeout_minutes:
         type: number
         default: 220
+      runner:
+        description: 'Where the lab job runs: github or codebuild (empty: the repository variable PP_LAB_RUNNER, else github)'
+        type: string
+        default: ''
 
 jobs:
   gate:
@@ -62,7 +67,7 @@ jobs:
           RELAY_APIS_KEY: ${{ secrets.PP_LAB_RELAY_APIS_DEPLOY_KEY }}
         run: |
           if [ -z "$RELAY_APIS_KEY" ]; then
-            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Nightly lab)."
+            msg="$RUN_NAME skipped: the lab is not set up (no secret PP_LAB_RELAY_APIS_DEPLOY_KEY; docs/ops/TEST_STRATEGY.md § Lab nightly)."
             echo "::notice title=$RUN_NAME idle::$msg"
             echo "$msg" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -73,7 +78,8 @@ jobs:
     name: lab run
     needs: gate
     if: needs.gate.outputs.enabled == 'true'
-    runs-on: codebuild-pp-browser-${{ github.run_id }}-${{ github.run_attempt }}
+    # codebuild: the pp-runners-infra project (privileged, LARGE); github: a hosted ubuntu-24.04 runner.
+    runs-on: ${{ (inputs.runner || vars.PP_LAB_RUNNER) == 'codebuild' && format('codebuild-pp-browser-{0}-{1}', github.run_id, github.run_attempt) || 'ubuntu-24.04' }}
     timeout-minutes: ${{ inputs.job_timeout_minutes }}
     env:
       # Outside the workspace: checkout cleans the workspace.
@@ -126,6 +132,23 @@ jobs:
             cmake -S . -B "$PP_LOCAL_BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPP_BROWSER_COMPILER_CACHE=ON
           fi
           cmake --build "$PP_LOCAL_BUILD_DIR" --target pp-app-probe pp-node pp-node-load -j "$(nproc)"
+
+      # The CodeBuild host filters bridged traffic through iptables (br_netfilter): Docker's rules for internal
+      # networks then drop the NAT lab's user packets before they reach their gateway container.
+      - name: Let bridged traffic skip iptables
+        run: |
+          sudo modprobe br_netfilter 2>/dev/null || true
+          if [ -e /proc/sys/net/bridge/bridge-nf-call-iptables ]; then
+            echo 0 | sudo tee /proc/sys/net/bridge/bridge-nf-call-iptables
+          fi
+
+      # Images keep their canonical names; where they come from is the daemon's business. Anonymous Docker Hub pulls
+      # are rate limited per IP on shared runners, so ask Google's Docker Hub mirror first (Docker falls back to
+      # Docker Hub on a miss).
+      - name: Use a Docker Hub mirror
+        run: |
+          echo '{"registry-mirrors":["https://mirror.gcr.io"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
 
       - name: Run the suites
         env:
@@ -205,5 +228,5 @@ jobs:
           args=()
           for suite in $LAB_SUITES; do args+=(--summary "$suite=lab/$suite.json"); done
           if [ "$ISSUES" != true ]; then args+=(--no-issues); fi
-          python3 scripts/test/nightly_lab_report.py "${args[@]}" --name "$RUN_NAME" --sha "$GITHUB_SHA" \
+          python3 scripts/test/lab_nightly_report.py "${args[@]}" --name "$RUN_NAME" --sha "$GITHUB_SHA" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

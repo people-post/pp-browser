@@ -450,7 +450,7 @@ jobs:
           cp -r assets "$dest/share/pp-browser/assets"
           tar -C stage -czf "pp-browser-linux-x86_64-${GITHUB_SHA::8}.tar.gz" pp-browser-linux-x86_64
 
-      # An artifact name takes no '/': release/app-1.0 → release-app-1.0.
+      # An artifact name takes no '/': release/app-1.1 → release-app-1.1.
       - name: Artifact name
         run: echo "PP_REF_SLUG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
 
@@ -652,7 +652,7 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
-      # An artifact name takes no '/': release/app-1.0 → release-app-1.0.
+      # An artifact name takes no '/': release/app-1.1 → release-app-1.1.
       - name: Artifact name
         run: echo "PP_REF_SLUG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
 

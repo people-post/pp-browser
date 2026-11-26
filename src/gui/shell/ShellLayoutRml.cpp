@@ -533,15 +533,6 @@ std::string ShellLayoutRml::PinGate() const {
          "!pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
-  // The app's default PIN: one line and a "?" (never a field for the digits); the "?" opens the note under it.
-  out << "<div class=\"shell-note-line row\" data-if=\"pin_gate_default_note_line != ''\">"
-         "<span class=\"text muted\">{{pin_gate_default_note_line}}</span>"
-         "<button class=\"settings-q-btn\" type=\"button\" data-event-click=\"pin_gate_note_toggle()\">"
-         "<svg class=\"settings-q-icon\" src=\"../icons/v2/help-circle.svg\" width=\"20\" height=\"20\"></svg>"
-         "</button></div>";
-  out << "<p class=\"text muted shell-note-text\" "
-         "data-if=\"pin_gate_default_note_line != '' && pin_gate_default_note_open\">"
-         "{{pin_gate_default_note_text}}</p>";
   if (state_.pin_gate.biometric_first) {
     PinGateBiometricFirst(out);
   } else if (state_.pin_gate.keypad) {

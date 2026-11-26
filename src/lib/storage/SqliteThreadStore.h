@@ -62,8 +62,8 @@ public:
   Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,
                                                           const std::string& target_message_id) const override;
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
-  /** profile.db `removed_messages` (DATA_LAYOUT): ids only, pruned kRemovedMessageIdKeepMs after their removal. */
-  Roe<bool> WasMessageRemoved(const std::string& message_id) const override;
+  /** profile.db `removed_message_ids` (DATA_LAYOUT): per sender, pruned kRemovedMessageIdKeepMs after their removal. */
+  Roe<bool> WasMessageRemoved(const std::string& sender, const std::string& message_id) const override;
   Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) override;
   /** A chat with a peer or a group: its rows' ids are remembered first (WasMessageRemoved). */
   Roe<bool> DeleteThread(const std::string& thread_id) override;
@@ -128,13 +128,13 @@ private:
   Roe<void> UpsertPeerSyncStateUnlocked(sqlite3* thread_db, const DirectChatTarget& target, uint32_t session_epoch,
                                         const PeerSyncState& state) const;
   /**
-   * Under profile_mutex: the ids of `thread`'s rows (newer than kRemovedMessageRowHorizonMs) go into
-   * `removed_messages` before the rows go — a chat with a peer or a group; nothing for another (an AI chat). Prunes
+   * Under profile_mutex: the (sender, id) of `thread`'s rows (newer than kRemovedMessageRowHorizonMs) go into
+   * `removed_message_ids` before the rows go — a chat with a peer or a group; nothing for another (an AI chat). Prunes
    * the ids past kRemovedMessageIdKeepMs.
    */
   Roe<void> RememberRemovedRowsUnlocked(const Thread& thread, sqlite3* thread_db) const;
   /** Under profile_mutex: WasMessageRemoved. */
-  bool WasMessageRemovedUnlocked(const std::string& message_id) const;
+  bool WasMessageRemovedUnlocked(const std::string& sender, const std::string& message_id) const;
 
   mutable SqliteThreadDb db_;
 };

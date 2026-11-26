@@ -806,8 +806,13 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageImpl(const ThreadMessage& mes
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  if (auto removed = WasMessageRemoved(message.id); removed && *removed) {
-    return Error("Message was removed here with its chat"); // a copy that came again (WasMessageRemoved)
+  {
+    auto thread = GetThread(message.thread_id);
+    const std::string sender =
+        thread && *thread ? RemovedMessageSenderOfRow(**thread, message.sender_contact_id) : message.sender_contact_id;
+    if (auto removed = WasMessageRemoved(sender, message.id); removed && *removed) {
+      return Error("Message was removed here with its chat"); // a copy that came again (WasMessageRemoved)
+    }
   }
   auto thread_db = db_.OpenThreadDb(message.thread_id);
   if (!thread_db) {
@@ -1069,24 +1074,26 @@ Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const st
   return found;
 }
 
-Roe<bool> SqliteThreadStore::WasMessageRemoved(const std::string& message_id) const {
-  if (message_id.empty()) {
+Roe<bool> SqliteThreadStore::WasMessageRemoved(const std::string& sender, const std::string& message_id) const {
+  if (sender.empty() || message_id.empty()) {
     return false;
   }
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   std::lock_guard lock(db_.profile_mutex());
-  return WasMessageRemovedUnlocked(message_id);
+  return WasMessageRemovedUnlocked(sender, message_id);
 }
 
-bool SqliteThreadStore::WasMessageRemovedUnlocked(const std::string& message_id) const {
+bool SqliteThreadStore::WasMessageRemovedUnlocked(const std::string& sender, const std::string& message_id) const {
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT 1 FROM removed_messages WHERE message_id = ? LIMIT 1;", -1, &stmt,
+  if (sqlite3_prepare_v2(db_.profile_db(),
+                         "SELECT 1 FROM removed_message_ids WHERE sender = ? AND message_id = ? LIMIT 1;", -1, &stmt,
                          nullptr) != SQLITE_OK) {
     return false;
   }
-  sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 1, sender.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 2, message_id.c_str(), -1, SQLITE_TRANSIENT);
   const bool found = sqlite3_step(stmt) == SQLITE_ROW;
   sqlite3_finalize(stmt);
   return found;
@@ -1100,40 +1107,44 @@ Roe<void> SqliteThreadStore::RememberRemovedRowsUnlocked(const Thread& thread, s
     return {};
   }
   const int64_t now_ms = util::NowUnixMs();
-  std::vector<std::string> ids;
+  std::vector<std::pair<std::string, std::string>> ids; // (sender, id)
   sqlite3_stmt* read = nullptr;
-  if (sqlite3_prepare_v2(thread_db, "SELECT id FROM messages WHERE timestamp >= ?;", -1, &read, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(thread_db, "SELECT sender_contact_id, id FROM messages WHERE timestamp >= ?;", -1, &read,
+                         nullptr) != SQLITE_OK) {
     return Error("Failed to read the messages of a chat being removed");
   }
   sqlite3_bind_int64(read, 1, now_ms - kRemovedMessageRowHorizonMs);
   while (sqlite3_step(read) == SQLITE_ROW) {
-    if (std::string id = SqlText(read, 0); !id.empty()) {
-      ids.push_back(std::move(id));
+    const std::string sender = RemovedMessageSenderOfRow(thread, SqlText(read, 0));
+    if (std::string id = SqlText(read, 1); !sender.empty() && !id.empty()) {
+      ids.emplace_back(sender, std::move(id));
     }
   }
   sqlite3_finalize(read);
 
   sqlite3* profile = db_.profile_db();
   if (sqlite3_exec(profile, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-    return Error("Failed to begin removed_messages txn");
+    return Error("Failed to begin removed_message_ids txn");
   }
   sqlite3_stmt* prune = nullptr;
-  if (sqlite3_prepare_v2(profile, "DELETE FROM removed_messages WHERE removed_at < ?;", -1, &prune, nullptr) ==
+  if (sqlite3_prepare_v2(profile, "DELETE FROM removed_message_ids WHERE removed_at < ?;", -1, &prune, nullptr) ==
       SQLITE_OK) {
     sqlite3_bind_int64(prune, 1, now_ms - kRemovedMessageIdKeepMs);
     (void)sqlite3_step(prune);
   }
   sqlite3_finalize(prune);
   sqlite3_stmt* insert = nullptr;
-  if (sqlite3_prepare_v2(profile, "INSERT OR REPLACE INTO removed_messages (message_id, removed_at) VALUES (?, ?);", -1,
-                         &insert, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(
+          profile, "INSERT OR REPLACE INTO removed_message_ids (sender, message_id, removed_at) VALUES (?, ?, ?);", -1,
+          &insert, nullptr) != SQLITE_OK) {
     sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return Error("Failed to prepare removed_messages insert");
+    return Error("Failed to prepare removed_message_ids insert");
   }
-  for (const std::string& id : ids) {
+  for (const auto& [sender, id] : ids) {
     sqlite3_reset(insert);
-    sqlite3_bind_text(insert, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(insert, 2, now_ms);
+    sqlite3_bind_text(insert, 1, sender.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(insert, 3, now_ms);
     if (sqlite3_step(insert) != SQLITE_DONE) {
       sqlite3_finalize(insert);
       sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
@@ -1143,7 +1154,7 @@ Roe<void> SqliteThreadStore::RememberRemovedRowsUnlocked(const Thread& thread, s
   sqlite3_finalize(insert);
   if (sqlite3_exec(profile, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
     sqlite3_exec(profile, "ROLLBACK;", nullptr, nullptr, nullptr);
-    return Error("Failed to commit removed_messages");
+    return Error("Failed to commit removed_message_ids");
   }
   return {};
 }
@@ -1971,7 +1982,7 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
   ThreadMessage stored = message;
   {
     std::lock_guard profile_lock(db_.profile_mutex());
-    if (WasMessageRemovedUnlocked(message.id)) {
+    if (WasMessageRemovedUnlocked(RemovedMessageSenderOfRow(**thread, message.sender_contact_id), message.id)) {
       return Error("Message was removed here with its chat"); // as AppendMessage
     }
     auto thread_db = db_.OpenThreadDb(message.thread_id);

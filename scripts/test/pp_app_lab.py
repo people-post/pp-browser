@@ -4960,7 +4960,7 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep profile dirs and logs of passing runs")
     ap.add_argument("--retry-failed", action="store_true",
                     help="run each failed scenario once more: passing then is a flake, failing again a failure")
-    ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
+    ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the lab nightly")
     args = ap.parse_args()
     problems = app_lab_select.check_registry(scenario_entries())
     if problems:

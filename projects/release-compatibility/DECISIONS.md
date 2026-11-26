@@ -410,8 +410,8 @@ leaves for them.
    "registered or guest" from the key's slot (`brief_llm_api_key` / `brief_llm_guest_api_key`), not its prefix.
 3. **The relay's version** (RC006 item 3, A1): its own semver `vX.Y.Z` on `release/X.Y`, starting at 1.0, reported in
    `client-compat` at `schema_version` 1 as `relay_version`, `app_range` and `node_range`.
-4. **Floors at release** (A2, C3): `min_client_version` `1.0.0`, and a new `min_node_version` `10.0.0`.
-5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.0: the sign window, the `blobs/*`, `files/*` and
+4. **Floors at release** (A2, C3): `min_client_version` `1.1.0` (app release 1 is 1.1.0, [RC024](#rc024--app-release-1-is-version-110); `1.0.0` before it), and a new `min_node_version` `10.0.0`.
+5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.1 (RC024): the sign window, the `blobs/*`, `files/*` and
    `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping. Testers reinstall that day
    (RC017), so no supported app needs them and no window is kept.
 6. **The version header** (O1): `X-PP-Client: <product>/<version> <os>` on every relay call from the app and pp-node.
@@ -454,7 +454,7 @@ leaves for them.
 | Where versions are counted (O1) | Leo | a CloudWatch metric by product, version and OS; no account id, no table |
 | How `RELAY_VERSION` reaches the functions; an `x-pp-relay-version` header | Leo | injected by the deploy workflow from the tag; header optional |
 | Deploys (RC006 item 8, X11) | Leo | `dev/<date>.<n>` tags; a Lambda version per tag and one alias per function |
-| Checks before deploy (O3) | Leo | `deploy` needs `integration`; the behaviour suite on PRs in both repos; the nightly lab's variables set |
+| Checks before deploy (O3) | Leo | `deploy` needs `integration`; the behaviour suite on PRs in both repos; the lab nightly's variables set |
 | Prod's update links (C3) | Leo | the App Store and Play links and the desktop download page, set on the release day |
 | Support retention, S3 lifecycle days (item 8) | Leo | 90 days each, stated in SPECS and the privacy text |
 | The crash-report endpoint (O6) | Leo | as SPECS plans: a bucket with a 90-day expiry, no account id, rate-limited |
@@ -591,3 +591,29 @@ profile:
   `internal/<n>` upload is the store app's build and shares its container; the guard costs nothing once it does.
 **Cost:** a tester build offers no Production row; a tester with prod data on the device starts in a new staging (or
 dev) profile and has to reinstall the store app to see that data.
+
+## RC023 — pp-ledger has release branches; its pins are vX.Y.Z
+
+**Date:** 2026-11-24
+**Status:** Accepted (Hongwei, 2026-11-24). Amends [DESIGN § Libraries and numbering](DESIGN.md#libraries-and-numbering)
+for pp-ledger; the pp-cpp-* libraries are unchanged. Its own record:
+[pp-ledger projects/release](https://github.com/people-post/pp-ledger/blob/main/projects/release/DECISIONS.md) (RL001–RL007).
+**Decision:** pp-ledger releases as a product, as pp-node does: `main` and one `release/X.Y` per minor, candidates
+`vX.Y.Z-rc.N` built once and promoted to `vX.Y.Z`, the same backport bot and release-branch checks. Its first release
+is **2.0.0**; the `release/vX.Y.Z` tags before it were development pins and are retired. pp-browser's `main` may pin a
+pp-ledger candidate or release; a pp-node release branch pins a pp-ledger release, and a ledger fix it needs comes as
+a pp-ledger patch release from the branch it pins.
+**Rationale:** pp-ledger is a network's software as well as a library: operators run its nodes, and once its network
+launches the chain's formats are frozen and rule changes switch on at a signed epoch (pp-ledger RL006). Main plus tags
+would make every fix to a running network carry everything since its release.
+**Alternatives:** Keep pp-ledger with the libraries (main plus tags); a library release branch only when a product
+branch needs one (the current rule for pp-cpp-*: too late for a network's first fix).
+
+## RC024 — App release 1 is version 1.1.0
+
+**Date:** 2026-11-25
+**Status:** Accepted (Hongwei, on Leo's proposal, 2026-11-25). Amends [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) and [RC018](#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 4 for the app only: pp-node stays 10.0 and the relay 1.0.
+**Decision:** Release 1 of the app is **1.1.0**: branch `release/app-1.1`, candidates `v1.1.0-rc.<n>`, the release `v1.1.0`. Its relay floor `min_client_version` is `1.1.0`. `main`'s `PP_BROWSER_VERSION` is 1.1.0 from now on, and the tree no longer sets a release-version default (the stale `1.0.0-rc16`): a dev build reports its version, a candidate the version its tag names.
+**Rationale:** `v1.0.0-rc14`…`rc16` (the older tag form) and TestFlight builds marketed 1.0.0 already exist, all from before the signed-format cutover, and tags never move: a release 1.0.0 would share its version with builds that cannot reach the cutover relays. The app's own version line (RC016) lets it skip 1.0 at no cost. With the floor at 1.1.0 those builds, which report 1.0.0, get the relay's *update* answer instead of failing on the signed formats.
+**Alternatives:** Keep 1.0.0 (the same version as pre-cutover builds; the floor cannot tell them apart); 2.0.0 (no format reason for a major).
+

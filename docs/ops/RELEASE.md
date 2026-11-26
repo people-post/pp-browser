@@ -24,13 +24,13 @@ Step by step, with who does what and how to check it: the [release, hotfix and a
 | **`release/node-X.Y`** | One per pp-node release, cut from main; takes `pp-node/vX.Y.*` tags |
 
 ```text
-main ──cut──► release/app-1.0 ──tag──► v1.0.0-rc.1 … v1.0.0-rc.<n> ──tag (same commit)──► v1.0.0
+main ──cut──► release/app-1.1 ──tag──► v1.1.0-rc.1 … v1.1.0-rc.<n> ──tag (same commit)──► v1.1.0
      └─cut──► release/node-10.0 ──tag──► pp-node/v10.0.0-rc.1 … ──tag (same commit)──► pp-node/v10.0.0
 ```
 
 A release branch takes fixes only. Fixes land on main first and are then backported to each live release branch that needs them (DESIGN [§ Release lines are first-class](../../projects/release-compatibility/DESIGN.md#release-lines-are-first-class)); release branches are never merged back. A `backport release/app-X.Y` label on the merged main PR has the backport bot open the cherry-pick PR ([§ Release branches and backports](#release-branches-and-backports)).
 
-The libraries (pp-cpp-*) and pp-ledger have only `main`: pins are release tags cut on their `main`.
+The libraries (pp-cpp-*) have only `main`: pins are release tags cut on their `main`. pp-ledger has release branches of its own (`release/X.Y`, tags `vX.Y.Z-rc.N` and `vX.Y.Z`, [RC023](../../projects/release-compatibility/DECISIONS.md#rc023--pp-ledger-has-release-branches-its-pins-are-vxyz)): `main` may pin a pp-ledger candidate or release, a release branch pins a release.
 
 ## Tags
 
@@ -46,7 +46,7 @@ Release tags are immutable: never move or re-push one; a fix is a new candidate.
 | `rc-build/<build number>` | `ios-testflight.yml` | the candidate's commit | The TestFlight build number a release candidate was uploaded with |
 | `node-internal/<YYYY-MM-DD>.<n>` | `release-pp-node.yml` | the built commit (on main) | An internal pp-node build (Run workflow); not a release |
 
-Workflows create their tags only after the build (and the upload, or the image smoke) succeeded, and never move one: creating a tag that exists fails the job. So `TestFlight 1.0.0 (152)` is `git show internal/152` or `git show rc-build/152`.
+Workflows create their tags only after the build (and the upload, or the image smoke) succeeded, and never move one: creating a tag that exists fails the job. So `TestFlight 1.1.0 (152)` is `git show internal/152` or `git show rc-build/152`.
 
 Numbers: `-rc.<n>` counts from 1 within a version. TestFlight build numbers are one counter for dev builds and candidates: the next after the highest `internal/<n>` or `rc-build/<n>` (and after 143, the last upload before builds were tagged). The older `v1.0.0-rcN` / `pp-node/v9.0.0` forms are no longer accepted.
 
@@ -55,20 +55,20 @@ Numbers: `-rc.<n>` counts from 1 within a version. TestFlight build numbers are 
 ### Release candidate → release (app)
 
 1. Land work on **`main`** (PRs; build CI green).
-2. Cut the release branch from main once per X.Y: `git push origin main:release/app-1.0`.
+2. Cut the release branch from main once per X.Y: `git push origin main:release/app-1.1`.
 3. Tag a candidate on the branch and push it:
 
 ```bash
-git fetch origin && git checkout --detach origin/release/app-1.0
-git tag -a v1.0.0-rc.1 -m "pp-browser 1.0.0 rc.1"
-git push origin v1.0.0-rc.1
+git fetch origin && git checkout --detach origin/release/app-1.1
+git tag -a v1.1.0-rc.1 -m "pp-browser 1.1.0 rc.1"
+git push origin v1.1.0-rc.1
 ```
 
-4. [`release.yml`](../../.github/workflows/release.yml) builds it once, with version 1.0.0 (not `1.0.0-rc.1`: only the build number differs between candidates): macOS, Windows and Android, and the TestFlight upload through [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) (tagging `rc-build/<n>`). When all of them pass, it publishes the GitHub prerelease `pp-browser v1.0.0-rc.1`.
-5. Test the candidate. A fix lands on main, is backported to `release/app-1.0`, and gets the next candidate (`v1.0.0-rc.2`).
-6. Release the candidate that passed by tagging **its commit**: `git tag -a v1.0.0 <commit of v1.0.0-rc.N> -m "pp-browser 1.0.0" && git push origin v1.0.0`. Nothing is rebuilt: the `promote` job publishes the GitHub release `pp-browser v1.0.0` with that candidate's files (same bytes, their SHA-256 listed) and names its TestFlight build. It is marked latest only when it is the newest `vX.Y.Z`.
+4. [`release.yml`](../../.github/workflows/release.yml) builds it once, with version 1.1.0 (not `1.1.0-rc.1`: only the build number differs between candidates): macOS, Windows and Android, and the TestFlight upload through [`ios-testflight.yml`](../../.github/workflows/ios-testflight.yml) (tagging `rc-build/<n>`). When all of them pass, it publishes the GitHub prerelease `pp-browser v1.1.0-rc.1`.
+5. Test the candidate. A fix lands on main, is backported to `release/app-1.1`, and gets the next candidate (`v1.1.0-rc.2`).
+6. Release the candidate that passed by tagging **its commit**: `git tag -a v1.1.0 <commit of v1.1.0-rc.N> -m "pp-browser 1.1.0" && git push origin v1.1.0`. Nothing is rebuilt: the `promote` job publishes the GitHub release `pp-browser v1.1.0` with that candidate's files (same bytes, their SHA-256 listed) and names its TestFlight build. It is marked latest only when it is the newest `vX.Y.Z`.
 
-A hotfix is the same from the affected release branch: `v1.0.1-rc.1`, then `v1.0.1` on its commit. The guard refuses `vX.Y.Z-rc.<n>` once `vX.Y.Z` exists.
+A hotfix is the same from the affected release branch: `v1.1.1-rc.1`, then `v1.1.1` on its commit. The guard refuses `vX.Y.Z-rc.<n>` once `vX.Y.Z` exists.
 
 ### Release candidate → release (pp-node)
 
@@ -223,13 +223,13 @@ Each product's release that ships into the field gets a branch cut from `main`, 
 
 **What a release branch takes:** fixes only. No features and no format changes; an additive change only where a fix needs it; a security cutover may go on. The newest branch takes every fix; older branches still in range take only security fixes and fixes for a break between in-range versions. Release branches are never merged back into `main`.
 
-**Cutting one** (the release owner): `git push origin main:refs/heads/release/app-1.0`. [`release-issue.yml`](../../.github/workflows/release-issue.yml) then opens the issue "Release app 1.0" from [`.github/ISSUE_TEMPLATE/release.md`](../../.github/ISSUE_TEMPLATE/release.md), assigned to whoever pushed the branch, where the checklist is ticked and the go / no-go recorded, and creates the label `backport release/app-1.0`. [Build CI](../../.github/workflows/build.yml) runs on the branch's pushes and on PRs to it, with every platform and every test (not a PR's subset).
+**Cutting one** (the release owner): `git push origin main:refs/heads/release/app-1.1`. [`release-issue.yml`](../../.github/workflows/release-issue.yml) then opens the issue "Release app 1.1" from [`.github/ISSUE_TEMPLATE/release.md`](../../.github/ISSUE_TEMPLATE/release.md), assigned to whoever pushed the branch, where the checklist is ticked and the go / no-go recorded, and creates the label `backport release/app-1.1`. [Build CI](../../.github/workflows/build.yml) runs on the branch's pushes and on PRs to it, with every platform and every test (not a PR's subset).
 
 **Fixes land on `main` first, then are backported:**
 
 1. Merge the fix to `main` as usual.
-2. Label the PR `backport release/app-1.0`, before or after the merge; one label per branch that needs it (a fix in code app and pp-node share takes one per product's branch).
-3. [`backport.yml`](../../.github/workflows/backport.yml) cherry-picks the PR's commits with `-x` (each keeps its `(cherry picked from commit …)` trailer) onto `backport/pr-<N>-to-release-app-1.0`, cut from the target, and opens a PR to `release/app-1.0` that links the original. It asks the release owner (repo variable `RELEASE_OWNER`; the original author when unset or when the request fails) for review, and comments the link on the original. The commits: a merge commit's PR commits in order (merges inside the PR skipped), a squash merge's one commit, or a rebase merge's commits. Commits already on the target are skipped.
+2. Label the PR `backport release/app-1.1`, before or after the merge; one label per branch that needs it (a fix in code app and pp-node share takes one per product's branch).
+3. [`backport.yml`](../../.github/workflows/backport.yml) cherry-picks the PR's commits with `-x` (each keeps its `(cherry picked from commit …)` trailer) onto `backport/pr-<N>-to-release-app-1.1`, cut from the target, and opens a PR to `release/app-1.1` that links the original. It asks the release owner (repo variable `RELEASE_OWNER`; the original author when unset or when the request fails) for review, and comments the link on the original. The commits: a merge commit's PR commits in order (merges inside the PR skipped), a squash merge's one commit, or a rebase merge's commits. Commits already on the target are skipped.
 4. The backport PR runs that branch's checks and needs a human approval (the release owner's may do).
 
 **Checks on the bot's PRs.** A PR opened, or a branch pushed, with the workflow token (`GITHUB_TOKEN`, the only token the bot has) starts no `pull_request` or `push` run, so the bot dispatches `build.yml` on its branch; those check runs land on the PR's head commit. A human push to the branch then runs the normal PR checks. If a run is missing: Actions → build → Run workflow on the backport branch, or close and reopen the PR.
@@ -240,7 +240,7 @@ Each product's release that ships into the field gets a branch cut from `main`, 
 
 **A hotfix starts from the affected branch**, not only the newest: backport to `release/app-1.1` (or the exception above), and tag `v1.1.Z+1` there, its candidates `-rc.N` first.
 
-**Closing a branch** (the release owner, when the version table says its release has left the range): close its open backport PRs with a note naming the range exit (`gh pr list --base release/app-1.0 --state open --json number --jq '.[].number' | xargs -I{} gh pr close {} --comment "release/app-1.0 left the supported range on <date>; not backported."`); rename the label `backport release/app-1.0` to `closed release/app-1.0`, so the bot no longer takes it and the PRs keep it as a record; then lock the branch against pushes in branch protection. The branch is kept: its tags and history must stay.
+**Closing a branch** (the release owner, when the version table says its release has left the range): close its open backport PRs with a note naming the range exit (`gh pr list --base release/app-1.1 --state open --json number --jq '.[].number' | xargs -I{} gh pr close {} --comment "release/app-1.1 left the supported range on <date>; not backported."`); rename the label `backport release/app-1.1` to `closed release/app-1.1`, so the bot no longer takes it and the PRs keep it as a record; then lock the branch against pushes in branch protection. The branch is kept: its tags and history must stay.
 
 ## Deferred
 

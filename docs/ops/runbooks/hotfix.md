@@ -5,14 +5,14 @@
 A fix that one or more live release branches need: it lands on main, is backported by the bot, and ships as a patch
 candidate from each affected branch. The rules: [RELEASE.md § Release branches and backports](../RELEASE.md#release-branches-and-backports)
 ([RC014](../../../projects/release-compatibility/DECISIONS.md#rc014--backport-and-hotfix-rules-after-leos-second-review)).
-Examples use `release/app-1.0`; pp-node is the same with `release/node-X.Y` and `pp-node/v…` tags.
+Examples use `release/app-1.1`; pp-node is the same with `release/node-X.Y` and `pp-node/v…` tags.
 
 - **When:** a bug in a release in the field, or in a candidate not yet released. The newest release branch takes
   every fix; older branches still in range take only security fixes and fixes for a break between in-range
   versions. Never features or format changes (an additive change only where the fix needs it).
 - **Who:** the fix's author writes and merges it on main; the release owner approves the backport PR, merges it,
   and tags the patch.
-- **Record:** a comment on the branch's release issue ("Release app 1.0") per patch; the `incident` issue too when
+- **Record:** a comment on the branch's release issue ("Release app 1.1") per patch; the `incident` issue too when
   the fix answers one ([app-incident.md](app-incident.md)).
 
 ## 1. Which branches
@@ -22,7 +22,7 @@ the bug:
 
 ```bash
 git tag --contains <commit that brought the bug> --list 'v*'                       # releases built on it
-git log --oneline --grep 'cherry picked from commit <sha>' origin/release/app-1.0   # backported to a branch
+git log --oneline --grep 'cherry picked from commit <sha>' origin/release/app-1.1   # backported to a branch
 ```
 
 ## 2. Fix on main first
@@ -35,19 +35,19 @@ at all is the [exception](#5-the-release-branch-only-exception).
 Label the merged PR once per branch that needs it (before or after the merge):
 
 ```bash
-gh pr edit <main PR> --add-label 'backport release/app-1.0'
+gh pr edit <main PR> --add-label 'backport release/app-1.1'
 ```
 
 [`backport.yml`](../../../.github/workflows/backport.yml) cherry-picks the PR's commits with `-x` onto
-`backport/pr-<N>-to-release-app-1.0` and opens a PR to `release/app-1.0` that links the original, asking the release
+`backport/pr-<N>-to-release-app-1.1` and opens a PR to `release/app-1.1` that links the original, asking the release
 owner for review. Verify: the bot's comment on the original PR ("opened #M"), or
-`gh run list --workflow backport.yml --limit 1` and `gh pr list --base release/app-1.0`.
+`gh run list --workflow backport.yml --limit 1` and `gh pr list --base release/app-1.1`.
 
 **Its checks.** A PR the bot opens starts no `pull_request` run, so the bot dispatches `build.yml` on its branch
 (every platform, every test):
 
 ```bash
-gh run list --workflow build.yml --branch backport/pr-<N>-to-release-app-1.0 --limit 1
+gh run list --workflow build.yml --branch backport/pr-<N>-to-release-app-1.1 --limit 1
 ```
 
 The provenance check ([`release-branch-pr.yml`](../../../.github/workflows/release-branch-pr.yml): every commit
@@ -62,12 +62,12 @@ enforced by protection on release branches (PHASES § P2).
 **It does not apply.** The bot pushes nothing and comments on the original PR with the conflicting commit, its files
 and the commands to do it by hand. The author does it: resolve, and say what differs on a line
 `branch-specific backport: …` in that commit's message (or in a separate commit when the rest picks cleanly); open
-the PR to `release/app-1.0` linking the original. The same by hand for a backport touching `.github/workflows/`
+the PR to `release/app-1.1` linking the original. The same by hand for a backport touching `.github/workflows/`
 (the bot's token cannot push it).
 
 ## 4. An older live branch
 
-A fix for app 1.0 while 1.1 is current goes to `release/app-1.0`: label `backport release/app-1.0` (and each newer
+A fix for app 1.1 while 1.2 is current goes to `release/app-1.1`: label `backport release/app-1.1` (and each newer
 branch that needs it), tag the patch there (step 6). Its GitHub release is not marked latest, since a newer
 `vX.Y.Z` exists.
 
@@ -77,11 +77,11 @@ A fix only a release branch needs (the code is gone from main, say): a PR straig
 the reason on a line `Why not on main: …`.
 
 ```bash
-git switch -c fix/<name> origin/release/app-1.0
+git switch -c fix/<name> origin/release/app-1.1
 # commit the fix
 git push -u origin fix/<name>
-gh pr create --base release/app-1.0 --label release-branch-only \
-  --title '[release/app-1.0] <fix>' --body $'<what and why>\n\nWhy not on main: <the reason>'
+gh pr create --base release/app-1.1 --label release-branch-only \
+  --title '[release/app-1.1] <fix>' --body $'<what and why>\n\nWhy not on main: <the reason>'
 ```
 
 `release-branch-pr.yml` fails the PR without the reason (at least a few words).
@@ -93,13 +93,13 @@ Once every fix is merged on the branch, tag the next patch's first candidate on 
 same release issue.
 
 ```bash
-git fetch origin && git checkout --detach origin/release/app-1.0
-git tag -a v1.0.1-rc.1 -m "pp-browser 1.0.1 rc.1"
-git push origin v1.0.1-rc.1
+git fetch origin && git checkout --detach origin/release/app-1.1
+git tag -a v1.1.1-rc.1 -m "pp-browser 1.1.1 rc.1"
+git push origin v1.1.1-rc.1
 ```
 
-The guard refuses `v1.0.0-rc.<n>` once `v1.0.0` exists: a fix to a release is always `vX.Y.Z+1-rc.1`. Then
-`v1.0.1` on the commit of the candidate that passed, and the store submission as for a release. When the fix answers
+The guard refuses `v1.1.0-rc.<n>` once `v1.1.0` exists: a fix to a release is always `vX.Y.Z+1-rc.1`. Then
+`v1.1.1` on the commit of the candidate that passed, and the store submission as for a release. When the fix answers
 a field problem, Leo raises `latest_client_version` to the patch so users below it see the update banner
 ([app-incident.md § 6](app-incident.md#6-communicate)).
 

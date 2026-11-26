@@ -396,19 +396,21 @@ rules ([RC008](DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-cand
 | Fix or backport to a release branch | All unit tests, the frozen-data compatibility tests, every platform build that ships, the lab scenarios the fix touches (`--only`); for the relay, its integration tests and the local-stack end-to-end test |
 | Version tag | No new build: deploy the tested artifact to staging / canary, then production after approval |
 
-The nightly lab and the full lab run on main and before each `.0` release; a fix does not wait for them.
+The lab nightly and the full lab run on main and before each `.0` release; a fix does not wait for them.
 
 ### Libraries and numbering
 
 **Libraries stay simpler.** pp-cpp-* keep main plus version tags. A library release branch is cut only when a
-product's release branch needs a library fix without taking a newer major version.
+product's release branch needs a library fix without taking a newer major version. pp-ledger is not one of them: it is
+a network's software too, with its own `release/X.Y` branches and `vX.Y.Z` releases, the first 2.0.0
+([RC023](DECISIONS.md#rc023--pp-ledger-has-release-branches-its-pins-are-vxyz)).
 
 **App, pp-node and the relay each have their own version** ([RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version)), as the repo's two trains already do (`v*` for
 the app, `pp-node/v*` for the node, `docs/ops/RELEASE.md`):
 
 | Product | Tags | Release branch | Release 1 |
 |---------|------|----------------|-----------|
-| App | `vX.Y.Z` (pp-browser) | `release/app-X.Y` | **1.0** (its first public release; 1.0.0 today) |
+| App | `vX.Y.Z` (pp-browser) | `release/app-X.Y` | **1.1** (its first public release; 1.1.0, [RC024](DECISIONS.md#rc024--app-release-1-is-version-110): 1.0.0 was taken by pre-cutover builds) |
 | pp-node | `pp-node/vX.Y.Z` (pp-browser) | `release/node-X.Y` | **10.0** (the next major after v9) |
 | Relay | `vX.Y.Z` (pp-relay-apis) | `release/X.Y` | **1.0** |
 
@@ -514,11 +516,11 @@ has none.
 
 ## Release checklist
 
-**The release owner for release 1 (app 1.0, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
+**The release owner for release 1 (app 1.1, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
 
 Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
 release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
-a product's release branch is cut, a workflow opens an issue for it ("Release app 1.0", "Release pp-node 10.0") from a template (`.github/ISSUE_TEMPLATE/release.md`)
+a product's release branch is cut, a workflow opens an issue for it ("Release app 1.1", "Release pp-node 10.0") from a template (`.github/ISSUE_TEMPLATE/release.md`)
 and assigns the release owner, who ticks the boxes, links results and records the go/no-go there. What CI and the
 workflows already check (tests, frozen data, the mixed-version lab, the staging deploy) is linked, not re-checked
 by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the issue.
@@ -536,7 +538,7 @@ by hand. The relay keeps its own list in pp-relay-apis (Leo's), linked from the 
 - [ ] Full CI on every shipped platform, frozen-data tests and the app ↔ relay behaviour suite green
 - [ ] Staging: the relay candidate deployed; the store app (N−1) and the candidate tested against it; relay rollback
   rehearsed
-- [ ] Lab scenarios the release touches, and the latest nightly lab, green
+- [ ] Lab scenarios the release touches, and the latest lab nightly, green
 - [ ] On real devices from internal testing: register, message, call, push and VoIP wake, link a device, account
   deletion
 - [ ] Release notes and TestFlight "What to Test" written
@@ -602,7 +604,7 @@ in the same rehearsal once identity rotation exists (RC011). A runbook never run
 
 The lab is too long for a developer to run whole (about 20 suites in `scripts/test/pp_local_test.sh`; the app lab
 alone, `scripts/test/pp_app_lab.py`, has 103 scenarios), and nothing ran it on a schedule: on 2026-11-18 the last 24
-nightly runs (`.github/workflows/nightly-lab.yml`) were all skipped, because the repo variables `PP_LAB_INSTANCE_ID`
+nightly runs (`.github/workflows/lab-nightly.yml`) were all skipped, because the repo variables `PP_LAB_INSTANCE_ID`
 and `PP_LAB_AWS_ROLE` that start the lab machine were never set. Tiers, each with a time budget
 ([RC013](DECISIONS.md#rc013--regression-suites-in-tiers-picked-by-capability-run-remotely)):
 
@@ -656,7 +658,7 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
 6. **The version table:** one table in pp-browser's `docs/contracts/`; pp-relay-apis `SPECS.md` links to it and
    lists only the relay's own formats.
 7. **One number for app and pp-node:** no, superseded by [RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version) (2026-11-19): each product has its own version;
-   release 1 is app 1.0, pp-node 10.0, relay 1.0.
+   release 1 is app 1.1 ([RC024](DECISIONS.md#rc024--app-release-1-is-version-110)), pp-node 10.0, relay 1.0.
 8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
    `dev/<date>.<n>` (relay dev deploys; `qa/` before RC009); none for CI builds nobody installs. *(Leo, for the
    relay's)*
