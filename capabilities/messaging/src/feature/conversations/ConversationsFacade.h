@@ -284,6 +284,8 @@ public:
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id);
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
   void SetSupportAccountId(std::string account_id);
+  /** The PP support account's id as last set (empty: none); read-only, for what must keep that chat out (forward targets). */
+  std::string SupportAccountId();
   void RegisterContactDirectEndpoints(const Contact& contact);
   /** The keys a directory entry carries for its account, each kept only when it proves to be the account's. */
   void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);

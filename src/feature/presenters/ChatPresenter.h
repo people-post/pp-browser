@@ -649,6 +649,13 @@ public:
 
   // --- Forwarding text and contact cards (DEV/PLAN-message-forward-text.md) -----------------------------------------
 
+  /**
+   * The chats and people the "Forward to" list offers (ClassifyForwardTarget on each, then OrderForwardTargets): no AI
+   * conversation, no PP support chat, not ourselves, no blocked contact, no group we cannot post in.
+   */
+  std::vector<ForwardTarget> ForwardTargets();
+  /** The chat ids of `chosen`, in order; a person with no chat yet gets one made now (empty id: it could not be made). */
+  std::vector<std::string> ForwardTargetThreads(const std::vector<ForwardTarget>& chosen);
   /** The open chat's message can be forwarded (CanForwardMessage on the row as stored now). */
   bool CanForward(const std::string& message_id);
   /** Starts choosing messages in the open chat with `message_id` ticked; false (nothing started) when it cannot be forwarded. */
@@ -676,7 +683,10 @@ public:
    * returns. A lock stops it too: it clears the keys the messaging layer sends with (IdentityStore::ClearDek).
    */
   void AbortForward();
-  /** A forward was stopped part-way; the next chat entry tells the user ("only part was forwarded"). Read once. */
+  /**
+   * A forward was stopped part-way; the next chat entry tells the user ("only part was forwarded"). Read once, and only
+   * by the account it happened under: another account on this device never hears of it.
+   */
   bool TakeForwardInterrupted();
 
   /** Tests: the posting of each batch, and the messaging calls a forward makes (default: the UI queue; the facade). */
@@ -721,6 +731,9 @@ private:
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
   uint64_t forward_epoch_ = 0;
   bool forward_interrupted_ = false;
+  /** The account the running forward was started under, and the one a stopped forward is told to. */
+  std::string forward_run_account_;
+  std::string forward_interrupted_account_;
   std::optional<ForwardPorts> forward_ports_;
   std::function<void(std::function<void()>)> forward_post_;
   ForwardPorts ForwardPortsNow();

@@ -63,6 +63,7 @@ struct FakeMessaging {
   std::string active = "src";
   std::map<std::string, ThreadMessage> rows;
   std::map<std::string, ForwardTargetKind> targets;
+  std::string account = "acct-a";
   std::vector<SendCall> calls;
   /** Runs inside each send, with the number of sends so far (this one included). */
   std::function<void(size_t)> during_send;
@@ -80,6 +81,7 @@ struct FakeMessaging {
       const auto it = targets.find(thread);
       return it == targets.end() ? ForwardTargetKind::Unavailable : it->second;
     };
+    ports.account_id = [this]() { return account; };
     ports.send_user = [this](const std::string& thread, const std::string& text, SendRelayOptions options) {
       return Record("user", thread, text, options);
     };
@@ -449,6 +451,24 @@ TEST_F(ChatForwardTest, SignOutMidBatchStopsTheBatchAndCallsNoSendAfterwards) {
   EXPECT_FALSE(presenter.TakeForwardInterrupted()) << "once";
 }
 
+TEST_F(ChatForwardTest, TheInterruptedNoticeIsOnlyForTheAccountItHappenedUnder) {
+  AddTexts(3);
+  chats.during_send = [this](const size_t sends) {
+    if (sends == 2) {
+      presenter.ResetForNewProfile(); // signing out in the middle of a send
+    }
+  };
+  ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
+  presenter.ToggleForwardSelection("m2");
+  presenter.ForwardSelected({"bob", "carol"}, nullptr);
+  Drain();
+  chats.account = "acct-b"; // another account signs in on this device
+  EXPECT_FALSE(presenter.TakeForwardInterrupted()) << "a different account never hears of it";
+  chats.account = "acct-a"; // the first one signs in again
+  EXPECT_TRUE(presenter.TakeForwardInterrupted());
+  EXPECT_FALSE(presenter.TakeForwardInterrupted()) << "once";
+}
+
 TEST_F(ChatForwardTest, LockMidBatchStopsTheBatchLikeSignOut) {
   // Locking clears the keys a send needs (ProfileSecretsEngine::Lock -> IdentityStore::ClearDek), so a batch does not
   // go on through a lock: the shell stops it (AbortForward) and no send is made after that.
@@ -492,6 +512,152 @@ TEST_F(ChatForwardTest, LockSignOutOrThreadDeletedLeavesSelectionMode) {
       "another-chat"); // a different chat opens (no messaging bound: it is refused, the choosing still ends)
   EXPECT_FALSE(presenter.ForwardChoosing());
   EXPECT_FALSE(presenter.TakeForwardInterrupted()) << "nothing was being sent";
+}
+
+Thread DirectThread(const std::string& id, const std::string& peer, const int64_t updated_at = 0) {
+  Thread thread;
+  thread.id = id;
+  thread.kind = ThreadKind::Direct;
+  thread.peer_identity_value = peer;
+  thread.updated_at = updated_at;
+  return thread;
+}
+
+ForwardTargetFacts SavedContact() {
+  ForwardTargetFacts facts;
+  facts.saved_contact = true;
+  facts.my_account = "acct-me";
+  facts.support_account = "acct-support";
+  return facts;
+}
+
+TEST(ForwardTargetKindTest, OnlyASavedUnblockedContactOrAGroupWeMayPostInIsATarget) {
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t1", "acct-bob"), SavedContact()), ForwardTargetKind::Direct);
+
+  Thread ai;
+  ai.kind = ThreadKind::Ai;
+  EXPECT_EQ(ClassifyForwardTarget(ai, SavedContact()), ForwardTargetKind::Unavailable) << "an AI conversation";
+
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t2", "acct-me"), SavedContact()), ForwardTargetKind::Unavailable)
+      << "ourselves";
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t3", "acct-support"), SavedContact()), ForwardTargetKind::Unavailable)
+      << "the PP support chat";
+  ForwardTargetFacts no_support = SavedContact();
+  no_support.support_account.clear();
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t4", ""), no_support), ForwardTargetKind::Direct)
+      << "an empty id never matches an empty support account";
+
+  ForwardTargetFacts blocked = SavedContact();
+  blocked.blocked = true;
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t5", "acct-bob"), blocked), ForwardTargetKind::Unavailable);
+  ForwardTargetFacts stranger = SavedContact();
+  stranger.saved_contact = false;
+  EXPECT_EQ(ClassifyForwardTarget(DirectThread("t6", "acct-bob"), stranger), ForwardTargetKind::Unavailable);
+
+  Thread group;
+  group.kind = ThreadKind::Group;
+  group.group_id = "g1";
+  ForwardTargetFacts member;
+  member.in_group = true;
+  EXPECT_EQ(ClassifyForwardTarget(group, member), ForwardTargetKind::Group);
+  ForwardTargetFacts left;
+  EXPECT_EQ(ClassifyForwardTarget(group, left), ForwardTargetKind::Unavailable) << "removed or left";
+  ForwardTargetFacts ended = member;
+  ended.group_dissolved = true;
+  EXPECT_EQ(ClassifyForwardTarget(group, ended), ForwardTargetKind::Unavailable);
+}
+
+ForwardTarget Chat(const std::string& thread, const std::string& contact, const std::string& title, const bool group,
+                   const int64_t updated_at) {
+  ForwardTarget target;
+  target.thread_id = thread;
+  target.contact_id = contact;
+  target.title = title;
+  target.group = group;
+  target.updated_at = updated_at;
+  return target;
+}
+
+TEST(ForwardTargetKindTest, TheListIsRecentChatsThenOtherPeopleThenOtherGroupsEachOnce) {
+  std::vector<ForwardTarget> all;
+  for (int i = 0; i < 10; ++i) { // ten chats; the eight most recent lead
+    all.push_back(
+        Chat("t" + std::to_string(i), "c" + std::to_string(i), "Person " + std::to_string(i), false, 100 + i));
+  }
+  all.push_back(Chat("", "c-new", "Zed", false, 0));         // a contact with no chat yet
+  all.push_back(Chat("", "c3", "Person 3 again", false, 0)); // c3 has a chat: not listed twice
+  all.push_back(Chat("g-old", "", "Alpha club", true, 5));
+  all.push_back(Chat("g-new", "", "Beta club", true, 500)); // the most recent chat of all
+  all.push_back(Chat("t0", "c0", "Person 0", false, 100));  // the same chat twice
+  const std::vector<ForwardTarget> ordered = OrderForwardTargets(all);
+
+  std::vector<std::string> keys;
+  for (const ForwardTarget& target : ordered) {
+    keys.push_back(target.Key());
+  }
+  const std::vector<std::string> expected = {"g-new", "t9", "t8", "t7",
+                                             "t6",    "t5", "t4", "t3",            // recent chats
+                                             "t0",    "t1", "t2", "contact:c-new", // the other people, by name
+                                             "g-old"};                             // the other groups
+  EXPECT_EQ(keys, expected);
+}
+
+TEST_F(ChatForwardTest, TheListOffersNoAiNoSupportNoSelfNoBlockedAndNoGroupWeLeft) {
+  ForwardCandidate bob{DirectThread("t-bob", "acct-bob", 10), "bob", "Bob", "", SavedContact()};
+  ForwardCandidate ai;
+  ai.thread.id = "t-ai";
+  ai.thread.kind = ThreadKind::Ai;
+  ai.title = "New chat";
+  ForwardCandidate support{DirectThread("t-support", "acct-support", 9), "support", "PP support", "", SavedContact()};
+  ForwardCandidate me{DirectThread("t-me", "acct-me", 8), "me", "Me", "", SavedContact()};
+  ForwardCandidate blocked{DirectThread("t-blocked", "acct-bad", 7), "bad", "Bad", "", SavedContact()};
+  blocked.facts.blocked = true;
+  ForwardCandidate left;
+  left.thread.id = "t-left";
+  left.thread.kind = ThreadKind::Group;
+  left.thread.group_id = "g-left";
+  left.title = "Left club";
+  ForwardCandidate club;
+  club.thread.id = "t-club";
+  club.thread.kind = ThreadKind::Group;
+  club.thread.group_id = "g-club";
+  club.thread.updated_at = 20;
+  club.title = "Club";
+  club.facts.in_group = true;
+  ForwardPorts ports = chats.Ports();
+  ports.candidates = [=]() { return std::vector<ForwardCandidate>{bob, ai, support, me, blocked, left, club}; };
+  presenter.SetForwardPortsForTest(ports);
+
+  std::vector<std::string> keys;
+  for (const ForwardTarget& target : presenter.ForwardTargets()) {
+    keys.push_back(target.Key());
+  }
+  EXPECT_EQ(keys, (std::vector<std::string>{"t-club", "t-bob"}));
+}
+
+TEST_F(ChatForwardTest, TheSupportChatIsRefusedAtSendTimeToo) {
+  AddTexts(1);
+  ForwardPorts ports = chats.Ports();
+  ports.target_of = [](const std::string& thread) {
+    // What the facade's port does for a chat: its facts, then ClassifyForwardTarget.
+    const Thread t = DirectThread(thread, thread == "t-support" ? "acct-support" : "acct-bob");
+    return ClassifyForwardTarget(t, SavedContact());
+  };
+  presenter.SetForwardPortsForTest(ports);
+  const std::optional<ForwardResult> result = Forward({"m1"}, {"t-support", "t-bob"});
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->skipped_targets, 1u);
+  EXPECT_EQ(chats.TextsTo("t-support").size(), 0u) << "nothing goes to the support chat";
+  EXPECT_EQ(chats.TextsTo("t-bob").size(), 1u);
+}
+
+TEST_F(ChatForwardTest, APersonWithNoChatYetGetsOneWhenChosenAndAFailureIsAnEmptyId) {
+  ForwardPorts ports = chats.Ports();
+  ports.direct_thread_of = [](const std::string& contact) { return contact == "c-ok" ? std::string("made") : ""; };
+  presenter.SetForwardPortsForTest(ports);
+  EXPECT_EQ(presenter.ForwardTargetThreads(
+                {Chat("t1", "c1", "A", false, 1), Chat("", "c-ok", "B", false, 0), Chat("", "c-bad", "C", false, 0)}),
+            (std::vector<std::string>{"t1", "made", ""}));
 }
 
 struct MetricsCapture : logging::Handler {

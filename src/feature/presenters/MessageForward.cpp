@@ -3,6 +3,9 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 
 #include <algorithm>
+#include <cctype>
+#include <iterator>
+#include <set>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -32,6 +35,87 @@ bool CanForwardMessage(const ThreadMessage& message) {
       break;
   }
   return false;
+}
+
+ForwardTargetKind ClassifyForwardTarget(const Thread& thread, const ForwardTargetFacts& facts) {
+  if (thread.kind == ThreadKind::Group) {
+    return thread.group_id && facts.in_group && !facts.group_dissolved ? ForwardTargetKind::Group
+                                                                       : ForwardTargetKind::Unavailable;
+  }
+  if (thread.kind != ThreadKind::Direct) {
+    return ForwardTargetKind::Unavailable; // an AI conversation
+  }
+  if (!facts.saved_contact || facts.blocked) {
+    return ForwardTargetKind::Unavailable;
+  }
+  const std::string& peer = thread.peer_identity_value;
+  if (!peer.empty() && (peer == facts.my_account || peer == facts.support_account)) {
+    return ForwardTargetKind::Unavailable; // ourselves, or the PP support chat
+  }
+  return ForwardTargetKind::Direct;
+}
+
+namespace {
+
+bool NameBefore(const ForwardTarget& a, const ForwardTarget& b) {
+  const auto fold = [](std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    return text;
+  };
+  const std::string left = fold(a.title);
+  const std::string right = fold(b.title);
+  return left != right ? left < right : a.Key() < b.Key();
+}
+
+} // namespace
+
+std::vector<ForwardTarget> OrderForwardTargets(std::vector<ForwardTarget> targets) {
+  // Once each: a chat by its id, a person with a chat by that chat.
+  std::set<std::string> seen;
+  std::set<std::string> contacts_with_a_chat;
+  std::vector<ForwardTarget> unique;
+  for (const ForwardTarget& target : targets) {
+    if (!target.thread_id.empty() && !target.contact_id.empty()) {
+      contacts_with_a_chat.insert(target.contact_id);
+    }
+  }
+  for (ForwardTarget& target : targets) {
+    if (target.thread_id.empty() && contacts_with_a_chat.count(target.contact_id) > 0) {
+      continue;
+    }
+    if (seen.insert(target.Key()).second) {
+      unique.push_back(std::move(target));
+    }
+  }
+  std::vector<ForwardTarget> chats;
+  for (const ForwardTarget& target : unique) {
+    if (!target.thread_id.empty() && target.updated_at > 0) {
+      chats.push_back(target);
+    }
+  }
+  std::stable_sort(chats.begin(), chats.end(), [](const ForwardTarget& a, const ForwardTarget& b) {
+    return a.updated_at != b.updated_at ? a.updated_at > b.updated_at : NameBefore(a, b);
+  });
+  if (chats.size() > kForwardRecentChats) {
+    chats.resize(kForwardRecentChats);
+  }
+  std::set<std::string> recent;
+  for (const ForwardTarget& target : chats) {
+    recent.insert(target.Key());
+  }
+  std::vector<ForwardTarget> people;
+  std::vector<ForwardTarget> groups;
+  for (ForwardTarget& target : unique) {
+    if (recent.count(target.Key()) > 0) {
+      continue;
+    }
+    (target.group ? groups : people).push_back(std::move(target));
+  }
+  std::sort(people.begin(), people.end(), NameBefore);
+  std::sort(groups.begin(), groups.end(), NameBefore);
+  chats.insert(chats.end(), std::make_move_iterator(people.begin()), std::make_move_iterator(people.end()));
+  chats.insert(chats.end(), std::make_move_iterator(groups.begin()), std::make_move_iterator(groups.end()));
+  return chats;
 }
 
 ForwardRun::ForwardRun(ForwardPorts ports, std::string source_thread, std::vector<std::string> message_ids,

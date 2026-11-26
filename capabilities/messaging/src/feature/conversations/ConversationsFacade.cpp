@@ -695,6 +695,10 @@ void ConversationsFacade::SetSupportAccountId(std::string account_id) {
   hub_.MeshMessaging().SetSupportAccountId(std::move(account_id));
 }
 
+std::string ConversationsFacade::SupportAccountId() {
+  return hub_.MeshMessaging().SupportAccountId();
+}
+
 void ConversationsFacade::RegisterContactDirectEndpoints(const Contact& contact) {
   hub_.MeshMessaging().RegisterContactDirectEndpoints(contact);
 }

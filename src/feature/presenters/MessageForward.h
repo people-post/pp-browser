@@ -34,6 +34,59 @@ bool CanForwardMessage(const ThreadMessage& message);
 /** What a chat can take a forward as. */
 enum class ForwardTargetKind { Unavailable, Direct, Group };
 
+/** What decides whether a chat can take a forward; the presenter gathers them from the messaging layer. */
+struct ForwardTargetFacts {
+  /** A one-to-one chat: its peer is a saved contact, and that contact is blocked. */
+  bool saved_contact = false;
+  bool blocked = false;
+  /** A group chat: we are still a member (not removed or left), and its owner has not ended it. */
+  bool in_group = false;
+  bool group_dissolved = false;
+  /** This account's id, and the PP support account's (empty when there is none): a chat with either is no target. */
+  std::string my_account;
+  std::string support_account;
+};
+
+/**
+ * What `thread` is as somewhere to forward to: a saved, unblocked contact's chat, or a group we may post in. Not: an AI
+ * conversation, a chat with ourselves, the PP support chat, a blocked contact, a chat with someone who is not a saved
+ * contact, a group we left or that ended.
+ */
+ForwardTargetKind ClassifyForwardTarget(const Thread& thread, const ForwardTargetFacts& facts);
+
+/** A chat or contact as the messaging layer knows it, before the presenter decides whether it is a target. */
+struct ForwardCandidate {
+  /** The chat; for a contact with no chat yet a Direct thread with an empty id and the contact's identity. */
+  Thread thread;
+  std::string contact_id;
+  std::string title;
+  std::string subtitle;
+  ForwardTargetFacts facts;
+};
+
+/** One row of the "Forward to" list. A contact with no chat yet has no `thread_id`: the chat is made when it is chosen. */
+struct ForwardTarget {
+  std::string thread_id;
+  std::string contact_id;
+  std::string title;
+  std::string subtitle;
+  bool group = false;
+  int64_t updated_at = 0;
+
+  /** What the list and the picker know it by: the chat's id, else "contact:<id>". */
+  std::string Key() const { return thread_id.empty() ? "contact:" + contact_id : thread_id; }
+};
+
+/** The most recently active chats that lead the list. */
+inline constexpr size_t kForwardRecentChats = 8;
+
+/**
+ * The list's order, each chat or person once: the most recent chats (kForwardRecentChats, newest first), then the
+ * other people (a contact whose chat is among the recent ones is not listed twice), then the other groups; each part
+ * by name.
+ */
+std::vector<ForwardTarget> OrderForwardTargets(std::vector<ForwardTarget> targets);
+
 /**
  * What a forward needs from the messaging layer. The presenter fills it from the conversations facade; the send ports
  * are the facade's `SendUserMessage` / `SendGroupMessage`.
@@ -45,6 +98,12 @@ struct ForwardPorts {
   std::function<std::optional<ThreadMessage>(const std::string& thread_id, const std::string& message_id)> get_message;
   /** What `thread_id` is as a target now: a contact's chat we may write to, a group we may post in, or neither. */
   std::function<ForwardTargetKind(const std::string& thread_id)> target_of;
+  /** This account's id now (empty when there is none): a forward stopped part-way is told about to this account only. */
+  std::function<std::string()> account_id;
+  /** Every chat and every saved contact, undecided: the list of "Forward to" is made from them. */
+  std::function<std::vector<ForwardCandidate>()> candidates;
+  /** The one-to-one chat with a contact, made when there is none yet; empty when it cannot be made. */
+  std::function<std::string(const std::string& contact_id)> direct_thread_of;
   std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text, SendRelayOptions options)>
       send_user;
   std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text, SendRelayOptions options)>

@@ -26,6 +26,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactIdentity.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
@@ -1620,35 +1621,94 @@ void ChatPresenter::ForgetCachedPrefs() {
 
 namespace {
 
-/** What `thread_id` is as somewhere to forward to: a saved, unblocked contact's chat, or a group we may post in. */
+/** What decides whether `thread` is somewhere to forward to, read from the messaging layer now. */
+ForwardCandidate ForwardCandidateOf(ConversationsFacade* facade, const Thread& thread, const std::string& my_account,
+                                    const std::string& support_account) {
+  ForwardCandidate candidate;
+  candidate.thread = thread;
+  candidate.facts.my_account = my_account;
+  candidate.facts.support_account = support_account;
+  if (thread.kind == ThreadKind::Group) {
+    // Still in it (not removed or left) and not ended by its owner; a group still checking its members answers the
+    // send itself (MeshDeliveryOrchestrator::SendGroupMessage refuses it before storing anything).
+    candidate.facts.in_group = thread.group_id && facade->LocalGroupRole(*thread.group_id);
+    candidate.facts.group_dissolved = thread.group_id && facade->IsGroupDissolved(*thread.group_id);
+  } else if (thread.kind == ThreadKind::Direct) {
+    const PeerDisplayLabel label = facade->ResolveThreadLabel(thread);
+    candidate.title = label.title;
+    if (label.contact_id) {
+      candidate.contact_id = *label.contact_id;
+      auto contact = facade->GetContact(*label.contact_id);
+      if (contact && *contact) {
+        candidate.facts.saved_contact = true;
+        candidate.facts.blocked = (*contact)->trust == TrustLevel::Blocked;
+      }
+    }
+  }
+  if (thread.kind == ThreadKind::Group) {
+    candidate.title = facade->ResolveThreadLabel(thread).title;
+  }
+  return candidate;
+}
+
+std::string MyAccountOf(ConversationsFacade* facade) {
+  const auto identity = facade->GetIdentity();
+  return identity ? identity->account_id : std::string();
+}
+
+/** What `thread_id` is as somewhere to forward to now (ClassifyForwardTarget on what the messaging layer says). */
 ForwardTargetKind ForwardTargetOf(ConversationsFacade* facade, const std::string& thread_id) {
   auto found = facade->GetThread(thread_id);
   if (!found || !*found) {
     return ForwardTargetKind::Unavailable;
   }
-  const Thread& thread = **found;
-  if (thread.kind == ThreadKind::Group) {
-    // Still in it (not removed or left) and not ended by its owner; a group still checking its members answers the
-    // send itself (MeshDeliveryOrchestrator::SendGroupMessage refuses it before storing anything).
-    return thread.group_id && facade->LocalGroupRole(*thread.group_id) && !facade->IsGroupDissolved(*thread.group_id)
-               ? ForwardTargetKind::Group
-               : ForwardTargetKind::Unavailable;
+  const ForwardCandidate candidate =
+      ForwardCandidateOf(facade, **found, MyAccountOf(facade), facade->SupportAccountId());
+  return ClassifyForwardTarget(candidate.thread, candidate.facts);
+}
+
+/** Every chat that could be a target, and every saved contact with no chat yet (undecided: the presenter classifies). */
+std::vector<ForwardCandidate> ForwardCandidatesOf(ConversationsFacade* facade) {
+  std::vector<ForwardCandidate> out;
+  const std::string me = MyAccountOf(facade);
+  const std::string support = facade->SupportAccountId();
+  std::set<std::string> contacts_with_a_chat;
+  if (auto threads = facade->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Ai || !thread.listed) {
+        continue; // an unlisted chat is one a group's membership events made; its person is listed as a contact below
+      }
+      ForwardCandidate candidate = ForwardCandidateOf(facade, thread, me, support);
+      candidate.subtitle = {};
+      if (!candidate.contact_id.empty()) {
+        contacts_with_a_chat.insert(candidate.contact_id);
+      }
+      out.push_back(std::move(candidate));
+    }
   }
-  if (thread.kind != ThreadKind::Direct) {
-    return ForwardTargetKind::Unavailable; // an AI conversation
+  if (auto contacts = facade->SearchLocalContacts("")) {
+    for (const Contact& contact : *contacts) {
+      if (contacts_with_a_chat.count(contact.id) > 0) {
+        continue;
+      }
+      const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
+      if (target.peer_identity_value.empty()) {
+        continue;
+      }
+      ForwardCandidate candidate;
+      candidate.thread.kind = ThreadKind::Direct;
+      candidate.thread.peer_identity_kind = target.peer_identity_kind;
+      candidate.thread.peer_identity_value = target.peer_identity_value;
+      candidate.contact_id = contact.id;
+      candidate.title = FormatContactTitle(contact);
+      candidate.facts.saved_contact = true;
+      candidate.facts.blocked = contact.trust == TrustLevel::Blocked;
+      candidate.facts.my_account = me;
+      candidate.facts.support_account = support;
+      out.push_back(std::move(candidate));
+    }
   }
-  const PeerDisplayLabel label = facade->ResolveThreadLabel(thread);
-  if (!label.contact_id) {
-    return ForwardTargetKind::Unavailable; // not a saved contact
-  }
-  auto contact = facade->GetContact(*label.contact_id);
-  if (!contact || !*contact || (*contact)->trust == TrustLevel::Blocked) {
-    return ForwardTargetKind::Unavailable;
-  }
-  if (const auto identity = facade->GetIdentity(); identity && thread.peer_identity_value == identity->account_id) {
-    return ForwardTargetKind::Unavailable; // ourselves
-  }
-  return ForwardTargetKind::Direct;
+  return out;
 }
 
 ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
@@ -1663,6 +1723,15 @@ ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
     return **found;
   };
   ports.target_of = [facade](const std::string& thread_id) { return ForwardTargetOf(facade, thread_id); };
+  ports.account_id = [facade]() { return MyAccountOf(facade); };
+  ports.candidates = [facade]() { return ForwardCandidatesOf(facade); };
+  ports.direct_thread_of = [facade](const std::string& contact_id) {
+    if (auto contact = facade->GetContact(contact_id); contact && *contact) {
+      facade->RegisterContactDirectEndpoints(**contact);
+    }
+    auto thread = facade->FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);
+    return thread ? thread->id : std::string();
+  };
   ports.send_user = [facade](const std::string& thread_id, const std::string& text, SendRelayOptions options) {
     return facade->SendUserMessage(thread_id, text, std::move(options));
   };
@@ -1682,6 +1751,43 @@ ForwardPorts ChatPresenter::ForwardPortsNow() {
     return *forward_ports_;
   }
   return facade_ ? FacadeForwardPorts(facade_) : ForwardPorts{};
+}
+
+std::vector<ForwardTarget> ChatPresenter::ForwardTargets() {
+  const ForwardPorts ports = ForwardPortsNow();
+  std::vector<ForwardTarget> targets;
+  if (!ports.candidates) {
+    return targets;
+  }
+  for (const ForwardCandidate& candidate : ports.candidates()) {
+    const ForwardTargetKind kind = ClassifyForwardTarget(candidate.thread, candidate.facts);
+    if (kind == ForwardTargetKind::Unavailable) {
+      continue;
+    }
+    ForwardTarget target;
+    target.thread_id = candidate.thread.id;
+    target.contact_id = candidate.contact_id;
+    target.title = candidate.title;
+    target.subtitle = candidate.subtitle;
+    target.group = kind == ForwardTargetKind::Group;
+    target.updated_at = candidate.thread.updated_at;
+    targets.push_back(std::move(target));
+  }
+  return OrderForwardTargets(std::move(targets));
+}
+
+std::vector<std::string> ChatPresenter::ForwardTargetThreads(const std::vector<ForwardTarget>& chosen) {
+  const ForwardPorts ports = ForwardPortsNow();
+  std::vector<std::string> threads;
+  for (const ForwardTarget& target : chosen) {
+    if (!target.thread_id.empty()) {
+      threads.push_back(target.thread_id);
+    } else {
+      // A contact with no chat yet: the chat is made now. Empty when it cannot be (counted as a chat not reached).
+      threads.push_back(ports.direct_thread_of ? ports.direct_thread_of(target.contact_id) : std::string());
+    }
+  }
+  return threads;
 }
 
 bool ChatPresenter::CanForward(const std::string& message_id) {
@@ -1741,6 +1847,7 @@ void ChatPresenter::ForwardSelected(std::vector<std::string> targets, std::funct
     refuse();
     return;
   }
+  forward_run_account_ = ports.account_id ? ports.account_id() : std::string();
   forward_run_ = std::make_shared<ForwardRun>(std::move(ports), source, std::move(ids), std::move(targets));
   PostForwardBatch(forward_epoch_, forward_run_, std::move(done));
 }
@@ -1786,12 +1893,24 @@ void ChatPresenter::AbortForward() {
   }
   ++forward_epoch_;
   // Part of it went out (a chat may have only some of the messages): the next time the user is in a chat, say so.
-  forward_interrupted_ = forward_interrupted_ || forward_run_->Result().forwarded > 0;
+  if (forward_run_->Result().forwarded > 0) {
+    forward_interrupted_ = true;
+    forward_interrupted_account_ = forward_run_account_;
+  }
   forward_run_.reset();
 }
 
 bool ChatPresenter::TakeForwardInterrupted() {
-  return std::exchange(forward_interrupted_, false);
+  if (!forward_interrupted_) {
+    return false;
+  }
+  const ForwardPorts ports = ForwardPortsNow();
+  const std::string account = ports.account_id ? ports.account_id() : std::string();
+  if (account != forward_interrupted_account_) {
+    return false; // another account (or none yet) is looking: it stays for the account it belongs to
+  }
+  forward_interrupted_ = false;
+  return true;
 }
 
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
