@@ -221,7 +221,8 @@ new device appended itself to, it sends that card to its contacts (the `device_l
 message reaches the new device too. A device restored from the recovery
 phrase starts a fresh list holding only itself (`card_intent` fresh), newer than any it or the account's card
 floor knew; so does a new account's first device (marked `fresh` when its identity is created). A device the newest
-list leaves out is **signed out**: it issues no card, sends nothing, and stops
+list leaves out is **signed out**: it issues no card, sends nothing (chat sends and the control lane's call, group-invite and roster signals are refused
+with the same signed-out error; the card and copy asks it needs to learn its own state still go), and stops
 syncing the account locker; Me → Security says so. The rule is followed by the account's own devices — each
 still holds the account key, so a stolen device could sign itself back in (M021 limit 4).
 
