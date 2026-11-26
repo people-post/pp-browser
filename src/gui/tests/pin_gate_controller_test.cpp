@@ -1041,21 +1041,15 @@ TEST_F(PinGateStartOverTest, AStartOverNotBegunCanBeTappedAgain) {
   EXPECT_EQ(start_overs_, 3);
 }
 
-TEST_F(PinGateStartOverTest, ANewerAppsDataAsksForTheUpdateAndStillOffersStartOverBehindTheConfirm) {
+TEST_F(PinGateStartOverTest, ANewerAppsDataOffersNothingToWipe) {
   BindStartOver(/*with_quit=*/false);
   controller_.ShowProfileProblem(ProfileOpenProblem::Newer);
   EXPECT_TRUE(shown_.profile_problem_newer);
   EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.profile_newer_message"));
   controller_.OnStartOver();
-  ASSERT_TRUE(shown_.start_over_confirm_mode) << "the same confirm step";
-  EXPECT_EQ(start_overs_, 0) << "asked first";
-  // Not now: back to the update page, not the cannot-open one.
-  controller_.OnCancel();
-  EXPECT_TRUE(shown_.profile_problem_mode);
-  EXPECT_TRUE(shown_.profile_problem_newer);
-  controller_.OnStartOver();
+  EXPECT_FALSE(shown_.start_over_confirm_mode);
   controller_.OnStartOverConfirm();
-  EXPECT_EQ(start_overs_, 1);
+  EXPECT_EQ(start_overs_, 0);
 }
 
 TEST_F(PinGateStartOverTest, QuitIsOfferedWhereTheAppCanQuit) {
@@ -1066,40 +1060,17 @@ TEST_F(PinGateStartOverTest, QuitIsOfferedWhereTheAppCanQuit) {
   EXPECT_EQ(quits_, 1);
 }
 
-TEST_F(PinGateStartOverTest, ForgotPinOffersStartOverOnThisDevice) {
+// "Forgot PIN?" offers no wipe: the data there may be perfectly good.
+TEST_F(PinGateStartOverTest, ForgotPinOffersNoStartOver) {
   BindStartOver(/*with_quit=*/false);
   pin_digits_ = 4;
   controller_.ShowUnlock();
-  controller_.OnStartOver();
-  EXPECT_FALSE(shown_.start_over_confirm_mode) << "only behind \"Forgot PIN?\"";
-
   controller_.OnForgotToggle();
   ASSERT_TRUE(shown_.forgot_open);
   controller_.OnStartOver();
-  ASSERT_TRUE(shown_.start_over_confirm_mode);
-  controller_.OnCancel();
-  EXPECT_TRUE(shown_.unlock_mode) << "Cancel goes back to the PIN door";
-  EXPECT_FALSE(shown_.start_over_confirm_mode);
-
-  controller_.OnForgotToggle();
-  controller_.OnStartOver();
   controller_.OnStartOverConfirm();
-  EXPECT_EQ(start_overs_, 1);
-  EXPECT_EQ(completes_, 0) << "no PIN was tried";
-}
-
-TEST_F(PinGateStartOverTest, NotWhileThePinIsChecked) {
-  BindStartOver(/*with_quit=*/false);
-  keypad_available_ = true;
-  pin_digits_ = 4;
-  controller_.ShowUnlock();
-  controller_.OnForgotToggle();
-  for (int digit : {1, 2, 3, 4}) {
-    controller_.OnKey(digit);
-  }
-  ASSERT_TRUE(shown_.keypad_busy);
-  controller_.OnStartOver();
   EXPECT_FALSE(shown_.start_over_confirm_mode);
+  EXPECT_EQ(start_overs_, 0);
 }
 
 // Through the real unlock gate: an account this build cannot open (an October identity, refused after the PIN) shows

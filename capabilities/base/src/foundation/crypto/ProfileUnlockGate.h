@@ -162,7 +162,7 @@ public:
   /** The problem found on this profile (before the PIN, or by the unlock), until the profile is reset. */
   std::optional<ProfileOpenProblem> ProfileProblem() const { return profile_problem_; }
   /**
-   * "Start over on this device" was confirmed (on the problem page, or under "Forgot PIN?"): the page closes and the
+   * "Start over on this device" was confirmed (on the "can't be opened" page): the page closes and the
    * callers waiting on it are told no, so the reset's own EnsureUnlocked raises the first-run page. The problem is
    * kept until ForgetProfileProblem: a reset that fails shows the page again. False (nothing done) while an unlock
    * or a face / fingerprint prompt runs: the reset must not race it.

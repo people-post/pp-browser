@@ -1214,16 +1214,6 @@ TEST_F(ProfileUnlockGateProblemTest, StartOverClosesThePageAndTheResetBringsTheF
   EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
 }
 
-TEST_F(ProfileUnlockGateProblemTest, ForgotPinStartOverClosesTheDoor) {
-  CreateVault();
-  Bind();
-  gate_.BeginDeferredUnlockAfterFirstPresent();
-  ASSERT_EQ(doors_, 1);
-  ASSERT_TRUE(gate_.ReleaseForStartOver());
-  EXPECT_EQ(dismissed_, 1);
-  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
-}
-
 TEST_F(ProfileUnlockGateProblemTest, StartOverWaitsForARunningUnlock) {
   CreateVault();
   ProfileUnlockPorts ports;

@@ -560,8 +560,8 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
 }
 
 // A profile this build cannot open, whatever the PIN: no PIN box at all, the reason, then "Start over" (and "Quit"
-// where the app can quit); a newer app's data shows the same way on, under its update message. The confirm: a red "Start over" and
-// Cancel. "Forgot PIN?" opens onto the same start-over.
+// where the app can quit); a newer app's data has no start-over control, only its message. The confirm: a red "Start over" and
+// Cancel. "Forgot PIN?" offers none.
 TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
   const std::string kStartOver = "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">";
   ShellState state;
@@ -583,20 +583,20 @@ TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
   state.pin_gate.quit_offered = true;
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").PinGate(), "data-event-click=\"pin_gate_quit()\""));
 
-  // A newer app's data: the update message first, then "Start over" (secondary) under a line saying what each does.
-  const std::string kStartOverSecondary =
-      "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_start_over()\">";
+  // A newer app's data: the message says what to do; no start-over control at all, on phone or desktop. Quit stays
+  // where the app can quit.
+  const std::string kStartOverClick = "pin_gate_start_over()";
   state.pin_gate.profile_problem_newer = true;
   const std::string newer_desktop = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_TRUE(Has(newer_desktop, kStartOverSecondary));
-  EXPECT_FALSE(Has(newer_desktop, kStartOver)) << "not the primary button: updating comes first";
-  EXPECT_TRUE(Has(newer_desktop, Tr("pin.profile_newer_detail")));
+  EXPECT_FALSE(Has(newer_desktop, kStartOverClick));
+  EXPECT_FALSE(Has(newer_desktop, Tr("pin.start_over")));
   EXPECT_TRUE(Has(newer_desktop, "pin_gate_quit()"));
   state.pin_gate.quit_offered = false;
   const std::string newer_phone = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_TRUE(Has(newer_phone, kStartOverSecondary));
-  EXPECT_TRUE(Has(newer_phone, Tr("pin.profile_newer_detail")));
+  EXPECT_FALSE(Has(newer_phone, kStartOverClick));
+  EXPECT_FALSE(Has(newer_phone, Tr("pin.start_over")));
   EXPECT_FALSE(Has(newer_phone, "pin_gate_quit()"));
+  EXPECT_FALSE(Has(newer_phone, "shell-pin-gate-problem")) << "no buttons: the message says what to do";
 
   ShellState confirm;
   confirm.pin_gate.active = true;
@@ -607,13 +607,11 @@ TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
   EXPECT_FALSE(Has(asked, "<input"));
   EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(confirm.pin_gate));
 
+  // "Forgot PIN?" offers no wipe: the data there may be perfectly good.
   ShellState door;
   door.pin_gate.active = true;
   door.pin_gate.unlock_mode = true;
-  const std::string unlock = ShellLayoutRml(door, false, "").PinGate();
-  EXPECT_TRUE(Has(unlock,
-                  "data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open && !pin_gate_waiting_device_unlock\" "
-                  "data-event-click=\"pin_gate_start_over()\""));
+  EXPECT_FALSE(Has(ShellLayoutRml(door, false, "").PinGate(), "pin_gate_start_over()"));
 }
 
 // Face / fingerprint unlock (DEV/PLAN-pin-gate-redesign.md C): the pad's bottom-left key (where no "OK" is due) with

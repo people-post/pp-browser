@@ -249,14 +249,14 @@ struct PinGateState {
   bool waiting_device_unlock = false;
   /**
    * This build cannot open the profile, whatever the PIN (ProfileOpenProblem): no PIN box, the reason (`message`,
-   * then what can be done) and the way on — "Start over" (also under a newer app's data, below its update message), "Quit" (`quit_offered`,
+   * then what can be done) and the way on — "Start over" (the "can't be opened" page only), "Quit" (`quit_offered`,
    * desktop). Markup: ShellLayoutRml::PinGateProfileProblem; events pin_gate_start_over / pin_gate_quit.
    */
   bool profile_problem_mode = false;
-  /** A newer version of the app saved the profile: update the app first (Start over is offered below that). */
+  /** A newer version of the app saved the profile: update the app; no wipe is offered. */
   bool profile_problem_newer = false;
   bool quit_offered = false;
-  /** "Start over" asks once (from the problem page or "Forgot PIN?"): Cancel goes back, pin_gate_start_over_confirm runs it. */
+  /** "Start over" asks once (from the "can't be opened" page): Cancel goes back, pin_gate_start_over_confirm runs it. */
   bool start_over_confirm_mode = false;
   /** Settings asks for the PIN once (transfer code, recovery phrase) / changes it (old → new → again), B2. */
   bool verify_mode = false;

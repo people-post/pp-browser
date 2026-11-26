@@ -551,10 +551,6 @@ std::string ShellLayoutRml::PinGate() const {
       << Tr("pin.forgot_link") << "</button>";
   out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open\">"
       << Tr("pin.forgot_explain") << "</p>";
-  // Deleting the app does not remove its data everywhere (desktop, the iPhone app on a Mac): the way out is here.
-  out << "<button class=\"btn btn-secondary shell-pin-gate-start-over\" data-if=\"pin_gate_unlock_mode && "
-         "pin_gate_forgot_open && !pin_gate_waiting_device_unlock\" data-event-click=\"pin_gate_start_over()\">"
-      << Tr("pin.start_over_here") << "</button>";
   out << "</div></div>";
   return out.str();
 }
@@ -573,13 +569,20 @@ void ShellLayoutRml::PinGateProfileProblem(std::ostringstream& out) const {
     out << "</div>";
     return;
   }
-  // A newer app's data asks for the update first; "newer" is read from bytes nothing has verified (and a downgrade
-  // looks the same), so the way out is below it, with what each choice does to the data.
-  out << "<p class=\"text muted shell-pin-gate-note\">"
-      << Tr(gate.profile_problem_newer ? "pin.profile_newer_detail" : "pin.profile_old_detail") << "</p>";
+  if (gate.profile_problem_newer) {
+    // A newer app's data: the message says what to do. No wipe is offered (the data may be perfectly good); only
+    // "Quit" where the app can quit.
+    if (gate.quit_offered) {
+      out << "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">";
+      out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_quit()\">" << Tr("pin.quit")
+          << "</button></div>";
+    }
+    return;
+  }
+  out << "<p class=\"text muted shell-pin-gate-note\">" << Tr("pin.profile_old_detail") << "</p>";
   out << "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">";
-  out << "<button class=\"btn " << (gate.profile_problem_newer ? "btn-secondary" : "btn-primary")
-      << "\" data-event-click=\"pin_gate_start_over()\">" << Tr("pin.start_over") << "</button>";
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">" << Tr("pin.start_over")
+      << "</button>";
   if (gate.quit_offered) {
     out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_quit()\">" << Tr("pin.quit") << "</button>";
   }

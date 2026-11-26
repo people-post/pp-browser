@@ -278,7 +278,6 @@ void PinGateController::Dismiss() {
   scanning_ = false;
   ResetSettingsFlows();
   pin_state_ = {};
-  start_over_from_problem_ = false;
   link_flow_ = false;
   phrase_flow_ = false;
   pending_link_default_pin_ = false;
@@ -383,7 +382,6 @@ void PinGateController::ShowProfileProblem(const ProfileOpenProblem problem) {
   phrase_flow_ = false;
   pending_link_default_pin_ = false;
   pending_link_pin_.clear();
-  start_over_from_problem_ = false;
   ResetSettingsFlows();
   const bool newer = problem == ProfileOpenProblem::Newer;
   pin_state_ = {};
@@ -403,14 +401,10 @@ void PinGateController::OnStartOver() {
   if (!shell_pin_gate_.apply_pin_gate || !pin_state_.active || !gate_complete_.start_over || ChoiceTooSoon()) {
     return;
   }
-  const bool from_problem = pin_state_.profile_problem_mode;
-  start_over_from_newer_ = from_problem && pin_state_.profile_problem_newer;
-  const bool from_forgot =
-      pin_state_.unlock_mode && pin_state_.forgot_open && !pin_state_.keypad_busy && !pin_state_.waiting_device_unlock;
-  if (!from_problem && !from_forgot) {
+  // Only the "can't be opened" page: nowhere else may the app offer a wipe, the data there may be perfectly good.
+  if (!pin_state_.profile_problem_mode || pin_state_.profile_problem_newer) {
     return;
   }
-  start_over_from_problem_ = from_problem;
   start_over_sent_ = false;
   ResetSettingsFlows();
   pin_state_ = {};
@@ -1015,12 +1009,7 @@ void PinGateController::OnCancel() {
     return;
   }
   if (pin_state_.start_over_confirm_mode) {
-    // Not now: back to the page it came from.
-    if (start_over_from_problem_) {
-      ShowProfileProblem(start_over_from_newer_ ? ProfileOpenProblem::Newer : ProfileOpenProblem::CannotOpen);
-    } else {
-      ShowUnlock();
-    }
+    ShowProfileProblem(ProfileOpenProblem::CannotOpen); // not now: back to the page it came from
     return;
   }
   if (pin_state_.verify_mode || pin_state_.change_mode) {
