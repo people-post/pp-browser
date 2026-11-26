@@ -1567,7 +1567,7 @@
     "chat.menu.delete_for_everyone": "Delete for everyone",
     "chat.menu.reply": "Reply",
     "chat.menu.forward": "Forward",
-    "chat.menu.forward_many": "Forward several",
+    "chat.menu.select": "Select",
     "chat.forward.selected_count": "{n} selected",
     "chat.forward.send": "Forward",
     "chat.forward.pick_title": "Forward to",

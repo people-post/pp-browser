@@ -473,7 +473,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   EXPECT_NE(bar_markup.find("msg_bar_forward()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_reply()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_more()"), std::string::npos);
-  // The order is reactions, +, Edit, Forward, Reply, More ("Forward several" is in More, not a button).
+  // The order is reactions, +, Edit, Forward, Reply, More ("Select" is in More, not a button).
   EXPECT_LT(bar_markup.find("msg_bar_emoji"), bar_markup.find("msg_bar_react"));
   EXPECT_LT(bar_markup.find("msg_bar_react"), bar_markup.find("msg_bar_edit"));
   EXPECT_LT(bar_markup.find("msg_bar_edit"), bar_markup.find("msg_bar_forward"));
@@ -509,14 +509,14 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   EXPECT_NE(controller.find("kBarEmojiCount = 5"), std::string::npos) << "five reactions";
 }
 
-// "Forward" in the bar forwards that one message ("Forward to" opens at once); "Forward several" (the multi-select) is
+// "Forward" in the bar forwards that one message ("Forward to" opens at once); "Select" (the multi-select) is
 // not a bar button: it is in the right-click menu and in the bar's "..." menu, which are the same list, right after Forward.
-TEST_F(ChatWideLayoutTest, TheHoverBarForwardButtonForwardsOneMessageAndForwardSeveralIsInTheMenus) {
+TEST_F(ChatWideLayoutTest, TheHoverBarForwardButtonForwardsOneMessageAndSelectIsInTheMenus) {
   const std::string page = Asset("views/chat_wide.rml");
   const size_t bar = page.find("class=\"msg-bar\"");
   ASSERT_NE(bar, std::string::npos);
   const std::string bar_markup = page.substr(bar, page.find("class=\"message-group\"", bar) - bar);
-  EXPECT_EQ(bar_markup.find("forward_many"), std::string::npos) << "no extra hover-bar button";
+  EXPECT_EQ(bar_markup.find("select"), std::string::npos) << "no extra hover-bar button";
   EXPECT_EQ(bar_markup.find("msg_bar_select"), std::string::npos);
   // The bar's button runs the menu item "forward_message", which is the one-message forward.
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::Forward), "forward_message");
@@ -524,12 +524,12 @@ TEST_F(ChatWideLayoutTest, TheHoverBarForwardButtonForwardsOneMessageAndForwardS
   const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   ASSERT_NE(for_request, std::string::npos);
   const size_t forward = menus.find("\"forward_message\"", for_request);
-  const size_t many = menus.find("\"forward_many_messages\"", for_request);
+  const size_t many = menus.find("\"select_messages\"", for_request);
   ASSERT_NE(forward, std::string::npos);
   ASSERT_NE(many, std::string::npos);
   EXPECT_LT(forward, many) << "right after Forward, in the list both the right-click and the bar's More show";
   EXPECT_NE(menus.find("host_.BeginForward(message_id)", forward), std::string::npos);
-  EXPECT_NE(menus.find("host_.BeginForwardMany(message_id)", many), std::string::npos);
+  EXPECT_NE(menus.find("host_.BeginSelect(message_id)", many), std::string::npos);
   const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const size_t begin = controller.find("void ChatController::BeginForward(");
   ASSERT_NE(begin, std::string::npos);

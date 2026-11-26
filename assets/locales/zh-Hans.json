@@ -1522,7 +1522,7 @@
     "chat.menu.delete_for_everyone": "为所有人删除",
     "chat.menu.reply": "回复",
     "chat.menu.forward": "转发",
-    "chat.menu.forward_many": "批量转发",
+    "chat.menu.select": "多选",
     "chat.forward.selected_count": "已选 {n} 条",
     "chat.forward.send": "转发",
     "chat.forward.pick_title": "转发给",
