@@ -347,7 +347,7 @@ build compiles staging and dev and no prod. Amends
 **Status:** Accepted (Hongwei, 2026-11-19). Supersedes RC006 item 7 (app and pp-node share numbers, release 1 = 10.0).
 **Decision:** Three version lines: the app (`vX.Y.Z`, branches `release/app-X.Y`, release 1 = **1.0**), pp-node
 (`pp-node/vX.Y.Z`, branches `release/node-X.Y`, release 1 = **10.0**, the next major after v9) and the relay
-(`vX.Y.Z` in pp-relay-apis, branches `release/X.Y`, release 1 = **1.0**). The version table lists, per release of
+(`vX.Y.Z` in pp-relay-apis, branches `release/X.Y`, release 1 = **1.0** (amended by RC025)). The version table lists, per release of
 each product, the format versions it writes and reads ([DESIGN § Libraries and numbering](DESIGN.md#libraries-and-numbering)).
 **Rationale:**
 - Compatibility is decided by format versions, not product numbers; a product number only names a release, so
@@ -408,10 +408,10 @@ leaves for them.
 2. **The AI client follows the relay's current contract** (C1): `llm_token` renewed before it expires, the relay's
    error codes (`user_rate_limit`, `user_daily_limit`, `guest_*`, `token_expired`) instead of message text, and
    "registered or guest" from the key's slot (`brief_llm_api_key` / `brief_llm_guest_api_key`), not its prefix.
-3. **The relay's version** (RC006 item 3, A1): its own semver `vX.Y.Z` on `release/X.Y`, starting at 1.0, reported in
+3. **The relay's version** (RC006 item 3, A1): its own semver `vX.Y.Z` on `release/X.Y`, starting at 1.0 (amended by RC025), reported in
    `client-compat` at `schema_version` 1 as `relay_version`, `app_range` and `node_range`.
 4. **Floors at release** (A2, C3): `min_client_version` `1.1.0` (app release 1 is 1.1.0, [RC024](#rc024--app-release-1-is-version-110); `1.0.0` before it), and a new `min_node_version` `10.0.0`.
-5. **The legacy parts go in relay 1.0** (C2), deployed with app 1.1 (RC024): the sign window, the `blobs/*`, `files/*` and
+5. **The legacy parts go in relay 1.0** (amended by RC025) (C2), deployed with app 1.1 (RC024): the sign window, the `blobs/*`, `files/*` and
    `GET /search` aliases, `llm_api_key` and `keys/rotate`, the pre-cutover sender mapping. Testers reinstall that day
    (RC017), so no supported app needs them and no window is kept.
 6. **The version header** (O1): `X-PP-Client: <product>/<version> <os>` on every relay call from the app and pp-node.
@@ -458,7 +458,7 @@ leaves for them.
 | Prod's update links (C3) | Leo | the App Store and Play links and the desktop download page, set on the release day |
 | Support retention, S3 lifecycle days (item 8) | Leo | 90 days each, stated in SPECS and the privacy text |
 | The crash-report endpoint (O6) | Leo | as SPECS plans: a bucket with a 90-day expiry, no account id, rate-limited |
-| The operator set: how many keys, its threshold, who holds them (item 7) | Leo | 2 of 3, offline, one in escrow (RC010) |
+| The operator set: how many keys, its threshold, who holds them (item 7) | Leo | Target 2 of 3, offline, one in escrow (RC010); 1 of 1 in every environment today (SIGNED_FORMATS Q9) |
 | Whether relay certificates expire (bounds a stolen hot key against a client that never sees the new certificate, at the cost of re-signing offline) | Leo | no expiry in release 1; certificates spread by every channel |
 | The support-worker's "not readable" reply (X9), wake payload version (X10), PITR on every state table | Leo | yes to each |
 
@@ -502,12 +502,12 @@ reinstall release 1), and its formats move to `docs/contracts/` as each is built
    become binary.
 5. A relay is identified by `relay:` + base64url(BLAKE2b-256 of its founding operator set) (Q5). Its certificate binds
    1–4 origins (Q6), carries `expires_at` with 0 = none and a reader for it (Q7), and release 1 ships the reader for
-   operator-set changes, unused until its runbook exists (Q8). Set sizes: prod and staging 2 of 3, dev and local 1 of
+   operator-set changes, unused until its runbook exists (Q8). Set sizes: target 2 of 3 for prod and staging (every environment runs 1 of 1 today), dev and local 1 of
    1 (Q9; who holds them is Leo's). Builds embed each environment's relay id and current certificate (Q10). A planned
    rotation accepts the previous PeerId as audience for 24 h, never after a compromise (Q11). The certified signing
    key is unused in release 1 (Q13).
 6. Pre-release relay data release 1 cannot read (v4 cards, record-1 lockers, envelope-3 mailboxes) is deleted with
-   relay 1.0's deploy (Q12).
+   relay 1.0's deploy (amended by RC025) (Q12).
 7. No extension area per envelope copy (Q14); the DHT record is in the cutover (Q15).
 **Rationale:** SIGNED_FORMATS § Open questions gives each one. Doing all signed objects in one cutover, before release
 1, is the only time no older reader exists.
@@ -612,8 +612,14 @@ branch needs one (the current rule for pp-cpp-*: too late for a network's first 
 ## RC024 — App release 1 is version 1.1.0
 
 **Date:** 2026-11-25
-**Status:** Accepted (Hongwei, on Leo's proposal, 2026-11-25). Amends [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) and [RC018](#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 4 for the app only: pp-node stays 10.0 and the relay 1.0.
+**Status:** Accepted (Hongwei, on Leo's proposal, 2026-11-25). Amends [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) and [RC018](#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 4 for the app only: pp-node stays 10.0 and the relay 1.0 (amended by RC025).
 **Decision:** Release 1 of the app is **1.1.0**: branch `release/app-1.1`, candidates `v1.1.0-rc.<n>`, the release `v1.1.0`. Its relay floor `min_client_version` is `1.1.0`. `main`'s `PP_BROWSER_VERSION` is 1.1.0 from now on, and the tree no longer sets a release-version default (the stale `1.0.0-rc16`): a dev build reports its version, a candidate the version its tag names.
 **Rationale:** `v1.0.0-rc14`…`rc16` (the older tag form) and TestFlight builds marketed 1.0.0 already exist, all from before the signed-format cutover, and tags never move: a release 1.0.0 would share its version with builds that cannot reach the cutover relays. The app's own version line (RC016) lets it skip 1.0 at no cost. With the floor at 1.1.0 those builds, which report 1.0.0, get the relay's *update* answer instead of failing on the signed formats.
 **Alternatives:** Keep 1.0.0 (the same version as pre-cutover builds; the floor cannot tell them apart); 2.0.0 (no format reason for a major).
 
+## RC025 — Relay release 1 is version 1.1
+
+**Date:** 2026-11-26
+**Status:** Proposed (Leo, to be confirmed by the release owner). Amends [RC016](#rc016--app-pp-node-and-relay-each-have-their-own-version) and [RC018](#rc018--the-release-1-answers-for-kenneths-and-leos-rows) item 4 for the relay only, and the "relay stays 1.0" sentence of [RC024](#rc024--app-release-1-is-version-110).
+**Decision:** Release 1 of the relay is **1.1.x**: branch `release/1.1`, candidates `release/v1.1.0-rc.<n>`, the release `v1.1.0`. App 1.1.0 and pp-node 10.0 are unchanged.
+**Rationale:** The tag `release/v1.0.0-rc.1` already points at a pre-cutover commit, and tags never move. Clients never compare the relay version (it is informational), so the number costs nothing to change.

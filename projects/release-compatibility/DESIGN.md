@@ -516,7 +516,7 @@ has none.
 
 ## Release checklist
 
-**The release owner for release 1 (app 1.1, pp-node 10.0, relay 1.0) is Hongwei** (RC015); the role rotates after it.
+**The release owner for release 1 (app 1.1, pp-node 10.0, relay 1.1) is Hongwei** (RC015); the role rotates after it.
 
 Today's list (`docs/ops/RELEASE.md` § Checklist before tagging) predates release mode. This one replaces it when
 release mode ships (P4 moves it into `RELEASE.md`; until then it lives here). Each release gets its own copy: when
@@ -658,7 +658,7 @@ Hongwei, 2026-11-17 (RC006). Items 3 and 8 touch the relay's workflows and wait 
 6. **The version table:** one table in pp-browser's `docs/contracts/`; pp-relay-apis `SPECS.md` links to it and
    lists only the relay's own formats.
 7. **One number for app and pp-node:** no, superseded by [RC016](DECISIONS.md#rc016--app-pp-node-and-relay-each-have-their-own-version) (2026-11-19): each product has its own version;
-   release 1 is app 1.1 ([RC024](DECISIONS.md#rc024--app-release-1-is-version-110)), pp-node 10.0, relay 1.0.
+   release 1 is app 1.1 ([RC024](DECISIONS.md#rc024--app-release-1-is-version-110)), pp-node 10.0, relay 1.1 ([RC025](DECISIONS.md#rc025--relay-release-1-is-version-11)).
 8. **Internal build tags:** `internal/<build number>` (apps), `node-internal/<date>.<n>` (pp-node),
    `dev/<date>.<n>` (relay dev deploys; `qa/` before RC009); none for CI builds nobody installs. *(Leo, for the
    relay's)*
