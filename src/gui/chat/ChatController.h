@@ -34,6 +34,7 @@
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
+#include "gui/chat/ForwardFlow.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
@@ -605,6 +606,12 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
+  /** ChatMenusHost's "Forward": starts choosing messages to forward (DEV/PLAN-message-forward-text.md). */
+  void BeginForward(const std::string& message_id) override;
+  /** The choosing (or the picker, or a pill's cause) changed: the title bar, the Forward button and the rows' ticks follow. */
+  void OnForwardChanged();
+  /** The rows get the forward flags (and the search marks when a search is open): the scroller's decorator. */
+  void InstallRowDecorator();
   /** Editing a sent message (DEV/PLAN-message-edit.md): ChatMenusHost's "Edit", and the bar's × while editing. */
   bool CanEditMessage(const std::string& message_id) override;
   void StartEditMessage(const std::string& message_id) override;
@@ -1042,6 +1049,8 @@ private:
   std::map<std::string, std::vector<std::string>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
+  /** Forwarding text and contact cards, from the menu's Forward to the pill; made in the constructor (it needs `this`). */
+  std::unique_ptr<ForwardFlow> forward_flow_;
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;

@@ -86,6 +86,9 @@ void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
     message_handle.RegisterMember("has_reactions", &MessageDisplayRow::has_reactions);
     message_handle.RegisterMember("search_hit", &MessageDisplayRow::search_hit);
     message_handle.RegisterMember("search_current", &MessageDisplayRow::search_current);
+    message_handle.RegisterMember("forward_mode", &MessageDisplayRow::forward_mode);
+    message_handle.RegisterMember("forward_ok", &MessageDisplayRow::forward_ok);
+    message_handle.RegisterMember("forward_ticked", &MessageDisplayRow::forward_ticked);
     message_handle.RegisterMember("time_label", &MessageDisplayRow::time_label);
     message_handle.RegisterMember("date_label", &MessageDisplayRow::date_label);
     message_handle.RegisterMember("run_start", &MessageDisplayRow::run_start);

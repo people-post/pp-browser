@@ -2471,6 +2471,11 @@ bool Application::MountPresenters(ui::Context* context) {
   chat_people_picker_notify.offer_group_admin = [this](const std::string& thread_id, const std::string& sender) {
     people_picker_->OfferGroupAdmin(thread_id, sender);
   };
+  chat_people_picker_notify.open_choose_targets = [this](PeoplePickerChooseOptions options, PeoplePickerChooseDone done,
+                                                         std::function<void()> cancel) {
+    people_picker_->OpenForResult(std::move(options), std::move(done), std::move(cancel));
+  };
+  chat_people_picker_notify.close_choose_targets = [this]() { people_picker_->CloseChooseTargets(); };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
   EmojiPickerNotifyPorts emoji_notify;

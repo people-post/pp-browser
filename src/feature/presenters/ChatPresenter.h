@@ -664,6 +664,8 @@ public:
   /** Ticks or unticks a message of the chat being chosen from; at most kMaxForwardMessages. */
   ForwardTick ToggleForwardSelection(const std::string& message_id);
   bool ForwardChoosing() const { return forward_selection_.Active(); }
+  /** The strip of "Forward to" for the ticked messages (ForwardPreviewText); empty when none is ticked or readable. */
+  std::string ForwardPreview(const std::function<std::string(size_t count)>& count_text);
   /** The ticked messages, in the order they were ticked. */
   const std::vector<std::string>& ForwardSelectedIds() const { return forward_selection_.Ids(); }
   const std::string& ForwardSourceThread() const { return forward_selection_.Thread(); }

@@ -511,6 +511,13 @@ void PeoplePickerController::RegisterFlow() {
       [this]() { OnFlowDismissed(); });
 }
 
+void PeoplePickerController::CloseChooseTargets() {
+  if (mode_ == PeoplePickerMode::ChooseTargets && layer_id_ >= 0) {
+    Close();
+    NotifySurfaceChanged();
+  }
+}
+
 void PeoplePickerController::Close() {
   if (flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();

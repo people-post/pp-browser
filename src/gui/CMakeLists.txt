@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_gui
     chat/AgentTurnController.cpp
     chat/AskAiPanel.cpp
     chat/ChatMenus.cpp
+    chat/ForwardFlow.cpp
     chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp
     chat/ChatController.cpp

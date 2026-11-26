@@ -76,6 +76,10 @@ struct MessageDisplayRow {
   /** Search inside the chat: the row contains the query, and the row the search is on (its matches are marked). */
   bool search_hit = false;
   bool search_current = false;
+  /** Choosing messages to forward: every row is in the mode (a tap ticks), `forward_ok` rows can go and show a tick box. */
+  bool forward_mode = false;
+  bool forward_ok = false;
+  bool forward_ticked = false;
   /** content_rml as built, while search marks are wrapped into it — not bound to RML. */
   std::optional<std::string> search_source_rml;
   /** Local send / receive time, e.g. "18:32"; empty when unknown. */

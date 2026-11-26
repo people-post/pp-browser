@@ -463,6 +463,24 @@ select selectbox option:hover {
   color: #3c3c4399;
 }
 
+.chat-forward-title {
+  color: #000000;
+}
+
+.chat-forward-cancel {
+  color: #007aff;
+}
+
+.message-forward-check {
+  border-color: #3c3c434a;
+  background-color: #ffffff;
+}
+
+.message-forward-check--on {
+  border-color: #007aff;
+  background-color: #007aff;
+}
+
 .chat-search-step svg {
   image-color: #8e8e93;
 }

@@ -31,6 +31,13 @@ inline constexpr size_t kMaxForwardTargets = 9;
  */
 bool CanForwardMessage(const ThreadMessage& message);
 
+/**
+ * The strip of the "Forward to" list: one text message shows its first two lines, one contact card its name, several
+ * messages `count_text(count)` ("3 messages"). Empty when nothing is chosen.
+ */
+std::string ForwardPreviewText(const std::vector<ThreadMessage>& messages,
+                               const std::function<std::string(size_t count)>& count_text);
+
 /** What a chat can take a forward as. */
 enum class ForwardTargetKind { Unavailable, Direct, Group };
 

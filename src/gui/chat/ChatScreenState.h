@@ -143,6 +143,10 @@ struct ChatScreenState {
   /** The "⋯" menu offers "Search" (a chat is open and messaging is ready). */
   bool show_search = false;
   /** Search inside the open chat: the search box replaces the header, the step bar replaces the composer. */
+  /** Choosing messages to forward (phones): the title bar says how many, the composer gives way to the Forward button. */
+  bool forward_selecting = false;
+  ui::String forward_count_label;
+  bool forward_can_next = false;
   bool search_open = false;
   /** The first index is being built ("Searching…"). */
   bool search_indexing = false;

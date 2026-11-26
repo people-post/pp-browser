@@ -183,6 +183,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     return actions;
   }
 
+  if (presenter_.ForwardChoosing()) {
+    return actions; // choosing messages to forward: a press on a row is a tick, not a menu
+  }
   const std::string message_id = FindAttributeUp(request.target, "message-id");
   if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
@@ -225,6 +228,11 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     // Reply: the message shows as a quote bar above the composer and is attached to the next send.
     actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
                        "../icons/v2/reply.svg"});
+    // Forward: text and contact cards (ChatPresenter::CanForward); right after Reply, before Copy.
+    if (presenter_.CanForward(message_id)) {
+      actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
+                         [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/share.svg"});
+    }
     actions.push_back(
         {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.

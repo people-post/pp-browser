@@ -37,6 +37,37 @@ bool CanForwardMessage(const ThreadMessage& message) {
   return false;
 }
 
+std::string ForwardPreviewText(const std::vector<ThreadMessage>& messages,
+                               const std::function<std::string(size_t count)>& count_text) {
+  if (messages.empty()) {
+    return {};
+  }
+  if (messages.size() > 1) {
+    return count_text ? count_text(messages.size()) : std::to_string(messages.size());
+  }
+  const ThreadMessage& message = messages.front();
+  if (message.content_type == ChatContentType::ContactCard) {
+    if (auto card = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
+        card && !card->display_name.empty()) {
+      return card->display_name;
+    }
+    return message.text;
+  }
+  // The first two lines; the view clips what is longer than the strip.
+  std::string out;
+  size_t from = 0;
+  for (int line = 0; line < 2 && from <= message.text.size(); ++line) {
+    const size_t end = message.text.find('\n', from);
+    const std::string part = message.text.substr(from, end == std::string::npos ? std::string::npos : end - from);
+    out += (line == 0 ? "" : "\n") + part;
+    if (end == std::string::npos) {
+      break;
+    }
+    from = end + 1;
+  }
+  return out;
+}
+
 ForwardTargetKind ClassifyForwardTarget(const Thread& thread, const ForwardTargetFacts& facts) {
   if (thread.kind == ThreadKind::Group) {
     return thread.group_id && facts.in_group && !facts.group_dissolved ? ForwardTargetKind::Group

@@ -113,6 +113,9 @@ public:
    */
   void OpenForResult(PeoplePickerChooseOptions options, PeoplePickerChooseDone done, std::function<void()> cancel = {});
 
+  /** Closes the picker when it is in choose-and-return mode (a lock, a sign-out); another mode's picker is left alone. */
+  void CloseChooseTargets();
+
   void Close();
 
 private:

@@ -1790,6 +1790,18 @@ std::vector<std::string> ChatPresenter::ForwardTargetThreads(const std::vector<F
   return threads;
 }
 
+std::string ChatPresenter::ForwardPreview(const std::function<std::string(size_t count)>& count_text) {
+  const ForwardPorts ports = ForwardPortsNow();
+  std::vector<ThreadMessage> messages;
+  for (const std::string& id : forward_selection_.Ids()) {
+    if (std::optional<ThreadMessage> row =
+            ports.get_message ? ports.get_message(forward_selection_.Thread(), id) : std::nullopt) {
+      messages.push_back(std::move(*row));
+    }
+  }
+  return ForwardPreviewText(messages, count_text);
+}
+
 bool ChatPresenter::CanForward(const std::string& message_id) {
   const ForwardPorts ports = ForwardPortsNow();
   if (message_id.empty() || !ports.active_thread || !ports.get_message) {

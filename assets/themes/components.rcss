@@ -243,6 +243,84 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* Choosing messages to forward: the title bar takes the header's place. */
+.chat-forward-top {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8dp;
+}
+
+.chat-forward-title {
+  margin: 0;
+  font-size: 17dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-forward-cancel {
+  flex-shrink: 0;
+  min-width: 44dp;
+  height: 44dp;
+  padding: 0 12dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 17dp;
+  white-space: nowrap;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* The bottom: one Forward button where the composer was. */
+.chat-forward-bar {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  margin: 0 8dp 6dp 8dp;
+}
+
+.chat-forward-next {
+  display: block;
+  width: 100%;
+  min-height: 50dp;
+  line-height: 50dp;
+  text-align: center;
+}
+
+/* A row while choosing: room on the left for the tick box, and a cover that takes every tap on the row. */
+.message-row-forward-mode {
+  position: relative;
+  padding-left: 40dp;
+}
+
+.message-forward-check {
+  position: absolute;
+  left: 10dp;
+  top: 10dp;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+  border-radius: 12dp;
+  border-width: 2dp;
+}
+
+.message-forward-check--on {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+.message-forward-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  cursor: pointer;
+}
+
 /* A search match in a message (colours in colors-*.rcss); like the mention chip, it stays inline. */
 .search-mark {
   padding: 0 1dp;
