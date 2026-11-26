@@ -14,8 +14,9 @@ endif()
 # product decision).
 set(PP_MESH_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-mesh tests" FORCE)
 set(PP_MESH_WITH_UPNP OFF CACHE BOOL "Map ports with UPnP (vendored miniupnpc)")
-set(PP_MESH_WARNINGS_AS_ERRORS ${PP_BROWSER_WARNINGS_AS_ERRORS} CACHE BOOL
-  "Treat compiler warnings as errors for pp-cpp-mesh targets")
+# Its -Werror follows ours: a plain variable overrides the library's option() (CMP0077), so turning
+# PP_BROWSER_WARNINGS_AS_ERRORS off reaches it in an existing build folder too.
+set(PP_MESH_WARNINGS_AS_ERRORS ${PP_BROWSER_WARNINGS_AS_ERRORS})
 
 pp_pin_make_available(pp-cpp-mesh)
 

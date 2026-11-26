@@ -20,6 +20,8 @@ endif()
 set(PP_LEDGER_BUILD_APPS OFF CACHE BOOL "Build pp-ledger's apps" FORCE)
 set(PP_LEDGER_BUILD_HTTP OFF CACHE BOOL "Build pp-ledger's HTTP API server" FORCE)
 set(PP_LEDGER_BUILD_TESTS OFF CACHE BOOL "Build pp-ledger's tests" FORCE)
+# Its -Werror follows ours, as pp-cpp-mesh's (PpCppMesh.cmake). A pp-ledger release before the switch ignores it.
+set(PP_LEDGER_WARNINGS_AS_ERRORS ${PP_BROWSER_WARNINGS_AS_ERRORS})
 
 pp_pin_make_available(pp-ledger)
 
