@@ -1326,6 +1326,10 @@ protected:
       return {};
     };
     ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+    ports.on_biometric_lost = [this]() {
+      ++lost_;
+      bio_enabled_ = false; // the settings switch reads off
+    };
     return ports;
   }
 
@@ -1346,6 +1350,7 @@ TEST_F(ProfileUnlockGateKeyMismatchTest, AGraceKeyThatDoesNotFitShowsThePinDoorN
   EXPECT_EQ(doors_, 1) << "the PIN door";
   EXPECT_EQ(errors_, 0) << "no raw text";
   EXPECT_FALSE(engine_.IsUnlocked()) << "the key that did not fit is gone from memory";
+  EXPECT_EQ(lost_, 0) << "the grace path leaves face unlock alone";
   EXPECT_FALSE(gate_.IsUnlockInProgress());
 
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
@@ -1387,12 +1392,49 @@ TEST_F(ProfileUnlockGateKeyMismatchTest, AFaceKeyThatDoesNotFitShowsThePinDoorNo
   EXPECT_EQ(errors_, 0);
   EXPECT_FALSE(engine_.IsUnlocked()) << "locked again, so the PIN is not refused as 'already open'";
   EXPECT_FALSE(gate_.IsUnlockInProgress());
+  EXPECT_EQ(lost_, 1) << "the stored key did not fit: face unlock is turned off";
+  ASSERT_EQ(hints_.size(), 1u) << "the door says why, once";
+  EXPECT_FALSE(hints_[0].empty());
+  EXPECT_FALSE(bio_enabled_);
 
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
   RunAll();
   EXPECT_TRUE(engine_.IsUnlocked());
   EXPECT_TRUE(problems_.empty());
   EXPECT_EQ(Prompts(), 1) << "the face prompt does not come round again";
+
+  // The next unlock (a cold start): no face prompt, the key is gone.
+  engine_.Vault()->Lock();
+  ProfileUnlockGate next;
+  next.BindSecrets(engine_);
+  next.BindPorts(MismatchPorts());
+  next.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+  EXPECT_EQ(Prompts(), 1);
+  EXPECT_EQ(lost_, 1);
+  next.BindPorts({});
+}
+
+// A damaged identity with face unlock on: the key is dropped (it cannot be told from one that did not fit), the PIN
+// door shows, and the PIN then meets the same failure: the problem page.
+TEST_F(ProfileUnlockGateKeyMismatchTest, ADamagedIdentityWithFaceUnlockOnDropsTheKeyThenThePinGetsTheProblemPage) {
+  unopenable_calls_ = 2;
+  Answers({GraceUnlock::Status::Expired});
+  BioAnswers({BiometricUnlock::Status::Found});
+  bio_opens_vault_ = true;
+  gate_.BindPorts(MismatchPorts());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(lost_, 1);
+  EXPECT_EQ(hints_.size(), 1u);
+  EXPECT_EQ(doors_, 1);
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::CannotOpen);
+  EXPECT_EQ(lost_, 1) << "dropped once";
 }
 
 // An import reads what someone else sent: a newer or malformed reply (the link reply's version byte is read before

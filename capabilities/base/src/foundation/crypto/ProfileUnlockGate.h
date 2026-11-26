@@ -258,7 +258,9 @@ private:
    */
   void ReportError(const Error& error, bool may_be_profile_problem = false);
   /** A grace / face / fingerprint unlock failed after the vault opened: a profile problem is "this key did not fit". */
-  void ReportKeyUnlockError(const Error& error);
+  void ReportKeyUnlockError(const Error& error, bool biometric = false);
+  /** The face / fingerprint key is gone: the door says why (pin.biometric_reset_hint), the settings switch reads off. */
+  void ShowBiometricLost();
 
   ProfileSecretsEngine* secrets_ = nullptr;
   ProfileUnlockPorts ports_;

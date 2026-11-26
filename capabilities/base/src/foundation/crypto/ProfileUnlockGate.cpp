@@ -141,7 +141,7 @@ void ProfileUnlockGate::ReportError(const std::string& message) {
   }
 }
 
-void ProfileUnlockGate::ReportKeyUnlockError(const Error& error) {
+void ProfileUnlockGate::ReportKeyUnlockError(const Error& error, const bool biometric) {
   if (!ProfileProblemOf(error)) {
     ReportError(error);
     return;
@@ -156,8 +156,26 @@ void ProfileUnlockGate::ReportKeyUnlockError(const Error& error) {
   if (secrets_ && Secrets().IsUnlocked()) {
     Secrets().Lock();
   }
+  if (biometric) {
+    // The stored face / fingerprint key does not fit this profile and a PIN never rewrites it: left saved, every launch
+    // would pass the prompt and fall to the PIN door again. It goes, as when the engine finds it missing.
+    DiagLine("unlock.biometric").Add("result", "mismatch").Emit();
+    if (secrets_) {
+      Secrets().DisableBiometric();
+    }
+    ShowBiometricLost();
+  }
   if (!showing_) {
     RequestShowUnlock(nullptr);
+  }
+}
+
+void ProfileUnlockGate::ShowBiometricLost() {
+  if (ports_.ui.show_biometric_reset) {
+    ports_.ui.show_biometric_reset(Localized("pin.biometric_reset_hint"));
+  }
+  if (ports_.on_biometric_lost) {
+    ports_.on_biometric_lost();
   }
 }
 
@@ -891,7 +909,7 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
           StartupMark("biometric_unlock_fail");
           // Locked again, so the face / fingerprint key and the PIN both start over (an open vault would refuse both).
           Secrets().Lock();
-          ReportKeyUnlockError(ready.error());
+          ReportKeyUnlockError(ready.error(), /*biometric=*/true);
           return;
         }
         RememberGraceAfterPinUnlock(); // as after a PIN unlock: the grace window starts
@@ -918,12 +936,7 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
     case BiometricUnlock::Status::Missing:
       // The engine deleted both pieces: the key goes, the door says why, the settings switch reads off.
       DiagLine("unlock.biometric").Add("result", "missing").Emit();
-      if (ports_.ui.show_biometric_reset) {
-        ports_.ui.show_biometric_reset(Localized("pin.biometric_reset_hint"));
-      }
-      if (ports_.on_biometric_lost) {
-        ports_.on_biometric_lost();
-      }
+      ShowBiometricLost();
       return;
   }
 }
