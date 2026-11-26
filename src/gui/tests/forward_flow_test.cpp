@@ -440,17 +440,17 @@ TEST_F(ForwardResultTextTest, SaysWhatWentOutAndWhatDidNotInEnglish) {
   EXPECT_EQ(ForwardResultText(Sent()), "Forwarded");
   ForwardResult messages = Sent();
   messages.skipped_messages = 2;
-  EXPECT_EQ(ForwardResultText(messages), "Forwarded. 2 could not be forwarded.");
+  EXPECT_EQ(ForwardResultText(messages), "Forwarded. 2 didn't go through.");
   ForwardResult chats = Sent();
   chats.skipped_targets = 3;
-  EXPECT_EQ(ForwardResultText(chats), "Forwarded. 3 chats could not be reached.");
+  EXPECT_EQ(ForwardResultText(chats), "Forwarded. Couldn't reach 3 chats.");
   ForwardResult both = Sent();
   both.skipped_messages = 1;
   both.skipped_targets = 2;
-  EXPECT_EQ(ForwardResultText(both), "Forwarded. 1 could not be forwarded. 2 chats could not be reached.");
+  EXPECT_EQ(ForwardResultText(both), "Forwarded. 1 didn't go through. Couldn't reach 2 chats.");
   ForwardResult nothing;
   nothing.nothing_sent = true;
-  EXPECT_EQ(ForwardResultText(nothing), "Forwarding failed");
+  EXPECT_EQ(ForwardResultText(nothing), "Couldn't forward");
 }
 
 TEST_F(ForwardResultTextTest, SaysWhatWentOutAndWhatDidNotInChinese) {
