@@ -585,6 +585,7 @@
     "settings.storage.reset_confirm_title": "重置我的资料？",
     "settings.storage.reset_confirm_message":
         "会删掉这台设备上的聊天、联系人和账号的加密资料，无法恢复。之后可以新建账号，或把这台设备关联到别的设备上的账号。",
+    "settings.storage.reset_confirm_linked_note": "重置后，请在主设备的设备列表里移除这台设备。",
     "settings.storage.reset_confirm_check": "我知道这无法恢复",
     "settings.storage.profile_reset": "已重置",
     "settings.storage.attachment_policy.label": "自动下载",

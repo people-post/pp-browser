@@ -634,12 +634,32 @@ void SettingsSecurityActions::ResetToolPermissions() {
                                      {});
 }
 
+bool SettingsSecurityActions::ThisDeviceIsLinkedNotMain() const {
+  if (!commands_.own_devices) {
+    return false;
+  }
+  // The same read as the Devices page. Signed out (also the device-removed notice's "Link again") or no list yet: no note.
+  Roe<OwnDevicesView> listed = commands_.own_devices();
+  if (!listed || listed->signed_out || listed->pending != OwnListPending::None || listed->this_is_main) {
+    return false;
+  }
+  for (const OwnDeviceView& device : listed->devices) {
+    if (device.is_this_device) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void SettingsSecurityActions::ResetProfile() {
   if (!feedback_.show_confirm_with_checkbox) {
     return;
   }
-  feedback_.show_confirm_with_checkbox(Tr("settings.storage.reset_confirm_title"),
-                                       Tr("settings.storage.reset_confirm_message"),
+  std::string message = Tr("settings.storage.reset_confirm_message");
+  if (ThisDeviceIsLinkedNotMain()) {
+    message += "\n\n" + Tr("settings.storage.reset_confirm_linked_note");
+  }
+  feedback_.show_confirm_with_checkbox(Tr("settings.storage.reset_confirm_title"), message,
                                        Tr("settings.storage.reset_confirm_check"), false,
                                        [this](const bool confirmed, const bool checked) {
                                          if (!confirmed) {
