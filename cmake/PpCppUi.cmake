@@ -14,6 +14,8 @@ include(PpBrowserCapability) # PP_BROWSER_ROOT
 # leaves ui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
 set(UI_TESTS OFF CACHE BOOL "Build UI engine unit tests" FORCE)
+# Its -Werror follows ours, as pp-cpp-mesh's (PpCppMesh.cmake).
+set(PP_UI_WARNINGS_AS_ERRORS ${PP_BROWSER_WARNINGS_AS_ERRORS})
 
 # FreeType: no WOFF2 (brotli). pp-cpp-ui v0.2.1+ always vendors zlib+libpng.
 set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
