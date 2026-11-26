@@ -15,11 +15,7 @@ bool CanForwardMessage(const ThreadMessage& message) {
   if (IsLocalActionMessage(message) || message.ai_image_json) {
     return false;
   }
-  // Ours that is still queued, or did not go out: it has no settled text to hand on (its red mark has its own tap).
-  if (message.sender_contact_id == kLocalSelfContactId &&
-      (message.delivery == MessageDelivery::Pending || message.delivery == MessageDelivery::Failed)) {
-    return false;
-  }
+  // Our own text and cards forward whatever their delivery state: the words are settled the moment they are sent.
   switch (message.content_type) {
     case ChatContentType::Text:
       return !message.text.empty();

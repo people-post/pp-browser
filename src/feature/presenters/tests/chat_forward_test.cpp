@@ -236,9 +236,17 @@ TEST_F(ChatForwardTest, TextAndCardsCanBeForwardedAttachmentsAndLocalActionsCann
   deleted.content_type = ChatContentType::Deleted;
   EXPECT_FALSE(CanForwardMessage(deleted)) << "tombstone";
   EXPECT_FALSE(CanForwardMessage(TextRow("empty", "", 12))) << "a text with nothing in it";
+  ThreadMessage queued_action = TextRow("qa", "Opened settings", 13, kLocalSelfContactId);
+  queued_action.generation = kLocalActionGeneration;
+  queued_action.delivery = MessageDelivery::Pending;
+  EXPECT_FALSE(CanForwardMessage(queued_action)) << "a queued local_action stays out";
+  ThreadMessage queued_attachment = TextRow("qp", "photo.jpg", 14, kLocalSelfContactId);
+  queued_attachment.content_type = ChatContentType::Attachment;
+  queued_attachment.delivery = MessageDelivery::Pending;
+  EXPECT_FALSE(CanForwardMessage(queued_attachment)) << "a queued attachment stays out";
 }
 
-TEST_F(ChatForwardTest, FailedAndQueuedMessagesCannotBeForwarded) {
+TEST_F(ChatForwardTest, MyOwnQueuedAndFailedTextAndCardsCanBeForwarded) {
   ThreadMessage queued = TextRow("queued", "on its way", 1, kLocalSelfContactId);
   queued.delivery = MessageDelivery::Pending;
   ThreadMessage failed = TextRow("failed", "did not go", 2, kLocalSelfContactId);
@@ -251,12 +259,26 @@ TEST_F(ChatForwardTest, FailedAndQueuedMessagesCannotBeForwarded) {
   for (const ThreadMessage* row : {&queued, &failed, &sent, &queued_card}) {
     chats.Add(*row);
   }
-  EXPECT_FALSE(presenter.CanForward("queued"));
-  EXPECT_FALSE(presenter.CanForward("failed"));
-  EXPECT_FALSE(presenter.CanForward("queued-card"));
+  EXPECT_TRUE(presenter.CanForward("queued"));
+  EXPECT_TRUE(presenter.CanForward("failed"));
+  EXPECT_TRUE(presenter.CanForward("queued-card"));
   EXPECT_TRUE(presenter.CanForward("sent"));
-  EXPECT_FALSE(presenter.BeginForwardSelection("failed"));
-  EXPECT_FALSE(presenter.ForwardChoosing()) << "nothing started";
+
+  const auto result = Forward({"queued"}, {"bob"});
+  ASSERT_TRUE(result);
+  ASSERT_EQ(chats.calls.size(), 1u);
+  EXPECT_EQ(chats.calls[0].text, "on its way");
+}
+
+TEST_F(ChatForwardTest, ALocalOnlyOwnRowIsForwardedLikeAnyText) {
+  ThreadMessage local = TextRow("local", "kept here", 1, kLocalSelfContactId);
+  local.delivery = MessageDelivery::Local;
+  chats.Add(local);
+  EXPECT_TRUE(presenter.CanForward("local"));
+  const auto result = Forward({"local"}, {"bob"});
+  ASSERT_TRUE(result);
+  ASSERT_EQ(chats.calls.size(), 1u);
+  EXPECT_EQ(chats.calls[0].text, "kept here");
 }
 
 TEST_F(ChatForwardTest, ACardIAmNotAbleToResendCannotBeForwarded) {
