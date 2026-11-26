@@ -72,7 +72,9 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | log-out | phone context menus (chat row Leave group) | drawn | - |
 | more | phone Chats list swipe action (More) | drawn | - |
 | pin | phone context menus (chat row Pin / Unpin) | drawn | `pin.svg` |
+| forward | phone / desktop message menus and desktop hover bar (message Forward); the horizontal mirror of reply | drawn (mirror of reply) | - |
 | reply | phone context menus (message Reply) | drawn | - |
+| select | phone / desktop message menus (message Select) | drawn | - |
 | retry | chat picture bubble while it uploads: the disc after a failed send (DEV/PLAN-picture-upload-bubble.md) | drawn | - |
 | share | phone context menus (shared item Share) | drawn | `share.svg` |
 | trash | phone context menus (Delete) | drawn | `trash.svg` |
