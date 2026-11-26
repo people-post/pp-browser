@@ -125,7 +125,7 @@ struct ForwardResult {
   size_t skipped_messages = 0;
   /** Chats dropped by the re-check (no longer a contact we may write to / a group we may post in). */
   size_t skipped_targets = 0;
-  /** Sends the messaging layer refused (a red mark in that chat, or nothing stored). */
+  /** Messages the messaging layer refused in at least one chat (a red mark there, or nothing stored). */
   size_t send_errors = 0;
   /** Not one send was queued: "forward failed". */
   bool nothing_sent = false;
@@ -163,6 +163,8 @@ private:
   bool prepared_ = false;
   /** The messages that survived the re-check, in the chat's order. */
   std::vector<ThreadMessage> messages_;
+  /** Per kept message: some chat refused it (so `send_errors` counts messages, not sends). */
+  std::vector<bool> send_failed_;
   size_t target_at_ = 0;
   size_t message_at_ = 0;
   bool target_open_ = false;

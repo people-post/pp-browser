@@ -173,6 +173,7 @@ bool ForwardRun::Prepare() {
   std::stable_sort(messages_.begin(), messages_.end(), [](const ThreadMessage& a, const ThreadMessage& b) {
     return a.display_order != b.display_order ? a.display_order < b.display_order : a.timestamp < b.timestamp;
   });
+  send_failed_.assign(messages_.size(), false);
   return !messages_.empty();
 }
 
@@ -227,7 +228,9 @@ ForwardRun::State ForwardRun::Step(size_t budget, const std::function<bool()>& s
         send ? send(target, message.text, std::move(options)) : Roe<ThreadMessage>(Error("Messaging not ready"));
     if (sent) {
       ++result_.forwarded;
-    } else {
+    } else if (!send_failed_[message_at_]) {
+      // Counted once per message, however many chats refused it.
+      send_failed_[message_at_] = true;
       ++result_.send_errors;
     }
     if (++message_at_ >= messages_.size()) {

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <deque>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -67,6 +68,8 @@ struct FakeMessaging {
   std::vector<SendCall> calls;
   /** Runs inside each send, with the number of sends so far (this one included). */
   std::function<void(size_t)> during_send;
+  /** Message texts the messaging layer refuses in every chat. */
+  std::set<std::string> refused_texts;
 
   void Add(const ThreadMessage& row) { rows[row.id] = row; }
 
@@ -96,6 +99,9 @@ struct FakeMessaging {
     calls.push_back({method, thread, text, options.content_type, options.payload_json});
     if (during_send) {
       during_send(calls.size());
+    }
+    if (refused_texts.count(text) > 0) {
+      return Error("refused");
     }
     ThreadMessage sent;
     sent.id = "sent-" + std::to_string(calls.size());
@@ -367,6 +373,17 @@ TEST_F(ChatForwardTest, ATargetThatCanNoLongerBeWrittenToIsSkippedAndCounted) {
   EXPECT_TRUE(chats.TextsTo("carol").empty()) << "that chat gets nothing";
   EXPECT_EQ(chats.TextsTo("bob").size(), 2u);
   EXPECT_EQ(chats.TextsTo("club").size(), 2u);
+}
+
+TEST_F(ChatForwardTest, AMessageRefusedInEveryChatIsCountedOnceNotOncePerChat) {
+  AddTexts(3);
+  chats.refused_texts = {"text 2"};
+  chats.targets["erin"] = ForwardTargetKind::Direct;
+  const auto result = Forward({"m1", "m2", "m3"}, {"bob", "carol", "dave", "erin"});
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->forwarded, 8u);
+  EXPECT_EQ(result->send_errors, 1u) << "messages that failed, not sends that failed";
+  EXPECT_EQ(result->skipped_messages, 0u);
 }
 
 TEST_F(ChatForwardTest, NothingSentReportsFailure) {
