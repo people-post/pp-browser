@@ -93,7 +93,12 @@ TEST(ChatAnswerTest, DetailsLinkDestinationCannotBreakOutOfTheLink) {
 }
 
 TEST(ChatAnswerTest, ResolveChatLinkOnlyOpensInRangeHttps) {
-  const std::vector<MarkdownLink> links = {{"https://a.test/"}, {"javascript:alert(1)"}, {"http://b.test/"}};
+  // Built by push_back, not from an initializer list: GCC 13 cannot see the size through the list's backing array and
+  // reports the (guarded) out-of-range probes below as -Warray-bounds.
+  std::vector<MarkdownLink> links;
+  for (const char* url : {"https://a.test/", "javascript:alert(1)", "http://b.test/"}) {
+    links.push_back(MarkdownLink{url});
+  }
   EXPECT_EQ(ResolvedUrl(links, 0), "https://a.test/");
   EXPECT_FALSE(ResolveChatLink(links, 1));
   EXPECT_FALSE(ResolveChatLink(links, 2));
