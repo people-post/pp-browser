@@ -102,6 +102,11 @@ struct World {
     std::function<bool(uint64_t, uint64_t)> progress;
   };
 
+  // The flow's destructor lets the screen go (keep_awake(false) writes into `awake`, a member declared after it): the
+  // flow goes first, while every member it calls into is still alive. Without this a run still going at the end of a
+  // test wrote into a freed vector and corrupted the heap, and a later test crashed (about every other run).
+  ~World() { flow.reset(); }
+
   World() {
     candidates = {Person("t-bob", "bob", "Bob", 30), Person("t-cy", "cy", "Cy", 20)};
     ForwardPorts ports;
