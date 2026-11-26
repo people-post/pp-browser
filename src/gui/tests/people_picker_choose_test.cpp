@@ -45,6 +45,13 @@ public:
   static std::string Preview(const PeoplePickerController& picker) {
     return picker.show_preview_ ? picker.preview_text_.c_str() : "";
   }
+  static std::string Refusal(const PeoplePickerController& picker) { return picker.choose_refusal_.c_str(); }
+  static std::string Note(const PeoplePickerController& picker) { return picker.preview_note_.c_str(); }
+  static size_t Tiles(const PeoplePickerController& picker) { return picker.preview_items_.size(); }
+  static bool TileGrey(const PeoplePickerController& picker, const size_t i) { return picker.preview_items_[i].grey; }
+  static std::string TileThumb(const PeoplePickerController& picker, const size_t i) {
+    return picker.preview_items_[i].thumb.c_str();
+  }
   static void Search(PeoplePickerController& picker, const std::string& query) {
     picker.search_query_ = query.c_str();
     picker.OnSearchChanged();
@@ -179,6 +186,37 @@ protected:
   int invite_calls = 0;
   std::string last_direct;
 };
+
+TEST_F(PeoplePickerChooseTest, SendIsGreyWithTheHostsReasonShowingWhileALimitIsBroken) {
+  candidates = {Person("t-bob", "bob", "Bob", "acct-bob", 30), Person("t-cy", "cy", "Cy", "acct-cy", 20)};
+  PeoplePickerChooseOptions options = Options();
+  options.preview = "3 messages";
+  options.preview_note = "1 aren't on this device and won't be forwarded";
+  options.preview_items = {{"photo", "/scratch/0.jpg", false, ""}, {"file", "", true, "a.pdf"}};
+  options.refusal = [](const size_t chats) {
+    return chats >= 2 ? std::string("Pick fewer items or fewer chats") : std::string();
+  };
+  picker.OpenForResult(
+      options, [this](std::vector<ForwardTarget> chosen) { returned = std::move(chosen); }, [this]() { ++cancelled; });
+  EXPECT_EQ(Access::Tiles(picker), 2u);
+  EXPECT_EQ(Access::TileThumb(picker, 0), "/scratch/0.jpg");
+  EXPECT_TRUE(Access::TileGrey(picker, 1)) << "a file this device does not hold is dimmed";
+  EXPECT_EQ(Access::Note(picker), "1 aren't on this device and won't be forwarded");
+  EXPECT_EQ(Access::Refusal(picker), "") << "nothing broken with no chat chosen";
+
+  Access::Tap(picker, "t-bob");
+  EXPECT_TRUE(Access::ConfirmEnabled(picker)) << "one chat is fine";
+  EXPECT_EQ(Access::Refusal(picker), "");
+  Access::Tap(picker, "t-cy");
+  EXPECT_FALSE(Access::ConfirmEnabled(picker)) << "two chats break the limit: Send is off";
+  EXPECT_EQ(Access::Refusal(picker), "Pick fewer items or fewer chats");
+  Access::Confirm(picker);
+  EXPECT_TRUE(returned.empty()) << "a tap on the greyed button hands nothing back";
+  EXPECT_EQ(open_layers, 1);
+  Access::Tap(picker, "t-cy");
+  EXPECT_TRUE(Access::ConfirmEnabled(picker)) << "and it comes back when the reason goes";
+  EXPECT_EQ(Access::Refusal(picker), "");
+}
 
 TEST_F(PeoplePickerChooseTest, ThePickerInChooseModeReturnsTargetsAndRunsNoInvite) {
   candidates = {Person("t-bob", "bob", "Bob", "acct-bob", 30), Person("t-cy", "cy", "Cy", "acct-cy", 20),

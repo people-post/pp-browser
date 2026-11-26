@@ -228,7 +228,8 @@ TEST_F(ForwardFlowTest, TheNextChatEntryTellsOnlyPartWasForwardedOnce) {
   Drain();
   EXPECT_EQ(sends.size(), 10u) << "nothing is sent after the lock";
   flow->OnChatEntered();
-  EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.interrupted")}));
+  // 10 of the 14 x 2 = 28 sends went out: the line says how many of how many.
+  EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.partial", {{"done", "10"}, {"total", "28"}})}));
   flow->OnChatEntered();
   EXPECT_EQ(pills.size(), 1u) << "once";
 }

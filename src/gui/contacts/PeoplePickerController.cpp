@@ -212,11 +212,21 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
       row_handle.RegisterMember("locked", &PickerRow::locked);
       row_handle.RegisterMember("disabled", &PickerRow::disabled);
     }
+    if (auto item_handle = ctor.RegisterStruct<PreviewItemRow>()) {
+      item_handle.RegisterMember("icon", &PreviewItemRow::icon);
+      item_handle.RegisterMember("thumb", &PreviewItemRow::thumb);
+      item_handle.RegisterMember("label", &PreviewItemRow::label);
+      item_handle.RegisterMember("grey", &PreviewItemRow::grey);
+    }
     if (auto member_handle = ctor.RegisterStruct<MemberSummaryRow>()) {
       member_handle.RegisterMember("title", &MemberSummaryRow::title);
     }
     ctor.RegisterArray<std::vector<PickerRow>>();
     ctor.RegisterArray<std::vector<MemberSummaryRow>>();
+    ctor.RegisterArray<std::vector<PreviewItemRow>>();
+    ctor.Bind("preview_items", &controller.preview_items_);
+    ctor.Bind("preview_note", &controller.preview_note_);
+    ctor.Bind("choose_refusal", &controller.choose_refusal_);
     ctor.Bind("rows", &controller.rows_);
     ctor.Bind("member_summary", &controller.member_summary_);
     ctor.Bind("search_query", &controller.search_query_);
@@ -450,7 +460,18 @@ void PeoplePickerController::OpenForResult(PeoplePickerChooseOptions options, Pe
          choose_cancel_ = std::move(cancel);
          choose_all_ = choose_options_.list ? choose_options_.list() : std::vector<ForwardTarget>{};
          preview_text_ = choose_options_.preview.c_str();
-         show_preview_ = !choose_options_.preview.empty();
+         preview_items_.clear();
+         for (const ChoosePreviewItem& item : choose_options_.preview_items) {
+           PreviewItemRow row;
+           row.icon = item.icon.c_str();
+           row.thumb = item.thumb_src.c_str();
+           row.label = item.label.c_str();
+           row.grey = item.grey;
+           preview_items_.push_back(std::move(row));
+         }
+         preview_note_ = choose_options_.preview_note.c_str();
+         choose_refusal_ = "";
+         show_preview_ = !choose_options_.preview.empty() || !choose_options_.preview_items.empty();
          choose_mode_ = true;
          empty_hint_ = "";
        });
@@ -579,6 +600,9 @@ void PeoplePickerController::ResetState() {
   choose_cancel_ = nullptr;
   choose_all_.clear();
   preview_text_ = "";
+  preview_items_.clear();
+  preview_note_ = "";
+  choose_refusal_ = "";
   show_preview_ = false;
   choose_mode_ = false;
   show_checks_ = true;
@@ -1184,6 +1208,12 @@ std::string PeoplePickerController::SelectStepTitle() const {
 void PeoplePickerController::UpdateCta() {
   const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
   cta_enabled_ = cta != PeoplePickerCta::Disabled && cta != PeoplePickerCta::Inviting;
+  if (mode_ == PeoplePickerMode::ChooseTargets) {
+    // The forward's limits depend on how many chats are ticked: the host says why Send is off, and it stays off.
+    const std::string why = choose_options_.refusal ? choose_options_.refusal(selected_ids_.size()) : std::string();
+    choose_refusal_ = why.c_str();
+    cta_enabled_ = cta_enabled_ && why.empty();
+  }
   invite_hint_ = ShowInviteNeedsContactHint(cta, mode_) ? Tr("people_picker.invite_needs_contact").c_str() : "";
   if (mode_ == PeoplePickerMode::GroupAddMember) {
     RefreshGroupAddLimit();
@@ -1312,6 +1342,9 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "show_add_members");
   host.Dirty("people_picker", "show_preview");
   host.Dirty("people_picker", "preview_text");
+  host.Dirty("people_picker", "preview_items");
+  host.Dirty("people_picker", "preview_note");
+  host.Dirty("people_picker", "choose_refusal");
   host.Dirty("people_picker", "choose_mode");
 }
 

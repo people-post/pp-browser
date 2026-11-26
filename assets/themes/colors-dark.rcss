@@ -2534,6 +2534,19 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
+.people-picker-preview-label,
+.people-picker-preview-note {
+  color: #ebebf599;
+}
+
+.people-picker-refusal {
+  color: #ff453a;
+}
+
+.people-picker-preview-icon {
+  color: #ebebf599;
+}
+
 .people-picker-member-chip {
   background-color: #0a84ff2e;
   color: #0a84ff;
@@ -5106,4 +5119,34 @@ input.checkbox:checked {
   opacity: 0.6;
 }
 /* END phone page rules */
+
+.forward-progress {
+  background-color: #000000;
+}
+
+.forward-progress-title {
+  color: #ffffff;
+}
+
+.forward-progress-line {
+  color: #ffffff;
+}
+
+.forward-progress-stay {
+  color: #ebebf599;
+}
+
+.forward-progress-spinner {
+  border-color: #ebebf54c;
+  border-top-color: #0a84ff;
+}
+
+.forward-progress-bar {
+  background-color: #7878803d;
+}
+
+.forward-progress-bar-fill {
+  background-color: #0a84ff;
+}
+
 }

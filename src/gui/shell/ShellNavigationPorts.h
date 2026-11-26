@@ -28,6 +28,8 @@ struct ShellChromeSnapshot {
   bool compact_chat_open = false;
   /** A ring or a call screen (any mode, the minimised chip too) is up. */
   bool call_shown = false;
+  /** A call is on (answered or placed): its screen or bar sits in the call chrome, below the full-screen layers. */
+  bool call_in_progress = false;
 };
 
 /**
@@ -64,6 +66,7 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
   snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
   snap.call_shown = state.call_ring.active || state.call_in_progress.active;
+  snap.call_in_progress = state.call_in_progress.active;
   return snap;
 }
 

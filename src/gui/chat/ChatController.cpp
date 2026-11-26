@@ -32,6 +32,9 @@
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "gui/chat/ChatOpenMetrics.h"
 #include "gui/chat/ChatPictureTextures.h"
+#include "gui/ScreenAwakeHolds.h"
+#include "foundation/platform/ImageThumbnail.h"
+#include "foundation/platform/PlatformLifecycleEvents.h"
 #include "gui/UiFrameStats.h"
 #include "foundation/diagnostics/OsCurrentMemory.h"
 #include "common/Diag.h"
@@ -612,7 +615,31 @@ ChatController::ChatController()
   };
   forward_ports.pill = [this](const std::string& message) { ShowToast(message); };
   forward_ports.changed = [this]() { OnForwardChanged(); };
+  forward_ports.open_progress = [this]() { forward_progress_.Open(); };
+  forward_ports.close_progress = [this]() { forward_progress_.Close(); };
+  forward_ports.show_progress = [this](const ForwardProgressView& view) { forward_progress_.Show(view); };
+  // The page holds the screen on (a locked phone sends nothing); a call holds it too, so the two go through one switch.
+  forward_ports.keep_awake = [](const bool on) {
+    ScreenAwakeHolds::Shared().Set(ScreenAwakeHolds::Holder::Forward, on, "forward");
+  };
+  forward_ports.now_ms = []() { return SteadyNowMs(); };
+  forward_ports.preview = MakeForwardPreviewPorts();
+  forward_ports.preview_done = [this]() {
+    if (forward_preview_files_) {
+      forward_preview_files_->RemoveAll(); // the thumbnails made for the page go with it
+      forward_preview_files_.reset();
+    }
+  };
   forward_flow_ = std::make_unique<ForwardFlow>(presenter_, std::move(forward_ports));
+  presenter_.SetForwardAttachmentBusy([this]() { return AttachmentBusy(); });
+  // A call's controls sit under a full-screen layer: no forward with uploads starts during a call.
+  presenter_.SetForwardCallActive([this]() { return ChromeSnapshot().call_in_progress; });
+  ForwardProgressController::Handlers progress_handlers;
+  progress_handlers.cancel = [this]() { forward_flow_->OnProgressCancel(); };
+  progress_handlers.close = [this]() { forward_flow_->OnProgressClose(); };
+  progress_handlers.back = [this]() { return forward_flow_->OnProgressBack(); };
+  progress_handlers.closed = [this]() { forward_flow_->OnProgressLayerClosed(); };
+  forward_progress_.SetHandlers(std::move(progress_handlers));
 
   // Desktop "Save as" of a received attachment (DEV/PLAN-received-file-save-as.md): AttachmentSaveFlow decides, these
   // are its ports. Only "saved / cancelled / failed" and the size go to the log, never a name or a path.
@@ -1156,6 +1183,7 @@ void ChatController::BindShellNavigation(ShellNavigationPorts ports) {
   chrome_.BindShellNavigation(shell_navigation_);
   working_set_.BindShellNavigation(shell_navigation_);
   picture_send_.BindShellNavigation(shell_navigation_);
+  forward_progress_.BindShellNavigation(shell_navigation_);
 }
 
 void ChatController::BindShellFeedback(ShellFeedbackPorts ports) {
@@ -1174,6 +1202,55 @@ void ChatController::BindSurfaceNotify(ChatSurfaceNotifyPorts ports) {
 
 void ChatController::BindMessagingUi(MessagingUiPorts ports) {
   messaging_ui_ = std::move(ports);
+}
+
+ForwardPreviewPorts ChatController::MakeForwardPreviewPorts() {
+  ForwardPreviewPorts ports;
+  ports.bubble_picture = [this](const std::string& message_id) -> std::string {
+    // The picture the bubble shows now, only when its row is on the page (a row scrolled far away has no tile).
+    for (const MessageDisplayRow& row : chat_.messages) {
+      if (message_id != row.message_id.c_str()) {
+        continue;
+      }
+      for (const std::string& src : PictureSources({row})) {
+        std::error_code ec;
+        if (!src.empty() && std::filesystem::exists(src, ec)) {
+          return src;
+        }
+      }
+      break;
+    }
+    return {};
+  };
+  ports.poster = [this](const ForwardItemFacts& item) -> std::string {
+    if (!facade_ || item.content_hash.empty()) {
+      return {};
+    }
+    const std::string profile = facade_->ProfileDataDir();
+    const std::string thread = presenter_.ForwardSourceThread();
+    return AttachmentPosterExists(profile, thread, item.content_hash)
+               ? AttachmentPosterPath(profile, thread, item.content_hash)
+               : std::string();
+  };
+  ports.plaintext = [this](const std::vector<uint8_t>& hash) -> Roe<ByteVector> {
+    if (!facade_) {
+      return Roe<ByteVector>::error(Error("no messaging"));
+    }
+    return facade_->StoredAttachmentPlaintext(hash);
+  };
+  ports.thumbnail = [](const ByteVector& bytes, const int max_px) { return MakeImageThumbnailJpeg(bytes, max_px); };
+  ports.put_file = [this](const std::vector<uint8_t>& jpeg, const size_t index) -> std::string {
+    if (!facade_) {
+      return {};
+    }
+    // A thumbnail (never the picture), in the session view area of the profile that every lock / sign-out / start wipe
+    // covers (ForwardPreviewFiles); removed when "Forward to" closes.
+    if (!forward_preview_files_) {
+      forward_preview_files_ = std::make_unique<ForwardPreviewFiles>(facade_->ProfileDataDir());
+    }
+    return forward_preview_files_->Put(jpeg, index);
+  };
+  return ports;
 }
 
 ShellChromeSnapshot ChatController::ChromeSnapshot() const {
@@ -7111,6 +7188,13 @@ bool ChatController::Setup(ui::Context* context) {
   context_ = context;
   // The mesh's own background / foreground reactions are the hub's (ConversationsHub::OnAppBackground).
   lifecycle_background_id_ = AppLifecycle::AddBackgroundListener([this]() { OnApplicationPause(); });
+  // A forward with uploads stops when the phone really goes to the background (not for Control Center or a banner:
+  // those only resign the app active, which AppLifecycle's listener above also hears). Desktop windows losing focus
+  // or being minimised never stop it.
+  if (Platform::IsMobile()) {
+    forward_background_id_ =
+        PlatformLifecycleEvents::AddEnteredBackgroundListener([this]() { forward_flow_->OnAppEnteredBackground(); });
+  }
   // Timers may not have run while the app was suspended: no clock may stay past its time (#210).
   lifecycle_foreground_id_ =
       AppLifecycle::AddForegroundListener([this, alive = std::weak_ptr<int>(send_mark_alive_)]() {
@@ -7486,6 +7570,9 @@ bool ChatController::Setup(ui::Context* context) {
   if (!picture_send_.RegisterModel(context)) {
     return false;
   }
+  if (!forward_progress_.RegisterModel(context)) {
+    return false;
+  }
   if constexpr (kUiDemoBuild) {
     ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
   }
@@ -7685,6 +7772,11 @@ void ChatController::OnApplicationPause() {
 
 void ChatController::Update() {
   picture_send_.Update();
+  // The "Forwarding" page: its numbers; and its leaving when a call starts (the call's controls sit under it).
+  if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {
+    forward_flow_->OnCallStarted();
+  }
+  forward_flow_->Tick(messaging_ready_ && MessagingReady() && AppLifecycle::IsVisible());
   PollChatShowing();
   ReleaseQueuedTextures();
   // The vault locked: the view cache (previews, pictures, posters, covers) is wiped. Every chat picture becomes its
@@ -8154,6 +8246,10 @@ void ChatController::Shutdown() {
   lifecycle_background_id_ = 0;
   AppLifecycle::RemoveListener(lifecycle_foreground_id_);
   lifecycle_foreground_id_ = 0;
+  if (forward_background_id_ != 0) {
+    PlatformLifecycleEvents::RemoveListener(forward_background_id_);
+    forward_background_id_ = 0;
+  }
   if (send_mark_timer_ != 0) {
     AppRuntime::CancelCoordinatorTimer(send_mark_timer_);
     send_mark_timer_ = 0;

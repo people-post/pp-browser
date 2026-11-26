@@ -36,8 +36,29 @@
 
     <div class="people-picker-footer stack">
       <!-- Choose and return (Forward to): what is about to be sent, two lines at most. -->
+      <!-- Why Send is off (too many files, too big, a call is on): the specific line, above the strip. -->
+      <p class="people-picker-refusal" data-if="choose_refusal != ''">{{choose_refusal}}</p>
       <div class="people-picker-preview" data-if="show_preview">
-        <p class="people-picker-preview-text">{{preview_text}}</p>
+        <p class="people-picker-preview-text" data-if="preview_text != ''">{{preview_text}}</p>
+        <!-- Attachments: a picture's thumbnail, a video's poster, or a type icon; grey when this device has no bytes. -->
+        <div class="people-picker-preview-items row" data-if="preview_items.size > 0">
+          <div data-for="item : preview_items" class="people-picker-preview-item"
+               data-class-people-picker-preview-item--grey="item.grey">
+            <div class="people-picker-preview-tile">
+              <img class="people-picker-preview-thumb" data-if="item.thumb != ''" data-attr-src="item.thumb"/>
+              <div class="people-picker-preview-icon" data-if="item.thumb == ''">
+                <svg data-if="item.icon == 'photo'" src="../icons/v2/photo.svg" width="24" height="24"></svg>
+                <svg data-if="item.icon == 'video'" src="../icons/v2/video.svg" width="24" height="24"></svg>
+                <svg data-if="item.icon == 'mic'" src="../icons/v2/mic.svg" width="24" height="24"></svg>
+                <svg data-if="item.icon == 'file'" src="../icons/v2/file.svg" width="24" height="24"></svg>
+                <svg data-if="item.icon == 'card'" src="../icons/v2/user.svg" width="24" height="24"></svg>
+                <svg data-if="item.icon == 'text'" src="../icons/v2/compose.svg" width="24" height="24"></svg>
+              </div>
+            </div>
+            <p class="people-picker-preview-label" data-if="item.label != ''">{{item.label}}</p>
+          </div>
+        </div>
+        <p class="people-picker-preview-note" data-if="preview_note != ''">{{preview_note}}</p>
       </div>
       <label class="people-picker-video-option row" data-if="show_call_video_option">
         <input type="checkbox" data-value="call_video_allowed"/>
