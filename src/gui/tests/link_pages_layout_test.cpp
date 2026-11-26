@@ -267,7 +267,7 @@ protected:
     context->SetDensityIndependentPixelRatio(g_scale);
     ASSERT_NE(context, nullptr);
     const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/foundation.rcss")) +
-                            ReadAll(AssetPath("themes/components.rcss")) +
+                            ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/wide.rcss")) +
                             ReadAll(AssetPath(dark ? "themes/colors-dark.rcss" : "themes/colors-light.rcss")) +
                             "</style></head><body style=\"padding: 0;" +
                             std::string(app_type ? "" : " font-family: Inter; font-size: 15dp;") +
