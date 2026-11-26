@@ -56,16 +56,17 @@ QrDisplay LinkQrDisplayFor(const bool compact, ui::Context* context, const int r
 }
 
 LinkComputerLayout LinkComputerLayoutFor(const float width_dp, const float height_dp) {
-  const int card_height = static_cast<int>(height_dp * 0.96f);
+  const int card_height = static_cast<int>(height_dp * kLinkComputerCardFraction);
   const int content_width =
-      std::min(kLinkComputerCardMaxWidthDp, static_cast<int>(width_dp * 0.96f)) - 2 * kLinkComputerPaddingDp;
+      std::min(kLinkComputerCardMaxWidthDp, static_cast<int>(width_dp * kLinkComputerCardFraction)) -
+      2 * kLinkComputerPaddingDp;
   LinkComputerLayout layout;
   const int room_for_two = content_width - kLinkComputerGapDp - kLinkComputerRightMinDp;
   layout.two_columns = room_for_two >= kLinkQrDesktopMinDp && card_height >= kLinkComputerTwoColumnsMinHeightDp;
-  const int by_height =
-      card_height - (layout.two_columns ? kLinkComputerReservedTwoColumnsHeightDp : kLinkComputerReservedOneColumnHeightDp);
+  const int by_height = card_height - (layout.two_columns ? kLinkComputerReservedTwoColumnsHeightDp
+                                                          : kLinkComputerReservedOneColumnHeightDp);
   const int by_width = layout.two_columns ? room_for_two : content_width;
-  layout.side_dp = std::max(kLinkQrDesktopMinDp, std::min({kLinkQrDesktopMaxDp, by_height, by_width}));
+  layout.side_dp = std::max(kLinkQrDesktopMinDp, std::min({kLinkComputerQrMaxDp, by_height, by_width}));
   return layout;
 }
 

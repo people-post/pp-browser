@@ -7752,17 +7752,23 @@ input.checkbox {
   transform: none;
   display: flex;
   flex-direction: column;
-  width: 96%;
-  max-width: 960dp;
-  max-height: 96%;
-  padding: 16dp 24dp;
+  width: 90%;
+  max-width: 720dp;
+  max-height: 90%;
+  padding: 16dp 20dp;
   overflow: hidden;
 }
 
 .shell-pin-gate--computer .shell-dialog-title {
   flex-shrink: 0;
-  margin: 0 0 8dp 0;
-  font-size: 17dp;
+  margin: 0 0 6dp 0;
+  font-size: 16dp;
+}
+
+/* Every button of the page stays inside its column and the card, whatever its label. */
+.shell-pin-gate--computer .btn {
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-body {
@@ -7774,17 +7780,17 @@ input.checkbox {
 
 .shell-pin-gate--computer .shell-dialog-actions {
   flex-shrink: 0;
-  margin-top: 12dp;
+  margin-top: 8dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-error {
-  font-size: 13dp;
-  line-height: 18dp;
+  font-size: 12dp;
+  line-height: 17dp;
 }
 
 .shell-pin-gate--computer .settings-step-text {
-  font-size: 14dp;
-  line-height: 20dp;
+  font-size: 13dp;
+  line-height: 18dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-offer {
@@ -7792,13 +7798,13 @@ input.checkbox {
 }
 
 .shell-pin-gate--computer .shell-pin-gate-code-label {
-  margin-top: 8dp;
+  margin-top: 4dp;
   font-size: 12dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-code {
-  font-size: 26dp;
-  line-height: 32dp;
+  font-size: 24dp;
+  line-height: 28dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-valid {
@@ -7806,18 +7812,22 @@ input.checkbox {
 }
 
 .shell-pin-gate--computer .shell-pin-gate-return {
-  margin: 4dp 0 0 0;
+  margin: 2dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-step {
+  margin-bottom: 4dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-return .btn {
-  min-height: 46dp;
-  line-height: 46dp;
+  min-height: 44dp;
+  line-height: 44dp;
 }
 
 .shell-pin-gate--computer .shell-pin-gate-computer-note {
-  margin-top: 8dp;
+  margin-top: 4dp;
   font-size: 12dp;
-  line-height: 17dp;
+  line-height: 16dp;
 }
 
 .shell-pin-gate--two-columns .shell-pin-gate-cols {
@@ -7825,7 +7835,7 @@ input.checkbox {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 24dp;
+  gap: 20dp;
 }
 
 .shell-pin-gate--two-columns .shell-pin-gate-col-code {
@@ -7837,7 +7847,7 @@ input.checkbox {
 .shell-pin-gate--two-columns .shell-pin-gate-copy {
   display: inline-block;
   width: auto;
-  padding: 0 24dp;
+  padding: 0 16dp;
 }
 
 .shell-pin-gate--two-columns .shell-pin-gate-col-steps {
@@ -7860,7 +7870,7 @@ input.checkbox {
 }
 
 .shell-pin-gate--two-columns .shell-pin-gate-code {
-  letter-spacing: 8dp;
+  letter-spacing: 6dp;
 }
 
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
