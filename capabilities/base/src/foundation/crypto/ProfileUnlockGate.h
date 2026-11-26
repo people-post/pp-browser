@@ -112,6 +112,8 @@ struct ProfileUnlockPorts {
   std::function<void()> on_biometric_lost;
   /** A call answered on the phone's call screen waits for the unlock (ICallSystemUi::HasPendingPushCall). */
   std::function<bool()> has_pending_push_call;
+  /** Ends the call answered on the locked phone, if one waits (a profile this build cannot open can never connect it). */
+  std::function<void()> end_pending_push_call;
   /** os::ProtectedDataAvailable. */
   std::function<bool()> protected_data_available;
   /** os::OnProtectedDataAvailable (the handler runs on any thread) / os::RemoveProtectedDataHandler. */
@@ -150,6 +152,12 @@ public:
    * newer app's (AppError::IsNewerFormat). nullopt for anything else (a wrong PIN, a passing failure).
    */
   static std::optional<ProfileOpenProblem> ProfileProblemOf(const Error& error);
+
+  /**
+   * The folder start-over would delete is the one whose files were probed: true when `reset_dir` is the bound
+   * secrets' profile folder (the same folder after normalization). False with nothing bound.
+   */
+  bool StartOverTargetsProbedFolder(const std::string& reset_dir) const;
 
   /** The problem found on this profile (before the PIN, or by the unlock), until the profile is reset. */
   std::optional<ProfileOpenProblem> ProfileProblem() const { return profile_problem_; }
@@ -243,7 +251,14 @@ private:
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
   void ReportError(const std::string& message);
-  void ReportError(const Error& error);
+  /**
+   * `may_be_profile_problem`: only a PIN unlock of existing data (RunUnlockAndReadyAsync) concludes "this build cannot
+   * open the profile". A grace / face / fingerprint key is never checked against the vault, and an import (link,
+   * recovery phrase) reads what someone else sent: their failures are theirs, never the profile's.
+   */
+  void ReportError(const Error& error, bool may_be_profile_problem = false);
+  /** A grace / face / fingerprint unlock failed after the vault opened: a profile problem is "this key did not fit". */
+  void ReportKeyUnlockError(const Error& error);
 
   ProfileSecretsEngine* secrets_ = nullptr;
   ProfileUnlockPorts ports_;

@@ -110,7 +110,7 @@ public:
   void OnScanReply();
   void OnForgotToggle();
   /**
-   * "Start over" on the problem page (not for a newer app's data) or "Start over on this device" under "Forgot PIN?":
+   * "Start over" on the problem page (also under a newer app's data: "newer" is read before anything is verified) or "Start over on this device" under "Forgot PIN?":
    * the confirm step (Me → Storage → Reset my data's words). Its Cancel goes back to the page it came from.
    */
   void OnStartOver();
@@ -169,6 +169,8 @@ private:
   bool ChoiceTooSoon() const;
   /** The start-over confirm came from the problem page (else from the unlock door's "Forgot PIN?"). */
   bool start_over_from_problem_ = false;
+  /** ... and that page was the newer app's (its Cancel goes back to it, not to the cannot-open page). */
+  bool start_over_from_newer_ = false;
   /** This confirm's "Start over" was sent (OnStartOverConfirm): a second delivery of the tap does nothing. */
   bool start_over_sent_ = false;
   bool link_flow_ = false;

@@ -1300,5 +1300,173 @@ TEST_F(ProfileUnlockGateProblemTest, AnOpenAccountIsNeverProbed) {
   EXPECT_EQ(doors_, 0);
 }
 
+// --- "This build cannot open the profile" is concluded only after a PIN the vault accepted, and only for data that was
+// already there: a remembered key that does not fit, or an import, never gets the page ---
+
+// A grace / face / fingerprint key is never checked against the vault: when the vault it opens cannot decrypt the
+// account data, that is "this key did not fit". The attempt is dropped like a failed one and the PIN door is shown;
+// only the same failure after a PIN the vault accepted is a problem with the profile.
+class ProfileUnlockGateKeyMismatchTest : public ProfileUnlockGateBiometricTest {
+protected:
+  ProfileUnlockPorts MismatchPorts() {
+    ProfileUnlockPorts ports = BioPorts();
+    const auto try_grace = ports.try_grace_unlock;
+    ports.try_grace_unlock = [this, try_grace]() -> Roe<GraceUnlock::Result> {
+      auto got = try_grace();
+      if (got && got->status == GraceUnlock::Status::Found) {
+        EXPECT_TRUE(static_cast<bool>(engine_.Vault()->UnlockWithDek(ByteVector(kDataEncryptionKeySize, 0x47))));
+      }
+      return got;
+    };
+    ports.ensure_messaging_ready = [this]() -> Roe<void> {
+      ++ready_calls_;
+      if (ready_calls_ <= unopenable_calls_) {
+        return AppError::Storage(Err::Storage::Unopenable, "identity.enc does not open with this vault's key");
+      }
+      return {};
+    };
+    ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+    return ports;
+  }
+
+  int ready_calls_ = 0;
+  int unopenable_calls_ = 1; // the first call fails; later ones succeed
+  std::vector<ProfileOpenProblem> problems_;
+};
+
+TEST_F(ProfileUnlockGateKeyMismatchTest, AGraceKeyThatDoesNotFitShowsThePinDoorNotTheProblemPage) {
+  bio_enabled_ = false;
+  Answers({GraceUnlock::Status::Found});
+  gate_.BindPorts(MismatchPorts());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+  EXPECT_EQ(doors_, 1) << "the PIN door";
+  EXPECT_EQ(errors_, 0) << "no raw text";
+  EXPECT_FALSE(engine_.IsUnlocked()) << "the key that did not fit is gone from memory";
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  EXPECT_TRUE(engine_.IsUnlocked()) << "the PIN opens the profile";
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(dismissed_, 1);
+}
+
+TEST_F(ProfileUnlockGateKeyMismatchTest, TheSameFailureAfterACorrectPinIsTheProblemPage) {
+  bio_enabled_ = false;
+  unopenable_calls_ = 2; // the grace key's attempt and the PIN's
+  Answers({GraceUnlock::Status::Found});
+  gate_.BindPorts(MismatchPorts());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+  ASSERT_TRUE(problems_.empty());
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(problems_.front(), ProfileOpenProblem::CannotOpen);
+  EXPECT_FALSE(engine_.IsUnlocked());
+}
+
+TEST_F(ProfileUnlockGateKeyMismatchTest, AFaceKeyThatDoesNotFitShowsThePinDoorNotTheProblemPage) {
+  Answers({GraceUnlock::Status::Expired});
+  BioAnswers({BiometricUnlock::Status::Found});
+  bio_opens_vault_ = true;
+  gate_.BindPorts(MismatchPorts());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+
+  EXPECT_EQ(Prompts(), 1);
+  EXPECT_EQ(ready_calls_, 1);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+  EXPECT_EQ(doors_, 1) << "the PIN door stays up";
+  EXPECT_EQ(errors_, 0);
+  EXPECT_FALSE(engine_.IsUnlocked()) << "locked again, so the PIN is not refused as 'already open'";
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(Prompts(), 1) << "the face prompt does not come round again";
+}
+
+// An import reads what someone else sent: a newer or malformed reply (the link reply's version byte is read before
+// anything authenticates it), or a phrase restore that fails, is that flow's own error on its own page, never the
+// profile problem; the user can go back and try again.
+TEST_F(ProfileUnlockGateProblemTest, AnImportThatFailsIsThatFlowsErrorNeverTheProfileProblem) {
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.import_link_device = [](const SecretText&, const std::string&) -> Roe<void> {
+    return AppError::NewerFormat("link reply version 9");
+  };
+  ports.restore_recovery_phrase = [](const SecretText&, const SecretText&,
+                                     const std::vector<std::string>&) -> Roe<void> {
+    return AppError::Storage(Err::Storage::Unopenable, "malformed recovery material");
+  };
+  ports.ui.show_identity_fork = [this]() { ++forks_; };
+  ports.ui.show_error = [this](const std::string& message) { errors_.push_back(message); };
+  ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(forks_, 1);
+
+  gate_.CompleteLinkDevice("4321", "reply", /*set_default_pin=*/false);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+  EXPECT_EQ(errors_.size(), 1u) << "the link page shows its error";
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+  gate_.Cancel();
+  EXPECT_EQ(forks_, 2) << "Back works";
+
+  gate_.CompletePhraseRestore("4321", "some words", /*set_default_pin=*/false);
+  EXPECT_TRUE(problems_.empty());
+  EXPECT_EQ(gate_.ProfileProblem(), std::nullopt);
+  EXPECT_EQ(errors_.size(), 2u);
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+  gate_.Cancel();
+  EXPECT_EQ(forks_, 3);
+}
+
+// A call answered on the locked phone waits for this account: with a profile this build cannot open it can never
+// connect, so the page ending it is the page going up (after a PIN, or found before one).
+TEST_F(ProfileUnlockGateProblemTest, TheProblemPageEndsACallWaitingForTheUnlock) {
+  CreateVault();
+  ready_result_ = AppError::Storage(Err::Storage::Unopenable, "identity.enc is from before release 1");
+  Bind();
+  int ended = 0;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.ensure_messaging_ready = [this]() -> Roe<void> { return ready_result_; };
+  ports.ui.show_unlock = [this]() { ++doors_; };
+  ports.ui.show_profile_problem = [this](const ProfileOpenProblem problem) { problems_.push_back(problem); };
+  ports.end_pending_push_call = [&ended]() { ++ended; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_EQ(ended, 0) << "the PIN door: the call still waits for the PIN";
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  ASSERT_EQ(problems_.size(), 1u);
+  EXPECT_EQ(ended, 1);
+  gate_.EnsureUnlocked(nullptr);
+  EXPECT_EQ(ended, 1) << "the page is already up: once";
+}
+
+// Start over deletes the folder the reset names; it must be the folder whose files were probed.
+TEST_F(ProfileUnlockGateProblemTest, StartOverTargetsOnlyTheProbedFolder) {
+  EXPECT_TRUE(gate_.StartOverTargetsProbedFolder(dir_.string()));
+  EXPECT_TRUE(gate_.StartOverTargetsProbedFolder((dir_ / "." / "").string())) << "the same folder, spelled otherwise";
+  EXPECT_FALSE(gate_.StartOverTargetsProbedFolder((dir_.parent_path() / "another_profile_folder").string()));
+  EXPECT_FALSE(gate_.StartOverTargetsProbedFolder((dir_ / "backends").string())) << "a folder inside is not it";
+  EXPECT_FALSE(gate_.StartOverTargetsProbedFolder(""));
+  ProfileUnlockGate unbound;
+  EXPECT_FALSE(unbound.StartOverTargetsProbedFolder(dir_.string())) << "nothing probed";
+}
+
 } // namespace
 } // namespace pbr

@@ -1041,15 +1041,21 @@ TEST_F(PinGateStartOverTest, AStartOverNotBegunCanBeTappedAgain) {
   EXPECT_EQ(start_overs_, 3);
 }
 
-TEST_F(PinGateStartOverTest, ANewerAppsDataOffersNothingToWipe) {
+TEST_F(PinGateStartOverTest, ANewerAppsDataAsksForTheUpdateAndStillOffersStartOverBehindTheConfirm) {
   BindStartOver(/*with_quit=*/false);
   controller_.ShowProfileProblem(ProfileOpenProblem::Newer);
   EXPECT_TRUE(shown_.profile_problem_newer);
   EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.profile_newer_message"));
   controller_.OnStartOver();
-  EXPECT_FALSE(shown_.start_over_confirm_mode);
+  ASSERT_TRUE(shown_.start_over_confirm_mode) << "the same confirm step";
+  EXPECT_EQ(start_overs_, 0) << "asked first";
+  // Not now: back to the update page, not the cannot-open one.
+  controller_.OnCancel();
+  EXPECT_TRUE(shown_.profile_problem_mode);
+  EXPECT_TRUE(shown_.profile_problem_newer);
+  controller_.OnStartOver();
   controller_.OnStartOverConfirm();
-  EXPECT_EQ(start_overs_, 0);
+  EXPECT_EQ(start_overs_, 1);
 }
 
 TEST_F(PinGateStartOverTest, QuitIsOfferedWhereTheAppCanQuit) {

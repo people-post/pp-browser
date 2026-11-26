@@ -403,7 +403,8 @@ void PinGateController::OnStartOver() {
   if (!shell_pin_gate_.apply_pin_gate || !pin_state_.active || !gate_complete_.start_over || ChoiceTooSoon()) {
     return;
   }
-  const bool from_problem = pin_state_.profile_problem_mode && !pin_state_.profile_problem_newer;
+  const bool from_problem = pin_state_.profile_problem_mode;
+  start_over_from_newer_ = from_problem && pin_state_.profile_problem_newer;
   const bool from_forgot =
       pin_state_.unlock_mode && pin_state_.forgot_open && !pin_state_.keypad_busy && !pin_state_.waiting_device_unlock;
   if (!from_problem && !from_forgot) {
@@ -1016,7 +1017,7 @@ void PinGateController::OnCancel() {
   if (pin_state_.start_over_confirm_mode) {
     // Not now: back to the page it came from.
     if (start_over_from_problem_) {
-      ShowProfileProblem(ProfileOpenProblem::CannotOpen);
+      ShowProfileProblem(start_over_from_newer_ ? ProfileOpenProblem::Newer : ProfileOpenProblem::CannotOpen);
     } else {
       ShowUnlock();
     }

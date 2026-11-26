@@ -560,7 +560,7 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
 }
 
 // A profile this build cannot open, whatever the PIN: no PIN box at all, the reason, then "Start over" (and "Quit"
-// where the app can quit); a newer app's data on a phone has nothing to tap. The confirm: a red "Start over" and
+// where the app can quit); a newer app's data shows the same way on, under its update message. The confirm: a red "Start over" and
 // Cancel. "Forgot PIN?" opens onto the same start-over.
 TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
   const std::string kStartOver = "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">";
@@ -583,15 +583,20 @@ TEST(ShellLayoutRmlTest, TheProfileProblemPageHasNoPinBoxAndItsWayOn) {
   state.pin_gate.quit_offered = true;
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").PinGate(), "data-event-click=\"pin_gate_quit()\""));
 
+  // A newer app's data: the update message first, then "Start over" (secondary) under a line saying what each does.
+  const std::string kStartOverSecondary =
+      "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_start_over()\">";
   state.pin_gate.profile_problem_newer = true;
   const std::string newer_desktop = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_FALSE(Has(newer_desktop, kStartOver)) << "nothing to wipe";
+  EXPECT_TRUE(Has(newer_desktop, kStartOverSecondary));
+  EXPECT_FALSE(Has(newer_desktop, kStartOver)) << "not the primary button: updating comes first";
+  EXPECT_TRUE(Has(newer_desktop, Tr("pin.profile_newer_detail")));
   EXPECT_TRUE(Has(newer_desktop, "pin_gate_quit()"));
   state.pin_gate.quit_offered = false;
   const std::string newer_phone = ShellLayoutRml(state, false, "").PinGate();
-  EXPECT_FALSE(Has(newer_phone, kStartOver));
+  EXPECT_TRUE(Has(newer_phone, kStartOverSecondary));
+  EXPECT_TRUE(Has(newer_phone, Tr("pin.profile_newer_detail")));
   EXPECT_FALSE(Has(newer_phone, "pin_gate_quit()"));
-  EXPECT_FALSE(Has(newer_phone, "shell-pin-gate-problem")) << "no buttons: update from the store";
 
   ShellState confirm;
   confirm.pin_gate.active = true;

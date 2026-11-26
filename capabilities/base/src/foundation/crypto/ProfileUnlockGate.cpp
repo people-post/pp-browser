@@ -6,6 +6,7 @@
 #include "common/Localized.h"
 #include "common/StartupTiming.h"
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -140,8 +141,28 @@ void ProfileUnlockGate::ReportError(const std::string& message) {
   }
 }
 
-void ProfileUnlockGate::ReportError(const Error& error) {
-  if (const auto problem = ProfileProblemOf(error)) {
+void ProfileUnlockGate::ReportKeyUnlockError(const Error& error) {
+  if (!ProfileProblemOf(error)) {
+    ReportError(error);
+    return;
+  }
+  // The grace / face / fingerprint key opened the vault without being checked against it: what it then could not
+  // decrypt says the key did not fit, not that the profile is lost. The attempt is dropped like a failed one — the
+  // vault locked again, the PIN door up, no message — and only the same failure after a PIN the vault accepted is a
+  // problem with the profile.
+  log().warning << "Unlock with a remembered key did not open the account data: " << error.message;
+  DiagLine("unlock.failed").Add("wrong_pin", false).Add("key_mismatch", true).Add("silent", !showing_).Emit();
+  SetUnlockInProgress(false);
+  if (secrets_ && Secrets().IsUnlocked()) {
+    Secrets().Lock();
+  }
+  if (!showing_) {
+    RequestShowUnlock(nullptr);
+  }
+}
+
+void ProfileUnlockGate::ReportError(const Error& error, const bool may_be_profile_problem) {
+  if (const auto problem = may_be_profile_problem ? ProfileProblemOf(error) : std::nullopt) {
     // The vault opened (the PIN was right), but this build cannot open what it guards: never a PIN error, never
     // "try again" — the problem page says what is wrong and what can be done. The key leaves memory: nothing on this
     // profile can use it.
@@ -219,6 +240,10 @@ void ProfileUnlockGate::RequestShowProfileProblem(std::function<void(bool)> done
   if (problem_page_up_ || !profile_problem_) {
     return;
   }
+  // A call answered on the locked phone waits for this account: it can never connect now.
+  if (ports_.end_pending_push_call) {
+    ports_.end_pending_push_call();
+  }
   // In place of whatever page is up (the PIN door whose unlock just failed): that door is down, and a face /
   // fingerprint answer still on its way is for a door that is gone.
   StopGrace();
@@ -230,6 +255,18 @@ void ProfileUnlockGate::RequestShowProfileProblem(std::function<void(bool)> done
   if (ports_.ui.show_profile_problem) {
     ports_.ui.show_profile_problem(*profile_problem_);
   }
+}
+
+bool ProfileUnlockGate::StartOverTargetsProbedFolder(const std::string& reset_dir) const {
+  if (!secrets_ || reset_dir.empty() || secrets_->ProfileDataDir().empty()) {
+    return false;
+  }
+  auto normal = [](const std::string& path) {
+    std::error_code ec;
+    auto canonical = std::filesystem::weakly_canonical(path, ec);
+    return (ec ? std::filesystem::path(path).lexically_normal() : canonical).generic_string();
+  };
+  return normal(secrets_->ProfileDataDir()) == normal(reset_dir);
 }
 
 bool ProfileUnlockGate::ReleaseForStartOver() {
@@ -312,7 +349,7 @@ void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_de
                   verified_pin = std::move(verified_pin)](Roe<void> result) {
     if (!result) {
       StartupMark("unlock_and_ready_fail");
-      ReportError(result.error());
+      ReportError(result.error(), /*may_be_profile_problem=*/true);
       return;
     }
     if (remember_grace) {
@@ -646,7 +683,7 @@ void ProfileUnlockGate::OnGraceAttemptDone(const GraceStep step, const std::opti
       // The vault is open but messaging did not start: as after a PIN unlock that got this far.
       StopGrace();
       StartupMark("grace_unlock_fail");
-      ReportError(result.error());
+      ReportKeyUnlockError(result.error());
       return;
     }
     StartupMark("grace_unlock_ok");
@@ -854,7 +891,7 @@ void ProfileUnlockGate::OnBiometricDone(const uint64_t door, std::optional<Biome
           StartupMark("biometric_unlock_fail");
           // Locked again, so the face / fingerprint key and the PIN both start over (an open vault would refuse both).
           Secrets().Lock();
-          ReportError(ready.error());
+          ReportKeyUnlockError(ready.error());
           return;
         }
         RememberGraceAfterPinUnlock(); // as after a PIN unlock: the grace window starts

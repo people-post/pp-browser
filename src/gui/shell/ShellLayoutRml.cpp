@@ -573,17 +573,13 @@ void ShellLayoutRml::PinGateProfileProblem(std::ostringstream& out) const {
     out << "</div>";
     return;
   }
-  if (!gate.profile_problem_newer) {
-    out << "<p class=\"text muted shell-pin-gate-note\">" << Tr("pin.profile_old_detail") << "</p>";
-  }
-  if (gate.profile_problem_newer && !gate.quit_offered) {
-    return; // a newer app's data on a phone: update from the store; nothing here to tap
-  }
+  // A newer app's data asks for the update first; "newer" is read from bytes nothing has verified (and a downgrade
+  // looks the same), so the way out is below it, with what each choice does to the data.
+  out << "<p class=\"text muted shell-pin-gate-note\">"
+      << Tr(gate.profile_problem_newer ? "pin.profile_newer_detail" : "pin.profile_old_detail") << "</p>";
   out << "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">";
-  if (!gate.profile_problem_newer) {
-    out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_start_over()\">" << Tr("pin.start_over")
-        << "</button>";
-  }
+  out << "<button class=\"btn " << (gate.profile_problem_newer ? "btn-secondary" : "btn-primary")
+      << "\" data-event-click=\"pin_gate_start_over()\">" << Tr("pin.start_over") << "</button>";
   if (gate.quit_offered) {
     out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_quit()\">" << Tr("pin.quit") << "</button>";
   }

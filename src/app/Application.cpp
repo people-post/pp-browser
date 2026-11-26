@@ -641,6 +641,13 @@ Roe<void> Application::ResetActiveProfile() {
 }
 
 bool Application::StartOverOnThisDevice() {
+  // The folder the problem was found in must be the folder the reset deletes: otherwise nothing is wiped.
+  if (!unlock_gate_->StartOverTargetsProbedFolder(store_.Snapshot().profile_data_dir)) {
+    log().error << "Start over refused: the probed profile folder is not the one the reset would delete";
+    pin_gate_->ShowError(
+        UserFeedback::UserMessage(AppError::Storage(Err::Storage::Failed, "start over: profile folder mismatch")));
+    return false;
+  }
   if (!unlock_gate_->ReleaseForStartOver()) {
     return false; // an unlock is running: the page stays, the button works once it is done
   }
@@ -2080,6 +2087,11 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.has_pending_push_call = []() {
     return ICallSystemUi::Instance().HasPendingPushCall() ||
            PendingNotificationTap::Instance().PeekCallRoute(PendingNotificationTap::Clock::now());
+  };
+  unlock_ports.end_pending_push_call = []() {
+    if (ICallSystemUi::Instance().HasPendingPushCall()) {
+      ICallSystemUi::Instance().EndPendingPushCall();
+    }
   };
   unlock_ports.protected_data_available = []() { return os::ProtectedDataAvailable(); };
   unlock_ports.on_protected_data_available = [](std::function<void()> fn) {
