@@ -86,7 +86,8 @@ namespace {
 
 bool NameBefore(const ForwardTarget& a, const ForwardTarget& b) {
   const auto fold = [](std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
   };
   const std::string left = fold(a.title);
