@@ -3,6 +3,7 @@
 #include "lib/messaging/GroupPermissions.h"
 
 #include "feature/conversations/ConversationsFacade.h"
+#include "common/Metrics.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "feature/presenters/DeliveryNoticePlan.h"
@@ -274,6 +275,9 @@ ChatPresenter::ChatPresenter() {
 }
 
 void ChatPresenter::BindFacade(ConversationsFacade* facade) {
+  if (facade != facade_) {
+    AbortForward(); // the messaging it sends through is gone or replaced
+  }
   facade_ = facade;
   prefs_.reset();
 }
@@ -283,6 +287,7 @@ void ChatPresenter::BindCallbacks(Callbacks callbacks) {
 }
 
 void ChatPresenter::ResetForNewProfile() {
+  AbortForward();
   prefs_.reset();
   showing_archived_ = false;
   showing_archived_ai_ = false;
@@ -487,6 +492,9 @@ void ChatPresenter::Changed() {
 
 bool ChatPresenter::SelectThread(const std::string& thread_id) {
   opened_at_mention_.reset();
+  if (forward_selection_.Active() && forward_selection_.Thread() != thread_id) {
+    forward_selection_.Clear(); // choosing messages ends with the chat it was in
+  }
   if (!facade_) {
     return false;
   }
@@ -1610,7 +1618,186 @@ void ChatPresenter::ForgetCachedPrefs() {
   prefs_.reset();
 }
 
+namespace {
+
+/** What `thread_id` is as somewhere to forward to: a saved, unblocked contact's chat, or a group we may post in. */
+ForwardTargetKind ForwardTargetOf(ConversationsFacade* facade, const std::string& thread_id) {
+  auto found = facade->GetThread(thread_id);
+  if (!found || !*found) {
+    return ForwardTargetKind::Unavailable;
+  }
+  const Thread& thread = **found;
+  if (thread.kind == ThreadKind::Group) {
+    // Still in it (not removed or left) and not ended by its owner; a group still checking its members answers the
+    // send itself (MeshDeliveryOrchestrator::SendGroupMessage refuses it before storing anything).
+    return thread.group_id && facade->LocalGroupRole(*thread.group_id) && !facade->IsGroupDissolved(*thread.group_id)
+               ? ForwardTargetKind::Group
+               : ForwardTargetKind::Unavailable;
+  }
+  if (thread.kind != ThreadKind::Direct) {
+    return ForwardTargetKind::Unavailable; // an AI conversation
+  }
+  const PeerDisplayLabel label = facade->ResolveThreadLabel(thread);
+  if (!label.contact_id) {
+    return ForwardTargetKind::Unavailable; // not a saved contact
+  }
+  auto contact = facade->GetContact(*label.contact_id);
+  if (!contact || !*contact || (*contact)->trust == TrustLevel::Blocked) {
+    return ForwardTargetKind::Unavailable;
+  }
+  if (const auto identity = facade->GetIdentity(); identity && thread.peer_identity_value == identity->account_id) {
+    return ForwardTargetKind::Unavailable; // ourselves
+  }
+  return ForwardTargetKind::Direct;
+}
+
+ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
+  ForwardPorts ports;
+  ports.active_thread = [facade]() { return facade->ActiveThreadId(); };
+  ports.get_message = [facade](const std::string& thread_id,
+                               const std::string& message_id) -> std::optional<ThreadMessage> {
+    auto found = facade->GetMessage(thread_id, message_id);
+    if (!found || !found->has_value()) {
+      return std::nullopt;
+    }
+    return **found;
+  };
+  ports.target_of = [facade](const std::string& thread_id) { return ForwardTargetOf(facade, thread_id); };
+  ports.send_user = [facade](const std::string& thread_id, const std::string& text, SendRelayOptions options) {
+    return facade->SendUserMessage(thread_id, text, std::move(options));
+  };
+  ports.send_group = [facade](const std::string& thread_id, const std::string& text, SendRelayOptions options) {
+    return facade->SendGroupMessage(thread_id, text, std::move(options));
+  };
+  return ports;
+}
+
+/** Sends per posted batch: a forward is at most 30 messages to 9 chats, and the UI thread gets a turn between batches. */
+constexpr size_t kForwardSendsPerBatch = 10;
+
+} // namespace
+
+ForwardPorts ChatPresenter::ForwardPortsNow() {
+  if (forward_ports_) {
+    return *forward_ports_;
+  }
+  return facade_ ? FacadeForwardPorts(facade_) : ForwardPorts{};
+}
+
+bool ChatPresenter::CanForward(const std::string& message_id) {
+  const ForwardPorts ports = ForwardPortsNow();
+  if (message_id.empty() || !ports.active_thread || !ports.get_message) {
+    return false;
+  }
+  const std::string thread_id = ports.active_thread();
+  const std::optional<ThreadMessage> row = thread_id.empty() ? std::nullopt : ports.get_message(thread_id, message_id);
+  return row && CanForwardMessage(*row);
+}
+
+bool ChatPresenter::BeginForwardSelection(const std::string& message_id) {
+  if (forward_run_ || !CanForward(message_id)) {
+    return false;
+  }
+  forward_selection_.Begin(ForwardPortsNow().active_thread(), message_id);
+  return true;
+}
+
+ChatPresenter::ForwardTick ChatPresenter::ToggleForwardSelection(const std::string& message_id) {
+  if (!forward_selection_.Active()) {
+    return ForwardTick::NotChoosing;
+  }
+  if (forward_selection_.Has(message_id)) {
+    forward_selection_.Flip(message_id);
+    return ForwardTick::Deselected;
+  }
+  // Chosen from the chat that choosing began in, whatever else is open now.
+  const ForwardPorts ports = ForwardPortsNow();
+  const std::optional<ThreadMessage> row =
+      ports.get_message ? ports.get_message(forward_selection_.Thread(), message_id) : std::nullopt;
+  if (!row || !CanForwardMessage(*row)) {
+    return ForwardTick::NotForwardable;
+  }
+  return forward_selection_.Flip(message_id) == ForwardSelection::Toggle::LimitReached ? ForwardTick::LimitReached
+                                                                                       : ForwardTick::Selected;
+}
+
+void ChatPresenter::ForwardSelected(std::vector<std::string> targets, std::function<void(const ForwardResult&)> done) {
+  const auto refuse = [&done]() {
+    ForwardResult none;
+    none.nothing_sent = true;
+    if (done) {
+      done(none);
+    }
+  };
+  std::vector<std::string> ids = forward_selection_.Ids();
+  const std::string source = forward_selection_.Thread();
+  forward_selection_.Clear();
+  if (forward_run_ || ids.empty() || targets.empty() || targets.size() > kMaxForwardTargets) {
+    refuse();
+    return;
+  }
+  ForwardPorts ports = ForwardPortsNow();
+  if (!ports.get_message || !ports.target_of || !ports.send_user || !ports.send_group) {
+    refuse();
+    return;
+  }
+  forward_run_ = std::make_shared<ForwardRun>(std::move(ports), source, std::move(ids), std::move(targets));
+  PostForwardBatch(forward_epoch_, forward_run_, std::move(done));
+}
+
+void ChatPresenter::PostForwardBatch(const uint64_t epoch, std::shared_ptr<ForwardRun> run,
+                                     std::function<void(const ForwardResult&)> done) {
+  auto batch = [this, alive = std::weak_ptr<int>(alive_), epoch, run, done = std::move(done)]() mutable {
+    if (!alive.lock() || epoch != forward_epoch_) {
+      return; // stopped from outside: no port is called, and nobody is told (AbortForward kept what to say)
+    }
+    const auto valid = [this, epoch]() { return epoch == forward_epoch_; };
+    const ForwardRun::State state = run->Step(kForwardSendsPerBatch, valid);
+    if (state == ForwardRun::State::Running) {
+      PostForwardBatch(epoch, std::move(run), std::move(done));
+      return;
+    }
+    if (state == ForwardRun::State::Aborted) {
+      return; // AbortForward has already taken the run away
+    }
+    const ForwardResult result = run->Result();
+    forward_run_.reset();
+    MetricsLine("chat.forward")
+        .Add("messages", run->MessageCount())
+        .Add("targets", run->TargetCount())
+        .Add("skipped_messages", result.skipped_messages)
+        .Add("skipped_targets", result.skipped_targets)
+        .Emit();
+    if (done) {
+      done(result);
+    }
+  };
+  if (forward_post_) {
+    forward_post_(std::move(batch));
+  } else {
+    AppRuntime::PostUI(std::move(batch));
+  }
+}
+
+void ChatPresenter::AbortForward() {
+  forward_selection_.Clear();
+  if (!forward_run_) {
+    return;
+  }
+  ++forward_epoch_;
+  // Part of it went out (a chat may have only some of the messages): the next time the user is in a chat, say so.
+  forward_interrupted_ = forward_interrupted_ || forward_run_->Result().forwarded > 0;
+  forward_run_.reset();
+}
+
+bool ChatPresenter::TakeForwardInterrupted() {
+  return std::exchange(forward_interrupted_, false);
+}
+
 void ChatPresenter::ForgetThread(const std::string& thread_id) {
+  if (forward_selection_.Active() && forward_selection_.Thread() == thread_id) {
+    forward_selection_.Clear();
+  }
   if (prefs_) {
     prefs_->erase(thread_id);
   }
