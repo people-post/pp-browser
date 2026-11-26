@@ -232,9 +232,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     // Reply, before Copy.
     if (presenter_.CanForward(message_id)) {
       actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
-                         [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/share.svg"});
+                         [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/forward.svg"});
       actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
-                         [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/check.svg"});
+                         [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/select.svg"});
     }
     actions.push_back(
         {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
