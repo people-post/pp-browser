@@ -35,7 +35,6 @@ PinGateActionPorts MakePinGateActionPorts(PinGateController& controller) {
   ports.on_use_saved_copy = [gate]() { gate->OnUseSavedCopy(); };
   ports.on_scan_reply = [gate]() { gate->OnScanReply(); };
   ports.on_forgot_toggle = [gate]() { gate->OnForgotToggle(); };
-  ports.on_note_toggle = [gate]() { gate->OnNoteToggle(); };
   ports.on_use_pin_instead = [gate]() { gate->OnUsePinInstead(); };
   ports.on_key = [gate](const int digit) { gate->OnKey(digit); };
   ports.on_backspace = [gate]() { gate->OnBackspace(); };

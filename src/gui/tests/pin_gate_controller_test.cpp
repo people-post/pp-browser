@@ -283,7 +283,6 @@ TEST_F(PinGateControllerTest, EveryShellActionIsWiredToTheController) {
   EXPECT_TRUE(ports.on_use_saved_copy);
   EXPECT_TRUE(ports.on_scan_reply) << "the link page's Scan";
   EXPECT_TRUE(ports.on_forgot_toggle);
-  EXPECT_TRUE(ports.on_note_toggle);
   EXPECT_TRUE(ports.on_use_pin_instead);
   EXPECT_TRUE(ports.on_key);
   EXPECT_TRUE(ports.on_backspace);
