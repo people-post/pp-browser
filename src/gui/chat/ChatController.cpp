@@ -7778,7 +7778,12 @@ void ChatController::InstallRowDecorator() {
 }
 
 void ChatController::BeginForward(const std::string& message_id) {
-  forward_flow_->Begin(message_id);
+  voice_playback_->Stop(); // the picker takes the screen: a voice message that was playing stops
+  forward_flow_->BeginSingle(message_id);
+}
+
+void ChatController::BeginForwardMany(const std::string& message_id) {
+  forward_flow_->BeginSelecting(message_id);
   if (forward_flow_->Selecting()) {
     voice_playback_->Stop(); // choosing messages: a voice message that was playing stops
   }

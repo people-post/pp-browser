@@ -608,6 +608,7 @@ private:
   void CancelQuoteReply();
   /** ChatMenusHost's "Forward": starts choosing messages to forward (DEV/PLAN-message-forward-text.md). */
   void BeginForward(const std::string& message_id) override;
+  void BeginForwardMany(const std::string& message_id) override;
   /** The choosing (or the picker, or a pill's cause) changed: the title bar, the Forward button and the rows' ticks follow. */
   void OnForwardChanged();
   /** The rows get the forward flags (and the search marks when a search is open): the scroller's decorator. */
