@@ -292,6 +292,20 @@ TEST(TranscriptRmlTest, ARowSaysWhetherItsMessageCanBeForwarded) {
   EXPECT_FALSE(rows[2].forwardable);
 }
 
+// The desktop hover bar's Forward is the row's own answer: a forwardable plain message has it, a picture or a notice
+// does not, and no facts hook (no store) is involved.
+TEST(TranscriptRmlTest, TheHoverBarOffersForwardOnlyOnAForwardableRow) {
+  using namespace phone_rows;
+  TranscriptRow text = TextRow("1", "account:a", kNoon);
+  TranscriptRow picture = TextRow("2", "account:a", kNoon + kMinute);
+  picture.message.content_type = ChatContentType::Attachment;
+  const auto rows = RenderTranscript({text, picture}, NamedFacts());
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_TRUE(rows[0].has_actions);
+  EXPECT_TRUE(rows[0].bar_forward);
+  EXPECT_FALSE(rows[1].bar_forward);
+}
+
 TEST(TranscriptRmlTest, ADateStripSitsOnlyWhereTheDayChanges) {
   using namespace phone_rows;
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));

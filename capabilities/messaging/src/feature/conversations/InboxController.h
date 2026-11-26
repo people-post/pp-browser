@@ -108,12 +108,11 @@ struct TranscriptFacts {
   std::function<bool(const std::string& message_id)> can_edit;
   /**
    * What the message menu offers on this message beyond Edit (the same decision, MessageMenuSlots.h): a reaction row, a
-   * Reply, Forward. The wide layout's hover bar draws only these. Unset: neither. The GUI sets this.
+   * Reply. The wide layout's hover bar draws only these. Unset: neither. The GUI sets this.
    */
   struct MessageBarOffer {
     bool react = false;
     bool reply = false;
-    bool forward = false;
   };
   std::function<MessageBarOffer(const std::string& message_id)> bar_offer;
   /** The send mark on a message (none when unset). The GUI sets this. */

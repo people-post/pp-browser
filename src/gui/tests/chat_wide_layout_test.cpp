@@ -551,8 +551,11 @@ TEST_F(ChatWideLayoutTest, TheHoverBarHasNoForwardForAPicture) {
   const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const size_t offer = controller.find("facts.bar_offer =");
   ASSERT_NE(offer, std::string::npos);
-  EXPECT_NE(controller.find("presenter_.CanForward(message_id)", offer), std::string::npos);
-  EXPECT_NE(controller.find("offer.forward = slots.forward;", offer), std::string::npos);
+  // The bar's Forward comes from the row (built from its message), never from a store read per row per render.
+  const std::string bar_offer = controller.substr(offer, controller.find("facts.voice_max_seconds", offer) - offer);
+  EXPECT_EQ(bar_offer.find("CanForward("), std::string::npos) << bar_offer;
+  const std::string rows = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/TranscriptRml.cpp");
+  EXPECT_NE(rows.find("row.bar_forward = row.has_actions && row.forwardable;"), std::string::npos);
 }
 
 // The right-click menu (ChatMenus::ForRequest, the same items as the long press and the bar) has Forward between Reply and

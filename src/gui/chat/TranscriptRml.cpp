@@ -1374,8 +1374,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       const TranscriptFacts::MessageBarOffer offer = facts.bar_offer(message.id);
       row.bar_react = offer.react;
       row.bar_reply = offer.reply;
-      row.bar_forward = offer.forward;
     }
+    // Forward is the row's own answer (built from its message): no store read per row per render.
+    row.bar_forward = row.has_actions && row.forwardable;
     const bool continues_run = plain && !new_day && run_sender == message.sender_contact_id &&
                                message.timestamp - run_start_ms <= kRunGapMs && message.timestamp >= run_start_ms;
     row.run_start = !continues_run;

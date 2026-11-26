@@ -4634,12 +4634,10 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
     TranscriptFacts::MessageBarOffer offer;
     auto thread = facade_->GetThread(thread_id);
     const bool takes_reactions = thread && *thread && ThreadTakesReactions((*thread)->kind);
-    const MessageMenuSlots slots =
-        DecideMessageMenuSlots(takes_reactions, !MessagePlainText(message_id).empty(),
-                               /*can_edit_now=*/false, chat_.editing_message, presenter_.CanForward(message_id));
+    const MessageMenuSlots slots = DecideMessageMenuSlots(takes_reactions, !MessagePlainText(message_id).empty(),
+                                                          /*can_edit_now=*/false, chat_.editing_message);
     offer.react = slots.react;
     offer.reply = slots.reply;
-    offer.forward = slots.forward;
     return offer;
   };
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
