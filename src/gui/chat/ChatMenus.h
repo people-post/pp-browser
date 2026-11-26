@@ -63,8 +63,10 @@ public:
   virtual void RememberEmoji(const std::string& emoji) = 0;
   virtual void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) = 0;
   virtual void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) = 0;
-  /** "Forward": starts choosing messages to forward in the open chat, `message_id` ticked. */
+  /** "Forward": opens "Forward to" for this one message. */
   virtual void BeginForward(const std::string& message_id) = 0;
+  /** "Select": starts choosing messages to forward in the open chat, `message_id` ticked. */
+  virtual void BeginSelect(const std::string& message_id) = 0;
   /** "Edit" is offered for this message now: our own text, sent at most 15 minutes ago (DEV/PLAN-message-edit.md). */
   virtual bool CanEditMessage(const std::string& message_id) = 0;
   /** "Edit": the message's words go into the composer under an "Edit message" bar. */

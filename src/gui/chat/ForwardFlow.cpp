@@ -79,20 +79,39 @@ void ForwardFlow::Changed() {
   }
 }
 
-void ForwardFlow::Begin(const std::string& message_id) {
+bool ForwardFlow::Start(const std::string& message_id) {
   if (presenter_.Forwarding()) {
     Show(Tr("chat.send.still_trying")); // the earlier forward is still being queued: the reason, not "cannot"
-    return;
+    return false;
   }
   if (!presenter_.BeginForwardSelection(message_id)) {
     Show(Tr("chat.forward.cannot"));
-    return;
+    return false;
   }
   source_thread_ = presenter_.ForwardSourceThread();
+  return true;
+}
+
+void ForwardFlow::BeginSelecting(const std::string& message_id) {
+  if (!Start(message_id)) {
+    return;
+  }
+  single_ = false;
   Changed();
 }
 
+void ForwardFlow::BeginSingle(const std::string& message_id) {
+  if (!Start(message_id)) {
+    return;
+  }
+  single_ = true;
+  OpenPicker();
+}
+
 void ForwardFlow::Tap(const std::string& message_id) {
+  if (single_) {
+    return;
+  }
   switch (presenter_.ToggleForwardSelection(message_id)) {
     case ChatPresenter::ForwardTick::Selected:
     case ChatPresenter::ForwardTick::Deselected:
@@ -110,12 +129,26 @@ void ForwardFlow::Tap(const std::string& message_id) {
 }
 
 void ForwardFlow::Cancel() {
+  if (single_) {
+    return; // the picker's own Cancel ends a single forward
+  }
   presenter_.EndForwardSelection(); // only the choosing: a forward already being sent goes on
   Changed();
 }
 
 void ForwardFlow::Next() {
-  if (!CanNext() || !ports_.open_picker) {
+  if (!CanNext()) {
+    return;
+  }
+  OpenPicker();
+}
+
+void ForwardFlow::OpenPicker() {
+  if (!ports_.open_picker) {
+    if (single_) {
+      presenter_.EndForwardSelection();
+      single_ = false;
+    }
     return;
   }
   PeoplePickerChooseOptions options;
@@ -137,8 +170,13 @@ void ForwardFlow::Next() {
         }
       },
       [this, turn]() {
-        if (turn == picker_turn_) { // closed without choosing: the messages stay ticked
+        if (turn ==
+            picker_turn_) { // closed without choosing: the messages stay ticked (a single forward forgets its one)
           picker_open_ = false;
+          if (single_) {
+            single_ = false;
+            presenter_.EndForwardSelection();
+          }
           Changed();
         }
       });
@@ -147,10 +185,15 @@ void ForwardFlow::Next() {
 void ForwardFlow::OnChosen(std::vector<ForwardTarget> chosen) {
   picker_open_ = false;
   ++picker_turn_;
-  if (!Selecting() || chosen.empty()) {
+  if (!presenter_.ForwardChoosing() || chosen.empty()) {
+    if (single_) {
+      single_ = false;
+      presenter_.EndForwardSelection();
+    }
     Changed();
     return;
   }
+  single_ = false; // the presenter ends the selection itself; a multi-select was never "single"
   presenter_.ForwardSelectedTo(std::move(chosen),
                                [this](const ForwardResult& result) { Show(ForwardResultText(result)); });
   Changed(); // choosing is over at once; the pill follows when everything is queued
@@ -160,6 +203,7 @@ void ForwardFlow::Stop() {
   const bool was_open = picker_open_;
   picker_open_ = false;
   ++picker_turn_;
+  single_ = false;
   presenter_.AbortForward();
   if (was_open && ports_.close_picker) {
     ports_.close_picker();
@@ -171,6 +215,7 @@ void ForwardFlow::Leave() {
   const bool was_open = picker_open_;
   picker_open_ = false;
   ++picker_turn_;
+  single_ = false;
   presenter_.EndForwardSelection();
   if (was_open && ports_.close_picker) {
     ports_.close_picker();
