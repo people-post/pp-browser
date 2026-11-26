@@ -19,6 +19,7 @@
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "foundation/crypto/RecoveryPhrase.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
@@ -1378,6 +1379,23 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
     hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
   }
   return *view;
+}
+
+uint64_t ConversationsFacade::AttachmentStoredBytes(const std::vector<uint8_t>& content_hash) {
+  const std::shared_ptr<CasStore> content = hub_.Content();
+  return content ? AttachmentLocalBytes(*content, content_hash) : 0;
+}
+
+Roe<ByteVector> ConversationsFacade::StoredAttachmentPlaintext(const std::vector<uint8_t>& content_hash) {
+  const std::shared_ptr<CasStore> content = hub_.Content();
+  if (!content) {
+    return Error("No content store");
+  }
+  const ByteVector dek = hub_.Attachments().CopyDek();
+  if (dek.empty()) {
+    return Error("The profile is locked");
+  }
+  return LoadAttachmentPlaintext(*content, content_hash, dek);
 }
 
 std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(const std::string& thread_id,

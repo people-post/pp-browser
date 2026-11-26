@@ -694,6 +694,55 @@ public:
    */
   bool TakeForwardInterrupted();
 
+  // --- Forwarding pictures, videos, files and voice messages (DEV/PLAN-message-forward-files-v3.md) -------------------
+
+  /**
+   * The ticked messages going to `target_count` chats, against the limits (kMaxForwardUploads uploads, kMaxForwardUploadBytes):
+   * what the "Forward to" page says above the preview, and which items it greys out. Nothing is read or decrypted, only
+   * a stat of the content store. `refusal` also holds AttachmentBusy while another attachment of ours is being sent.
+   */
+  ForwardCheck CheckForward(size_t target_count);
+  /** The forward being sent has a page: it holds at least one attachment (a run of text and cards has none). */
+  bool ForwardHasProgressPage() const;
+  /** What the progress page shows now; all zero when nothing is being sent. */
+  ForwardProgress ForwardProgressNow() const;
+  /**
+   * Cancel (`Cancelled`) or a notification tap that closed the page (`Tapped`): nothing new is started, the item under
+   * way is waited for, then `done` runs with the result (`stop` says which). No-op when nothing is being sent.
+   */
+  void CancelForward(ForwardStop kind = ForwardStop::Cancelled);
+  /** "Close" after a Cancel that got no answer for kForwardCloseOfferMs: leaves at once; the item under way is not counted failed. */
+  void CloseForward();
+  /**
+   * The phone really went to the background (iOS DID_ENTER_BACKGROUND, Android onStop: PlatformLifecycleEvents), the
+   * vault locked, an account signed out, messaging stopped: stops at once, the item under way is not interrupted
+   * (`AbortForward` is the same). The user hears of it on the next chat entry (TakeForwardNotice).
+   */
+  void NoteAppEnteredBackground();
+  /** The app only lost focus (iOS willResignActive: Control Center, a banner) or a desktop window lost focus / was minimised: nothing stops. */
+  void NoteAppLostFocus() {}
+  void NoteAppMinimized() {}
+  /** The chat the messages came from was deleted (from another device, or we were removed from it): stops, and says so at once through the notice sink. */
+  void NoteForwardSourceGone(const std::string& thread_id);
+  struct ForwardNotice {
+    ForwardStop kind = ForwardStop::None;
+    size_t done = 0;
+    size_t total = 0;
+  };
+  /**
+   * What to tell the user after a forward stopped without telling them itself (everything but Cancel / tap, whose `done`
+   * does, and a deleted source chat, whose notice went to the sink): "only part was forwarded, done of total". Read once,
+   * only by the account it happened under. None while the item that was under way has no answer yet
+   * (ForwardNoticePending), and none when nothing went out.
+   */
+  std::optional<ForwardNotice> TakeForwardNotice();
+  /** A stopped forward is still waiting for its item under way ("one is still being sent..."). */
+  bool ForwardNoticePending();
+  /** Where a notice that is due at once (a deleted source chat) goes: the bottom pill. */
+  void SetForwardNoticeSink(std::function<void(const ForwardNotice&)> sink) { forward_notice_sink_ = std::move(sink); }
+  /** Another attachment of ours is being sent (ChatController::AttachmentBusy); a forward with an upload does not start while it is. */
+  void SetForwardAttachmentBusy(std::function<bool()> busy) { forward_attachment_busy_ = std::move(busy); }
+
   /** Tests: the posting of each batch, and the messaging calls a forward makes (default: the UI queue; the facade). */
   void SetForwardPostForTest(std::function<void(std::function<void()>)> post) { forward_post_ = std::move(post); }
   void SetForwardPortsForTest(ForwardPorts ports) { forward_ports_ = std::move(ports); }
@@ -733,6 +782,14 @@ private:
   ResentMessages resent_ids_;
   ForwardSelection forward_selection_;
   std::shared_ptr<ForwardRun> forward_run_;
+  /** The forward that was stopped part-way, kept while it may still hear from the item that was under way. */
+  std::shared_ptr<ForwardRun> forward_interrupted_run_;
+  int64_t forward_interrupted_at_ms_ = 0;
+  /** A batch of the running forward is queued: a wake does not queue another. */
+  bool forward_batch_queued_ = false;
+  std::function<void(const ForwardResult&)> forward_done_;
+  std::function<void(const ForwardNotice&)> forward_notice_sink_;
+  std::function<bool()> forward_attachment_busy_;
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
   uint64_t forward_epoch_ = 0;
   bool forward_interrupted_ = false;
@@ -744,8 +801,11 @@ private:
   /** The facade's ports, built once (every row and every redraw asks); a test's own ports win. */
   const ForwardPorts& ForwardPortsNow();
   std::optional<ForwardPorts> facade_ports_;
-  void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run,
-                        std::function<void(const ForwardResult&)> done);
+  void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run);
+  /** An attachment answered or a timer fired: the run goes on (or, once stopped, only counts the answer). */
+  void OnForwardWake(const std::shared_ptr<ForwardRun>& run);
+  void StopForwardRun(ForwardStop kind);
+  void PostForwardTask(std::function<void()> task);
 };
 
 } // namespace pbr
