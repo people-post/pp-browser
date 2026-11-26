@@ -430,8 +430,8 @@ does not list its origin, so it is not used; and it cannot make one that does wi
   A release workflow refuses an empty or malformed relay id for prod; a dogfood build without one pins the first
   valid certificate's relay id, warned (as `OrgRelayFirstUseAllowed` today).
 - **Environments** ([RC009](DECISIONS.md#rc009--four-environments-todays-qa-becomes-staging-dev-is-new)): prod and
-  staging (today's qa) each have their own operator set, prod 2 of 3, offline, one key in escrow (RC018 part 2,
-  Leo); dev and the local stack 1 of 1 (**Q9**). The local stack generates its set and certificate at start and
+  staging (today's qa) each have their own operator set; every environment runs a 1 of 1 set today, and 2 of 3, offline, one key in escrow, is the target for prod and staging (RC018 part 2,
+  Leo), reached by an operator-set change (§ 3.2 / § 3.6); the local stack stays 1 of 1 (**Q9**). The local stack generates its set and certificate at start and
   names the link in `/_local/status`.
 - **User-run relays:** the operator runs relay's `scripts/relay-operator.mjs` (§ 4): generates the operator keys
   (1 of 1 is allowed), the transport and signing seeds, signs certificate 1 for its origins, and prints the relay
@@ -450,6 +450,9 @@ Release 1 ships the set-change **reader**; using it waits for its runbook (**Q8*
 functions do not switch at one instant, so the relay accepts the previous transport PeerId as audience for a short
 window after deploying a new certificate, never after a compromise (**Q11**, Leo).
 
+While an environment's set is 1 of 1, a lost or stolen operator key cannot be recovered from without a new relay id
+(a new relay link and a new build); the move to 2 of 3 waits on the Q8 runbook.
+
 ## 4. What changes on the relay (pp-relay-apis)
 
 | Item | Change | Files |
@@ -463,7 +466,7 @@ window after deploying a new certificate, never after a compromise (**Q11**, Leo
 | Relay identity | the registry loads the certificate (a secret of the deployment: 22 KB is too large for a function's 4 KB environment) and checks it at load: valid under `RELAY_ID`, its transport key the identity seed's, its signing key the signing seed's, else `503 relay_identity_unavailable`; serves `relay-identity` v2 and `client-compat`'s `relay_certificate_b64`. Other functions keep `RELAY_IDENTITY_PEER_ID` for the audience check, set by the deploy from the certificate | registry `relay-identity.ts:21-106`, `client-compat.ts:65-71`, shared `relay-identity.ts:106-117` |
 | Tools | `scripts/relay-operator.mjs`: `keygen` (one holder's key), `make-cert` (unsigned body: set, sequence, origins, the deployment's public keys), `sign` (one holder), `combine`, `verify --relay-id`, `link`; `relay-identity-keygen.mjs` also makes the signing seed | `scripts/` |
 | Vectors | `relay-sign-vectors.json` v2 copied byte for byte; new `ext-area-vectors.json` and `relay-certificate-vectors.json` (§ 6) | `sign-payload/*.test.ts` |
-| Cutover data | delete what release 1 cannot read: stored v4 cards, record-1 lockers, mailboxes of pre-release envelopes (**Q12**) | one-time job with relay 1.0 |
+| Cutover data | delete what release 1 cannot read: stored v4 cards, record-1 lockers, mailboxes of pre-release envelopes (**Q12**) | one-time job with relay 1.1 |
 
 ## 5. What changes in the app and pp-node (pp-browser)
 
@@ -489,7 +492,7 @@ fixture is frozen as a whole and must verify.
 | Typed blobs | each registry id with its size; id 0; an unknown id per kind | pp-cpp-crypto → pp-browser, relay |
 | Per object (§ 2, every row) | the signed bytes of a fixed input with an empty area, and with one unknown non-critical entry (verifies, entry kept); a signed fixture; refusals: version + 1 (update needed before verify), version − 1 (older), unknown critical entry (verifies, then update needed), unknown algorithm id | pp-browser (`envelope_signer_test`, `account_card_test`, group, locker, `PeerRequestAuth`, broadcast tests), mesh (DHT) |
 | `relay_sign_vectors.json` v2 (F5) | every domain and op at version 4 for relays `a` and `b`; a card v5 and the refused cards (v4 → `426`, v6, an unknown critical entry and an unknown id → `relay_upgrade_required`, today's bounds); KEM binding v2; grant v2; locker record v2; version 3 → `426`, version 5 → `relay_upgrade_required`; an unknown body key and an unknown non-critical entry (accepted); response fixtures with unknown keys (register/finish, poll, by-account, `client-compat`, `relay-identity` v2) | pp-browser → relay (byte for byte) |
-| `relay_certificate_vectors.json` | operator keys from seeds `0x01…`, `0x02…`, `0x03…` (2 of 3); the relay id; certificates 1 and 2 (a new transport key); one with a set change; refused: one signature, an index twice, a key outside the set, another relay id, a lower sequence, the same sequence with other bytes, an origin not listed, `expires_at` past, an unknown critical entry, version 2 | pp-browser → relay, pp-node |
+| `relay_certificate_vectors.json` | operator keys from seeds `0x01…`, `0x02…`, `0x03…` (2 of 3 in the vectors); the relay id; certificates 1 and 2 (a new transport key); one with a set change; refused: one signature, an index twice, a key outside the set, another relay id, a lower sequence, the same sequence with other bytes, an origin not listed, `expires_at` past, an unknown critical entry, version 2 | pp-browser → relay, pp-node |
 | Seeded keygen (F3) | the account, device, locker, operator and relay keys from fixed seeds: fixed key hashes | pp-cpp-crypto |
 
 ## 7. The cutover plan
@@ -507,13 +510,13 @@ Release 1 accepts only the forms in § 2 and § 3, on every side. The order:
 5. **Prod ceremony** (Leo): the prod operator set signs certificate 1 for the prod relay's **current** transport key
    (no rotation needed) and a new signing seed; the relay id and certificate go into the release build's
    configuration.
-6. **Release day**, in this order: app 1.1.0 (RC024) and pp-node 10.0.0 approved and held; relay 1.0 deployed to prod from
+6. **Release day**, in this order: app 1.1.0 (RC024) and pp-node 10.0.0 approved and held; relay 1.1 deployed to prod from
    its tag with the certificate, `min_client_version` 1.1.0 and `min_node_version` 10.0.0, and the cutover data job
    (Q12); then the apps released. Between the deploy and the release, older apps get `426` and say *update*.
    Testers delete the app and install release 1 (RC017); restoring from the phrase finds no pre-release locker
    (Q12) and starts with an empty locker under the same Account ID.
 
-Rollback ([RC003](DECISIONS.md#rc003--the-relay-can-always-roll-back-one-release)) starts at relay 1.0: it is the
+Rollback ([RC003](DECISIONS.md#rc003--the-relay-can-always-roll-back-one-release)) starts at relay 1.1: it is the
 first release that writes these forms, so before it there is no release to roll back to.
 
 ## Open questions
@@ -530,10 +533,10 @@ All answered as recommended: [RC020](DECISIONS.md#rc020--the-signed-formats-for-
 | Q6 | Does the certificate bind the relay's origins (1–4)? | **Yes.** It closes MR008 item 6 (a hostile relay fronting another); the cost is a new certificate when an origin changes, which RC018 already wants for a move |
 | Q7 | Certificate expiry: RC018 part 2's default is none in release 1. Ship the `expires_at` field (0 = none) and its reader anyway? | **Yes, field and reader; operators write 0.** Leo can start expiry later without a format change; adding the field later would make every in-range app say "update needed" |
 | Q8 | Operator-set changes (replace a lost or leaked operator key, keep the relay id): ship the reader in release 1? | **Yes, the reader; no use until its runbook.** Without it, losing one key of 2 of 3 means a new relay id for everyone |
-| Q9 | Set sizes per environment: prod 2 of 3 (Leo's default); staging and dev? | **Staging 2 of 3** (rehearses the ceremony and rotation), **dev and local 1 of 1**. Holders and escrow: Leo |
+| Q9 | Set sizes per environment: prod 2 of 3 (Leo's default); staging and dev? | **Target: staging and prod 2 of 3** (staging rehearses the ceremony and rotation); **dev and local 1 of 1**. **Current: dev, staging and prod all run 1 of 1** (the committed certificates say so); moving staging and prod to 2 of 3 is an operator-set change signed by the set in force, relay id unchanged (§ 3.2 / § 3.6), its runbook still pending (Q8). Holders and escrow: Leo |
 | Q10 | Builds embed each environment's current certificate as a floor, beside its relay id? | **Yes.** No first fetch before the first signed call, and a fresh install never accepts an older certificate than its build knew |
 | Q11 | During a planned rotation, the relay also accepts the previous transport PeerId as audience: for how long? | **24 h after the new certificate is deployed; never after a compromise** (Leo's runbook says which) |
-| Q12 | Pre-release relay data release 1 cannot read (v4 cards, record-1 lockers, envelope-3 mailboxes): delete at the cutover, or keep a reader? | **Delete, with relay 1.0's deploy.** RC017's clean start; testers who restore keep their Account ID and re-add contacts (direct contact). A reader would be the first pre-release bridge in release 1 |
+| Q12 | Pre-release relay data release 1 cannot read (v4 cards, record-1 lockers, envelope-3 mailboxes): delete at the cutover, or keep a reader? | **Delete, with relay 1.1's deploy.** RC017's clean start; testers who restore keep their Account ID and re-add contacts (direct contact). A reader would be the first pre-release bridge in release 1 |
 | Q13 | The relay's signing key: certified from release 1 but used for nothing yet. Leave it unused? | **Yes.** Certifying it now is what keeps later relay-issued items (signed answers, receipts) additive |
 | Q14 | No extension area per envelope copy? | **None.** Per-device data belongs in the copy's ciphertext (ChatPayload, T4) |
 | Q15 | The DHT record in this cutover (pp-cpp-mesh)? | **Yes.** pp-node 10.0.0 ships with release 1; V3 needs its version read first anyway |

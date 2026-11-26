@@ -12,7 +12,7 @@ ready; merge day merges each integration branch into `main`.
 | Repo | Integration branch | Lands on main |
 |------|--------------------|---------------|
 | pp-browser | `cutover/signed-formats` | merge day, with the relay's |
-| pp-relay-apis | `cutover/signed-formats` | merge day (Leo tags `dev/<date>.<n>`); then `release/1.0` is re-cut from `main` |
+| pp-relay-apis | `cutover/signed-formats` | merge day (Leo tags `dev/<date>.<n>`); then `release/1.1` is cut from `main` |
 | pp-cpp-mesh | none: DHT record v2 is a library release (`v10.0.0`, a breaking format), pinned on pp-browser's branch | before merge day |
 
 The integration branches are rebased on (or merge) `main` weekly, so they do not drift. CI runs on PRs into them.
@@ -58,8 +58,8 @@ What the merged R3, R4, R5 and W5 need in each of the relay's `main`, `staging` 
    (`https://<host>/api/relay`); `RELAY_IDENTITY_PEER_ID` equals the certificate's audience. The support worker needs
    the same relay id (R5: it names its relay on Support's card, and stops at start without it).
 3. Each environment's operator set and its certificate 1 (sequence 1, `expires_at` 0), in this order: **dev's** (1 of
-   1) before merge day; **staging's** (2 of 3, like prod's: it rehearses prod's ceremony) before the re-cut
-   `release/1.0`'s first candidate; **prod's** (2 of 3) before release day, certifying prod's current transport key and
+   1) before merge day; **staging's** (1 of 1 today; 2 of 3 is the target, reached by an operator-set change, SIGNED_FORMATS § 3.2 / § 3.6) before the re-cut
+   `release/1.1`'s first candidate; **prod's** (1 of 1 today; 2 of 3 is the target, same route) before release day, certifying prod's current transport key and
    a new signing seed. Without its certificate an environment's registry answers `503 relay_identity_unavailable` to
    signed calls.
 4. pp-browser: the relay ids in CI variables `PP_RELAY_ID_DEV`, `PP_RELAY_ID_STAGING` and `PP_RELAY_ID_PROD`, the
@@ -67,7 +67,7 @@ What the merged R3, R4, R5 and W5 need in each of the relay's `main`, `staging` 
    environment; the per-environment PeerId variables, `PP_RELAY_PEER_ID_*`, go: the relay id and certificate replace
    them); pp-node 10.0's fleet config sets `registration.relay_id` per tier (ansible).
 5. The cutover data job (`packages/cutover-data`, dry run unless `--apply`, `--env main|staging|prod`): a role to run
-   it once per environment (dev on merge day, staging when the re-cut `release/1.0`'s first candidate deploys, prod on
+   it once per environment (dev on merge day, staging when the re-cut `release/1.1`'s first candidate deploys, prod on
    release day; on dev and staging it rehearses prod's run) with DynamoDB scan/query/update/delete on `accounts` and
    `messages`, and S3 delete on the locker and message-body prefixes.
 6. The deploy roles: drop qa's trust of `refs/heads/main` (`relay-api-lambda.tf`, `nodes.tf`), as RC021 retires qa. After merge day the CloudFront behaviours for the removed routes
@@ -81,11 +81,11 @@ What the merged R3, R4, R5 and W5 need in each of the relay's `main`, `staging` 
 3. **L**: the whole app lab on the two integration branches against the local stack (1-of-1 operator set).
 4. **Merge day**, when dev's secrets and certificate exist: pp-relay-apis then pp-browser integration branches into
    `main` the same day; dev is reset and Leo tags `dev/<date>.<n>`; the data job runs on dev; the lab runs against dev.
-5. **Staging:** the relay's `release/1.0` (cut 2026-11-21 before the cutover; `release/v1.0.0-rc.1` never had testers)
-   is re-cut from `main`, so relay 1.0 is the cutover, and Leo tags `release/v1.0.0-rc.2` once staging's certificate
+5. **Staging:** the relay's release branch (`release/1.0` was cut 2026-11-21 before the cutover; `release/v1.0.0-rc.1` never had testers)
+   is re-cut from `main` as `release/1.1`, so relay 1.1 is the cutover ([RC025](DECISIONS.md#rc025--relay-release-1-is-version-11)), and Leo tags `release/v1.1.0-rc.1` once staging's certificate
    exists; staging is reset, the data job runs there as prod's rehearsal, and the lab runs against staging. pp-browser's
    release branch is cut from `main` likewise. Testers start on release 1 here or on prod (RC017: they reinstall).
-6. **Release day** as SIGNED_FORMATS § 7 step 6: prod's operator set and certificate, prod's data job, `v1.0.0`.
+6. **Release day** as SIGNED_FORMATS § 7 step 6: prod's operator set and certificate, prod's data job, `v1.1.0`.
 
 ## Status
 
