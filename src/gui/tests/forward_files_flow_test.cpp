@@ -491,6 +491,21 @@ TEST_F(ForwardFilesFlowTest, TheProgressPageClosesOnFinishCancelLockAndSignOut) 
   }
 }
 
+TEST_F(ForwardFilesFlowTest, ThePreviewFilesAreToldToGoWhenThePickerClosesAndOnLockSignOutAndTeardown) {
+  // ChatController points preview_done at ForwardPreviewFiles::RemoveAll; lock, sign-out and messaging teardown all end
+  // in ForwardFlow::Stop.
+  World closed;
+  closed.Hold(Picture("p1", 1, 1));
+  closed.flow->BeginSingle("p1");
+  closed.flow->Leave();
+  EXPECT_EQ(closed.preview_done_calls, 1);
+  World locked;
+  locked.Hold(Picture("p1", 1, 1));
+  locked.flow->BeginSingle("p1");
+  locked.flow->Stop();
+  EXPECT_GE(locked.preview_done_calls, 1);
+}
+
 TEST_F(ForwardFilesFlowTest, TheProgressPageKeepsTheScreenAwakeAndReleasesItOnEveryExit) {
   // Every way the page can end, with what each leaves behind: held while it is up, released exactly once after, and a
   // second forward holds it again. (A cancel is answered by the item under way, so its release waits for that.)

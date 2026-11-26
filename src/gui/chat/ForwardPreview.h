@@ -20,6 +20,31 @@ inline constexpr size_t kForwardPreviewTiles = 3;
 inline constexpr uint64_t kForwardPreviewMaxBytes = 8ULL * 1000ULL * 1000ULL;
 inline constexpr int kForwardPreviewThumbPx = 160;
 
+/** The reserved name (not a chat) whose `threads/<name>/blobs_view/` holds the thumbnails: the attachment views' wipes cover it. */
+inline constexpr const char* kForwardPreviewViewThread = "forward-preview";
+/** No file of this kind is larger than this on its long side: a thumbnail, never the picture. */
+inline constexpr int kForwardPreviewMaxLongSidePx = 256;
+
+/**
+ * The thumbnails made for the "Forward to" page, as files (the UI library loads an `<img>` from a path). They are
+ * decrypted content, so they live in the session view area of the profile (`AttachmentViewRoot`): removed when the page
+ * closes (RemoveAll, also on lock, sign-out and messaging teardown through ForwardFlow::Stop), by every lock / sign-out
+ * wipe of the attachment views (WipeAllAttachmentViewCaches), and once at each start (CleanStaleAttachmentFiles).
+ * Names are a counter, never a hash or a message id.
+ */
+class ForwardPreviewFiles {
+public:
+  explicit ForwardPreviewFiles(std::string profile_dir);
+  /** Writes the JPEG as `<index>.jpg`; returns its path, or empty when it is not a JPEG of at most 256 px a side. */
+  std::string Put(const std::vector<uint8_t>& jpeg, size_t index);
+  /** Removes the folder and what is in it. */
+  void RemoveAll();
+
+private:
+  std::string dir_;
+  bool started_ = false;
+};
+
 struct ForwardPreviewPorts {
   /** The file a picture's bubble on screen already shows (empty: the row is not on the page, or has no picture yet). */
   std::function<std::string(const std::string& message_id)> bubble_picture;

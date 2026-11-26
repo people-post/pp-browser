@@ -129,7 +129,6 @@ TEST(ForwardFlowWiringTest, ThePickerAndThePillGoThroughTheAppsPorts) {
   EXPECT_NE(app.find("people_picker_->CloseChooseTargets()"), std::string::npos);
 }
 
-
 // ---- Pictures, videos, files and voice messages (DEV/PLAN-message-forward-files-v3.md, step 3) --------------------
 
 TEST(ForwardFlowWiringTest, TheProgressPageIsOpenedDrawnAndClosedThroughTheFlowsPorts) {
@@ -172,7 +171,8 @@ TEST(ForwardFlowWiringTest, OnlyTheRealBackgroundStopsAForwardAndLosingFocusDoes
 
 TEST(ForwardFlowWiringTest, TheProgressPageGoesWhenACallStartsAndTheNumbersAreDrawnEveryTick) {
   const std::string update = Body(Controller(), "void ChatController::Update(");
-  EXPECT_NE(update.find("if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {"), std::string::npos);
+  EXPECT_NE(update.find("if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {"),
+            std::string::npos);
   EXPECT_NE(update.find("forward_flow_->OnCallStarted()"), std::string::npos);
   EXPECT_NE(update.find("forward_flow_->Tick("), std::string::npos);
 }
@@ -184,8 +184,9 @@ TEST(ForwardFlowWiringTest, ThePreviewTakesPicturesFromTheBubbleThenFromMemoryAn
   EXPECT_NE(ports.find("StoredAttachmentPlaintext("), std::string::npos) << "the stored bytes, only for the shown few";
   EXPECT_NE(ports.find("MakeImageThumbnailJpeg("), std::string::npos);
   EXPECT_EQ(ports.find("Download"), std::string::npos) << "nothing is ever downloaded for a preview";
-  EXPECT_NE(Controller().find("std::filesystem::remove_all(forward_preview_dir_"), std::string::npos)
+  EXPECT_NE(Controller().find("forward_preview_files_->RemoveAll()"), std::string::npos)
       << "the thumbnails go when the page does";
+  EXPECT_EQ(ports.find("\"picked\""), std::string::npos) << "no decrypted thumbnail outside the view area";
 }
 
 } // namespace

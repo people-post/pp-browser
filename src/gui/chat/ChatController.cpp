@@ -623,10 +623,9 @@ ChatController::ChatController()
   forward_ports.now_ms = []() { return SteadyNowMs(); };
   forward_ports.preview = MakeForwardPreviewPorts();
   forward_ports.preview_done = [this]() {
-    if (!forward_preview_dir_.empty()) {
-      std::error_code ec;
-      std::filesystem::remove_all(forward_preview_dir_, ec); // the thumbnails made for the page go with it
-      forward_preview_dir_.clear();
+    if (forward_preview_files_) {
+      forward_preview_files_->RemoveAll(); // the thumbnails made for the page go with it
+      forward_preview_files_.reset();
     }
   };
   forward_flow_ = std::make_unique<ForwardFlow>(presenter_, std::move(forward_ports));
@@ -1242,18 +1241,12 @@ ForwardPreviewPorts ChatController::MakeForwardPreviewPorts() {
     if (!facade_) {
       return {};
     }
-    // A small picture, written to the same session-only folder family the picture preview page uses (the UI library
-    // reads an <img> from a file); it is removed when "Forward to" closes.
-    std::error_code ec;
-    if (forward_preview_dir_.empty()) {
-      forward_preview_dir_ = (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "forward-preview").string();
-      std::filesystem::remove_all(forward_preview_dir_, ec); // leftovers of a run that was killed
+    // A thumbnail (never the picture), in the session view area of the profile that every lock / sign-out / start wipe
+    // covers (ForwardPreviewFiles); removed when "Forward to" closes.
+    if (!forward_preview_files_) {
+      forward_preview_files_ = std::make_unique<ForwardPreviewFiles>(facade_->ProfileDataDir());
     }
-    std::filesystem::create_directories(forward_preview_dir_, ec);
-    const std::string path = (std::filesystem::path(forward_preview_dir_) / (std::to_string(index) + ".jpg")).string();
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out.write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
-    return out ? path : std::string();
+    return forward_preview_files_->Put(jpeg, index);
   };
   return ports;
 }

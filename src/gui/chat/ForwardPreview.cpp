@@ -5,6 +5,8 @@
 #include "lib/voice/VoiceFile.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace pbr {
@@ -33,7 +35,73 @@ std::string MegabytesText(const uint64_t bytes) {
   return std::to_string(std::max<uint64_t>(1, (bytes + 999'999) / 1'000'000));
 }
 
+/** The larger side of a JPEG from its SOF segment; 0 when it is not a JPEG or has no readable size. */
+int JpegLongSide(const std::vector<uint8_t>& jpeg) {
+  if (jpeg.size() < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8) {
+    return 0;
+  }
+  size_t i = 2;
+  while (i + 4 <= jpeg.size()) {
+    if (jpeg[i] != 0xFF) {
+      return 0;
+    }
+    const uint8_t marker = jpeg[i + 1];
+    if (marker == 0xFF) {
+      ++i; // fill byte
+      continue;
+    }
+    if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2; // markers without a length
+      continue;
+    }
+    if (marker == 0xD9 || marker == 0xDA) {
+      return 0; // end / scan before any size
+    }
+    const size_t length = (static_cast<size_t>(jpeg[i + 2]) << 8) | jpeg[i + 3];
+    const bool sof = marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+    if (sof) {
+      if (i + 9 > jpeg.size()) {
+        return 0;
+      }
+      const int height = (jpeg[i + 5] << 8) | jpeg[i + 6];
+      const int width = (jpeg[i + 7] << 8) | jpeg[i + 8];
+      return std::max(width, height);
+    }
+    if (length < 2) {
+      return 0;
+    }
+    i += 2 + length;
+  }
+  return 0;
+}
+
 } // namespace
+
+ForwardPreviewFiles::ForwardPreviewFiles(std::string profile_dir)
+    : dir_((std::filesystem::path(AttachmentViewRoot(profile_dir, kForwardPreviewViewThread))).string()) {}
+
+std::string ForwardPreviewFiles::Put(const std::vector<uint8_t>& jpeg, const size_t index) {
+  const int side = JpegLongSide(jpeg);
+  if (side <= 0 || side > kForwardPreviewMaxLongSidePx) {
+    return {};
+  }
+  std::error_code ec;
+  if (!started_) {
+    std::filesystem::remove_all(dir_, ec); // leftovers of a page that was killed
+    started_ = true;
+  }
+  std::filesystem::create_directories(dir_, ec);
+  const std::string path = (std::filesystem::path(dir_) / (std::to_string(index) + ".jpg")).string();
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
+  return out ? path : std::string();
+}
+
+void ForwardPreviewFiles::RemoveAll() {
+  std::error_code ec;
+  std::filesystem::remove_all(dir_, ec);
+  started_ = false;
+}
 
 ForwardPreviewContent BuildForwardPreview(const ForwardCheck& check, const std::string& text,
                                           const std::function<std::string(size_t count)>& count_text,
@@ -43,8 +111,9 @@ ForwardPreviewContent BuildForwardPreview(const ForwardCheck& check, const std::
   if (check.attachments == 0) {
     return content; // text and cards only: the words, as before
   }
-  content.text = check.items.size() > 1 ? (count_text ? count_text(check.items.size()) : std::to_string(check.items.size()))
-                                        : std::string();
+  content.text = check.items.size() > 1
+                     ? (count_text ? count_text(check.items.size()) : std::to_string(check.items.size()))
+                     : std::string();
   size_t index = 0;
   for (const ForwardItemFacts& item : check.items) {
     if (content.items.size() >= kForwardPreviewTiles) {

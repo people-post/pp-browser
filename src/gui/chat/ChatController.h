@@ -1060,8 +1060,8 @@ private:
   uint64_t forward_background_id_ = 0;
   /** What "Forward to" shows of attachments: a bubble's picture, a poster, a thumbnail made in memory. */
   ForwardPreviewPorts MakeForwardPreviewPorts();
-  /** The folder the in-memory thumbnails were put in (empty: none yet); it is removed with the "Forward to" page. */
-  std::string forward_preview_dir_;
+  /** The thumbnail files made for the "Forward to" page (null: none yet); removed with the page. */
+  std::unique_ptr<ForwardPreviewFiles> forward_preview_files_;
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;
