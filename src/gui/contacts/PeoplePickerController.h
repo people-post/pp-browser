@@ -7,6 +7,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/contacts/PeoplePickerChoose.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -105,9 +106,21 @@ public:
    */
   void OfferGroupAdmin(const std::string& thread_id, const std::string& sender);
 
+  /**
+   * Choose and return: lists `options.list()`, up to `options.max_targets` can be ticked, the button hands them back to
+   * `done` (after the picker has closed). It invites, calls and creates nothing. `cancel` runs when the user closes the
+   * picker without choosing; a Close() from the host runs neither.
+   */
+  void OpenForResult(PeoplePickerChooseOptions options, PeoplePickerChooseDone done, std::function<void()> cancel = {});
+
+  /** Closes the picker when it is in choose-and-return mode (a lock, a sign-out); another mode's picker is left alone. */
+  void CloseChooseTargets();
+
   void Close();
 
 private:
+  friend class PeoplePickerControllerTestAccess;
+
   static void ToggleContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ConfirmCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -116,7 +129,12 @@ private:
   static void CreateGroupCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void AddMembersCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
-  void Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids);
+  /** `prepare` runs once the previous state is cleared and before the rows are made (a mode's own options). */
+  void Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids, std::function<void()> prepare = {});
+  /** Choose and return: the rows are the options' list (by name when searched), the ticked ones kept. */
+  void SyncChooseRows();
+  void OnToggleChoose(const std::string& key);
+  void OnChooseConfirm();
   void SyncRows();
   void SyncGroupCallRows();
   void SyncCallAddGuestRows();
@@ -224,6 +242,16 @@ private:
   bool show_add_members_ = false;
   ui::String full_hint_;
   ui::String invite_hint_;
+  // ChooseTargets
+  PeoplePickerChooseOptions choose_options_;
+  PeoplePickerChooseDone choose_done_;
+  std::function<void()> choose_cancel_;
+  std::vector<ForwardTarget> choose_all_;
+  /** The strip above the buttons (what is about to be sent), and whether there is one. */
+  ui::String preview_text_;
+  bool show_preview_ = false;
+  /** The picker is in choose-and-return mode (its rows grey out when the limit is reached). */
+  bool choose_mode_ = false;
   MessagingContactsPorts contacts_ports_;
   MessagingPeoplePickerPorts picker_ports_;
   UnlockEnsurePorts unlock_ensure_;

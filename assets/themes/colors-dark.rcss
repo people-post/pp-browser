@@ -485,6 +485,24 @@ select selectbox option:hover {
   color: #ebebf599;
 }
 
+.chat-forward-title {
+  color: #ffffff;
+}
+
+.chat-forward-cancel {
+  color: #0a84ff;
+}
+
+.message-forward-check {
+  border-color: #54545899;
+  background-color: #1c1c1e;
+}
+
+.message-forward-check--on {
+  border-color: #0a84ff;
+  background-color: #0a84ff;
+}
+
 .chat-search-step svg {
   image-color: #8e8e93;
 }
@@ -2506,6 +2524,14 @@ input.checkbox:checked {
 
 .people-picker-check-mark {
   color: #ffffff;
+}
+
+.people-picker-preview {
+  background-color: #7878803d;
+}
+
+.people-picker-preview-text {
+  color: #ebebf599;
 }
 
 .people-picker-member-chip {
