@@ -2457,6 +2457,19 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
+.people-picker-preview-label,
+.people-picker-preview-note {
+  color: #3c3c4399;
+}
+
+.people-picker-refusal {
+  color: #ff3b30;
+}
+
+.people-picker-preview-icon {
+  color: #3c3c4399;
+}
+
 .people-picker-member-chip {
   background-color: #007aff1f;
   color: #007aff;
@@ -4259,4 +4272,34 @@ input.checkbox:checked {
 .recovery-dots {
   color: #3c3c4399;
 }
+
+.forward-progress {
+  background-color: #ffffff;
+}
+
+.forward-progress-title {
+  color: #000000;
+}
+
+.forward-progress-line {
+  color: #000000;
+}
+
+.forward-progress-stay {
+  color: #3c3c4399;
+}
+
+.forward-progress-spinner {
+  border-color: #3c3c434c;
+  border-top-color: #007aff;
+}
+
+.forward-progress-bar {
+  background-color: #7878801f;
+}
+
+.forward-progress-bar-fill {
+  background-color: #007aff;
+}
+
 }

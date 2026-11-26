@@ -2021,7 +2021,21 @@ ForwardCheck ChatPresenter::CheckForward(const size_t target_count) {
   }
   const bool busy =
       (forward_attachment_busy_ && forward_attachment_busy_()) || (ports.attachment_busy && ports.attachment_busy());
-  return CheckForwardLimits(std::move(items), target_count, busy);
+  ForwardCheck check = CheckForwardLimits(std::move(items), target_count, busy);
+  if (check.refusal == ForwardRefusal::None && check.uploads > 0 && forward_call_active_ && forward_call_active_()) {
+    check.refusal = ForwardRefusal::CallActive;
+  }
+  return check;
+}
+
+bool ChatPresenter::IsAttachmentMessage(const std::string& message_id) {
+  const ForwardPorts& ports = ForwardPortsNow();
+  if (message_id.empty() || !ports.active_thread || !ports.get_message) {
+    return false;
+  }
+  const std::string thread_id = ports.active_thread();
+  const std::optional<ThreadMessage> row = thread_id.empty() ? std::nullopt : ports.get_message(thread_id, message_id);
+  return row && row->content_type == ChatContentType::Attachment;
 }
 
 bool ChatPresenter::ForwardHasProgressPage() const {

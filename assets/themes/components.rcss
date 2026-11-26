@@ -10307,6 +10307,68 @@ input.checkbox {
   overflow: hidden;
 }
 
+/* Forward to: attachments in the strip, up to three tiles; grey ones have no bytes on this device. */
+.people-picker-preview-items {
+  gap: 10dp;
+  align-items: flex-start;
+}
+
+.people-picker-preview-item {
+  width: 72dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.people-picker-preview-item--grey {
+  opacity: 0.4;
+}
+
+.people-picker-preview-tile {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 8dp;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.people-picker-preview-thumb {
+  width: 56dp;
+  height: 56dp;
+}
+
+.people-picker-preview-icon {
+  width: 56dp;
+  height: 56dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.people-picker-preview-label {
+  margin: 4dp 0 0 0;
+  font-size: 12dp;
+  line-height: 14dp;
+  max-height: 28dp;
+  max-width: 72dp;
+  overflow: hidden;
+  text-align: center;
+}
+
+.people-picker-preview-note {
+  margin: 6dp 0 0 0;
+  font-size: 13dp;
+  line-height: 17dp;
+}
+
+.people-picker-refusal {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
 .people-picker-footer {
   flex-shrink: 0;
   justify-content: flex-end;
@@ -16919,4 +16981,97 @@ textarea:composing ~ .ps-placeholder {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The "Forwarding 2/7" page (forward_progress.rml): a full-screen layer over the chat, centred, no way back but Cancel. */
+.forward-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forward-progress-body {
+  width: 100%;
+  max-width: 420dp;
+  padding: 0 32dp;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.forward-progress-title {
+  margin: 0 0 24dp 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.forward-progress-activity {
+  width: 100%;
+  height: 40dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes forward-progress-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.forward-progress-spinner {
+  width: 32dp;
+  height: 32dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 19dp;
+  animation: 0.9s linear infinite forward-progress-spin;
+}
+
+.forward-progress-bar {
+  width: 100%;
+  height: 8dp;
+  border-radius: 4dp;
+  overflow: hidden;
+}
+
+.forward-progress-bar-fill {
+  height: 8dp;
+  border-radius: 4dp;
+}
+
+.forward-progress-line {
+  margin: 12dp 0 0 0;
+  min-height: 22dp;
+  font-size: 16dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.forward-progress-stay {
+  margin: 24dp 0 0 0;
+  font-size: 14dp;
+  line-height: 19dp;
+  text-align: center;
+}
+
+.forward-progress-actions {
+  margin-top: 28dp;
+  min-height: 50dp;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 12dp;
+}
+
+.forward-progress-btn {
+  min-width: 120dp;
+  min-height: 50dp;
 }

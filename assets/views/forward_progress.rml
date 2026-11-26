@@ -1,0 +1,20 @@
+<div class="forward-progress" data-model="forward_progress">
+  <!-- Forwarding with attachments: the page stays up until the last item is out; no way back but Cancel. -->
+  <div class="forward-progress-body">
+    <p class="forward-progress-title">{{fp_title}}</p>
+    <div class="forward-progress-activity">
+      <div class="forward-progress-spinner" data-if="!fp_has_percent"></div>
+      <div class="forward-progress-bar" data-if="fp_has_percent">
+        <div class="forward-progress-bar-fill" data-style-width="fp_bar_width"></div>
+      </div>
+    </div>
+    <p class="forward-progress-line">{{fp_line}}</p>
+    <p class="forward-progress-stay" data-if="!fp_finishing">{{i18n:chat.forward.progress_stay}}</p>
+    <div class="forward-progress-actions">
+      <button class="btn btn-secondary forward-progress-btn" type="button" data-if="!fp_finishing"
+              data-event-click="forward_progress_cancel()">{{i18n:common.cancel}}</button>
+      <button class="btn btn-secondary forward-progress-btn" type="button" data-if="fp_can_close"
+              data-event-click="forward_progress_close()">{{i18n:common.close}}</button>
+    </div>
+  </div>
+</div>

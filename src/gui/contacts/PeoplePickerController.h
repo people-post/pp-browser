@@ -68,6 +68,14 @@ public:
     bool disabled = false;
   };
 
+  /** One thing of the "Forward to" strip as the page binds it. */
+  struct PreviewItemRow {
+    ui::String icon;
+    ui::String thumb;
+    ui::String label;
+    bool grey = false;
+  };
+
   struct MemberSummaryRow {
     ui::String title;
   };
@@ -249,6 +257,10 @@ private:
   std::vector<ForwardTarget> choose_all_;
   /** The strip above the buttons (what is about to be sent), and whether there is one. */
   ui::String preview_text_;
+  std::vector<PreviewItemRow> preview_items_;
+  ui::String preview_note_;
+  /** Why Send is off ("up to 5 files at once..."); empty when it may go. */
+  ui::String choose_refusal_;
   bool show_preview_ = false;
   /** The picker is in choose-and-return mode (its rows grey out when the limit is reached). */
   bool choose_mode_ = false;

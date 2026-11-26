@@ -738,10 +738,16 @@ public:
   std::optional<ForwardNotice> TakeForwardNotice();
   /** A stopped forward is still waiting for its item under way ("one is still being sent..."). */
   bool ForwardNoticePending();
+  /** A forward stopped part-way and its notice has not been taken yet (it may still wait for the item under way). */
+  bool ForwardNoticeDue() const { return forward_interrupted_; }
   /** Where a notice that is due at once (a deleted source chat) goes: the bottom pill. */
   void SetForwardNoticeSink(std::function<void(const ForwardNotice&)> sink) { forward_notice_sink_ = std::move(sink); }
   /** Another attachment of ours is being sent (ChatController::AttachmentBusy); a forward with an upload does not start while it is. */
   void SetForwardAttachmentBusy(std::function<bool()> busy) { forward_attachment_busy_ = std::move(busy); }
+  /** A call is on: a forward with an upload does not start (its progress page would cover the call's controls). */
+  void SetForwardCallActive(std::function<bool()> active) { forward_call_active_ = std::move(active); }
+  /** The open chat's message is an attachment (a picture, video, file or voice message, whatever its state). */
+  bool IsAttachmentMessage(const std::string& message_id);
 
   /** Tests: the posting of each batch, and the messaging calls a forward makes (default: the UI queue; the facade). */
   void SetForwardPostForTest(std::function<void(std::function<void()>)> post) { forward_post_ = std::move(post); }
@@ -790,6 +796,7 @@ private:
   std::function<void(const ForwardResult&)> forward_done_;
   std::function<void(const ForwardNotice&)> forward_notice_sink_;
   std::function<bool()> forward_attachment_busy_;
+  std::function<bool()> forward_call_active_;
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
   uint64_t forward_epoch_ = 0;
   bool forward_interrupted_ = false;

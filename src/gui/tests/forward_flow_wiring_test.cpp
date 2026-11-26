@@ -129,5 +129,64 @@ TEST(ForwardFlowWiringTest, ThePickerAndThePillGoThroughTheAppsPorts) {
   EXPECT_NE(app.find("people_picker_->CloseChooseTargets()"), std::string::npos);
 }
 
+
+// ---- Pictures, videos, files and voice messages (DEV/PLAN-message-forward-files-v3.md, step 3) --------------------
+
+TEST(ForwardFlowWiringTest, TheProgressPageIsOpenedDrawnAndClosedThroughTheFlowsPorts) {
+  const std::string ctor = Body(Controller(), "ChatController::ChatController()");
+  for (const char* port : {"forward_ports.open_progress = [this]() { forward_progress_.Open(); }",
+                           "forward_ports.close_progress = [this]() { forward_progress_.Close(); }",
+                           "forward_ports.show_progress =", "forward_ports.keep_awake =", "forward_ports.now_ms =",
+                           "forward_ports.preview = MakeForwardPreviewPorts()", "forward_ports.preview_done ="}) {
+    EXPECT_NE(ctor.find(port), std::string::npos) << port;
+  }
+  EXPECT_NE(ctor.find("ScreenAwakeHolds::Shared().Set(ScreenAwakeHolds::Holder::Forward, on"), std::string::npos)
+      << "the screen is held through the switch the call shares";
+  for (const char* handler : {"forward_flow_->OnProgressCancel()", "forward_flow_->OnProgressClose()",
+                              "forward_flow_->OnProgressBack()", "forward_flow_->OnProgressLayerClosed()"}) {
+    EXPECT_NE(ctor.find(handler), std::string::npos) << handler;
+  }
+  EXPECT_NE(ctor.find("presenter_.SetForwardAttachmentBusy([this]() { return AttachmentBusy(); })"), std::string::npos)
+      << "AttachmentBusy() reaches the presenter";
+  EXPECT_NE(ctor.find("presenter_.SetForwardCallActive("), std::string::npos);
+  EXPECT_NE(Controller().find("forward_progress_.RegisterModel(context)"), std::string::npos);
+  const std::string header = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.h");
+  EXPECT_NE(header.find("forward_progress_.BindFlowCoordinator(ports)"), std::string::npos);
+  EXPECT_NE(Controller().find("forward_progress_.BindShellNavigation(shell_navigation_)"), std::string::npos);
+}
+
+TEST(ForwardFlowWiringTest, OnlyTheRealBackgroundStopsAForwardAndLosingFocusDoesNot) {
+  const std::string setup = Body(Controller(), "bool ChatController::Setup(");
+  const size_t listener = setup.find("PlatformLifecycleEvents::AddEnteredBackgroundListener");
+  ASSERT_NE(listener, std::string::npos);
+  EXPECT_NE(setup.find("forward_flow_->OnAppEnteredBackground()", listener), std::string::npos);
+  EXPECT_NE(setup.rfind("if (Platform::IsMobile()) {", listener), std::string::npos)
+      << "a desktop window losing focus or being minimised never stops it";
+  // The focus-loss listener (iOS willResignActive: Control Center, a banner) is the one that already existed, and
+  // does not touch the forward.
+  const std::string pause = Body(Controller(), "void ChatController::OnApplicationPause()");
+  EXPECT_EQ(pause.find("forward"), std::string::npos) << "a banner or Control Center must not stop a forward";
+  EXPECT_NE(Body(Controller(), "void ChatController::Shutdown()").find("PlatformLifecycleEvents::RemoveListener"),
+            std::string::npos);
+}
+
+TEST(ForwardFlowWiringTest, TheProgressPageGoesWhenACallStartsAndTheNumbersAreDrawnEveryTick) {
+  const std::string update = Body(Controller(), "void ChatController::Update(");
+  EXPECT_NE(update.find("if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {"), std::string::npos);
+  EXPECT_NE(update.find("forward_flow_->OnCallStarted()"), std::string::npos);
+  EXPECT_NE(update.find("forward_flow_->Tick("), std::string::npos);
+}
+
+TEST(ForwardFlowWiringTest, ThePreviewTakesPicturesFromTheBubbleThenFromMemoryAndNeverDownloads) {
+  const std::string ports = Body(Controller(), "ForwardPreviewPorts ChatController::MakeForwardPreviewPorts()");
+  EXPECT_NE(ports.find("PictureSources({row})"), std::string::npos) << "the bubble's picture first";
+  EXPECT_NE(ports.find("AttachmentPosterPath("), std::string::npos) << "a video's poster";
+  EXPECT_NE(ports.find("StoredAttachmentPlaintext("), std::string::npos) << "the stored bytes, only for the shown few";
+  EXPECT_NE(ports.find("MakeImageThumbnailJpeg("), std::string::npos);
+  EXPECT_EQ(ports.find("Download"), std::string::npos) << "nothing is ever downloaded for a preview";
+  EXPECT_NE(Controller().find("std::filesystem::remove_all(forward_preview_dir_"), std::string::npos)
+      << "the thumbnails go when the page does";
+}
+
 } // namespace
 } // namespace pbr

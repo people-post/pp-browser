@@ -142,6 +142,8 @@ enum class ForwardRefusal {
   TooLarge,
   /** One attachment alone is above kMaxForwardUploadBytes: it cannot be forwarded at all. */
   SingleTooLarge,
+  /** A call is on: the progress page would hide its controls (checked by the presenter, not by CheckForwardLimits). */
+  CallActive,
 };
 
 /** The limits of a forward worked out before anything starts, from the declared sizes and what is held locally. */

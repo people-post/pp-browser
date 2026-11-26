@@ -228,16 +228,22 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     // Reply: the message shows as a quote bar above the composer and is attached to the next send.
     actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
                        "../icons/v2/reply.svg"});
-    // Forward (this message) and Select: text and contact cards (ChatPresenter::CanForward); right after
-    // Reply, before Copy.
-    if (presenter_.CanForward(message_id)) {
-      actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
-                         [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/share.svg"});
-      actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
-                         [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/check.svg"});
+  }
+  // Forward (this message) and Select: text, contact cards and pictures, videos, files and voice messages
+  // (ChatPresenter::CanForward); right after Reply, before Copy. An attachment has no words, so this does not wait for any.
+  if (presenter_.CanForward(message_id)) {
+    actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
+                       [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/share.svg"});
+    actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
+                       [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/check.svg"});
+  }
+  if (!text.empty()) {
+    // Copy gives the words of a message. A picture, video, file or voice message has none (its "text" is the file name,
+    // and a name is not what anyone means by copying a picture), so it has no Copy at all (Kenneth 2026-11-26).
+    if (!presenter_.IsAttachmentMessage(message_id)) {
+      actions.push_back(
+          {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
     }
-    actions.push_back(
-        {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
     if (auto active = facade->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
