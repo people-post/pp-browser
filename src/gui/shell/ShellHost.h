@@ -346,7 +346,6 @@ private:
   void DialogCancel();
   void DialogToggleCheckbox();
   void DialogToggleNote();
-  void PinGateNoteToggle();
   void PinGateSubmit();
   void PinGatePaste(); // read the clipboard into the transfer-code / phrase box (iOS has no paste menu there, B163)
   void PinGateClearPayload();

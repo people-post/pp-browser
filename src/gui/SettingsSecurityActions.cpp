@@ -5,8 +5,6 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
-#include "gui/AccountInvite.h"
-#include "gui/DefaultPinNote.h"
 #include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -136,7 +134,8 @@ void SettingsSecurityActions::ChangePin() {
       return;
     }
     // The gate checks the current PIN first (a wrong one stays on that step) and compares the new one with its
-    // repeat; the engine's change is the same as before. The app default PIN is public: no step asks for it.
+    // repeat; the engine's change is the same as before. On "No PIN" the current PIN is the app's known one
+    // (the translation layer, PinDefaults.h): no step asks for it.
     std::optional<SecretText> current_pin;
     if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
       current_pin = SecretText(std::string(kDefaultProfilePin));
@@ -191,7 +190,8 @@ void SettingsSecurityActions::RemovePin() {
         PinVerifyPurpose::RemovePin,
         [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
           AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
-            // A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
+            // "Remove PIN" is a change back to the app's known PIN, which the UI calls "No PIN" (the translation
+            // layer, PinDefaults.h). A wrong current PIN comes back as the vault's refusal: the gate says so and stays.
             Roe<void> changed = commands_.change_pin(pin, SecretText(std::string(kDefaultProfilePin)));
             AppRuntime::PostUI([done, changed = std::move(changed)]() { done(changed); });
           });
@@ -336,12 +336,6 @@ void SettingsSecurityActions::CheckLinkCode(std::string offer) {
         const std::string title = Tr("settings.security.link_device.check_title");
         const std::string message = Tr("settings.security.link_device.check_message", {{"code", *code}});
         const std::string ok = Tr("settings.security.link_device.check_ok");
-        // On the app's default PIN nothing asked for it: the dialog says so, with a "?" that tells the digits.
-        if (host_.Store().Snapshot().profile_prefs.pin_is_default && feedback_.show_confirm_with_note) {
-          feedback_.show_confirm_with_note(title, message, Tr("settings.security.default_hint"), DefaultPinNoteText(),
-                                           std::move(on_result), ok);
-          return;
-        }
         feedback_.show_confirm(title, message, std::move(on_result), ok);
       });
 }

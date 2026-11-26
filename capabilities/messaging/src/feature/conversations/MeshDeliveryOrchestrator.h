@@ -586,7 +586,7 @@ private:
    * A message of a chat cleared or deleted here, come again (IThreadTranscript::WasMessageRemoved: a mailbox read
    * from its start, a copy sent again): dropped before the receive pipeline — no chat made, no unread, no notice.
    */
-  bool RemovedHere(const RelayEnvelope& envelope) const;
+  bool RemovedHere(const RelayEnvelope& envelope, const std::string& local_account_id) const;
   void PostRelayIngestNotes(RelayIngestNotes notes);
   RelayInboxCoordinator::Ports InboxPorts();
   bool InboxReady(const std::string& origin) const;

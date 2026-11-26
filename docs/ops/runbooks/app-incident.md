@@ -30,15 +30,15 @@ who was told, the timeline in UTC with each workflow run linked.
 ## 2. Find the affected versions
 
 Every build names itself ([BUILD.md § Build identity](../BUILD.md#build-identity-commit-and-tag)): About shows
-`Build v1.0.0-rc.3 · a1b2c3d4`; the first line of a Send logs archive and the crash record give
-`1.0.0 · v1.0.0-rc.3 · a1b2c3d4`. A store build shows the tag of the candidate it was promoted from.
+`Build v1.1.0-rc.3 · a1b2c3d4`; the first line of a Send logs archive and the crash record give
+`1.1.0 · v1.1.0-rc.3 · a1b2c3d4`. A store build shows the tag of the candidate it was promoted from.
 
 ```bash
 git fetch --tags origin
-git tag --points-at 'v1.0.0-rc.3^{commit}'          # the release it became (v1.0.0), and rc-build/<n>
+git tag --points-at 'v1.1.0-rc.3^{commit}'          # the release it became (v1.1.0), and rc-build/<n>
 git show --no-patch rc-build/152                    # a TestFlight build number: rc-build/<n> or internal/<n>
 git tag --contains <commit that brought the bug> --list 'v*'
-git log --oneline --grep 'cherry picked from commit <sha>' origin/release/app-1.0
+git log --oneline --grep 'cherry picked from commit <sha>' origin/release/app-1.1
 ```
 
 Write each affected product, version and platform in the issue, and the in-range versions not affected. Not yet:

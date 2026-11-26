@@ -96,7 +96,10 @@ Thread InMemoryDeliveryStore::UpsertThreadLocked(const Thread& thread) {
 }
 
 Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessage& message) {
-  if (removed_.count(message.id) > 0) {
+  const auto chat = threads_.find(message.thread_id);
+  const std::string sender = chat != threads_.end() ? RemovedMessageSenderOfRow(chat->second, message.sender_contact_id)
+                                                    : message.sender_contact_id;
+  if (removed_.count({sender, message.id}) > 0) {
     return Error("Message was removed here with its chat");
   }
   std::vector<ThreadMessage>& rows = messages_[message.thread_id];
@@ -367,9 +370,9 @@ Roe<bool> InMemoryDeliveryStore::HasMessageId(const std::string& thread_id, cons
   return false;
 }
 
-Roe<bool> InMemoryDeliveryStore::WasMessageRemoved(const std::string& message_id) const {
+Roe<bool> InMemoryDeliveryStore::WasMessageRemoved(const std::string& sender, const std::string& message_id) const {
   std::lock_guard lock(mutex_);
-  return removed_.count(message_id) > 0;
+  return removed_.count({sender, message_id}) > 0;
 }
 
 void InMemoryDeliveryStore::ForgetRemovedIds() {
@@ -389,7 +392,7 @@ void InMemoryDeliveryStore::RememberRemovedLocked(const std::string& thread_id) 
   }
   if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
     for (const ThreadMessage& row : rows->second) {
-      removed_.insert(row.id);
+      removed_.insert({RemovedMessageSenderOfRow(thread->second, row.sender_contact_id), row.id});
     }
   }
 }
