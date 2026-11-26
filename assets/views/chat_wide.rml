@@ -239,7 +239,7 @@
             </button>
             <!-- Forward: text and contact cards (the menu's forward_message), between Edit and Reply. -->
             <button class="msg-bar-btn msg-bar-forward" type="button" data-if="row.bar_forward" data-event-click="msg_bar_forward()">
-              <svg src="../icons/v2/share.svg" width="18" height="18"></svg>
+              <svg src="../icons/v2/forward.svg" width="18" height="18"></svg>
             </button>
             <button class="msg-bar-btn" type="button" data-if="row.bar_reply" data-event-click="msg_bar_reply()">
               <svg src="../icons/v2/reply.svg" width="18" height="18"></svg>

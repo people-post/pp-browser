@@ -126,5 +126,18 @@ TEST(MessageMenuIconsTest, TheMessageMenuUsesThem) {
   EXPECT_NE(source.find("../icons/v2/select.svg", select), std::string::npos);
 }
 
+TEST(MessageMenuIconsTest, TheDesktopHoverBarForwardButtonUsesTheForwardIcon) {
+  std::ifstream in(std::string(PP_BROWSER_ASSETS_DIR) + "/views/chat_wide.rml", std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  const std::string view = out.str();
+  const size_t button = view.find("msg_bar_forward()");
+  ASSERT_NE(button, std::string::npos);
+  const size_t close = view.find("</button>", button);
+  const size_t icon = view.find("../icons/v2/forward.svg", button);
+  EXPECT_LT(icon, close);
+  EXPECT_EQ(view.find("../icons/v2/share.svg"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr
