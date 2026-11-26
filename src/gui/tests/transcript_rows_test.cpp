@@ -276,6 +276,22 @@ TranscriptFacts NamedFacts() {
 }
 } // namespace phone_rows
 
+// Forwarding asks the row, not the store: a row says whether its message can go (CanForwardMessage on the message it was
+// built from), so choosing messages and the desktop hover bar read nothing per row.
+TEST(TranscriptRmlTest, ARowSaysWhetherItsMessageCanBeForwarded) {
+  using namespace phone_rows;
+  TranscriptRow text = TextRow("1", "account:a", kNoon);
+  TranscriptRow picture = TextRow("2", "account:a", kNoon + kMinute);
+  picture.message.content_type = ChatContentType::Attachment;
+  TranscriptRow notice = TextRow("3", "account:a", kNoon + 2 * kMinute);
+  notice.message.content_type = ChatContentType::System;
+  const auto rows = RenderTranscript({text, picture, notice}, NamedFacts());
+  ASSERT_EQ(rows.size(), 3u);
+  EXPECT_TRUE(rows[0].forwardable);
+  EXPECT_FALSE(rows[1].forwardable);
+  EXPECT_FALSE(rows[2].forwardable);
+}
+
 TEST(TranscriptRmlTest, ADateStripSitsOnlyWhereTheDayChanges) {
   using namespace phone_rows;
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));

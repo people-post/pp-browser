@@ -599,6 +599,8 @@ ChatController::ChatController()
                                      std::function<void()> cancel) {
     if (people_picker_notify_.open_choose_targets) {
       people_picker_notify_.open_choose_targets(std::move(options), std::move(done), std::move(cancel));
+    } else if (cancel) {
+      cancel(); // no picker to open: the flow is told, and its Forward button works again
     }
   };
   forward_ports.close_picker = [this]() {
@@ -837,6 +839,7 @@ void ChatController::RunWhenRegistrationIdle(std::function<void(std::function<vo
 }
 
 void ChatController::OnMessagingTornDownForRegistration() {
+  forward_flow_->Stop(); // a forward still sending must not call into the messaging that was just torn down
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
   }
@@ -1485,6 +1488,7 @@ void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellS
     // Another chat opens: the choosing, and a picker over it, end with the chat they belonged to.
     forward_flow_->Leave();
   }
+  OnForwardChanged(); // the bars follow what the flow is now, whatever the presenter dropped on the way
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
@@ -7767,7 +7771,7 @@ void ChatController::InstallRowDecorator() {
     for (MessageDisplayRow& row : rows) {
       const std::string id = row.message_id.c_str();
       row.forward_mode = choosing;
-      row.forward_ok = choosing && !IsPendingUploadRowId(id) && presenter_.CanForward(id);
+      row.forward_ok = choosing && !IsPendingUploadRowId(id) && row.forwardable;
       row.forward_ticked = choosing && forward_flow_->Ticked(id);
     }
   });
@@ -7775,6 +7779,9 @@ void ChatController::InstallRowDecorator() {
 
 void ChatController::BeginForward(const std::string& message_id) {
   forward_flow_->Begin(message_id);
+  if (forward_flow_->Selecting()) {
+    voice_playback_->Stop(); // choosing messages: a voice message that was playing stops
+  }
 }
 
 void ChatController::OnForwardChanged() {

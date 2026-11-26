@@ -79,6 +79,8 @@ struct MessageDisplayRow {
   /** Choosing messages to forward: every row is in the mode (a tap ticks), `forward_ok` rows can go and show a tick box. */
   bool forward_mode = false;
   bool forward_ok = false;
+  /** The message this row was built from can be forwarded (CanForwardMessage): a row decides it with no store read. */
+  bool forwardable = false;
   bool forward_ticked = false;
   /** content_rml as built, while search marks are wrapped into it — not bound to RML. */
   std::optional<std::string> search_source_rml;

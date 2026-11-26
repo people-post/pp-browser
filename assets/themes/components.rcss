@@ -306,18 +306,23 @@ select selectbox option {
   box-sizing: border-box;
   border-radius: 12dp;
   border-width: 2dp;
+  z-index: 8;
+  pointer-events: none;
 }
 
 .message-forward-check--on {
   decorator: svg(../icons/v2/check.svg);
 }
 
+/* Above everything in the row that is positioned (a bubble's tail host, a reaction row, a list item): the cover is the
+   one that takes the click, so a link, a number or a card inside a bubble only ticks the row. */
 .message-forward-cover {
   position: absolute;
   left: 0;
   top: 0;
   right: 0;
   bottom: 0;
+  z-index: 7;
   cursor: pointer;
 }
 

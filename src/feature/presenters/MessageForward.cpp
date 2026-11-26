@@ -150,11 +150,12 @@ std::vector<ForwardTarget> OrderForwardTargets(std::vector<ForwardTarget> target
 }
 
 ForwardRun::ForwardRun(ForwardPorts ports, std::string source_thread, std::vector<std::string> message_ids,
-                       std::vector<std::string> targets)
+                       std::vector<ForwardTarget> targets)
     : ports_(std::move(ports)), source_thread_(std::move(source_thread)), message_ids_(std::move(message_ids)) {
   message_count_ = message_ids_.size();
-  for (std::string& target : targets) {
-    if (std::find(targets_.begin(), targets_.end(), target) == targets_.end()) {
+  for (ForwardTarget& target : targets) {
+    const auto same = [&target](const ForwardTarget& kept) { return kept.Key() == target.Key(); };
+    if (std::find_if(targets_.begin(), targets_.end(), same) == targets_.end()) {
       targets_.push_back(std::move(target));
     }
   }
@@ -178,7 +179,16 @@ bool ForwardRun::Prepare() {
 }
 
 bool ForwardRun::BeginTarget() {
-  target_kind_ = ports_.target_of ? ports_.target_of(targets_[target_at_]) : ForwardTargetKind::Unavailable;
+  const ForwardTarget& target = targets_[target_at_];
+  target_thread_ = target.thread_id;
+  if (target_thread_.empty() && !target.contact_id.empty() &&
+      (!ports_.contact_can_receive || ports_.contact_can_receive(target.contact_id)) && ports_.direct_thread_of) {
+    // A person with no chat yet: the chat is made now, after the re-check says they may still be written to, and each
+    // person whose chat cannot be made is a chat not reached.
+    target_thread_ = ports_.direct_thread_of(target.contact_id);
+  }
+  target_kind_ =
+      !target_thread_.empty() && ports_.target_of ? ports_.target_of(target_thread_) : ForwardTargetKind::Unavailable;
   if (target_kind_ == ForwardTargetKind::Unavailable) {
     ++result_.skipped_targets;
     ++target_at_;
@@ -221,7 +231,7 @@ ForwardRun::State ForwardRun::Step(size_t budget, const std::function<bool()>& s
       options.content_type = ChatContentType::ContactCard;
       options.payload_json = message.payload_json;
     }
-    const std::string& target = targets_[target_at_];
+    const std::string& target = target_thread_;
     const auto& send = target_kind_ == ForwardTargetKind::Group ? ports_.send_group : ports_.send_user;
     --budget;
     auto sent =

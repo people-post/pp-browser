@@ -55,7 +55,7 @@ public:
    * chosen from went).
    */
   void Leave();
-  /** The chat `thread_id` was deleted or left: if it is the one being chosen from, choosing ends. */
+  /** The chat `thread_id` was deleted or left: if it is the one being chosen from, choosing ends and the bars are redrawn. */
   void OnThreadGone(const std::string& thread_id);
   /** A chat is on screen now: a forward that was stopped part-way is told once (to the account it happened under). */
   void OnChatEntered();

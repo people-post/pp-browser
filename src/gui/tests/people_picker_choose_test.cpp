@@ -203,6 +203,16 @@ TEST_F(PeoplePickerChooseTest, ThePickerInChooseModeReturnsTargetsAndRunsNoInvit
   EXPECT_EQ(cancelled, 0);
 }
 
+TEST_F(PeoplePickerChooseTest, APickerThatCannotOpenAnswersCancelAndOpensNothing) {
+  MessagingContactsPorts down;
+  down.snapshot = []() { return MessagingView{}; }; // messaging not initialized
+  picker.BindContactsPorts(down);
+  Open();
+  EXPECT_EQ(open_layers, 0);
+  EXPECT_EQ(cancelled, 1) << "the caller is told, or its Forward button stays dead";
+  EXPECT_TRUE(returned.empty());
+}
+
 TEST_F(PeoplePickerChooseTest, ClosingItWithoutChoosingRunsCancelAndNotDone) {
   candidates = {Person("t-bob", "bob", "Bob", "acct-bob", 30)};
   Open();

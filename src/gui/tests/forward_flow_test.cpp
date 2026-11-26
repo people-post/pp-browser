@@ -287,6 +287,45 @@ TEST_F(ForwardFlowTest, CancelEndsChoosingAndTheChatBeingDeletedEndsItToo) {
   EXPECT_FALSE(flow->Selecting());
 }
 
+// The chat being chosen from is deleted: the presenter forgets the selection first (ForgetThread), the controller's
+// ForgetComposerExtras tells the flow after; the flow must still redraw, or the next chat shows the old "N selected" bar.
+TEST_F(ForwardFlowTest, ADeletedSourceChatEndsTheBarEvenWhenThePresenterForgotTheSelectionFirst) {
+  flow->Begin("m1");
+  flow->Tap("m2");
+  const int before = redraws;
+  presenter.ForgetThread("src"); // CloseChatWith -> presenter_.CloseThread -> ForgetThread
+  EXPECT_FALSE(flow->Selecting());
+  flow->OnThreadGone("src"); // ForgetComposerExtras
+  EXPECT_GT(redraws, before) << "the bars are drawn again";
+  EXPECT_FALSE(flow->CanNext());
+  flow->OnThreadGone("elsewhere");
+  EXPECT_FALSE(flow->Selecting());
+}
+
+TEST_F(ForwardFlowTest, ASecondForwardWhileOneIsStillSendingSaysItIsStillSending) {
+  flow->Begin("m1");
+  flow->Next();
+  PickerSends({"t-bob"});
+  ASSERT_TRUE(presenter.Forwarding());
+  pills.clear();
+  flow->Begin("m2");
+  EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.send.still_trying")})) << "the reason, not 'cannot be forwarded'";
+  EXPECT_FALSE(flow->Selecting());
+}
+
+TEST_F(ForwardFlowTest, ARefusedPickerLeavesTheForwardButtonWorking) {
+  // The host could not open it: the cancel runs at once (a picker that refuses answers like a closed one).
+  ForwardFlowPorts screen;
+  screen.open_picker = [](PeoplePickerChooseOptions, PeoplePickerChooseDone, std::function<void()> cancel) {
+    cancel();
+  };
+  screen.changed = [this]() { ++redraws; };
+  ForwardFlow refusing(presenter, screen);
+  refusing.Begin("m1");
+  refusing.Next();
+  EXPECT_TRUE(refusing.CanNext()) << "the Forward button is not dead";
+}
+
 class ForwardResultTextTest : public ::testing::Test {
 protected:
   void SetUp() override { ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR)); }
