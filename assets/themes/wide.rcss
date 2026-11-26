@@ -3078,6 +3078,16 @@
   margin: 0 24dp 8dp 24dp;
 }
 
+.shell-body--wide .people-picker-wide-refusal {
+  flex-shrink: 0;
+  margin: 0 24dp 8dp 24dp;
+}
+
+.shell-body--wide .people-picker-wide-preview {
+  max-height: 188dp;
+  overflow-y: auto;
+}
+
 .shell-body--wide .people-picker-wide-list {
   flex: 1;
   min-height: 0;
@@ -3107,4 +3117,40 @@
   border-radius: 22dp;
   line-height: 44dp;
   white-space: nowrap;
+}
+
+/* The "Forwarding 2/7" page (forward_progress_wide.rml): the layer is the phone's (components.rcss, centred); the content
+   is a card in the middle, never wider than the window less 12dp each side and never taller than it. */
+.shell-body--wide .forward-progress--wide {
+  padding: 12dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .forward-progress-card {
+  width: 100%;
+  max-width: 440dp;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 32dp;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 16dp;
+}
+
+.shell-body--wide .forward-progress-card .forward-progress-title {
+  margin-bottom: 20dp;
+}
+
+.shell-body--wide .forward-progress-card .forward-progress-stay {
+  margin-top: 16dp;
+}
+
+.shell-body--wide .forward-progress-card .forward-progress-actions {
+  margin-top: 20dp;
+}
+
+.shell-body--wide .forward-progress-card .forward-progress-btn {
+  min-height: 44dp;
 }

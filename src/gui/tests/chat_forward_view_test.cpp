@@ -88,9 +88,9 @@ protected:
       ctor.BindEventCallback("open_message_link",
                              [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++link_opens; });
       // What an attachment bubble does outside selection mode: none of it may happen while choosing.
-      for (const char* name : {"open_attachment", "open_picture", "download_attachment", "retry_attachment",
-                               "play_voice", "play_audio_file", "audio_seek_press", "open_sender", "open_reactors",
-                               "jump_to_quote"}) {
+      for (const char* name :
+           {"open_attachment", "open_picture", "download_attachment", "retry_attachment", "play_voice",
+            "play_audio_file", "audio_seek_press", "open_sender", "open_reactors", "jump_to_quote"}) {
         ctor.BindEventCallback(name, [this, name](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
           attachment_events.push_back(name);
         });
@@ -319,9 +319,10 @@ std::vector<MessageDisplayRow> AttachmentTranscript() {
     view.image_height = 600;
     return view;
   };
-  return RenderTranscript({row("a1", "photo.jpg", "image/jpeg", 900'000, 1), row("a2", "report.pdf", "application/pdf", 120'000, 2),
-                           row("a3", "voice-4200.ogg", "audio/ogg", 25'000, 3)},
-                          facts);
+  return RenderTranscript(
+      {row("a1", "photo.jpg", "image/jpeg", 900'000, 1), row("a2", "report.pdf", "application/pdf", 120'000, 2),
+       row("a3", "voice-4200.ogg", "audio/ogg", 25'000, 3)},
+      facts);
 }
 
 TEST_F(ChatForwardViewTest, AttachmentRowsHaveCheckboxesInSelectionMode) {
@@ -349,8 +350,8 @@ TEST_F(ChatForwardViewTest, ATapOnAnAttachmentRowInSelectionModeOnlyTicksItsRow)
     row.forward_ok = true;
   }
   Refresh();
-  const std::string markup = std::string(state.messages[0].content_rml.c_str()) + state.messages[1].content_rml.c_str() +
-                             state.messages[2].content_rml.c_str();
+  const std::string markup = std::string(state.messages[0].content_rml.c_str()) +
+                             state.messages[1].content_rml.c_str() + state.messages[2].content_rml.c_str();
   ASSERT_NE(markup.find("open_picture"), std::string::npos) << "the picture's clip has its own click";
   ASSERT_NE(markup.find("play_voice"), std::string::npos) << "the voice bubble has its own click";
   size_t tapped = 0;
@@ -373,7 +374,8 @@ TEST_F(ChatForwardViewTest, ATapOnAnAttachmentRowInSelectionModeOnlyTicksItsRow)
       }
       const size_t before = taps.size();
       Tap(element);
-      ASSERT_EQ(taps.size(), before + 1) << "a tap on " << element->GetAttribute<ui::String>("data-event-click", "").c_str()
+      ASSERT_EQ(taps.size(), before + 1) << "a tap on "
+                                         << element->GetAttribute<ui::String>("data-event-click", "").c_str()
                                          << " must tick its row";
       ++tapped;
     }
@@ -582,14 +584,16 @@ TEST(ChatForwardMenuTest, ATextMessageStillHasCopy) {
   // and before Ask AI: unchanged for text and contact cards.
   EXPECT_NE(source.find("CopyToClipboard(text)", copy), std::string::npos);
   EXPECT_LT(copy, source.find("\"ask_ai_message\"", for_request));
-  const size_t text_check = source.rfind("if (!text.empty()) {", copy);
+  const size_t text_check = source.rfind("if (slots.copy) {", copy); // the desktop's slot: a message with words
   ASSERT_NE(text_check, std::string::npos);
   EXPECT_EQ(source.find("\"reply_message\"", text_check), std::string::npos)
-      << "Copy's own `if (!text.empty())` is the one after Forward / Select";
+      << "Copy's own `if (slots.copy)` is the one after Forward / Select";
   ChatPresenter presenter;
   ForwardPorts ports;
   ports.active_thread = []() { return std::string("t"); };
-  ports.get_message = [](const std::string&, const std::string&) { return std::optional<ThreadMessage>(TextMessage("hi")); };
+  ports.get_message = [](const std::string&, const std::string&) {
+    return std::optional<ThreadMessage>(TextMessage("hi"));
+  };
   presenter.SetForwardPortsForTest(ports);
   EXPECT_FALSE(presenter.IsAttachmentMessage("m")) << "text is not an attachment: Copy stays";
 }

@@ -1544,6 +1544,7 @@
     "chat.forward.preview_voice": "语音 {t}",
     "chat.forward.progress_title": "正在转发 {done}/{total}",
     "chat.forward.progress_stay": "请留在这个页面，离开会停止转发",
+    "chat.forward.progress_stay_desktop": "发完之前请不要退出 PP。",
     "chat.forward.progress_wait": "稍等，马上继续",
     "chat.forward.progress_sending": "正在发送… {s} 秒",
     "chat.forward.progress_finishing": "正在结束，当前这一条会发完…",

@@ -1589,6 +1589,7 @@
     "chat.forward.preview_voice": "Voice message {t}",
     "chat.forward.progress_title": "Forwarding {done}/{total}",
     "chat.forward.progress_stay": "Stay on this page — leaving stops the forward.",
+    "chat.forward.progress_stay_desktop": "Keep PP open until this finishes.",
     "chat.forward.progress_wait": "One moment, almost there",
     "chat.forward.progress_sending": "Sending… {s}s",
     "chat.forward.progress_finishing": "Finishing — the current item will still go through…",

@@ -536,12 +536,13 @@ TEST_F(ChatWideLayoutTest, TheHoverBarForwardButtonForwardsOneMessageAndSelectIs
   EXPECT_NE(controller.substr(begin, 400).find("forward_flow_->BeginSingle("), std::string::npos);
 }
 
-// Forward is in the bar for the messages the presenter says can go (text, contact cards) and not for the rest (a
-// picture, a file, a voice message): the row says so (bar_forward) and the button is not drawn.
-TEST_F(ChatWideLayoutTest, TheHoverBarHasNoForwardForAPicture) {
+// Forward is in the bar for every message the presenter says can go: text, contact cards, and now a picture, a video, a
+// file and a voice message too (the row says so, bar_forward); it is not drawn for what cannot go (a notice, a deleted
+// or failed message, which have no bar slot for it).
+TEST_F(ChatWideLayoutTest, TheHoverBarOffersForwardForAPicture) {
   ShowChat();
-  state.messages[0].bar_forward = true;  // our text
-  state.messages[1].bar_forward = false; // their picture: reactions and More only
+  state.messages[0].bar_forward = true; // our text
+  state.messages[1].bar_forward = true; // their picture
   state.messages[1].bar_reply = false;
   Load(ConversationWidth(900));
   ui::ElementList wraps;
@@ -559,8 +560,23 @@ TEST_F(ChatWideLayoutTest, TheHoverBarHasNoForwardForAPicture) {
   }
   context->Update();
   EXPECT_TRUE(forward_shown(wraps[0])) << "a text has Forward";
-  EXPECT_FALSE(forward_shown(wraps[1])) << "a picture has none";
+  EXPECT_TRUE(forward_shown(wraps[1])) << "a picture has Forward too";
+  // A row that cannot go has none.
+  state.messages[1].bar_forward = false;
+  Load(ConversationWidth(900));
+  wraps.clear();
+  document->GetElementsByClassName(wraps, "msg-hover");
+  ASSERT_GE(wraps.size(), 2u);
+  wraps[1]->SetPseudoClass("hover", true);
+  context->Update();
+  EXPECT_FALSE(forward_shown(wraps[1])) << "a row the presenter refuses has none";
   // Between Edit and Reply, left to right.
+  state.messages[1].bar_forward = true;
+  Load(ConversationWidth(900));
+  wraps.clear();
+  document->GetElementsByClassName(wraps, "msg-hover");
+  wraps[0]->SetPseudoClass("hover", true);
+  context->Update();
   ui::ElementList buttons;
   wraps[0]->GetElementsByClassName(buttons, "msg-bar-btn");
   std::vector<float> lefts;
@@ -571,10 +587,12 @@ TEST_F(ChatWideLayoutTest, TheHoverBarHasNoForwardForAPicture) {
   }
   EXPECT_TRUE(std::is_sorted(lefts.begin(), lefts.end()));
   EXPECT_EQ(lefts.size(), 5u) << "+, Edit, Forward, Reply, More";
-  // The decision: Forward is its own slot, set from the presenter's answer and from nothing else.
+  // The decision: Forward is its own slot, set from the presenter's answer and from nothing else: a picture (no words
+  // beyond its file name) gets it when the presenter says yes.
   EXPECT_FALSE(DecideMessageMenuSlots(true, true, true, false, /*can_forward=*/false).forward);
   EXPECT_TRUE(DecideMessageMenuSlots(true, true, true, false, /*can_forward=*/true).forward);
-  EXPECT_FALSE(DecideMessageMenuSlots(true, false, false, false).forward) << "a picture: not forwardable";
+  EXPECT_TRUE(DecideMessageMenuSlots(true, false, false, false, /*can_forward=*/true).forward)
+      << "a message with no words of its own still has Forward when the presenter says so";
   const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
   const size_t offer = controller.find("facts.bar_offer =");
   ASSERT_NE(offer, std::string::npos);

@@ -5071,4 +5071,8 @@ input.checkbox:checked {
   background-color: #007aff;
 }
 
+.shell-body--wide .forward-progress-card {
+  background-color: #ffffff;
+}
+
 }

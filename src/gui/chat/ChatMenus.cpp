@@ -272,8 +272,8 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
 
   // Reply: the message shows as a quote bar above the composer and is attached to the next send.
   if (slots.reply) {
-    actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr,
-                       [this, text]() { host_.StartQuoteReply(text); }, "../icons/v2/reply.svg"});
+    actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
+                       "../icons/v2/reply.svg"});
   }
   // Forward (this message) and Select: text, contact cards and pictures, videos, files and voice messages
   // (ChatPresenter::CanForward); right after Reply, before Copy. An attachment has no words, so this does not wait for any.
