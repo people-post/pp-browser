@@ -340,25 +340,31 @@ TEST(ForwardPreviewTest, ThePreviewShowsTwoLinesOfTextACardNameOrACount) {
   EXPECT_EQ(ForwardPreviewText({}, count), "");
 }
 
-// The menu: "Forward" right after Reply and before Copy, for what ChatPresenter::CanForward says yes to (texts and
-// cards; a picture is no, and the presenter's own tests say so). A press while choosing offers no menu.
-TEST(ChatForwardMenuTest, TheMessageMenuOffersForwardAfterReplyForTextAndCards) {
+// The menu: "Forward" (this one message) and "Forward several" (multi-select) right after Reply and before Copy, for what
+// ChatPresenter::CanForward says yes to (texts and cards; a picture is no, and the presenter's own tests say so). A
+// press while choosing offers no menu.
+TEST(ChatForwardMenuTest, TheMessageMenuOffersForwardThenForwardSeveralAfterReply) {
   const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
   const size_t for_request = source.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   ASSERT_NE(for_request, std::string::npos);
   const size_t reply = source.find("\"reply_message\"", for_request);
   const size_t forward = source.find("\"forward_message\"", for_request);
+  const size_t select = source.find("\"forward_many_messages\"", for_request);
   const size_t copy = source.find("\"copy_message\"", for_request);
   ASSERT_NE(reply, std::string::npos);
   ASSERT_NE(forward, std::string::npos);
+  ASSERT_NE(select, std::string::npos);
   ASSERT_NE(copy, std::string::npos);
   EXPECT_LT(reply, forward) << "after Reply";
-  EXPECT_LT(forward, copy) << "before Copy";
+  EXPECT_LT(forward, select) << "Forward several right after Forward";
+  EXPECT_LT(select, copy) << "before Copy";
   EXPECT_NE(source.find("Tr(\"chat.menu.forward\")", for_request), std::string::npos);
+  EXPECT_NE(source.find("Tr(\"chat.menu.forward_many\")", for_request), std::string::npos);
   EXPECT_NE(source.find("host_.BeginForward(message_id)", for_request), std::string::npos);
+  EXPECT_NE(source.find("host_.BeginForwardMany(message_id)", for_request), std::string::npos);
 }
 
-TEST(ChatForwardMenuTest, TheMessageMenuHasNoForwardForAPicture) {
+TEST(ChatForwardMenuTest, APictureHasNeitherForwardNorForwardSeveral) {
   // The item is added only when the presenter says the message can go; a picture is an Attachment, which it refuses.
   const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
   const size_t for_request = source.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
@@ -371,6 +377,13 @@ TEST(ChatForwardMenuTest, TheMessageMenuHasNoForwardForAPicture) {
   const size_t decide = source.find("DecideMessageMenuSlots(");
   ASSERT_NE(decide, std::string::npos);
   EXPECT_NE(source.find("presenter_.CanForward(message_id)", decide), std::string::npos);
+  const size_t select = source.find("\"forward_many_messages\"", for_request);
+  ASSERT_NE(select, std::string::npos);
+  EXPECT_LT(select, source.find("\"copy_message\"", forward))
+      << "Forward several sits in the same slots.forward block as Forward";
+  const size_t block_end = source.find("\"copy_message\"", forward);
+  EXPECT_EQ(source.substr(forward, block_end - forward).find("if (slots.forward"), std::string::npos)
+      << "one check covers both items";
   ThreadMessage picture = TextMessage("");
   picture.content_type = ChatContentType::Attachment;
   EXPECT_FALSE(CanForwardMessage(picture));

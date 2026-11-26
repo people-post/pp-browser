@@ -142,7 +142,7 @@ protected:
 };
 
 TEST_F(ForwardFlowTest, ForwardRunsFromSelectionThroughPickerToSendAndClosesEverything) {
-  flow->Begin("m1"); // the menu's Forward on m1
+  flow->BeginSelecting("m1"); // the menu's Forward on m1
   ASSERT_TRUE(flow->Selecting());
   flow->Tap("m2");
   EXPECT_EQ(flow->CountLabel(), Tr("chat.forward.selected_count", {{"n", "2"}}));
@@ -171,7 +171,7 @@ TEST_F(ForwardFlowTest, ForwardRunsFromSelectionThroughPickerToSendAndClosesEver
 }
 
 TEST_F(ForwardFlowTest, ClosingThePickerLeavesTheMessagesTicked) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Next();
   picker_open = false;
   picker_cancel();
@@ -182,7 +182,7 @@ TEST_F(ForwardFlowTest, ClosingThePickerLeavesTheMessagesTicked) {
 }
 
 TEST_F(ForwardFlowTest, LockWhileThePickerIsOpenClosesThePickerAndLeavesSelection) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Tap("m2");
   flow->Next();
   ASSERT_TRUE(picker_open);
@@ -200,7 +200,7 @@ TEST_F(ForwardFlowTest, LockWhileThePickerIsOpenClosesThePickerAndLeavesSelectio
 }
 
 TEST_F(ForwardFlowTest, SignOutWhileThePickerIsOpenClosesIt) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Next();
   ASSERT_TRUE(picker_open);
   flow->Stop(); // ChatController stops the flow, then resets the presenter for the next profile
@@ -215,7 +215,7 @@ TEST_F(ForwardFlowTest, TheNextChatEntryTellsOnlyPartWasForwardedOnce) {
   for (int i = 4; i <= 14; ++i) { // enough messages that one batch (ten sends) does not finish the forward
     rows["m" + std::to_string(i)] = Text("m" + std::to_string(i), "text " + std::to_string(i), i);
   }
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   for (int i = 2; i <= 14; ++i) {
     flow->Tap("m" + std::to_string(i));
   }
@@ -237,7 +237,7 @@ TEST_F(ForwardFlowTest, TappingARowThatCannotBeForwardedShowsThePill) {
   ThreadMessage picture = Text("pic", "", 9);
   picture.content_type = ChatContentType::Attachment;
   rows["pic"] = picture;
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Tap("pic");
   EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.cannot")}));
   EXPECT_FALSE(flow->Ticked("pic"));
@@ -248,7 +248,7 @@ TEST_F(ForwardFlowTest, AMessageThatCannotBeForwardedDoesNotStartChoosing) {
   ThreadMessage picture = Text("pic", "", 9);
   picture.content_type = ChatContentType::Attachment;
   rows["pic"] = picture;
-  flow->Begin("pic");
+  flow->BeginSelecting("pic");
   EXPECT_FALSE(flow->Selecting());
   EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.cannot")}));
 }
@@ -257,7 +257,7 @@ TEST_F(ForwardFlowTest, TheThirtyFirstMessageShowsTheLimitPill) {
   for (int i = 4; i <= 40; ++i) {
     rows["m" + std::to_string(i)] = Text("m" + std::to_string(i), "t", i);
   }
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   for (int i = 2; i <= 30; ++i) {
     flow->Tap("m" + std::to_string(i));
   }
@@ -268,7 +268,7 @@ TEST_F(ForwardFlowTest, TheThirtyFirstMessageShowsTheLimitPill) {
 }
 
 TEST_F(ForwardFlowTest, TheBottomButtonIsOffWithNothingTicked) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Tap("m1"); // unticked again
   EXPECT_TRUE(flow->Selecting());
   EXPECT_FALSE(flow->CanNext());
@@ -277,10 +277,10 @@ TEST_F(ForwardFlowTest, TheBottomButtonIsOffWithNothingTicked) {
 }
 
 TEST_F(ForwardFlowTest, CancelEndsChoosingAndTheChatBeingDeletedEndsItToo) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Cancel();
   EXPECT_FALSE(flow->Selecting());
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->OnThreadGone("another-chat");
   EXPECT_TRUE(flow->Selecting()) << "another chat going does not matter";
   flow->OnThreadGone("src");
@@ -290,7 +290,7 @@ TEST_F(ForwardFlowTest, CancelEndsChoosingAndTheChatBeingDeletedEndsItToo) {
 // The chat being chosen from is deleted: the presenter forgets the selection first (ForgetThread), the controller's
 // ForgetComposerExtras tells the flow after; the flow must still redraw, or the next chat shows the old "N selected" bar.
 TEST_F(ForwardFlowTest, ADeletedSourceChatEndsTheBarEvenWhenThePresenterForgotTheSelectionFirst) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Tap("m2");
   const int before = redraws;
   presenter.ForgetThread("src"); // CloseChatWith -> presenter_.CloseThread -> ForgetThread
@@ -303,12 +303,12 @@ TEST_F(ForwardFlowTest, ADeletedSourceChatEndsTheBarEvenWhenThePresenterForgotTh
 }
 
 TEST_F(ForwardFlowTest, ASecondForwardWhileOneIsStillSendingSaysItIsStillSending) {
-  flow->Begin("m1");
+  flow->BeginSelecting("m1");
   flow->Next();
   PickerSends({"t-bob"});
   ASSERT_TRUE(presenter.Forwarding());
   pills.clear();
-  flow->Begin("m2");
+  flow->BeginSelecting("m2");
   EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.send.still_trying")})) << "the reason, not 'cannot be forwarded'";
   EXPECT_FALSE(flow->Selecting());
 }
@@ -321,9 +321,106 @@ TEST_F(ForwardFlowTest, ARefusedPickerLeavesTheForwardButtonWorking) {
   };
   screen.changed = [this]() { ++redraws; };
   ForwardFlow refusing(presenter, screen);
-  refusing.Begin("m1");
+  refusing.BeginSelecting("m1");
   refusing.Next();
   EXPECT_TRUE(refusing.CanNext()) << "the Forward button is not dead";
+}
+
+// "Forward" on one message (WeChat style): the picker opens at once with that message, and the chat never shows the
+// selection bars; "Forward several" is the old multi-select (BeginSelecting).
+TEST_F(ForwardFlowTest, ForwardOnOneMessageOpensThePickerAtOnceWithNoSelectionBars) {
+  flow->BeginSingle("m2");
+  ASSERT_TRUE(picker_open);
+  EXPECT_EQ(pickers_opened, 1);
+  EXPECT_EQ(picker_options.title, Tr("chat.forward.pick_title"));
+  EXPECT_EQ(picker_options.preview, "text 2") << "the usual strip for that one message";
+  EXPECT_FALSE(flow->Selecting()) << "no bars, no ticks";
+  EXPECT_FALSE(flow->CanNext());
+  flow->Tap("m1"); // a stray tap does not start choosing
+  EXPECT_FALSE(flow->Selecting());
+  EXPECT_EQ(presenter.ForwardSelectedIds().size(), 1u);
+}
+
+TEST_F(ForwardFlowTest, CancellingTheSingleForwardPickerLeavesNoSelectionBehind) {
+  flow->BeginSingle("m1");
+  ASSERT_TRUE(picker_open);
+  picker_open = false;
+  picker_cancel();
+  EXPECT_FALSE(flow->Selecting());
+  EXPECT_FALSE(presenter.ForwardChoosing());
+  EXPECT_TRUE(presenter.ForwardSelectedIds().empty());
+  EXPECT_TRUE(sends.empty());
+  EXPECT_TRUE(pills.empty());
+  flow->BeginSingle("m3"); // and the next forward works
+  EXPECT_EQ(pickers_opened, 2);
+}
+
+TEST_F(ForwardFlowTest, SingleForwardSendsExactlyThatMessageToTheChosenChats) {
+  flow->BeginSingle("m2");
+  PickerSends({"t-bob", "t-cy"});
+  Drain();
+  ASSERT_EQ(sends.size(), 2u);
+  EXPECT_EQ(sends[0].thread, "t-bob");
+  EXPECT_EQ(sends[0].text, "text 2");
+  EXPECT_EQ(sends[1].thread, "t-cy");
+  EXPECT_EQ(sends[1].text, "text 2");
+  EXPECT_FALSE(flow->Selecting());
+  EXPECT_FALSE(presenter.ForwardChoosing());
+  EXPECT_FALSE(presenter.Forwarding());
+  EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.done")}));
+}
+
+TEST_F(ForwardFlowTest, ForwardSeveralEntersSelectionModeWithTheMessageTicked) {
+  flow->BeginSelecting("m2"); // the menu's "Forward several"
+  EXPECT_TRUE(flow->Selecting());
+  EXPECT_TRUE(flow->Ticked("m2"));
+  EXPECT_EQ(pickers_opened, 0) << "the picker waits for the bottom button";
+  flow->Tap("m3");
+  ASSERT_TRUE(flow->CanNext());
+  flow->Next();
+  ASSERT_TRUE(picker_open);
+  EXPECT_EQ(picker_options.preview, Tr("chat.forward.preview_count", {{"n", "2"}}));
+  PickerSends({"t-bob"});
+  Drain();
+  ASSERT_EQ(sends.size(), 2u);
+  EXPECT_FALSE(flow->Selecting());
+}
+
+TEST_F(ForwardFlowTest, LockOrSignOutWhileTheSingleForwardPickerIsOpenClosesItAndSelectsNothing) {
+  flow->BeginSingle("m1");
+  ASSERT_TRUE(picker_open);
+  flow->Stop(); // the app locked
+  EXPECT_FALSE(picker_open);
+  EXPECT_EQ(picker_closed_by_host, 1);
+  EXPECT_FALSE(flow->Selecting());
+  EXPECT_TRUE(presenter.ForwardSelectedIds().empty());
+  PickerSends({"t-bob"}); // a late answer does nothing
+  Drain();
+  EXPECT_TRUE(sends.empty());
+  EXPECT_TRUE(pills.empty());
+
+  flow->BeginSingle("m1"); // sign-out: stop, then the presenter is reset for the next profile
+  ASSERT_TRUE(picker_open);
+  flow->Stop();
+  presenter.ResetForNewProfile();
+  EXPECT_FALSE(picker_open);
+  EXPECT_FALSE(flow->Selecting());
+  EXPECT_TRUE(presenter.ForwardSelectedIds().empty());
+}
+
+TEST_F(ForwardFlowTest, ARefusedPickerInTheSingleForwardLeavesTheChatUntouched) {
+  ForwardFlowPorts screen;
+  screen.open_picker = [](PeoplePickerChooseOptions, PeoplePickerChooseDone, std::function<void()> cancel) {
+    cancel(); // the host could not open it
+  };
+  screen.changed = [this]() { ++redraws; };
+  ForwardFlow refusing(presenter, screen);
+  refusing.BeginSingle("m1");
+  EXPECT_FALSE(refusing.Selecting());
+  EXPECT_FALSE(presenter.ForwardChoosing());
+  EXPECT_TRUE(presenter.ForwardSelectedIds().empty());
+  refusing.BeginSelecting("m1"); // and the multi-select still starts
+  EXPECT_TRUE(refusing.Selecting());
 }
 
 class ForwardResultTextTest : public ::testing::Test {
