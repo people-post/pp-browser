@@ -688,6 +688,40 @@ TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
   EXPECT_GE(sent_control_messages_, 1);
 }
 
+// #777: a device whose sends are refused (signed out, or offline) still declines locally: no invite left ringing for
+// up to the invite's lifetime, the participant Declined, and a new call can be placed at once.
+TEST_F(CallSessionInboundComposeTest, ADeclineWhoseSendIsRefusedStillClearsTheInviteAndFreesTheLine) {
+  const std::string call_id = "call:decline-refused";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+
+  fail_sends_ = true;
+  const int sent_before = sent_control_messages_;
+  EXPECT_TRUE(OnCallsOwner([&] { return csm_->DeclineInvite(call_id); })) << "the local decline is done";
+  EXPECT_EQ(sent_control_messages_, sent_before) << "the peer was not told";
+
+  auto pending = reads_->TopPendingInvite();
+  ASSERT_TRUE(pending);
+  EXPECT_FALSE(pending->has_value()) << "no invite left ringing";
+  auto self = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Declined);
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_EQ((*session)->state, CallSessionState::Ended);
+
+  fail_sends_ = false;
+  Thread thread;
+  thread.id = "thread-dm-out";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
+  EXPECT_TRUE(started) << (started ? "" : started.error().message);
+}
+
 // V037 intents: a second Accept click is not a second accept (the accept no longer waits for the
 // circuit park, so it has already gone through by the second click).
 TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {

@@ -821,10 +821,12 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
   if (!host_.wire.send_direct) {
     return Error("Call session workflow host ports not bound");
   }
+  // As LeaveCall: the local side is done whether or not the peer could be told (a signed-out or offline device
+  // refuses the send, #777) — a refused send must not leave the invite ringing or block the next call.
   if (auto sent = host_.wire.send_direct((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
                                          "Call declined", true);
       !sent) {
-    return sent.error();
+    log().warning << "decline not sent call_id=" << call_id << " err=" << sent.error().message;
   }
 
   CallParticipant participant;

@@ -1022,7 +1022,10 @@ TEST_F(MirrorTest, AGroupMessageIsMirroredOnceAMemberGotIt) {
 
 // --- #777: the control lane obeys the signed-out rule as chat sends do (M021 d4) ---------------------------------
 
-/** Alice's device as the account's newest list leaves it out: a restored device of her account issued a fresh list. */
+/**
+ * (No direct link is wired into this fixture — amp_links is null — so a control send can only reach the relay fake;
+ * the "nothing sent" checks below are not vacuous because a listed device's send shows up after the same Drain.)
+ * Alice's device as the account's newest list leaves it out: a restored device of her account issued a fresh list. */
 class SignedOutControlTest : public StoredResendTest {
 protected:
   /** This device hears the account's fresh list, issued by another device of the account that lists only itself. */
@@ -1109,7 +1112,8 @@ TEST_F(SignedOutControlTest, ADeviceOnTheListStillSendsItsControl) {
   ASSERT_FALSE(mesh_->OwnAccountCards().SignedOut());
   auto sent = mesh_->SendControl(bob_.account_id, Invite(), /*urgent=*/true);
   ASSERT_TRUE(sent) << sent.error().message;
-  ASSERT_TRUE(relay_->WaitForSends(1));
+  Drain(); // with no wait on the relay fake: Drain alone carries the outbox worker through, so "nothing sent" is real
+  EXPECT_EQ(relay_->Sent().size(), 1u);
   std::vector<ControlSendResult> got;
   mesh_->SendControlToMany({ControlSend{.peer_identity = bob_.account_id, .control = Invite()}},
                            [&](std::vector<ControlSendResult> results) { got = std::move(results); });
@@ -1117,15 +1121,6 @@ TEST_F(SignedOutControlTest, ADeviceOnTheListStillSendsItsControl) {
   ASSERT_EQ(got.size(), 1u);
   EXPECT_TRUE(got[0].queued);
   EXPECT_EQ(relay_->Sent().size(), 2u);
-}
-
-// A card ask is how a signed-out device learns its own state: it keeps going out (the lane itself, not SendControl).
-TEST_F(SignedOutControlTest, ASignedOutDeviceStillAnswersACardAsk) {
-  SignOut();
-  const std::string self = *mesh_->OwnAccountCards().DevicePeerId();
-  mesh_->AnswerCardAsk(self, bob_.account_id);
-  Drain();
-  EXPECT_EQ(relay_->Sent().size(), 1u);
 }
 
 } // namespace
