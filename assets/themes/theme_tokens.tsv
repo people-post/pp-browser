@@ -143,7 +143,7 @@ x-vbar-armed	#ff3b301a	#ff453a29	extra: the voice bar while the cancel is armed 
 x-vbar-ink-armed	#b3261e	#ff968c	extra: text and icon of the armed voice bar
 x-fwd-card	#ffffff94	#2c2c2e94	extra: wide forward-progress card surface over its backdrop blur (58% white / 58% bg-card-2): frosted glass, the chat shows through; the solid bg-card-2 stands in when transparency is off
 x-fwd-scrim	#00000038	#00000066	extra: the dimming behind the forward-progress card only (22% / 40% black, the shared scrim is 40% / 60%): the chat stays recognisable through the glass
-x-fwd-ring-disc	#00000080	#00000080	extra: the forward-progress ring's disc (the chat upload disc, rgba(0,0,0,128)); the same in both themes, white on it reads on the frosted card and on the phone page
-x-fwd-ring-track	#ffffff4d	#ffffff4d	extra: the unfilled part of that ring (the chat upload ring's track, white 30%)
-x-fwd-ring-core	#262626	#262626	extra: the opaque centre disc under the percentage (the chat upload core)
-x-fwd-ring-ink	#ffffff	#ffffff	extra: the ring's percentage and the spinner arc (white)
+x-ring-disc	#00000080	#00000080	extra: the small upload ring's disc (the chat upload disc, rgba(0,0,0,128)); the same in both themes, white on it reads on the composer card
+x-ring-track	#ffffff4d	#ffffff4d	extra: the unfilled part of that ring (white 30%)
+x-ring-core	#262626	#262626	extra: the opaque centre disc of that ring
+x-ring-ink	#ffffff	#ffffff	extra: the spinner arc of that ring (white)
