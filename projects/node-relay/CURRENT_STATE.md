@@ -38,7 +38,7 @@ mailbox works.
 store; an explicit `node.relay` ask in a build without it fails the start).
 
 **Separately (core):** a single-instance lock on the data folder, so a second process on the same folder exits with a
-clear error; nothing prevents two today (NR001's "never at once").
+clear error (NR001's "never at once"): [#805](https://github.com/people-post/pp-browser/pull/805), in review.
 
 **Next:** NR3, the mailbox on `pp-node-plus`, once pp-specs #4 is accepted. NR3 must combine the relay protocol with
 the ledger role's protocols in `MeshHost::SetAppProtocols`, which replaces the whole list.
