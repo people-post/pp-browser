@@ -249,8 +249,17 @@ works this way. The screens' words are Kenneth's (default: below).
   anyone runs) — is not one of the app's networks (PM001) and not a service of a backend (PM002): a third-party
   network the profile chooses on its own, by its **network card** (network id and genesis hash), never by an address
   alone.
-- **A tester build never opens pp-ledger's mainnet**, as it never opens `main` (PM001): it neither holds nor uses a
-  mainnet ledger key. Testnet and devnet: in any build.
+- **Ours by default, any by choice.** The app ships the cards of pp-ledger's mainnet — the network new ledger accounts
+  are made on — and its testnet. A user may add any other network by its card, as a deliberate step that shows its
+  genesis fingerprint and says it is not one of ours. A link may propose a network; it never switches one.
+- **On our mainnet, an account in one step:** the app's onboarding makes and pays for a new user's account there.
+  Elsewhere the user brings their own.
+- **A tester build opens only our test networks** (testnet, devnet), and adds none: it never opens pp-ledger's mainnet,
+  as it never opens `main` (PM001), and it cannot tell which other network carries value.
+- **A successor of our mainnet** (pp-ledger's re-genesis, after its keys were stolen or lost) comes in an app update,
+  its card the new default, with our announcement. Opening it, the app says it continues the user's accounts once its
+  import checks against the old network (pp-ledger `check-predecessor`): that proves the state carried over, not who
+  runs it; trust comes from the announcement and the app's default.
 - **A ledger key belongs to one ledger network:** kept under its network id, it never signs for another, so nothing
   made for a test network spends on the real one.
 - **The ledger network is always shown** on every screen that reads or signs for it; a test network says so plainly
@@ -261,9 +270,13 @@ works this way. The screens' words are Kenneth's (default: below).
 - pp-ledger's testnet runs for months before its mainnet: meanwhile the store app's prod backend (and a prod node's
   ledger role) must use the testnet, the only public chain. Tying the ledger network to the app's network would force
   prod to a mainnet that does not exist yet, and later stop a prod user trying the testnet.
-- The chain is not ours to bind: anyone may run a network, and org services are defaults, not dependencies.
+- The chain is not ours to bind: anyone may run a network, and the app is open source, so a mandate would bind only
+  our build. Org services are defaults, not dependencies; our network wins by being the default and the best served
+  (an account in one step), not the only one. No signed network list: nothing for us to guard, or for a thief to take.
 - What must never happen is real value in a tester build, or a test key spending real tokens: the guard and the keys
   per network say exactly that.
 **Alternatives rejected:** the ledger network from the app's network (`main` → mainnet, `staging` → testnet): wrong
-during the testnet's soak, and it makes a third party's chain part of our backend.
+during the testnet's soak, and it makes a third party's chain part of our backend. Our mainnet mandatory, or only
+networks on a list we sign: an open-source app can be rebuilt without either, and a list's key is one more thing a
+thief of the chain's keys would want.
 
