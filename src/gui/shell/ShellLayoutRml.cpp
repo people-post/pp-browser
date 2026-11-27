@@ -427,8 +427,9 @@ std::string ShellLayoutRml::Overlays() const {
     const bool modal = overlay.modal && state_.layout_mode == LayoutMode::Expanded;
     out << "<div class=\"shell-layer shell-layer-overlay" << (modal ? " shell-layer-modal" : "")
         << "\" data-model=\"window\">";
-    out << "<div class=\"shell-scrim" << (modal ? " shell-scrim--" + overlay.key : "") << "\""
-        << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
+    // The scrim class is emitted once: for every modal layer (the forward progress card) and for the send-preview tray.
+    out << "<div class=\"shell-scrim" << (modal || overlay.key == "picture_send" ? " shell-scrim--" + overlay.key : "")
+        << "\"" << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
         << " data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     if (modal) {
       out << "<div class=\"shell-modal-stage shell-modal-stage--" << overlay.key << "\" id=\"shell-modal-stage-"
