@@ -90,7 +90,7 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       KEM binding) in their own repo; pp-browser and the TS services (app-posts, app-static-api) pin it and
       test against it instead of copied vectors.
 
-## P4 — The capabilities repo (when a second app needs it, CR005 / CR006)
+## P4 — The capability repos (when a second app needs them, CR005 / CR027)
 
 Not scheduled. Before it (CR012):
 
@@ -99,9 +99,11 @@ Not scheduled. Before it (CR012):
 - [x] One home for vendored deps in pp-browser: `third_party/` with its manifest (`UPSTREAM.json`).
 - [ ] The shared home across repos, when a second repo builds the same vendored code.
 
-- [ ] Create the capabilities repo (people-post, public) with the target sets that app needs, the gate, and
-      their contracts and tests; release; pin in every app; pp-browser drops its copy.
-- [ ] Expected first: pp-node as its own app, with both its builds (`pp-node` and [node-relay](../node-relay/README.md)'s `pp-node-plus`; people, net, node and the add-ons, `relay` first; with `packaging/pp-node`, the N-* smokes,
-      the hard lab and `pp_node_closure.sh`).
+- [ ] pp-node repo-ready in place (CR028): its own config type; `capabilities/product` (the headless product base
+      both apps use); a standalone pp-node build with its CI job.
+- [ ] **pp-cpp-core** (people-post, public): base, the shared product base, people, net, node, with their gate,
+      contracts and tests; release; pin in pp-browser and the operator app; pp-browser drops its copy.
+- [ ] **pp-cpp-node**, after node-relay's mailbox (NR3): pp-node as its own app, with both its builds (`pp-node` and [node-relay](../node-relay/README.md)'s `pp-node-plus`) and the add-ons, `relay` first, pinning pp-cpp-core for people, net and node; with
+      `packaging/pp-node`, `release-pp-node.yml`, the N-* smokes, the hard lab and `pp_node_closure.sh`).
 - [ ] Waiting first (2026-11-22): pp-ledger-apps' operator app needs the relay certificate code (net, with RelayId
       from base) after release 1 ([CURRENT_STATE § A second app is waiting](CURRENT_STATE.md#a-second-app-is-waiting-2026-11-22)).

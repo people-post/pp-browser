@@ -7,8 +7,9 @@ client, the ledger apps) can **pick** them, as apps already pick
 pp-browser stays the client and integrator: UI, AI, app composition, and the version set it ships.
 
 **How:** boundaries in the tree first, enforced by a gate (P0–P3). A capability leaves only when a second
-app needs it (CR005), and then into **one capabilities repo** with a target set per capability, not a repo
-each (CR006).
+app needs it (CR005), and then into **a few layered repos**, each created on demand and cut along the capability
+order: a capability lives in the lowest repo its users already pin, and a repo splits where its users stop overlapping
+(CR027, superseding CR006's one repo).
 
 **Non-goals:** one engine target every app links whole; a repo per capability; splitting on a schedule.
 
@@ -82,9 +83,9 @@ apps:  pp-browser (UI, AI, composition)   pp-node (headless roles)   VPN client 
 | node | base, people, net | node services and roles; reaches messaging and calls only through ports the app wires |
 | app | anything | pp-browser's shell, GUI, AI (CR007), composition |
 
-**When a second app needs capabilities** (CR005), they move to **one capabilities repo** (CR006) holding the
-same target sets and the same gate. pp-node is the expected first: it would become its own app, picking
-people, net and node from that repo.
+**When a second app needs capabilities** (CR005), they move to layered repos (CR027) holding the same target sets
+and the same gate: first **pp-cpp-core** (base, the apps' shared product base, people, net, node) and **pp-cpp-node**
+(pp-node and its add-ons). pp-node becomes repo-ready in place first (CR028).
 
 ## Rules
 
@@ -97,7 +98,7 @@ people, net and node from that repo.
 3. **Layers inside, capabilities across** (CR011). The layer rules of
    [SRC_LAYOUT](../../docs/architecture/SRC_LAYOUT.md) hold inside every capability; a capability's DTOs under
    `common/<capability>/` belong to it. Lib peers include each other only down the capability order (CR013).
-4. **The app owns the version set.** A capabilities repo pins dependencies only for its own CI; each app keeps
+4. **The app owns the version set.** A capability repo pins dependencies only for its own CI; each app keeps
    one pin list that wins (as pp-cpp-mesh: "a consumer that already has the targets keeps its own").
 5. **A capability owns its contracts and tests.** Wire, disk and HTTP contracts, unit and in-process tests move
    with it. Cross-capability tests (the app lab, the hard lab) stay with the apps that integrate them. Formats

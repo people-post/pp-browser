@@ -29,7 +29,7 @@ the standalone build the link closure.
 ## Build and test it on its own
 
 [`capabilities/CMakeLists.txt`](../CMakeLists.txt) configures chosen capability folders and everything below them,
-without the app — what the capabilities repo's root will be (CR006):
+without the app — what a capability repo's root will be (CR027):
 
 ```bash
 cmake -S capabilities -B build-calls -DCMAKE_BUILD_TYPE=Debug -DPP_CAPABILITIES=calls

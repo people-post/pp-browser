@@ -9,7 +9,7 @@ ship; mark superseded here.
 
 **Date:** 2026-10-29  
 **Status:** accepted; amended by CR005 (move only for a second app) and CR006 (one capabilities repo, a target
-per capability, not a repo each); its list amended by CR007 (AI stays in the app) and CR008 / CR009
+per capability, not a repo each), which CR027 supersedes (layered repos, each born on demand); its list amended by CR007 (AI stays in the app) and CR008 / CR009
 
 **Context:** Messaging, calls and broadcast are about 83k of pp-browser's 179k source lines. One "engine" repo
 for everything below the GUI would also carry most of `foundation`, `common`, `lib/people` and `lib/net`
@@ -36,7 +36,8 @@ stay in apps. Owner threads become registered by apps and capabilities instead o
 
 **Date:** 2026-10-29  
 **Status:** accepted; amended by CR006 — "realtime" is the calls and broadcast targets of the one capabilities
-repo, still with no cycle between them; amended by CR020 (realtime rides delivery, not messaging)
+repo, still with no cycle between them — and, with CR006 superseded, by CR027: realtime is one repo again when it
+leaves; amended by CR020 (realtime rides delivery, not messaging)
 
 **Context:** They share `lib/media`, have a cycle between them (broadcast → calls 7 include sites, calls → broadcast 2),
 and broadcast alone is 5.6k lines.
@@ -74,7 +75,8 @@ boundaries at no release cost.
 ## CR006 — One capabilities repo, a target per capability
 
 **Date:** 2026-10-30  
-**Status:** accepted; supersedes the repo-per-capability shape of CR001
+**Status:** superseded by [CR027](#cr027--layered-repos-each-born-on-demand-instead-of-one-capabilities-repo)
+(layered repos, each born on demand); it superseded the repo-per-capability shape of CR001
 
 **Context:** CR001 rejected one engine *target* that every app links whole. Separate repos per capability
 fix that but cost one pin each, and two capabilities can pin two versions of a third.
@@ -652,3 +654,78 @@ copy, a one-line stub here per moved file, ids and headings unchanged.
 
 A moved decision keeps its heading in [adp DECISIONS](../adp/DECISIONS.md), with one line pointing at its new place,
 so `#a0xx-…` anchors still resolve; a moved AMP-CHANNEL section does the same at the end of that file.
+
+## CR027 — Layered repos, each born on demand, instead of one capabilities repo
+
+**Date:** 2026-11-27  
+**Status:** accepted (Hongwei, 2026-11-27: one capabilities repo would grow too big; the names pp-cpp-core and
+pp-cpp-node); supersedes CR006
+
+**Context:** CR006 put every capability that leaves pp-browser into one repo, to avoid a pin per capability and two
+capabilities pinning two versions of a third. Over time that repo would hold everything below the GUI: pp-browser
+again under another name. Version skew is solved another way since: the app's pin list owns every version (CR004,
+CR012; pp-browser builds pp-cpp-mesh against its own pp-cpp-common pin, not the mesh's). What is left of the cost of
+more repos is a pin each and a release whenever a change crosses one.
+
+**Decision:** Capabilities that leave pp-browser go into a few repos cut along the capability order, the way the
+pp-cpp-* libraries already are, each created only when a second app needs what it holds (CR005). Two rules keep each
+small:
+
+1. **A capability lives in the lowest repo all its users already pin**, never in a repo its users do not otherwise
+   need.
+2. **A repo splits where its capabilities' users stop overlapping:** two groups used by different apps become two
+   repos.
+
+Cut where changes rarely cross: what changes rarely sits low, what changes often stays with its app. The first two:
+
+| Repo | Holds | Used by |
+|------|-------|---------|
+| **pp-cpp-core** | base, the apps' shared product base (CR028), people, net, node | pp-browser, pp-cpp-node, pp-ledger-apps' operator app (base, people, net) |
+| **pp-cpp-node** | pp-node (the app, its packaging and release) and the add-on services only pp-node-plus links (relay; files later) | its own two builds |
+
+`node` goes low because the desktop app runs node services too (its mesh as a node); the add-ons go with their only
+user. Everything else (social, delivery, pricing, media, messaging, calls, broadcast, the GUI) stays in pp-browser
+until a second app needs some of it; realtime (calls and broadcast) then leaves as one repo (CR003).
+
+**Consequences:** pp-browser and pp-cpp-node each pin pp-cpp-core, one pin more than one repo would cost; a change
+spanning pp-cpp-core and an app is a release and a pin. The gate, the standalone build (`capabilities/CMakeLists.txt`,
+CR023) and the capability order hold inside each repo as they do here. Each repo pins what it builds on only for its
+own CI (DESIGN rule 4).
+
+## CR028 — pp-node becomes repo-ready in place
+
+**Date:** 2026-11-27  
+**Status:** accepted (Hongwei, 2026-11-27: "The idea looks good"); the shared product base in pp-cpp-core is a default
+taken (CURRENT_STATE)
+
+**Context:** The capabilities pp-node links (base, people, net, node, relay) include nothing from the product's base.
+All of pp-node's ties to pp-browser are in `src/app/node/`, measured 2026-11-27:
+
+- **Config:** it loads the desktop app's whole `AppConfig` (theme, LLM, MCP, search, …) and reads only `mesh`,
+  `registration`, `data_dir`, `relay.content_sha256` and `node`.
+- **The product's base** (gate group `product`, CR015): profiles and paths (`ProfileRegistry`, `ProfileManifest`,
+  `AppPaths`, `MeshRole`), deployment and platform (`DeploymentProfile` and its backend table, `Platform`,
+  `PlatformLogDefaults`, a few `os/` helpers including the data-folder lock), and the build's identity (`AppVersion`,
+  `BuildInfo`, `DevTools`).
+- **Tools:** `pp-node-probe` and `pp-node-load` are the node's; `pp-app-probe` and `pp-call-probe` run the app's
+  product stack and stay with pp-browser.
+
+**Decision:** Before any repo moves (calls' path, CR023):
+
+1. **pp-node gets its own config type**, read from the same file keys, so every deployed `config.json` and `PP_NODE_*`
+   variable keeps working; it no longer loads `AppConfig`.
+2. **The headless part of the product's base becomes a capability both apps use** (`capabilities/product`: profiles,
+   paths, deployment, platform core, the build's identity). Both apps need it identical (one data layout, one profile
+   model, the same backends). Rule 1 still holds: the base takes none of it, and only apps include `product` (CR015).
+   The desktop's `AppConfig`, i18n and the GUI platform stay with pp-browser.
+3. **A standalone build of pp-node**: one configure builds pp-node, pp-node-plus and their tests from `capabilities/`
+   and the node folder alone, without `src/`, with a CI job keeping it so (as the `capabilities` job does for calls).
+
+Then P4, in this order: pp-cpp-core (its first new user the operator app), then pp-cpp-node, which takes the app, the
+add-ons, `packaging/pp-node`, `release-pp-node.yml` (already its own release train), the `node-editions` job, the
+N-* smokes and the hard lab, `pp_node_closure.sh`, and their docs (BUILD and CONFIGURATION's node sections,
+NODE_METRICS, projects p2p-mesh and node-relay). The move waits for node-relay's mailbox (NR3); steps 1–3 move
+nothing and can go now.
+
+**Consequences:** The split becomes a `git subtree split` of folders that already build alone. pp-browser keeps
+building pp-node until the move (its desktop tree builds `pp-node` as an extra target today).
