@@ -1776,7 +1776,7 @@ ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
   return ports;
 }
 
-/** Sends per posted batch: a forward is at most 30 messages to 9 chats, and the UI thread gets a turn between batches. */
+/** Sends per posted batch: a forward is at most 30 messages to 3 chats, and the UI thread gets a turn between batches. */
 constexpr size_t kForwardSendsPerBatch = 10;
 
 } // namespace
