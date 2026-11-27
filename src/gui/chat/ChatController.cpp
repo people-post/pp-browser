@@ -4251,7 +4251,7 @@ bool ChatController::ChatPaneContains(const DropUiPoint point) const {
 void ChatController::HideDropHint() {
   drop_hint_shown_ = false;
   if (set_drop_hint_) {
-    set_drop_hint_({});
+    set_drop_hint_({}, std::nullopt);
   }
 }
 
@@ -4266,11 +4266,17 @@ void ChatController::OnDropHover(const std::optional<DropUiPoint> point) {
     HideDropHint();
     return;
   }
-  const std::string text = Tr(key, {{"name", std::string(chat_.thread_title.c_str())}});
+  const std::string name(chat_.thread_title.c_str());
+  const std::string text = Tr(key, {{"name", name}});
+  // Dropping would send: the same sentence cut at the name, so the hint sets the name in bold wherever it falls.
+  std::optional<NameWords> words;
+  if (RefusalFor(attach) == AttachRefusal::None) {
+    words = SplitAtNameMarker(Tr(key, {{"name", std::string(1, kNameMarker)}}), name);
+  }
   drop_hint_shown_ = !text.empty();
   drop_hint_preview_open_ = attach.preview_open;
   if (set_drop_hint_) {
-    set_drop_hint_(text);
+    set_drop_hint_(text, words);
   }
 }
 

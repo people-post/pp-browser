@@ -17800,9 +17800,11 @@ textarea:composing ~ .ps-placeholder {
   min-height: 50dp;
 }
 
-/* Files dragged over the chat (ShellLayoutRml::DropHintRml; colours in colors.rcss.tmpl): a soft tint over the whole
-   chat with a card in the middle. It never takes a click: the drag is the OS's, and a hint that stays for a moment
-   after it must not block the chat. */
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml; colours in colors.rcss.tmpl): a very light tint over the
+   whole chat, a soft rounded ring inset 10dp from its edges, and in the middle a round badge with the words under it
+   ("Drop to send to <name>", the name in bold) and the limit. A refusal (.drop-hint--no) has the same shape in grey. It
+   never takes a click: the drag is the OS's, and a hint that stays for a moment after it must not block the chat. No
+   backdrop blur: the layer has a z-index and children, where the engine draws none. */
 .drop-hint {
   position: absolute;
   top: 0;
@@ -17816,11 +17818,53 @@ textarea:composing ~ .ps-placeholder {
   pointer-events: none;
 }
 
-.drop-hint-label {
+.drop-hint-ring {
+  position: absolute;
+  top: 10dp;
+  left: 10dp;
+  right: 10dp;
+  bottom: 10dp;
+  border-radius: 16dp;
+  pointer-events: none;
+}
+
+.drop-hint-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   max-width: 80%;
-  padding: 20dp 28dp;
-  border-radius: 20dp;
-  font-size: 20dp;
+}
+
+.drop-hint-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  margin-bottom: 14dp;
+  border-radius: 28dp;
+}
+
+.drop-hint-icon {
+  flex-shrink: 0;
+  width: 26dp;
+  height: 26dp;
+}
+
+.drop-hint-label {
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.drop-hint-name {
   font-weight: bold;
+}
+
+.drop-hint-limit {
+  margin-top: 6dp;
+  font-size: 13dp;
+  line-height: 18dp;
   text-align: center;
 }

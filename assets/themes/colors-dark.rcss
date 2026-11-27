@@ -733,15 +733,47 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
-/* Files dragged over the chat (ShellLayoutRml::DropHintRml): a soft tint over the chat, a card with the words. */
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml): a light tint, a soft ring, an accent badge (grey when the
+   drop is refused) and the words. */
 .drop-hint {
-  background-color: #0a84ff2e;
+  background-color: #0a84ff1f;
+}
+
+.drop-hint--no {
+  background-color: #7878801f;
+}
+
+.drop-hint-ring {
+  border: 2dp #0a84ff59;
+}
+
+.drop-hint--no .drop-hint-ring {
+  border: 2dp #78788066;
+}
+
+.drop-hint-badge {
+  background-color: #0a84ff;
+}
+
+.drop-hint--no .drop-hint-badge {
+  background-color: #7878805c;
+}
+
+.drop-hint-icon {
+  image-color: #ffffff;
+}
+
+.drop-hint--no .drop-hint-icon {
+  image-color: #ebebf599;
 }
 
 .drop-hint-label {
-  background-color: #1c1c1e;
   color: #ffffff;
-  border: 2dp #0a84ff;
+}
+
+.drop-hint-label--no,
+.drop-hint-limit {
+  color: #ebebf599;
 }
 
 /* No shadow (DESIGN-pp-ui §6; a shadow here also drew a grey block on the simulator): a hairline keeps the white

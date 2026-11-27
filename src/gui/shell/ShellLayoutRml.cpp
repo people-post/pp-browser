@@ -43,8 +43,25 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 } // namespace
 
 std::string ShellLayoutRml::DropHintRml() {
-  return "<div class=\"drop-hint\" id=\"drop-hint\" data-if=\"drop_hint_visible\"><div class=\"drop-hint-label\">"
-         "{{drop_hint_text}}</div></div>";
+  // Dropping would send: a soft ring inset in the pane, a round badge and "Drop to send to <name>" with the name in bold,
+  // and the limit under it. Otherwise (a refusal): the same shape in grey, the refusal's own line, no limit.
+  std::ostringstream out;
+  out << "<div class=\"drop-hint\" id=\"drop-hint\" data-if=\"drop_hint_visible\" "
+         "data-class-drop-hint--no=\"!drop_hint_can\">";
+  out << "<div class=\"drop-hint-ring\" id=\"drop-hint-ring\"></div>";
+  out << "<div class=\"drop-hint-stack\">";
+  out << "<div class=\"drop-hint-badge\">"
+         "<svg class=\"drop-hint-icon\" data-if=\"drop_hint_can\" src=\"../icons/v2/drop-tray.svg\" width=\"26\" "
+         "height=\"26\"></svg>"
+         "<svg class=\"drop-hint-icon\" data-if=\"!drop_hint_can\" src=\"../icons/v2/block.svg\" width=\"26\" "
+         "height=\"26\"></svg></div>";
+  out << "<div class=\"drop-hint-label\" data-if=\"drop_hint_can\"><span class=\"drop-hint-prefix\">"
+         "{{drop_hint_prefix}}</span><span class=\"drop-hint-name\">{{drop_hint_name}}</span>"
+         "<span class=\"drop-hint-suffix\">{{drop_hint_suffix}}</span></div>";
+  out << "<div class=\"drop-hint-label drop-hint-label--no\" data-if=\"!drop_hint_can\">{{drop_hint_text}}</div>";
+  out << "<div class=\"drop-hint-limit\" data-if=\"drop_hint_can\">" << Tr("chat.drop.hint_limit") << "</div>";
+  out << "</div></div>";
+  return out.str();
 }
 
 /** The hold-to-talk bubble (components.rcss `.voice-bubble`): shown while a phone hold records; its box and the level

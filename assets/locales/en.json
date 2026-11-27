@@ -1230,6 +1230,7 @@
     "chat.attach.finish_current": "Send or cancel the current ones first",
     "chat.attach.not_here": "Files can't be sent here",
     "chat.drop.hint": "Drop to send to {name}",
+    "chat.drop.hint_limit": "Up to 9 at a time",
     "chat.drop.outside": "Drop it onto the chat to send",
     "chat.drop.no_position": "Drag and drop isn't available on this computer — use + to pick files",
     "chat.paste.too_large": "That image is too large to paste",

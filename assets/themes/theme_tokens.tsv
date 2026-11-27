@@ -153,3 +153,7 @@ x-kind-txt	#8793ab	#8793ab	extra: file type badge: text (grey-blue)
 x-kind-pdf	#e5484d	#e5484d	extra: file type badge: PDF (red)
 x-kind-zip	#d98a00	#d98a00	extra: file type badge: archives (amber, dark enough for a white label)
 x-kind-xls	#30a46c	#30a46c	extra: file type badge: spreadsheets (green)
+x-drop-tint	#007aff0f	#0a84ff1f	extra: the drop hint's tint over the chat (accent at ~6% / 12%)
+x-drop-ring	#007aff59	#0a84ff59	extra: the drop hint's ring (accent at 35%)
+x-drop-no-tint	#78788012	#7878801f	extra: the drop hint when dropping is refused: a grey tint
+x-drop-no-ring	#78788059	#78788066	extra: the refused drop hint's ring

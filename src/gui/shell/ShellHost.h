@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/platform/ScreenKeyboardGeometry.h"
+#include "lib/ui/NameWords.h"
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
@@ -165,8 +166,12 @@ public:
   void CloseAllLayers();
   /** The desktop title strip's text (WindowTitleFor); no effect on a platform without the strip. */
   void SetWindowTitle(const std::string& title);
-  /** The drop hint over the chat pane: `text` shows it, empty hides it. Dirties only on change. */
-  void SetDropHint(const std::string& text);
+  /**
+   * The drop hint over the chat pane: `text` shows it, empty hides it. `words` (the same sentence cut at the name) is
+   * given only when dropping would send: the hint then has its "can drop" form (badge, the name in bold, the limit line);
+   * without it it is a refusal's line. Dirties only on change.
+   */
+  void SetDropHint(const std::string& text, const std::optional<NameWords>& words = std::nullopt);
   /** How long until the drop hint should hide itself (empty = no wake needed); NotifyFrameEnd arms the idle wake from it. */
   void BindDropHintWake(std::function<std::optional<int64_t>()> ms_until_hide) {
     drop_hint_wake_ = std::move(ms_until_hide);

@@ -200,7 +200,9 @@ public:
   void OnDropHover(std::optional<DropUiPoint> point);
   void OnFilesDropped(std::vector<std::string> paths, std::optional<DropUiPoint> position);
   /** Shows the hint over the chat with `text`; empty hides it (ShellHost::SetDropHint). */
-  void BindDropHint(std::function<void(const std::string& text)> set_hint) { set_drop_hint_ = std::move(set_hint); }
+  void BindDropHint(std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_hint) {
+    set_drop_hint_ = std::move(set_hint);
+  }
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
   /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
@@ -1161,7 +1163,7 @@ private:
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
-  std::function<void(const std::string& text)> set_drop_hint_;
+  std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_drop_hint_;
   /** The hint is showing; the preview page was open when it last was set (a page opening under it hides it). */
   bool drop_hint_shown_ = false;
   bool drop_hint_preview_open_ = false;

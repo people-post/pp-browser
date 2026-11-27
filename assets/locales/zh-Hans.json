@@ -1209,6 +1209,7 @@
     "chat.attach.finish_current": "先把这一批发完或取消",
     "chat.attach.not_here": "这里不能发送文件",
     "chat.drop.hint": "松开发送给 {name}",
+    "chat.drop.hint_limit": "最多 9 个",
     "chat.drop.outside": "拖到聊天里才能发送",
     "chat.drop.no_position": "这台电脑不能用拖放，请点“＋”选文件",
     "chat.paste.too_large": "图片太大，无法粘贴",

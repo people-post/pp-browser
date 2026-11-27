@@ -1601,7 +1601,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
-  chat_->BindDropHint([this](const std::string& text) { shell_->SetDropHint(text); });
+  chat_->BindDropHint(
+      [this](const std::string& text, const std::optional<NameWords>& words) { shell_->SetDropHint(text, words); });
   shell.BindDropHintWake([]() { return SdlAppEvents::MsUntilDropHintHide(); });
   chat_->BindConversationsFacade(messaging_facade_.get());
   chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
