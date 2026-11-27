@@ -42,6 +42,11 @@ struct AgentUiPorts {
   /** One question with one prepared image to an AI thread (brief preset only). */
   std::function<SubmitOutcome(const std::string& thread_id, const std::string& text, AgentImageTurn image)>
       submit_image_to_thread;
+  /** A news item read in an AI thread: the item's URL and the fixed sentence (AgentSessions::SubmitNewsRead); `retry`:
+   *  started from the reader's "Try again". */
+  std::function<SubmitOutcome(const std::string& thread_id, const std::string& request_text, const std::string& title,
+                              bool retry)>
+      submit_news_read;
   /** May a turn start in `thread_id` now (empty: the Home composer)? */
   std::function<TurnStart(const std::string& thread_id)> can_start;
   /** The most thread turns at once now (3 registered, 1 guest): what the queued note says. */

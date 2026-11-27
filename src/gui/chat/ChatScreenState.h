@@ -10,6 +10,11 @@
 
 namespace pbr {
 
+/** One emoji of the wide layout's hover bar on a message (the reactions used most). */
+struct BarEmojiRow {
+  ui::String emoji;
+};
+
 /** One person on a message's reactions sheet: the emoji they reacted with, their name and avatar. */
 struct ReactorDisplayRow {
   ui::String emoji;
@@ -105,6 +110,8 @@ struct ChatScreenState {
   ui::String voice_timer;
   /** The bubble's first line when it is not the timer: the countdown ("N s left") or the limit text. Desktop: the bar's hint. */
   ui::String voice_hint;
+  /** The recording's loudness as a bar width ("0%".. "100%"): the wide composer's level meter. */
+  ui::String voice_level_width = "0%";
   ui::String voice_title;
   /** Phones: the floating bubble shows (a hold is on). Its box: left / top in dp from the chat overlay's corner ("123dp"),
    *  Strings are tiny; they change by 1dp or more. */
@@ -171,6 +178,19 @@ struct ChatScreenState {
   std::vector<MessageDisplayRow> messages;
   /** The reactions sheet (a tap on a message's emoji): who reacted, grouped by emoji. */
   std::vector<ReactorDisplayRow> reactor_rows;
+  /** The hover bar's reactions: the message menu's quick row, the first five of it. */
+  std::vector<BarEmojiRow> bar_emojis;
+  /** The news reader sheet (view "news_reader"): the item's title, loading / failed, the digest (bound only while it
+   *  shows) and Previous / Next for a list. */
+  ui::String news_reader_title;
+  bool news_reader_translated = false; // the digest shown is an AI translation: one line under the title says so
+  bool news_reader_loading = false;
+  bool news_reader_failed = false;
+  bool news_reader_can_retry = false; // "Try again" under the failure line (event news_reader_retry())
+  ui::String news_reader_body_rml;
+  bool news_reader_has_nav = false;
+  bool news_reader_can_prev = false;
+  bool news_reader_can_next = false;
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;

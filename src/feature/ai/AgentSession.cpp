@@ -7,6 +7,7 @@
 #include "lib/ai/AppActionWords.h"
 #include "lib/ai/LocalActionRender.h"
 #include "lib/ai/LocalizedLabels.h"
+#include "lib/ai/MarkdownToRml.h"
 #include "lib/ai/PayloadTurnPlanBuilder.h"
 #include "lib/ai/PromptBuilder.h"
 #include "lib/ai/StructuredTextParser.h"
@@ -98,6 +99,9 @@ const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std:
 
 /** brief_AI's answer routes a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
 constexpr ShareWord kTurnRoutes[] = {"none", "web", "chat", "app_action", "news", "image"};
+/** A news read's done.answer_kind and done.unavailable_kind (contract section 15) for "ai.news_read"; else `other`. */
+constexpr ShareWord kNewsAnswerKinds[] = {"news_digest", "news_unavailable"};
+constexpr ShareWord kNewsUnavailableKinds[] = {"not_article", "blocked", "mismatch", "other"};
 
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
 void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
@@ -227,6 +231,14 @@ struct AgentSession::Impl : public Module {
   std::string pending_user_text;
   std::optional<std::string> pending_user_payload;
   std::optional<AgentImageTurn> pending_image; // at most one per turn; SubmitToThread only
+  /** This turn reads a news item (SubmitNewsRead): its messages are stored hidden; its text streams to the reader
+   *  only (the chat screen keeps its deltas out of the chat). */
+  bool news_read = false;
+  std::string news_title;  // the read item's title (client.news_title)
+  bool news_retry = false; // the read was started from the reader's "Try again" (metrics only)
+  /** The streamed answer's done.answer_kind (empty: none); set by on_done for the persist and the ready event. */
+  std::string answer_kind;
+  bool translated = false; // the streamed digest's done.translated
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
@@ -354,6 +366,7 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .response_goal = state->turn_plan.response_goal,
                               .render_mode = state->turn_plan.render_mode,
                               .sources = std::move(sources),
+                              .answer_kind = state->answer_kind,
                               .from_model = from_model});
 }
 
@@ -406,6 +419,9 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->local_raw_results.clear();
   state->local_ctx.reset();
   state->pending_direct_action.reset();
+  state->news_read = false;
+  state->answer_kind.clear();
+  state->translated = false;
   state->pending_entry_id.clear();
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
@@ -722,6 +738,12 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   message.transport = MessageTransport::Local;
   if (state->local_turn) {
     message.generation = kLocalActionGeneration;
+  } else if (state->news_read) {
+    // Hidden like its request. Only brief_AI's explicit "news_digest" is a digest (read); "news_unavailable", none
+    // (an older server) or anything else is "could not be read": never guessed from the words.
+    message.generation = state->answer_kind != "news_digest" ? kNewsFailedGeneration
+                         : state->translated                 ? kNewsDigestTranslatedGeneration
+                                                             : kNewsDigestGeneration;
   }
   auto appended = state->thread_store->AppendMessage(message);
   if (!appended) {
@@ -1292,6 +1314,61 @@ bool AgentSession::BriefStreamAvailable(const std::shared_ptr<Impl>& state) {
 
 namespace {
 
+/** The AI assistant's news list in a thread: an answer with two or more news items (a single pick has one). */
+bool IsNewsList(const ThreadMessage& message) {
+  if (message.sender_contact_id != kAiAssistantContactId || IsHiddenNewsMessage(message) ||
+      IsLocalActionMessage(message) || message.text.find(kNewsLinkTitle) == std::string::npos) {
+    return false;
+  }
+  const std::vector<MarkdownLink> links = MarkdownToRml(message.text, MarkdownOptions{.news_links = true}).links;
+  return std::count_if(links.begin(), links.end(), [](const MarkdownLink& link) { return link.news; }) >= 2;
+}
+
+/**
+ * The newest news list of `thread_id`, read on its own (the context read has a budget and a compaction cursor, so it
+ * may have left the list out). Looks back a bounded number of messages.
+ */
+std::optional<ThreadMessage> LatestNewsList(const IThreadStore& store, const std::string& thread_id) {
+  constexpr size_t kPage = 100;
+  constexpr int kMaxPages = 5;
+  std::optional<int64_t> before;
+  for (int read = 0; read < kMaxPages; ++read) {
+    auto page = store.GetMessagesPage(thread_id, before, kPage);
+    if (!page || page->empty()) {
+      return std::nullopt;
+    }
+    for (auto it = page->rbegin(); it != page->rend(); ++it) {
+      if (IsNewsList(*it)) {
+        return *it;
+      }
+    }
+    const int64_t oldest = page->front().display_order;
+    if (page->size() < kPage || (before && oldest >= *before)) {
+      return std::nullopt;
+    }
+    before = oldest;
+  }
+  return std::nullopt;
+}
+
+/**
+ * The turns sent are the last kMaxHistoryTurns (BriefAiClient): when `list` is not among them, it goes first and the
+ * newest five follow, so "把第四条总结给我" still finds it after a few news reads pushed it out.
+ */
+void KeepNewsListInHistory(std::vector<BriefAiHistoryTurn>& history, const std::vector<std::string>& ids,
+                           const ThreadMessage& list) {
+  constexpr size_t kSent = 6;
+  const size_t first = history.size() > kSent ? history.size() - kSent : 0;
+  if (std::find(ids.begin() + static_cast<std::ptrdiff_t>(first), ids.end(), list.id) != ids.end()) {
+    return;
+  }
+  std::vector<BriefAiHistoryTurn> kept{BriefAiHistoryTurn{.role = "assistant", .content = list.text}};
+  const size_t newest = history.size() > kSent - 1 ? history.size() - (kSent - 1) : 0;
+  kept.insert(kept.end(), std::make_move_iterator(history.begin() + static_cast<std::ptrdiff_t>(newest)),
+              std::make_move_iterator(history.end()));
+  history = std::move(kept);
+}
+
 /** A settings-read tool: "我的设置是什么" is a request for it, not a how-to question. */
 bool ToolIsSettingsRead(const std::string& tool) {
   for (const AppActionWords& words : AppActionTable()) {
@@ -1671,7 +1748,15 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   // chat (contract: only the question goes out).
   if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist) {
     request.capabilities = AppActionCapabilities(state);
+    // Not an app action: says this client opens news items in the reader (contract section 15), so brief_AI marks
+    // its headline lists and news picks. Only here: AppActionCapabilities also feeds the app-action classifier.
+    request.capabilities.push_back("news_digest");
   }
+  if (state->news_read) {
+    request.news_title = state->news_title; // data beside the two-line message, never in it
+  }
+  state->answer_kind.clear();
+  state->translated = false;
 
   // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
   // still draining then sees a stale generation and must not touch the new turn's state.
@@ -1719,7 +1804,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   auto image_error_kind = std::make_shared<std::string>();
 
   BriefTurnSinks sinks;
-  // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue.
+  // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue. A news read's
+  // deltas go to the reader (AgentTurnController keeps them out of the chat); its done replaces them.
   auto last_delta = std::make_shared<std::optional<std::chrono::steady_clock::time_point>>();
   sinks.on_delta = [state, current, last_delta, stats](const std::string& text) {
     const auto now = std::chrono::steady_clock::now();
@@ -1742,14 +1828,24 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     }
   };
   sinks.on_meta = [stats](const std::string& route) { stats->route = route; };
-  sinks.on_done = [state, current, emit_turn, role_thread_id](const std::string& response, const std::string& finish,
-                                                              const std::vector<BriefAiSource>& sources,
-                                                              const std::string& role) {
+  sinks.on_done = [state, current, emit_turn, role_thread_id](
+                      const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
+                      const std::string& role, const std::string& answer_kind, const bool translated,
+                      const std::string& unavailable_kind) {
     emit_turn(finish == "length" ? ShareWord("done_truncated") : ShareWord("done"));
     state->shared->brief_key_renewed.store(false); // the key works: a later 401 may renew it again
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
+    }
+    if (state->news_read) {
+      // Counts reads by outcome and, for one that got no digest, by the server's reason; never a URL or title.
+      MetricsLine("ai.news_read")
+          .Pick("answer", answer_kind, kNewsAnswerKinds)
+          .Pick("unavailable_kind", unavailable_kind, kNewsUnavailableKinds)
+          .Add("translated", translated)
+          .Add("retry", state->news_retry)
+          .Emit();
     }
     if (!role_thread_id.empty()) {
       std::lock_guard lock(state->shared->last_role_mutex);
@@ -1759,6 +1855,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
         state->shared->last_role_by_thread[role_thread_id] = role;
       }
     }
+    state->answer_kind = answer_kind;
+    state->translated = translated;
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };
@@ -1766,6 +1864,13 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     emit_turn("handoff");
     state->shared->brief_key_renewed.store(false);
     if (!current()) {
+      return;
+    }
+    if (state->news_read) {
+      // A news read is never an app action: no local answer may appear in the chat. Nothing is stored, so the item
+      // stays unread and the reader says it could not be read.
+      state->Log().warning << "brief_AI handed back a news read; ended unread";
+      FinishTurn(state);
       return;
     }
     if (has_image) {
@@ -1789,7 +1894,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     if (!current()) {
       return;
     }
-    if (!partial.empty()) {
+    if (!partial.empty() && !state->news_read) { // a news read's part is no digest: the item stays unread
       EmitStreamedAnswer(state, partial, "error", {});
     }
     PushError(state, message, retryable, *image_error_kind);
@@ -1800,7 +1905,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     if (!current()) {
       return; // Cancel() followed by a new Submit: the new turn owns the state now
     }
-    if (!partial.empty()) {
+    if (!partial.empty() && !state->news_read) {
       EmitStreamedAnswer(state, partial, "cancelled", {});
     }
     FinishTurn(state);
@@ -1961,6 +2066,12 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       FinishTurn(state);
       return;
     }
+    if (state->news_read && !UseBriefStream(state)) {
+      // Only brief_AI reads a news item; nothing is stored, so the item stays unread.
+      PushError(state, "News items can only be read with the Brief AI model.");
+      FinishTurn(state);
+      return;
+    }
 
     ThreadMessage user_message;
     user_message.id = state->pending_image && !state->pending_image->message_id.empty()
@@ -1978,6 +2089,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
     user_message.transport = MessageTransport::Local;
+    if (state->news_read) {
+      user_message.generation = kNewsRequestGeneration;
+    }
     if (auto appended = state->thread_store->AppendMessage(user_message)) {
       state->pending_entry_id = appended->id;
     } else {
@@ -2006,11 +2120,12 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
         policy.Build(*messages, system_prompt, state->pending_user_text, state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
     if (UseBriefStream(state)) {
-      if (TryPendingLocalAnswer(state) || TryLocalAppAction(state)) {
+      if (!state->news_read && (TryPendingLocalAnswer(state) || TryLocalAppAction(state))) {
         return;
       }
       // Built context is a transcript blob plus a pending user turn; send the real messages instead.
       std::vector<BriefAiHistoryTurn> history;
+      std::vector<std::string> history_ids; // parallel to `history`
       for (const ThreadMessage& message : *messages) {
         if (message.id == state->pending_entry_id || message.text.empty() || IsLocalActionMessage(message)) {
           continue; // app-action entries may carry contact remarks: never sent to a model
@@ -2028,6 +2143,11 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
           }
         }
         history.push_back(BriefAiHistoryTurn{.role = assistant ? "assistant" : "user", .content = std::move(content)});
+        history_ids.push_back(message.id);
+      }
+      // "把第四条总结给我" must still find the news list after a few reads pushed it out of the last turns sent.
+      if (const auto list = LatestNewsList(*state->thread_store, state->pending_thread_id)) {
+        KeepNewsListInHistory(history, history_ids, *list);
       }
       StreamBriefTurn(state, std::move(history), summary ? summary->text : std::string());
       return;
@@ -2429,6 +2549,7 @@ SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, cons
                                   : (thread_id.empty() ? AgentTurnMode::Conversation : AgentTurnMode::Thread);
   impl_->assist_mode = AtAiMode::Local;
   impl_->pending_direct_action = std::make_pair(tool, std::move(args));
+  impl_->news_read = false;
 
   PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
@@ -2583,6 +2704,7 @@ SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<s
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_image.reset();
   impl_->pending_direct_action.reset();
+  impl_->news_read = false;
   impl_->turn_mode = AgentTurnMode::Conversation;
   impl_->pending_thread_id.clear();
 
@@ -2613,8 +2735,41 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_image = std::move(image);
   impl_->pending_direct_action.reset();
+  impl_->news_read = false;
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
+
+  PostTurnTask(impl_, [impl = impl_]() {
+    if (!StartNowOrWhenConfigured(impl)) {
+      return;
+    }
+    StartTurn(impl);
+  });
+  return SubmitOutcome::Started;
+}
+
+SubmitOutcome AgentSession::SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                                           const std::string& title, const bool retry) {
+  if (thread_id.empty() || request_text.empty()) {
+    return SubmitOutcome::Ignored;
+  }
+  if (impl_->busy.exchange(true)) {
+    impl_->Log().info << "news read not taken: a turn runs in this session";
+    return SubmitOutcome::BusyHere;
+  }
+  impl_->turn_in_flight = true;
+
+  impl_->cancelled = false;
+  BeginStreamTurn();
+  impl_->pending_user_text = request_text;
+  impl_->pending_user_payload.reset();
+  impl_->pending_image.reset();
+  impl_->pending_direct_action.reset();
+  impl_->pending_thread_id = thread_id;
+  impl_->turn_mode = AgentTurnMode::Thread;
+  impl_->news_read = true;
+  impl_->news_title = title;
+  impl_->news_retry = retry;
 
   PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
@@ -2644,6 +2799,7 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_image.reset();
   impl_->pending_direct_action.reset();
+  impl_->news_read = false;
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
   impl_->assist_mode = mode;

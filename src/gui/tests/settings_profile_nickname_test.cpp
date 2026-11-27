@@ -212,6 +212,21 @@ TEST_F(SettingsProfileNicknameTest, AFailedSaveRestoresTheOldNameAndSaysSoNotSav
   EXPECT_EQ(*baseline, "Old");
 }
 
+// Reset my profile (the wide layout edits the name in place): nothing of the
+// old account stays on the card, and leaving the Me tab afterwards saves none of its unsaved typing into the new profile.
+TEST_F(SettingsProfileNicknameTest, AfterAProfileResetTheCardIsEmptyAndLeavingMeSavesNothingOfTheOldTyping) {
+  host().UiState().profile_nickname = "Typed";
+  host().PushToView(true); // the desktop's field: typed, not saved
+
+  settings.OnProfileReset();
+  context->Update();
+  EXPECT_EQ(ShownName(), "") << "the old name is gone from the view";
+
+  settings.OnMeSurfaceClosed(); // the tab change that follows the reset
+  EXPECT_TRUE(saved_with.empty());
+  EXPECT_EQ(ShownName(), "");
+}
+
 TEST_F(SettingsProfileNicknameTest, WithoutThePromptPortTheRowDoesNothing) {
   ShellFeedbackPorts none;
   settings.BindShellFeedback(none);

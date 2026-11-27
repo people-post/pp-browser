@@ -1,5 +1,6 @@
 #include "gui/PinGateController.h"
 
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
@@ -8,9 +9,43 @@
 #include "foundation/platform/PendingNotificationTap.h"
 #include "gui/UserFeedback.h"
 
+#include "common/Logger.h"
+
 #include <utility>
 
 namespace pbr {
+
+namespace {
+logging::Logger& GateLog() {
+  static logging::Logger log = logging::getLogger("Gui.PinGate");
+  return log;
+}
+} // namespace
+
+PinGateActionPorts MakePinGateActionPorts(PinGateController& controller) {
+  PinGateController* gate = &controller;
+  PinGateActionPorts ports;
+  ports.on_submit = [gate]() { gate->OnSubmit(); };
+  ports.on_cancel = [gate]() { gate->OnCancel(); };
+  ports.on_set_pin = [gate]() { gate->OnSetPin(); };
+  ports.on_use_default = [gate]() { gate->OnUseDefaultPin(); };
+  ports.on_identity_new = [gate]() { gate->OnIdentityNew(); };
+  ports.on_identity_link = [gate]() { gate->OnIdentityLink(); };
+  ports.on_identity_phrase = [gate]() { gate->OnIdentityPhrase(); };
+  ports.on_use_saved_copy = [gate]() { gate->OnUseSavedCopy(); };
+  ports.on_scan_reply = [gate]() { gate->OnScanReply(); };
+  ports.on_forgot_toggle = [gate]() { gate->OnForgotToggle(); };
+  ports.on_note_toggle = [gate]() { gate->OnNoteToggle(); };
+  ports.on_use_pin_instead = [gate]() { gate->OnUsePinInstead(); };
+  ports.on_key = [gate](const int digit) { gate->OnKey(digit); };
+  ports.on_backspace = [gate]() { gate->OnBackspace(); };
+  ports.on_keypad_ok = [gate]() { gate->OnKeypadOk(); };
+  ports.on_use_text = [gate]() { gate->OnUseText(); };
+  ports.on_use_keypad = [gate]() { gate->OnUseKeypad(); };
+  ports.on_biometric = [gate]() { gate->OnBiometric(); };
+  ports.on_use_pin = [gate]() { gate->OnUsePin(); };
+  return ports;
+}
 
 void PinGateController::BindGateComplete(UnlockGateCompletePorts ports) {
   gate_complete_ = std::move(ports);
@@ -424,7 +459,10 @@ void PinGateController::ShowLinkOffer() {
   pin_state_.link_offer_qr = "";
   pin_state_.link_offer_code = "";
   pin_state_.link_offer_text = "";
-  pin_state_.link_can_scan = static_cast<bool>(gate_complete_.scan_link_reply);
+  pin_state_.link_valid =
+      Tr("settings.security.link_device.copied_valid", {{"minutes", std::to_string(kLinkWindowMs / 60000)}}).c_str();
+  pin_state_.link_can_scan = static_cast<bool>(gate_complete_.scan_link_reply) &&
+                             (!gate_complete_.can_scan_link_reply || gate_complete_.can_scan_link_reply());
   if (!gate_complete_.begin_link_offer) {
     return;
   }
@@ -445,6 +483,10 @@ void PinGateController::ForgetLinkOffer() {
 }
 
 void PinGateController::OnScanReply() {
+  GateLog().info << "Link page: Scan pressed (active=" << pin_state_.active
+                 << " link_page=" << pin_state_.link_paste_mode << " phrase=" << phrase_flow_
+                 << " already_scanning=" << scanning_
+                 << " can_scan=" << static_cast<bool>(gate_complete_.scan_link_reply) << ")";
   if (!pin_state_.active || !pin_state_.link_paste_mode || phrase_flow_ || scanning_ ||
       !gate_complete_.scan_link_reply) {
     return;

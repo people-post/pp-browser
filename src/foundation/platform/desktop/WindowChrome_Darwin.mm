@@ -15,8 +15,12 @@ namespace pbr {
 namespace desktop {
 namespace {
 
-/** Standard macOS window corner radius (Big Sur+). */
-constexpr CGFloat kWindowCornerRadiusPt = 10.0;
+/**
+ * The window's outer corner radius: ours (the window is borderless and transparent; this layer mask is its shape), softer
+ * than the system's 10pt. `.shell-body--framed.shell-body--round` in components.rcss draws the 1dp outline with the same
+ * radius in dp (equal to pt here): change both together.
+ */
+constexpr CGFloat kWindowCornerRadiusPt = 18.0;
 
 } // namespace
 

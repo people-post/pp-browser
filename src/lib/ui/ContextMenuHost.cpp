@@ -555,39 +555,41 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
     return;
   }
 
+  // The wide layout keeps a menu 8dp (not 8 device pixels) clear of the window edge; the phone's margin is unchanged.
+  const float edge =
+      compact_layout_ ? kViewportMarginPx : kViewportMarginPx * context_->GetDensityIndependentPixelRatio();
   float left = float_popover_ ? static_cast<float>(preferred.x) - size.x : static_cast<float>(preferred.x);
   float top = static_cast<float>(preferred.y);
   // A pull-down keeps clear of the screen edge (its corner and shadow show) even when its button sits at the edge.
-  const float side_margin =
-      float_popover_ ? kPopoverEdgeDp * context_->GetDensityIndependentPixelRatio() : kViewportMarginPx;
+  const float side_margin = float_popover_ ? kPopoverEdgeDp * context_->GetDensityIndependentPixelRatio() : edge;
   const float max_left = static_cast<float>(dims.x) - size.x - side_margin;
-  const float max_top = static_cast<float>(dims.y) - size.y - kViewportMarginPx;
+  const float max_top = static_cast<float>(dims.y) - size.y - edge;
 
   if (left > max_left) {
     left = max_left;
   }
-  if (left < kViewportMarginPx) {
-    left = kViewportMarginPx;
+  if (left < edge) {
+    left = edge;
   }
 
-  if (float_above_ && static_cast<float>(preferred.y) - size.y >= kViewportMarginPx) {
+  if (float_above_ && static_cast<float>(preferred.y) - size.y >= edge) {
     top = static_cast<float>(preferred.y) - size.y;
-  } else if (top + size.y > static_cast<float>(dims.y) - kViewportMarginPx) {
+  } else if (top + size.y > static_cast<float>(dims.y) - edge) {
     // Prefer flipping above the preferred anchor when there is room.
     const float flipped = static_cast<float>(preferred.y) - size.y;
-    if (flipped >= kViewportMarginPx) {
+    if (flipped >= edge) {
       top = flipped;
-    } else if (max_top >= kViewportMarginPx) {
+    } else if (max_top >= edge) {
       top = max_top;
     } else {
-      top = kViewportMarginPx;
+      top = edge;
     }
   }
-  if (top > max_top && max_top >= kViewportMarginPx) {
+  if (top > max_top && max_top >= edge) {
     top = max_top;
   }
-  if (top < kViewportMarginPx) {
-    top = kViewportMarginPx;
+  if (top < edge) {
+    top = edge;
   }
 
   char left_buf[32];

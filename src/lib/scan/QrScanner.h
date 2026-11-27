@@ -18,6 +18,9 @@ public:
     std::optional<std::string> text;
     std::string error;
     ErrorKind error_kind = ErrorKind::None;
+    /** The camera is one the call screen draws mirrored (not a back camera). A hint only: `preview` is never mirrored
+     *  here, the page decides whether to draw it so. */
+    bool mirror_preview = false;
   };
 
   /** `no_frame_timeout` is how long a camera may stay silent (outside an OS permission prompt) before an error. */
@@ -26,8 +29,14 @@ public:
   ~QrScanner();
   QrScanner(const QrScanner&) = delete;
   QrScanner& operator=(const QrScanner&) = delete;
-  /** Replaces any previous scan; rear camera preferred. Pass UI-thread display rotation. */
-  void Start(int display_rotation_deg = 0);
+  /** The OS lists a camera, so a scan could open one (nothing is opened to find out). */
+  bool CameraAvailable() const;
+  /**
+   * Replaces any previous scan; rear camera preferred. Pass UI-thread display rotation. `full_frame_preview`: the
+   * preview is always the whole frame (up to 1280 on its long edge) instead of the centre crop the decoder is
+   * sometimes given while it hunts for a code; what is decoded does not change.
+   */
+  void Start(int display_rotation_deg = 0, bool full_frame_preview = false);
   /** Cancels, clears pending updates, never waits on OS permission or camera close. */
   void Stop();
   /** Consumes latest preview / terminal payload or error. A payload stops capture. */

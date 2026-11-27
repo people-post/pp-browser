@@ -215,6 +215,15 @@ SubmitOutcome AgentSessions::SubmitToThread(const std::string& thread_id, const 
   });
 }
 
+SubmitOutcome AgentSessions::SubmitNewsRead(const std::string& thread_id, const std::string& request_text,
+                                            const std::string& title, const bool retry) {
+  if (thread_id.empty() || request_text.empty()) {
+    return SubmitOutcome::Ignored; // never the Home session: a news item belongs to an AI thread
+  }
+  return SubmitIn(thread_id,
+                  [&](AgentSession& session) { return session.SubmitNewsRead(thread_id, request_text, title, retry); });
+}
+
 SubmitOutcome AgentSessions::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                                                 std::optional<std::string> user_payload, const AtAiMode mode) {
   if (prompt.empty()) {

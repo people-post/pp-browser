@@ -3,7 +3,7 @@
 namespace pbr {
 
 std::optional<SupportMessage> SupportMessageOf(const ThreadMessage& message, const SendMark mark) {
-  if (message.content_rml || IsLocalActionMessage(message)) {
+  if (message.content_rml || IsLocalActionMessage(message) || IsHiddenNewsMessage(message)) {
     return std::nullopt;
   }
   switch (message.content_type) {

@@ -269,6 +269,63 @@ TEST_F(PinGateControllerTest, TheLinkPageShowsTheOfferAndScansTheReply) {
   EXPECT_EQ(forgotten_, 1) << "the one-time key goes with the page";
 }
 
+// The link page's Scan did nothing on every device: Application never filled the shell's port for it, and the test
+// above calls OnScanReply() directly. Every action the shell can raise must reach the controller.
+TEST_F(PinGateControllerTest, EveryShellActionIsWiredToTheController) {
+  const PinGateActionPorts ports = MakePinGateActionPorts(controller_);
+  EXPECT_TRUE(ports.on_submit);
+  EXPECT_TRUE(ports.on_cancel);
+  EXPECT_TRUE(ports.on_set_pin);
+  EXPECT_TRUE(ports.on_use_default);
+  EXPECT_TRUE(ports.on_identity_new);
+  EXPECT_TRUE(ports.on_identity_link);
+  EXPECT_TRUE(ports.on_identity_phrase);
+  EXPECT_TRUE(ports.on_use_saved_copy);
+  EXPECT_TRUE(ports.on_scan_reply) << "the link page's Scan";
+  EXPECT_TRUE(ports.on_forgot_toggle);
+  EXPECT_TRUE(ports.on_note_toggle);
+  EXPECT_TRUE(ports.on_use_pin_instead);
+  EXPECT_TRUE(ports.on_key);
+  EXPECT_TRUE(ports.on_backspace);
+  EXPECT_TRUE(ports.on_keypad_ok);
+  EXPECT_TRUE(ports.on_use_text);
+  EXPECT_TRUE(ports.on_use_keypad);
+  EXPECT_TRUE(ports.on_biometric);
+  EXPECT_TRUE(ports.on_use_pin);
+
+  // And pressing it on the link page reaches the camera port.
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  ASSERT_TRUE(shown_.link_paste_mode);
+  ports.on_scan_reply();
+  EXPECT_TRUE(scan_closed_) << "Scan on the link page opened the scan";
+}
+
+// "Scan" is offered only where a camera is listed; with none, only Paste is left.
+TEST_F(PinGateControllerTest, ScanIsOfferedOnlyWithACamera) {
+  bool camera = false;
+  UnlockGateCompletePorts complete;
+  complete.begin_link_offer = []() -> Roe<LinkOfferDisplay> {
+    return LinkOfferDisplay{.qr_svg = "<rect/>", .text = "pp-browser-link-offer:AQ", .code = "0427"};
+  };
+  complete.scan_link_reply = [](std::function<void(std::string)>, std::function<void()>) {};
+  complete.can_scan_link_reply = [&camera]() { return camera; };
+  controller_.BindGateComplete(std::move(complete));
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  ASSERT_TRUE(shown_.link_paste_mode);
+  EXPECT_FALSE(shown_.link_can_scan) << "no camera listed";
+  EXPECT_FALSE(std::string(shown_.link_valid.c_str()).empty());
+
+  camera = true;
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  EXPECT_TRUE(shown_.link_can_scan);
+}
+
 TEST_F(PinGateControllerTest, ThePhrasePageMakesNoOffer) {
   controller_.ShowIdentityFork();
   controller_.OnIdentityPhrase();

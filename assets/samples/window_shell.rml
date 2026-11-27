@@ -3,11 +3,13 @@
   <title>PP</title>
   <link type="text/rcss" href="../themes/foundation.rcss"/>
   <link type="text/rcss" href="../themes/components.rcss"/>
+  <link type="text/rcss" href="../themes/wide.rcss"/>
   <link type="text/rcss" href="../themes/colors-light.rcss"/>
   <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
 <body data-model="window" class="shell-body" data-class-shell-body--framed="titlebar_visible && !window_maximized"
-      data-class-shell-body--compact="layout_mode == 'compact'">
+      data-class-shell-body--round="titlebar_traffic_lights" data-class-shell-body--round-small="window_corners_small"
+      data-class-shell-body--compact="layout_mode == 'compact'" data-class-shell-body--wide="layout_mode == 'expanded'">
   <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
     <div id="shell-titlebar-controls" class="shell-titlebar-controls shell-titlebar-controls--traffic" data-if="titlebar_traffic_lights">
       <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-close" type="button" data-event-click="titlebar_close()">
@@ -27,7 +29,7 @@
       </button>
     </div>
     <div class="shell-titlebar-drag" data-event-dblclick="titlebar_toggle_maximize()">
-      <p class="shell-titlebar-title">{{i18n:app.name}}</p>
+      <p class="shell-titlebar-title">{{window_title}}</p>
     </div>
     <div class="shell-titlebar-controls shell-titlebar-controls--icons" data-if="!titlebar_traffic_lights">
       <button class="shell-titlebar-btn" type="button" data-event-click="titlebar_minimize()">

@@ -295,6 +295,18 @@ public:
     return nullptr;
   }
 
+  bool HasCamera() const override {
+    if (!SDL_WasInit(SDL_INIT_CAMERA) && !SDL_InitSubSystem(SDL_INIT_CAMERA)) {
+      return false;
+    }
+    int count = 0;
+    SDL_CameraID* cameras = SDL_GetCameras(&count);
+    if (cameras) {
+      SDL_free(cameras);
+    }
+    return count > 0;
+  }
+
   std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) override {
     const auto fail = [error](std::string message) -> std::unique_ptr<ICameraEndpoint> {
       SDL_Log("MediaDeviceArbiter: camera %s", message.c_str());

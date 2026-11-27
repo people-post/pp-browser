@@ -118,3 +118,18 @@ TEST(ThreadSearchTest, AnEditedMessageIsFoundByItsNewWordsOnly) {
   EXPECT_EQ(Search({edited, edit}, "nine"), (std::vector<std::string>{"m1"}));
   EXPECT_TRUE(Search({edited, edit}, "eight").empty());
 }
+
+// A news read's hidden request and digest (DEV/PLAN-news-inline-digest.md) are not drawn, so they are no hits.
+TEST(ThreadSearchTest, HiddenNewsMessagesAreNotIndexed) {
+  ThreadMessage request = Text("request", 1, "https://n.example/a\n这篇讲了什么");
+  request.generation = kNewsRequestGeneration;
+  ThreadMessage digest = Text("digest", 2, "文章说利率上调");
+  digest.generation = kNewsDigestGeneration;
+  ThreadMessage failed = Text("failed", 3, "这篇暂时取不到内容。");
+  failed.generation = kNewsFailedGeneration;
+  ThreadMessage translated = Text("translated", 4, "译文：利率上调");
+  translated.generation = kNewsDigestTranslatedGeneration;
+  const std::vector<ThreadMessage> messages = {request, digest, failed, translated, Text("shown", 5, "利率怎么了")};
+  EXPECT_EQ(Search(messages, "利率"), (std::vector<std::string>{"shown"}));
+  EXPECT_TRUE(Search(messages, "n.example").empty());
+}

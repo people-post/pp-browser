@@ -40,6 +40,8 @@ struct UnlockGateCompletePorts {
    * (cancelled, refused); either once, on the UI thread. Unset: no camera on this page.
    */
   std::function<void(std::function<void(std::string text)> done, std::function<void()> closed)> scan_link_reply;
+  /** A camera is listed, so "Scan" can work (nothing is opened to find out). Unset: assumed yes. */
+  std::function<bool()> can_scan_link_reply;
   /**
    * Restore from a recovery phrase (M023) under `pin` for this device, then unlock; `saved_copies`: saved copies of
    * the account the user picked (exported locker files' text).

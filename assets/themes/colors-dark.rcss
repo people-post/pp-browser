@@ -405,6 +405,32 @@ select selectbox option:hover {
   color: #0a84ff;
 }
 
+/* A news item already read (MarkNewsLinksRead): grey in its list, like a visited link. */
+.chat-link.news-read {
+  color: #ebebf599;
+}
+
+/* The news reader sheet (news_reader.rml). */
+.news-reader-spin {
+  border-color: #ebebf54c #ebebf54c #ebebf54c transparent;
+}
+
+.news-reader-note,
+.news-reader-translated {
+  color: #ebebf599;
+}
+
+.news-reader-open {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.news-reader-step,
+.news-reader-retry {
+  background-color: #7878805c;
+  color: #ffffff;
+}
+
 /* In our own (blue) bubble the link is blue on blue: it takes the bubble's white and keeps its underline; pressed / hovered
    it dims (colour alpha: the engine has no :not() or variables, so each state is spelled out). */
 .bubble-user .chat-link {
@@ -2002,6 +2028,7 @@ input.checkbox:checked {
 }
 
 .qr-scan-hint,
+.qr-scan-computer-hint,
 .qr-scan-tool-label {
   color: #ffffff;
 }
@@ -3248,8 +3275,8 @@ input.checkbox:checked {
 /* The Advanced page's banner strip: pale amber with a warn-coloured edge; the words stay in the normal text colour. */
 .shell-layer-compact .settings-banner {
   background-color: #2e2210;
-  border-top: 1dp solid #ff9f0a4d;
-  border-bottom: 1dp solid #ff9f0a4d;
+  border-top: 1dp #ff9f0a4d;
+  border-bottom: 1dp #ff9f0a4d;
 }
 
 .settings-banner-text {
@@ -3270,20 +3297,21 @@ input.checkbox:checked {
   color: #ebebf599;
 }
 
-.shell-layer-compact .settings-step-num {
+.settings-step-num {
   background-color: #0a84ff;
   color: #ffffff;
 }
 
-.shell-layer-compact .settings-step-text {
+.link-step--later .settings-step-num {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
+.settings-step-text {
   color: #ffffff;
 }
 
-.shell-layer-compact .settings-step {
-  border-top: 1dp #54545899;
-}
-
-.shell-layer-compact .settings-transfer-lead {
+.link-step--later .settings-step-text {
   color: #ebebf599;
 }
 
@@ -3309,7 +3337,7 @@ input.checkbox:checked {
   background-color: transparent;
   color: #0a84ff;
   border: 0;
-  border-top: 1dp solid #54545899;
+  border-top: 1dp #54545899;
 }
 
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:active {
@@ -4025,14 +4053,23 @@ input.checkbox:checked {
 
 /* On the camera the disc is a dark glass with a white chevron, in both themes. */
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face,
-.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {
+.shell-layer-compact .qr-scan-back:active .shell-circle-btn-face,
+.shell-layer-computer .qr-scan-back .shell-circle-btn-face,
+.shell-layer-computer .qr-scan-back:active .shell-circle-btn-face {
   background-color: #00000066;
   decorator: none;
   box-shadow: none;
 }
 
-.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
+.shell-layer-compact .qr-scan-back .shell-circle-btn-face svg,
+.shell-layer-computer .qr-scan-back .shell-circle-btn-face svg {
   image-color: #ffffff;
+}
+
+/* A computer's scan layer: the hint and the buttons sit on a dark band over the camera, in both themes. */
+.shell-layer-computer .qr-scan-computer-bar,
+.shell-layer-computer .qr-scan-actions {
+  background-color: #000000b3;
 }
 
 .context-menu-layer--popover-left .context-menu-panel {
@@ -4295,4 +4332,752 @@ input.checkbox:checked {
 .recovery-dots {
   color: #ebebf599;
 }
+
+/* ---- Wide layout (wide.rcss, DEV/DESIGN-desktop-ui.md step 1): every rule is rooted at .shell-body--wide ---- */
+
+/* The result pill: the phone's white pill (above), a hairline instead of a shadow. */
+.shell-body--wide .shell-toast {
+  background-color: #1c1c1e;
+  border-color: #54545899;
+  box-shadow: none;
+}
+
+.shell-body--wide .shell-toast-text {
+  color: #ffffff;
+}
+
+.shell-body--wide .shell-toast {
+  background-color: #2c2c2e;
+}
+
+/* Floating menu: a card with a soft shadow; the row under the pointer turns accent blue (red for a destructive
+   one) with white text and icon. */
+.shell-body--wide #context-menu-panel,
+.shell-body--wide .context-menu-quick {
+  background-color: #1c1c1e;
+  border-color: #54545899;
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+/* Dark: raised a step above the page (the page is black / bg-card), like the phone's page sheets. */
+.shell-body--wide #context-menu-panel,
+.shell-body--wide .context-menu-quick {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .context-menu-layer--bar #context-menu-panel {
+  box-shadow: 0 4dp 16dp #00000026;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item--danger {
+  border-top-color: #54545899;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item--danger:hover {
+  border-top-color: transparent;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover .context-menu-item-icon svg,
+.shell-body--wide #context-menu-panel .context-menu-item--danger:hover svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item--danger:hover {
+  background-color: #ff453a;
+  color: #ffffff;
+}
+
+.shell-body--wide #context-menu-panel .context-menu-item:hover .context-menu-item-check {
+  color: #ffffff;
+}
+
+/* Base look. Placed last so that, at equal specificity, these win over the phone-and-desktop rules above. */
+.shell-body--wide .shell-pane-primary {
+  background-color: #000000;
+}
+
+.shell-body--wide .shell-pane-home {
+  background-color: #000000;
+}
+
+.shell-body--wide .shell-nav-tab--active {
+  background-color: #0a84ff2e;
+}
+
+.shell-body--wide .sidebar-session,
+.shell-body--wide .settings-row,
+.shell-body--wide .contacts-row,
+.shell-body--wide .contacts-thread-row,
+.shell-body--wide .sidebar-session--pinned {
+  background-color: transparent;
+}
+
+.shell-body--wide .sidebar-session:hover,
+.shell-body--wide .settings-row:hover,
+.shell-body--wide .contacts-row:hover,
+.shell-body--wide .contacts-thread-row:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .sidebar-session.sidebar-session-active,
+.shell-body--wide .sidebar-session--ai.sidebar-session-active,
+.shell-body--wide .sidebar-session--private.sidebar-session-active,
+.shell-body--wide .sidebar-session--public.sidebar-session-active,
+.shell-body--wide .sidebar-session--group.sidebar-session-active,
+.shell-body--wide .settings-row.settings-row--active,
+.shell-body--wide .contacts-row.contacts-row--active {
+  background-color: #0a84ff2e;
+  box-shadow: none;
+}
+
+.shell-body--wide .card,
+.shell-body--wide .me-profile-card,
+.shell-body--wide .contact-profile-card,
+.shell-body--wide .chat-form,
+.shell-body--wide .chat-empty {
+  background-color: #1c1c1e;
+}
+
+.shell-body--wide .field,
+.shell-body--wide .chat-form-field {
+  background-color: #242426;
+  border-color: transparent;
+}
+
+.shell-body--wide .field:focus,
+.shell-body--wide .chat-form-field:focus {
+  border-color: #0a84ff;
+}
+
+.shell-body--wide .chat-search {
+  background-color: #242426;
+}
+
+.shell-body--wide .prompt-composer-pill,
+.shell-body--wide .shell-composer-mount.surface-chrome .prompt-composer-pill {
+  background-color: #1c1c1e;
+  box-shadow: none;
+}
+
+.shell-body--wide .chat-shell--e2e .chat-header,
+.shell-body--wide .chat-shell--ai .chat-header,
+.shell-body--wide .chat-shell--public .chat-header,
+.shell-body--wide .chat-shell--group .chat-header {
+  background-color: transparent;
+}
+
+/* ---- Chat section (design step 2) ---- */
+.shell-body--wide .chat-header {
+  background-color: #1c1c1ef0;
+  border-bottom-color: #54545899;
+}
+
+/* The conversation's header strip is clear; its material child is the phone bar's colour (.bar-material: x-bar, solid
+   with Transparency off), see-through over the blur on a frosted row, as on the phone's chat bar. The composer strip's
+   material is the phone's own (.bar-material / .bar-material--frost). */
+.shell-body--wide .chat-panel .chat-header {
+  background-color: transparent;
+}
+
+.shell-body--wide .shell-pane-row--frost .chat-header > .bar-material {
+  background-color: #1a1a1cc7;
+}
+
+/* The floating composer panel (wide.rcss): the phone bar's colour as the panel, see-through at 62% over the blur on a
+   frosted row, solid (x-bar, from .bar-material) with Transparency off; a hairline and a faint, blur-free three-layer shadow
+   (mostly below it) lift it off the messages in both. */
+.shell-body--wide .shell-pane-composer-bar > .bar-material {
+  border: 0.5dp #54545899;
+  box-shadow: 0 2dp 0 0.5dp #00000012, 0 3dp 0 1dp #00000012, 0 4dp 0 1.5dp #00000012;
+}
+
+.shell-body--wide .shell-pane-composer-bar > .bar-material--frost {
+  background-color: #1a1a1c9e;
+}
+
+/* What runs under the header strip stays under a banner. */
+.shell-body--wide .chat-gap-banner {
+  background-color: #000000;
+}
+
+.shell-body--wide .chat-header-call-btn,
+.shell-body--wide .chat-header-more-btn,
+.shell-body--wide .chat-header-search-btn {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.shell-body--wide .chat-header-call-btn:hover,
+.shell-body--wide .chat-header-more-btn:hover,
+.shell-body--wide .chat-header-search-btn:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .chat-header-call-btn--join {
+  background-color: #30d158;
+  color: #ffffff;
+}
+
+.shell-body--wide .chat-header-search-btn svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .shell-statusbar-popover {
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+.shell-body--wide .shell-statusbar-popover {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .shell-frame--emoji_picker {
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+.shell-body--wide .shell-frame--emoji_picker {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .shell-frame--picture_send {
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel {
+  background-color: #7878803d;
+  color: #ffffff;
+}
+
+.shell-body--wide .msg-bar {
+  background-color: #1c1c1e;
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+.shell-body--wide .msg-bar {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .msg-bar-btn {
+  background-color: transparent;
+}
+
+.shell-body--wide .msg-bar-emoji {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.shell-body--wide .msg-bar-emoji:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .msg-bar-sep {
+  background-color: #54545899;
+}
+
+.shell-body--wide .msg-bar-btn:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .msg-bar-btn svg {
+  image-color: #ebebf599;
+}
+
+.shell-body--wide .msg-bar-btn:hover svg {
+  image-color: #0a84ff;
+}
+
+.shell-body--wide .shell-empty-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .shell-empty-body {
+  color: #ebebf599;
+}
+
+.shell-body--wide .chat-search-label {
+  color: #ebebf54c;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-live-pill {
+  background-color: #1c1c1e;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-level-fill {
+  background-color: #0a84ff;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-cancel-x {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-voice-cancel-x svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-mic-btn.prompt-voice-live {
+  background-color: #0a84ff;
+}
+
+.shell-body--wide .prompt-composer--wide .prompt-mic-btn.prompt-voice-live svg,
+.shell-body--wide .prompt-composer--wide .prompt-mic-btn.prompt-voice-live:hover svg {
+  image-color: #ffffff;
+}
+
+/* Contacts list column (design step 3, page A): the New chat tiles on the white column, the hover buttons, the scan button. */
+.shell-body--wide .contacts-panel--wide .nc-section-header {
+  background-color: transparent;
+}
+
+.shell-body--wide .contacts-panel--wide .nc-action {
+  background-color: #000000;
+}
+
+.shell-body--wide .contacts-panel--wide .nc-action:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .contacts-wide-scan {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .contacts-wide-scan svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .contacts-wide-scan:hover {
+  background-color: #7878805c;
+}
+
+.shell-body--wide .contacts-row-action {
+  background-color: transparent;
+}
+
+.shell-body--wide .contacts-row-action svg {
+  image-color: #ebebf599;
+}
+
+.shell-body--wide .contacts-row-action:hover {
+  background-color: #7878805c;
+}
+
+.shell-body--wide .contacts-row-action:hover svg {
+  image-color: #0a84ff;
+}
+
+/* Settings (design step 3, page B): the list column is the phone's grey grouped page with white cards; the picked row
+   and card; the detail column's title. */
+.shell-body--wide .settings-panel--wide {
+  background-color: #000000;
+}
+
+.shell-body--wide .settings-panel--wide .group-row--active {
+  background-color: #0a84ff2e;
+}
+
+.shell-body--wide .settings-panel--wide .group-row:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .settings-panel--wide .group-row--active:hover {
+  background-color: #0a84ff2e;
+}
+
+.shell-body--wide .settings-panel--wide .me-card-main--active .me-card-name {
+  color: #0a84ff;
+}
+
+.shell-body--wide .settings-detail-panel .settings-header-title {
+  color: #ffffff;
+}
+
+/* The news reader panel (news_reader_wide.rml) and the Groups list (group_list_wide.rml). */
+.shell-body--wide .shell-frame--news_reader {
+  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+}
+
+.shell-body--wide .news-reader--wide .news-reader-open:hover {
+  background-color: #0a84ff;
+  opacity: 0.88;
+}
+
+.shell-body--wide .news-reader--wide .news-reader-step:hover,
+.shell-body--wide .news-reader--wide .news-reader-retry:hover {
+  background-color: #7878805c;
+}
+
+.shell-body--wide .group-list-row:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .group-list-wide-title {
+  color: #ffffff;
+}
+
+/* A news item of an AI answer: hovered it takes the text colour (the underline stays); in our own bubble it dims. */
+.shell-body--wide .chat-link.news-link:hover {
+  color: #ffffff;
+}
+
+.shell-body--wide .bubble-user .chat-link.news-link:hover {
+  color: #ffffffb3;
+}
+
+/* BEGIN phone message rules (generated by scripts/ui/gen_wide_phone_rules.py, do not edit) */
+.shell-body--wide .chat-date-pill,
+.shell-body--wide .chat-system-line p {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
+.shell-body--wide .bubble-assistant .chat-quote {
+  border-left: 3dp #0a84ff;
+  background-color: #0000000f;
+}
+
+.shell-body--wide .bubble-user .chat-quote {
+  border-left: 3dp #ffffff;
+  background-color: #ffffff33;
+}
+
+.shell-body--wide .chat-attachment-card {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card,
+.shell-body--wide .message-row-user .chat-voice-card {
+  background-color: #2f92ff;
+  color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card .muted,
+.shell-body--wide .message-row-user .chat-attachment-card .heading-3,
+.shell-body--wide .message-row-user .chat-voice-time {
+  color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .route-icon {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-play {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-play svg {
+  image-color: #2f92ff;
+}
+
+.shell-body--wide .chat-reaction-row--overlay .chat-reaction-pill {
+  border-color: #111111;
+}
+
+.shell-body--wide .chat-attachment-card .chat-suggestion {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-body--wide .chat-group-invite {
+  background-color: #2c2c2e;
+  color: #ffffff;
+}
+
+.shell-body--wide .chat-group-invite .chat-suggestion {
+  border-top: 1dp #7878803d;
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-body--wide .message-row-user .chat-attachment-card .chat-suggestion {
+  color: #ffffff;
+}
+
+.shell-body--wide .bubble-tail-in {
+  image-color: #2c2c2e;
+}
+
+.shell-body--wide .bubble-tail-out {
+  image-color: #2f92ff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-play {
+  background-color: transparent;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-play svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-bar {
+  background-color: #ffffff80;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-bars--played .chat-voice-bar {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-knob {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-badge {
+  background-color: #ffffff;
+  border: 1.5dp #2f92ff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-card .chat-voice-badge-mic {
+  image-color: #2f92ff;
+}
+
+.shell-body--wide .message-row-user .chat-voice-fill {
+  background-color: #ffffff;
+}
+
+.shell-body--wide .message-row-user .chat-audio-knob {
+  background-color: #ffffff;
+  border: 1dp rgba(0, 0, 0, 0.2);
+}
+/* END phone message rules */
+
+/* BEGIN phone page rules (generated by scripts/ui/gen_wide_phone_rules.py, do not edit) */
+.shell-body--wide .group-row--danger .group-row-text {
+  color: #ff453a;
+}
+
+.shell-body--wide .contacts-row-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .contact-detail-panel {
+  background-color: #000000;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer {
+  background-color: #2c2c2e;
+  border: 1dp #54545899;
+  box-shadow: 0 2dp 8dp #00000026;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-pill {
+  background-color: transparent;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-body--wide .home-composer-mount .prompt-icon-home {
+  image-color: #ebebf599;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn .prompt-icon-home-emoji {
+  background-color: #0a84ff33;
+}
+
+.shell-body--wide .home-composer-mount .prompt-emoji-btn svg {
+  image-color: #0a84ff;
+}
+
+.shell-body--wide .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-disc {
+  background-color: #0a84ff;
+}
+
+.shell-body--wide .home-composer-mount .prompt-send-btn--idle .prompt-send-disc {
+  background-color: #48484a;
+}
+
+.shell-body--wide .group-id-btn {
+  background-color: transparent;
+}
+
+.shell-body--wide .group-id-label {
+  color: #ebebf599;
+}
+
+.shell-body--wide .me-card-name,
+.shell-body--wide .group-card-title,
+.shell-body--wide .group-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .group-card {
+  background-color: #1c1c1e;
+}
+
+.shell-body--wide .group-row,
+.shell-body--wide .me-card-main {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.shell-body--wide .group-row:active {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .group-row--off:active {
+  background-color: transparent;
+}
+
+.shell-body--wide .group-row--off .group-row-text {
+  color: #ebebf54c;
+}
+
+.shell-body--wide .group-row-body {
+  border-top: 1dp #54545899;
+}
+
+.shell-body--wide .group-row-text,
+.shell-body--wide .group-card .field,
+.shell-body--wide .group-note {
+  color: #ffffff;
+}
+
+.shell-body--wide .group-card .field,
+.shell-body--wide .cd-field {
+  background-color: #2c2c2e;
+}
+
+.shell-body--wide .group-field-hint {
+  color: #ebebf599;
+}
+
+.shell-body--wide .group-row--static:active {
+  background-color: transparent;
+}
+
+.shell-body--wide .settings-label.group-row-text {
+  color: #ffffff;
+}
+
+.shell-body--wide .settings-text-btn,
+.shell-body--wide .settings-text-btn:hover,
+.shell-body--wide .settings-text-btn:focus {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.shell-body--wide .settings-text-btn:active {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .settings-copied-box {
+  background-color: #30d1582e;
+  border-color: #30d158;
+}
+
+.shell-body--wide .settings-copied-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .settings-copied-sub {
+  color: #ebebf599;
+}
+
+.shell-body--wide .settings-dev-ill {
+  image-color: #ebebf54c;
+}
+
+.shell-body--wide .settings-dev-sentence,
+.shell-body--wide .settings-dev-note-title {
+  color: #ffffff;
+}
+
+.shell-body--wide .settings-dev-sub,
+.shell-body--wide .settings-dev-note-line {
+  color: #ebebf599;
+}
+
+.shell-body--wide .settings-section--grouped .group-card .btn.settings-action-row,
+.shell-body--wide .settings-section--grouped .group-card .btn.settings-action-row:hover,
+.shell-body--wide .settings-section--grouped .group-card .btn.settings-action-row:focus {
+  background-color: transparent;
+  color: #0a84ff;
+  border: 0;
+  border-top: 1dp #54545899;
+}
+
+.shell-body--wide .settings-section--grouped .group-card .btn.settings-action-row:active {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .settings-pill-btn,
+.shell-body--wide .settings-pill-btn:hover,
+.shell-body--wide .settings-pill-btn:focus {
+  background-color: transparent;
+}
+
+.shell-body--wide .settings-pill {
+  background-color: #0a84ff2e;
+  color: #0a84ff;
+}
+
+.shell-body--wide .settings-pill-btn:disabled .settings-pill {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
+.shell-body--wide .settings-improve-send .group-row-text {
+  color: #0a84ff;
+}
+
+.shell-body--wide .group-row-sub,
+.shell-body--wide .group-row-value,
+.shell-body--wide .group-row .settings-choice-value-text,
+.shell-body--wide .group-head,
+.shell-body--wide .group-foot,
+.shell-body--wide .me-card-meta,
+.shell-body--wide .group-card .muted {
+  color: #ebebf599;
+}
+
+.shell-body--wide .group-chevron {
+  image-color: #ebebf54c;
+}
+
+.shell-body--wide .group-icon svg {
+  image-color: #ffffff;
+}
+
+.shell-body--wide .group-icon--accent { background-color: #007aff; }
+
+.shell-body--wide .group-icon--success { background-color: #34c759; }
+
+.shell-body--wide .group-icon--orange { background-color: #ff9500; }
+
+.shell-body--wide .group-icon--purple { background-color: #af52de; }
+
+.shell-body--wide .group-icon--teal { background-color: #30b0c7; }
+
+.shell-body--wide .group-icon--indigo { background-color: #5856d6; }
+
+.shell-body--wide .group-icon--gray { background-color: #8e8e93; }
+
+.shell-body--wide .me-card-avatar .avatar-letter {
+  color: #ffffff;
+}
+
+.shell-body--wide .settings-section--grouped .btn,
+.shell-body--wide .settings-section--grouped .btn-secondary {
+  background-color: #0a84ff2e;
+  color: #0a84ff;
+}
+
+.shell-body--wide .settings-section--grouped .btn-primary {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.shell-body--wide .settings-section--grouped .btn:active {
+  opacity: 0.6;
+}
+/* END phone page rules */
 }

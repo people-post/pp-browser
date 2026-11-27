@@ -1210,6 +1210,150 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* The news reader sheet (news_reader.rml): the item's title, the digest, then a bar of 50dp buttons ("Open original",
+   and Previous / Next for a list). Colours: colors.rcss.tmpl. A column of its own, not .ac-page / .ac-scroll: in a
+   sheet those are the Add contact page's (.shell-layer-compact .ac-page .ac-scroll: absolutely positioned over the whole
+   page), which drew the
+   bar at the top, over the title, and let the scroll take its taps. The bar stays in the flow at the bottom (the
+   sheet's own padding keeps it above the home indicator); only the title and the digest scroll. */
+.news-reader {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-reader-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4dp 24dp 4dp;
+  box-sizing: border-box;
+}
+
+.news-reader-title {
+  margin: 4dp 0 12dp 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+  word-break: break-word;
+}
+
+/* "AI translation of the original": one small line under the title of a translated digest. */
+.news-reader-translated {
+  margin: -6dp 0 12dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  word-break: break-word;
+}
+
+.news-reader-loading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  margin-top: 8dp;
+}
+
+.news-reader-spin {
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+  border-width: 2dp;
+  border-radius: 9dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
+.news-reader-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 22dp;
+}
+
+.news-reader-body {
+  font-size: 16dp;
+  line-height: 25dp;
+}
+
+.news-reader-body p {
+  margin: 0 0 12dp 0;
+  word-break: break-word;
+}
+
+.news-reader-body ul,
+.news-reader-body ol {
+  margin: 4dp 0 12dp 0;
+  padding-left: 0;
+}
+
+.news-reader-body li {
+  display: block;
+  position: relative;
+  padding-left: 26dp;
+  word-break: break-word;
+}
+
+.news-reader-body .md-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.7;
+}
+
+.news-reader-body .md-item {
+  display: block;
+}
+
+.news-reader-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 0 12dp 0;
+}
+
+.news-reader-open,
+.news-reader-step {
+  height: 50dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.news-reader-open {
+  flex: 1;
+  min-width: 0;
+  font-size: 16dp;
+  font-weight: bold;
+}
+
+.news-reader-step {
+  flex-shrink: 0;
+  min-width: 88dp;
+  padding: 0 14dp;
+  font-size: 15dp;
+}
+
+.news-reader-step--off {
+  opacity: 0.35;
+}
+
+/* "Try again" under the failure line: the bar's secondary pill (50dp), as wide as its words. */
+.news-reader-retry {
+  display: inline-block;
+  height: 50dp;
+  min-width: 120dp;
+  margin-top: 14dp;
+  padding: 0 20dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  font-size: 15dp;
+  box-sizing: border-box;
+}
+
 /* A mention / @everyone in a group message (group-chat G015): a tinted chip, bold; a member's opens them. */
 .chat-mention {
   font-weight: bold;
@@ -1593,6 +1737,18 @@ select selectbox option {
    Hidden while maximized (edge-to-edge). */
 .shell-body--framed {
   border-width: 1dp;
+}
+
+/* The macOS window's own shape (WindowChrome_Darwin.mm kWindowCornerRadiusPt, the same 18): its outline follows the
+   rounded corner. Linux and Windows 10 keep their square window. */
+.shell-body--framed.shell-body--round {
+  border-radius: 18dp;
+}
+
+/* Windows 11 rounds the window itself (WindowCorners_Win32.cpp, DWMWCP_ROUND: the system's small radius, 8px at 100%
+   scale): the outline follows it. Maximized, the window is square and unframed. */
+.shell-body--framed.shell-body--round-small {
+  border-radius: 8dp;
 }
 
 .shell-titlebar {
@@ -3518,7 +3674,6 @@ select selectbox option {
   padding: 0 12dp;
   box-sizing: border-box;
   border-top-width: 1dp;
-  border-top-style: solid;
   z-index: 50;
 }
 
@@ -4913,7 +5068,6 @@ select selectbox option {
   margin-top: -17dp;
   margin-left: -17dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite photo-preview-spin;
 }
@@ -7615,6 +7769,11 @@ input.checkbox {
   text-align: center;
 }
 
+/* Account setup's button stacks (account, friends): a label stays on one line, whatever the language. */
+.shell-onboarding-actions .btn {
+  white-space: nowrap;
+}
+
 .shell-pin-gate-input {
   width: 100%;
   margin-bottom: 10dp;
@@ -7625,29 +7784,242 @@ input.checkbox {
 }
 
 /* The link page (M027): the new device's offer, a dense QR code (version 29) the main device's camera reads from this
-   screen, so as large as the card allows; dark on white whatever the theme. */
-.shell-pin-gate-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6dp;
-  margin-bottom: 10dp;
+   screen, so as large as the page allows (the shell binds its side, QrDisplay.h LinkQrDisplayFor); dark on white
+   whatever the theme. The card widens for it: on a desktop to 560dp, on a phone to the whole screen, and scrolls when
+   the second step does not fit under the code. */
+.shell-dialog.shell-pin-gate--link {
+  width: 94%;
+  max-width: 560dp;
+  max-height: 96%;
+  overflow-y: auto;
+  padding: 20dp 24dp;
+}
+
+.shell-dialog.shell-pin-gate--link.shell-pin-gate--compact {
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  transform: none;
+  border-radius: 0;
+  padding: 44dp 20dp 16dp 20dp;
+}
+
+.shell-pin-gate--link .shell-dialog-title,
+.shell-pin-gate--link .shell-dialog-message {
+  text-align: center;
+}
+
+/* No reserved empty lines on this page: the room goes to the code (the error line grows when it has words). */
+.shell-pin-gate--link .shell-pin-gate-error {
+  min-height: 0;
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.shell-pin-gate--link .shell-dialog-actions {
+  margin-top: 4dp;
+}
+
+.shell-pin-gate-offer {
+  display: block;
+  margin: 8dp 0 4dp 0;
+  text-align: center;
 }
 
 .shell-pin-gate-qr {
-  width: 260dp;
-  height: 260dp;
+  display: block;
+  width: 280dp;
+  height: 280dp;
+  margin: 0 auto;
   /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
   image-color: #ffffff;
 }
 
-.shell-pin-gate-code {
-  font-weight: bold;
+.shell-pin-gate-code-label {
+  margin: 12dp 0 0 0;
+  font-size: 13dp;
   text-align: center;
 }
 
-.shell-pin-gate-scan {
-  margin-bottom: 8dp;
+.shell-pin-gate-code {
+  margin: 0;
+  font-size: 30dp;
+  line-height: 38dp;
+  font-weight: bold;
+  letter-spacing: 6dp;
+  text-align: center;
+}
+
+.shell-pin-gate-valid {
+  margin: 0 0 4dp 0;
+  font-size: 12dp;
+  text-align: center;
+}
+
+.shell-pin-gate-copy {
+  display: block;
+  width: 100%;
+  min-height: 44dp;
+  text-align: center;
+}
+
+/* The second step, the main device's reply: its own block under the first, the main action full width. */
+.shell-pin-gate-return {
+  display: block;
+  margin: 8dp 0 4dp 0;
+}
+
+.shell-pin-gate-step {
+  margin: 0 0 8dp 0;
+}
+
+/* The computer's caption under Paste / Scan: small, grey, centred; it wraps. */
+.shell-pin-gate-computer-note {
+  margin: 10dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.shell-pin-gate-return .btn {
+  min-height: 50dp;
+  line-height: 50dp;
+  text-align: center;
+}
+
+/* The link page on a desktop computer (ShellLayoutRml::PinGate; QrDisplay.h LinkComputerLayoutFor sizes the code from the
+   window). The layer centres the card by layout instead of a transform, so the card is never taller than the window
+   and its footer (Back, Continue) is always on screen: the title and the footer keep their height, the body between
+   them scrolls only when even the 280dp code does not fit. Two columns (the class --two-columns, a wide window): the code and
+   Copy as text on the left, the steps, the 4 digits and the Paste / Scan row on the right; one column otherwise.
+   Text is a size smaller than the phone's page; buttons keep their 44dp. Kept here rather than in a wide sheet: it is
+   one page, generated in C++, and no wide stylesheet exists yet. */
+.shell-pin-gate-layer--computer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-pin-gate-layer--computer .shell-dialog.shell-pin-gate--computer {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  width: 96%;
+  max-width: 960dp;
+  max-height: 96%;
+  padding: 16dp 24dp;
+  overflow: hidden;
+}
+
+.shell-pin-gate--computer .shell-dialog-title {
+  flex-shrink: 0;
+  margin: 0 0 8dp 0;
+  font-size: 17dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-body {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-pin-gate--computer .shell-dialog-actions {
+  flex-shrink: 0;
+  margin-top: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-error {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-pin-gate--computer .settings-step-text {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-offer {
+  margin: 4dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code-label {
+  margin-top: 8dp;
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code {
+  font-size: 26dp;
+  line-height: 32dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-valid {
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return {
+  margin: 4dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return .btn {
+  min-height: 46dp;
+  line-height: 46dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-computer-note {
+  margin-top: 8dp;
+  font-size: 12dp;
+  line-height: 17dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-cols {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 24dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-code {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* Content width, not 100%: a percentage width would make the column as wide as the whole row. */
+.shell-pin-gate--two-columns .shell-pin-gate-copy {
+  display: inline-block;
+  width: auto;
+  padding: 0 24dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-steps {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.shell-pin-gate--two-columns .link-step {
+  justify-content: flex-start;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-error,
+.shell-pin-gate--two-columns .shell-pin-gate-note,
+.shell-pin-gate--two-columns .shell-pin-gate-digits,
+.shell-pin-gate--two-columns .shell-pin-gate-code-label,
+.shell-pin-gate--two-columns .shell-pin-gate-code,
+.shell-pin-gate--two-columns .shell-pin-gate-valid,
+.shell-pin-gate--two-columns .shell-pin-gate-computer-note {
+  text-align: left;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-code {
+  letter-spacing: 8dp;
 }
 
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
@@ -8173,7 +8545,6 @@ input.checkbox {
   width: 28dp;
   height: 28dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite sync-pending-spin;
 }
@@ -9765,11 +10136,11 @@ input.checkbox {
 
 /* The switch animating is the only feedback a toggle gives (no "saved" toast). */
 .settings-switch {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s quadratic-in-out;
 }
 
 .settings-switch-knob {
-  transition: transform 0.15s ease-in-out;
+  transition: transform 0.15s quadratic-in-out;
 }
 
 .settings-choice-row {
@@ -11161,6 +11532,78 @@ input.checkbox {
   margin-top: 8dp;
   font-size: 13dp;
   line-height: 18dp;
+}
+
+/* Desktop computer scanner (ShellLayoutRml: .shell-layer-computer, the same full-screen layer as the phone's): the camera
+   fills the window and the picture is the whole frame, aspect-fit (ElementScanPreview draws it, the dimming and the guide
+   square on it); the back is a round button at the top left, the hint (or the failure line) and Cancel / Try again sit at
+   the bottom, always inside the window. */
+.qr-scan-computer-bar {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.shell-layer-computer .qr-scan-title,
+.shell-layer-computer .qr-scan-status {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan-camera {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 0;
+}
+
+.shell-layer-computer .qr-scan-back {
+  position: absolute;
+  top: 16dp;
+  left: 16dp;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-computer .qr-scan-back svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-computer .qr-scan-computer-bar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 12dp 32dp 4dp 32dp;
+  text-align: center;
+}
+
+.shell-layer-computer .qr-scan-computer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-computer .qr-scan-actions {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  padding: 8dp 32dp 16dp 32dp;
 }
 
 /* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
@@ -14045,19 +14488,12 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
-/* Me > Devices & transfer > Link a new device (phones): lead line, the 50dp scan and paste buttons (the grouped-page
+/* Me > Devices & transfer > Link a new device (phones): the numbered steps, the 50dp scan and paste buttons (the grouped-page
    .btn), the framed reply box with its QR code and small "copy" button, then the numbered steps and the reset note. */
-.shell-layer-compact .settings-transfer-lead {
-  margin: 20dp 32dp 0 32dp;
-  font-size: 15dp;
-  line-height: 21dp;
-}
-
 .shell-layer-compact .settings-copied-box {
   margin: 16dp 16dp 0 16dp;
   padding: 16dp 18dp 8dp 18dp;
   border-width: 2dp;
-  border-style: solid;
   border-radius: 14dp;
   box-sizing: border-box;
 }
@@ -14086,10 +14522,17 @@ textarea:composing ~ .prompt-composer-label,
 .settings-link-reply {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6dp;
 }
 
+/* On a phone the box leaves the code (up to the page's width less 40dp) its full width: slim margin and padding. */
+.shell-layer-compact .settings-link-reply {
+  margin: 16dp 10dp 0 10dp;
+  padding: 16dp 6dp 8dp 6dp;
+}
+
+/* The code's side is bound (link_qr_side: the page's width on a phone, up to 423dp on a desktop window). */
 .settings-link-qr {
   width: 280dp;
   height: 280dp;
@@ -14102,39 +14545,124 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
 }
 
-.shell-layer-compact .settings-steps-card {
-  padding: 0 16dp 0 0;
+/* The reply's note: one grey line (two on a narrow phone) under the validity line, centred. */
+.settings-link-note {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
 }
 
-.shell-layer-compact .settings-step {
+/* Copy as text and Send… side by side, as wide as the code. */
+.link-btn-row--reply {
+  max-width: 360dp;
+  margin: 4dp 0 0 0;
+}
+
+/* The reply's two buttons: "Copy as text" quiet, "Done" the one main button; 50dp rows, as wide as the code. */
+.settings-link-btn {
+  display: block;
+  width: 100%;
+  max-width: 360dp;
+  box-sizing: border-box;
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 4dp 0 0 0;
+  text-align: center;
+}
+
+/* The link pages' Scan / Paste pair: one row, equal widths sharing the card's content width (Paste alone: all of it). */
+.link-btn-row {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
-  padding: 12dp 0;
+  gap: 10dp;
+  width: 100%;
+  margin: 10dp 0 0 0;
 }
 
-.shell-layer-compact .settings-step:first-child {
-  border-top-width: 0;
+.link-btn-row .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  display: block;
+  white-space: nowrap;
 }
 
-.shell-layer-compact .settings-step-num {
-  flex: 0 0 26dp;
-  width: 26dp;
-  height: 26dp;
-  margin: 0 12dp 0 16dp;
-  border-radius: 13dp;
-  font-size: 14dp;
-  line-height: 26dp;
+/* The link page's Scan / Paste buttons: 50dp, in the row above. */
+.settings-transfer-btn {
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 0;
+  text-align: center;
+}
+
+.settings-transfer-note {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* A numbered step: a small round marker and one short line (the link pages: the new device's two steps, the main
+   device's three, the reply's step 3). The main device's list is left-aligned; on the new device's card it is centred. */
+.link-step {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 6dp 0 0 0;
+}
+
+.settings-step-num {
+  flex: 0 0 24dp;
+  width: 24dp;
+  height: 24dp;
+  margin: 0 10dp 0 0;
+  border-radius: 12dp;
+  font-size: 13dp;
+  line-height: 24dp;
   font-weight: bold;
   text-align: center;
 }
 
-.shell-layer-compact .settings-step-text {
-  flex: 1;
+.settings-step-text {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 16dp;
-  line-height: 22dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.settings-transfer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-transfer-hint {
+  margin: 20dp 32dp 0 32dp;
+}
+
+.settings-transfer-steps {
+  margin: 12dp 0 0 0;
+}
+
+.shell-layer-compact .settings-transfer-steps {
+  margin: 12dp 32dp 0 32dp;
+}
+
+.settings-transfer-steps .link-step {
+  justify-content: flex-start;
+}
+
+/* The reply box's step 3 is its title. */
+.link-step--title {
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.link-step--title .settings-copied-title {
+  font-size: 17dp;
+  line-height: 24dp;
 }
 
 /* A grey line with its "?" right after it (the link page's note, a linked phone's card). */

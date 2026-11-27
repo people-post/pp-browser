@@ -19,6 +19,14 @@ std::string Rml(const std::string& md) {
   return MarkdownToRml(md).rml;
 }
 
+std::vector<std::string> Urls(const pbr::MarkdownRml& r) {
+  std::vector<std::string> urls;
+  for (const pbr::MarkdownLink& link : r.links) {
+    urls.push_back(link.url);
+  }
+  return urls;
+}
+
 std::string LinkSpan(int index, const std::string& label) {
   return "<span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " + std::to_string(index) + ")\">" +
          label + "</span>";
@@ -185,7 +193,7 @@ TEST(MarkdownToRmlTest, HttpsLinks) {
   EXPECT_EQ(r.rml, "<p>" + LinkSpan(0, "a") + " and " + LinkSpan(0, "b <strong>c</strong>") + " and " +
                        LinkSpan(1, "d") + "</p>");
   // Repeated URLs share one index.
-  EXPECT_EQ(r.links, (std::vector<std::string>{"https://x.com/p", "https://y.com"}));
+  EXPECT_EQ(Urls(r), (std::vector<std::string>{"https://x.com/p", "https://y.com"}));
 
   r = MarkdownToRml("see https://x.com/a_b_c. Also (https://y.com/f(x)) ok");
   EXPECT_EQ(r.rml, "<p>see " + LinkSpan(0, "https://x.com/a_b_c") + ". Also (" + LinkSpan(1, "https://y.com/f(x)") +
@@ -194,6 +202,79 @@ TEST(MarkdownToRmlTest, HttpsLinks) {
   r = MarkdownToRml("[https://x.com](https://x.com)");
   EXPECT_EQ(r.rml, "<p>" + LinkSpan(0, "https://x.com") + "</p>");
   EXPECT_EQ(r.links.size(), 1u);
+}
+
+// News items (DEV/PLAN-news-inline-digest.md): brief_AI marks each link of a headline list with the title `pp:news`.
+TEST(MarkdownToRmlTest, NewsTitleMakesANewsItemOnlyWhenAsked) {
+  const std::string md =
+      "1. [Alpha **news**](https://a.example/1 \"pp:news\")\n2. [Beta](https://b.example/2?x=1 \"pp:news\")";
+  const auto news = MarkdownToRml(md, {.news_links = true});
+  ExpectSafe(news.rml);
+  ASSERT_EQ(news.links.size(), 2u);
+  EXPECT_TRUE(news.links[0].news);
+  EXPECT_EQ(news.links[0].url, "https://a.example/1");
+  EXPECT_EQ(news.links[0].label, "Alpha news");
+  EXPECT_EQ(news.links[0].news_ordinal, 0u);
+  EXPECT_TRUE(news.links[1].news);
+  EXPECT_EQ(news.links[1].label, "Beta");
+  EXPECT_EQ(news.links[1].news_ordinal, 1u);
+  EXPECT_NE(news.rml.find("<span class=\"chat-link news-link\" data-event-click=\"open_chat_link('__ENTRY__', 1)\">"),
+            std::string::npos)
+      << news.rml;
+  EXPECT_EQ(news.rml.find("pp:news"), std::string::npos) << "the title is never shown";
+
+  // Anywhere else (a chat with a person, a digest, the ask-AI panel) the same text is two plain links.
+  const auto plain = MarkdownToRml(md);
+  ASSERT_EQ(plain.links.size(), 2u);
+  EXPECT_FALSE(plain.links[0].news);
+  EXPECT_FALSE(plain.links[1].news);
+  EXPECT_EQ(Urls(plain), (std::vector<std::string>{"https://a.example/1", "https://b.example/2?x=1"}));
+  EXPECT_EQ(plain.rml.find("news-link"), std::string::npos);
+  EXPECT_EQ(plain.rml.find("pp:news"), std::string::npos);
+}
+
+// Before titles were parsed, `[t](url "title")` showed its raw source as text.
+TEST(MarkdownToRmlTest, TitledLinksAreLinksNotLiteralText) {
+  auto r = MarkdownToRml("[t](https://x.com/a \"Some title\") and [u](https://y.com 'single')");
+  EXPECT_EQ(r.rml, "<p>" + LinkSpan(0, "t") + " and " + LinkSpan(1, "u") + "</p>");
+  EXPECT_EQ(Urls(r), (std::vector<std::string>{"https://x.com/a", "https://y.com"}));
+  // Another title is a plain link even where news items count.
+  r = MarkdownToRml("[t](https://x.com/a \"pp:other\")", {.news_links = true});
+  ASSERT_EQ(r.links.size(), 1u);
+  EXPECT_FALSE(r.links[0].news);
+  // An unclosed title is no link.
+  EXPECT_EQ(Rml("[t](https://x.com/a \"open"), "<p>[t](https://x.com/a &quot;open</p>");
+  EXPECT_EQ(Rml("[t](https://x.com/a \"x\" y)"), "<p>[t](https://x.com/a &quot;x&quot; y)</p>");
+}
+
+// An article's digest: nothing in it is tappable, a link shows as its text and a bare URL as text.
+TEST(MarkdownToRmlTest, WithLinksOffNothingIsTappable) {
+  const auto r = MarkdownToRml(
+      "See [the source](https://evil.example/x \"pp:news\") and https://evil.example/y or [z](http://plain).",
+      {.news_links = true, .links = false});
+  ExpectSafe(r.rml);
+  EXPECT_TRUE(r.links.empty());
+  EXPECT_EQ(r.rml.find("chat-link"), std::string::npos) << r.rml;
+  EXPECT_EQ(r.rml.find("open_chat_link"), std::string::npos);
+  EXPECT_EQ(r.rml, "<p>See the source and https://evil.example/y or z.</p>");
+}
+
+TEST(MarkdownToRmlTest, AnOrderedListWithoutTheTitleIsNoNews) {
+  const auto r = MarkdownToRml("1. [Step one](https://docs.example/1)\n2. [Step two](https://docs.example/2)",
+                               {.news_links = true});
+  ASSERT_EQ(r.links.size(), 2u);
+  EXPECT_FALSE(r.links[0].news);
+  EXPECT_FALSE(r.links[1].news);
+  EXPECT_EQ(r.rml.find("news-link"), std::string::npos);
+}
+
+TEST(MarkdownToRmlTest, ANewsItemAndAPlainLinkToOneUrlAreTwoEntries) {
+  const auto r = MarkdownToRml("[a](https://x.com/p \"pp:news\") [b](https://x.com/p) [c](https://x.com/p \"pp:news\")",
+                               {.news_links = true});
+  ASSERT_EQ(r.links.size(), 2u);
+  EXPECT_TRUE(r.links[0].news);
+  EXPECT_EQ(r.links[0].label, "a"); // the first one names it
+  EXPECT_FALSE(r.links[1].news);
 }
 
 TEST(MarkdownToRmlTest, NoAutolinkAfterAnUnclosedBracket) {
@@ -208,7 +289,7 @@ TEST(MarkdownToRmlTest, AutolinkInsideChineseText) {
   // Chinese text has no spaces around a URL: it must still link, and stop where the Chinese resumes.
   const auto r = MarkdownToRml("详见https://x.com/a?b=1的内容。");
   EXPECT_EQ(r.rml, "<p>详见" + LinkSpan(0, "https://x.com/a?b=1") + "的内容。</p>");
-  EXPECT_EQ(r.links, (std::vector<std::string>{"https://x.com/a?b=1"}));
+  EXPECT_EQ(Urls(r), (std::vector<std::string>{"https://x.com/a?b=1"}));
 }
 
 TEST(MarkdownToRmlTest, NonHttpsLinksBecomeText) {
@@ -256,8 +337,8 @@ TEST(MarkdownToRmlTest, HostileInputIsEscaped) {
   for (const auto& md : inputs) {
     const auto r = MarkdownToRml(md);
     ExpectSafe(r.rml);
-    for (const auto& url : r.links) {
-      EXPECT_EQ(url.rfind("https://", 0), 0u) << url;
+    for (const auto& link : r.links) {
+      EXPECT_EQ(link.url.rfind("https://", 0), 0u) << link.url;
     }
   }
   EXPECT_EQ(Rml("<script>alert(1)</script>"), "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
@@ -271,7 +352,7 @@ TEST(MarkdownToRmlTest, HostileInputIsEscaped) {
   // The URL only ever appears in `links`, never in the markup.
   const auto tricky = MarkdownToRml("[x](https://a.com/'\"\\\\{{q}})");
   ASSERT_EQ(tricky.links.size(), 1u);
-  EXPECT_EQ(tricky.links[0], "https://a.com/'\"\\{{q}}");
+  EXPECT_EQ(tricky.links[0].url, "https://a.com/'\"\\{{q}}");
   EXPECT_EQ(tricky.rml, "<p>" + LinkSpan(0, "x") + "</p>");
 }
 
@@ -349,7 +430,7 @@ TEST(MarkdownToRmlTest, RandomMarkerSoupIsWellFormed) {
     ASSERT_TRUE(pbr::RmlValidator::ValidateFragment(r.rml).ok) << md << "\n=> " << r.rml;
     ASSERT_EQ(CheckBalanced(r.rml), "") << md << "\n=> " << r.rml;
     ASSERT_EQ(r.rml.find("{{"), std::string::npos) << md;
-    for (const std::string& link : r.links) {
+    for (const std::string& link : Urls(r)) {
       ASSERT_EQ(link.rfind("https://", 0), 0u) << md;
     }
   }

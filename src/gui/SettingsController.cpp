@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+#include "gui/QrDisplay.h"
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -265,6 +266,20 @@ void SettingsController::OnProfileReset() {
   ui_state_.profile_avatar_tone = fresh.profile_avatar_tone;
   // The name field's baseline too, so the next load (the new account's) is not taken for an edit of the old name.
   UiEditSession::Instance().OnLoaded(kUiFieldProfileNickname, "");
+  // The wide layout's right pane (a section such as Storage) and what was waiting to be saved belong to the old account
+  // too: nothing is flushed into the new profile, and the next visit to Me opens on the list.
+  dirty_sections_.clear();
+  quiet_sections_.clear();
+  debounce_deadline_ms_ = 0;
+  show_detail_ = false;
+  selected_id_.clear();
+  selected_title_.clear();
+  status_ = "";
+  ResetSecurityPage();
+  storage_manager_.Reset();
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
   PushUiStateToBindings();
   DirtyAll(/*include_profile_nickname=*/true);
 }
@@ -1536,6 +1551,9 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
+  if (section_id == "devices") {
+    security_actions_.RefreshLinkCanScan(); // the first camera enumeration: only where the link page can show
+  }
   FlushPending();
   ResetSecurityPage();
 
@@ -1698,7 +1716,16 @@ void SettingsController::RefreshBlockedCount() {
   DataModelHost::Instance().Dirty("settings", "blocked_count");
 }
 
+std::string SettingsController::LinkQrSide() const {
+  return LinkQrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_,
+                          kLinkQrDesktopSettingsReservedWidthDp)
+      .css;
+}
+
 void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (page == "transfer") {
+    security_actions_.RefreshLinkCanScan();
+  }
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;
