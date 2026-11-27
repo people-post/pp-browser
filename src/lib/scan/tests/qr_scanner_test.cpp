@@ -173,8 +173,8 @@ TEST(QrDecodeTest, DecodesRawPayloadAndRotatedFrame) {
   EXPECT_FALSE(DecodeQr(truncated));
 }
 // The link handshake's codes are dense (version 29 and up): on a 1080p frame at 3 pixels per module a decoder that
-// halves the frame first sees 1.5 and reads nothing.
-TEST(QrDecodeTest, ADenseCodeOnA1080pFrameIsRead) {
+// halves the frame first sees 1.5 and reads nothing. The desktop decodes such a frame whole; a phone's cap is 1280.
+TEST(QrDecodeTest, ADenseCodeOnA1080pFrameIsReadWithTheDesktopCapAndNotWithThePhonesCap) {
   std::string text;
   for (int i = 0; i < 1300; ++i) {
     text += static_cast<char>('a' + (i * 7 + i / 13) % 26); // varied, so the modules do not repeat
@@ -198,7 +198,8 @@ TEST(QrDecodeTest, ADenseCodeOnA1080pFrameIsRead) {
       }
     }
   }
-  EXPECT_EQ(DecodeQr(frame), text);
+  EXPECT_EQ(DecodeQr(frame, kQrDesktopDecodeEdge), text);
+  EXPECT_FALSE(DecodeQr(frame)) << "the phones' cap halves the frame first";
 }
 
 TEST(QrScannerTest, ScanIsOfferedOnlyWhereTheOsListsACamera) {
@@ -229,11 +230,21 @@ TEST(QrScannerTest, DeliversPreviewAndPayloadThenReleasesCamera) {
   EXPECT_EQ(result.text, "old payload");
   ASSERT_TRUE(result.preview);
   EXPECT_TRUE(state.rear_requested);
-  EXPECT_EQ(state.requested_format.capture_width, 1920);
-  EXPECT_EQ(state.requested_format.capture_height, 1080);
+  EXPECT_EQ(state.requested_format.capture_width, 1280) << "a phone keeps 720p";
+  EXPECT_EQ(state.requested_format.capture_height, 720);
   EXPECT_EQ(state.requested_format.fps, 30);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
   EXPECT_TRUE(devices.Holders(MediaDeviceKind::Camera).empty());
+}
+
+TEST(QrScannerTest, TheDesktopAsksForA1080pCapture) {
+  FakeState state;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start(0, /*full_frame_preview=*/true);
+  ASSERT_TRUE(WaitFor([&] { return scanner.Poll().text.has_value(); }));
+  EXPECT_EQ(state.requested_format.capture_width, 1920);
+  EXPECT_EQ(state.requested_format.capture_height, 1080);
 }
 TEST(QrScannerTest, StopAndRestartDiscardBlockedOldOpenWithoutBlockingUi) {
   FakeState state;

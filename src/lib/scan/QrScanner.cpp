@@ -15,8 +15,13 @@
 
 namespace pbr {
 namespace {
-constexpr int kQrCaptureWidth = 1920;
-constexpr int kQrCaptureHeight = 1080;
+// Phones capture 720p and decode at most 1280 on the long edge, as they always have. The desktop (the full-window
+// preview) asks for 1080p and decodes it whole: the link handshake's codes are version 29 (141 modules with the quiet
+// zone), and filling 60% of a 720-line frame gives them barely 3 pixels per module, quirc's floor.
+constexpr int kMobileCaptureWidth = 1280;
+constexpr int kMobileCaptureHeight = 720;
+constexpr int kDesktopCaptureWidth = 1920;
+constexpr int kDesktopCaptureHeight = 1080;
 // The desktop's full-window preview: sharp enough to judge focus, 3.7 MB a frame at most.
 constexpr int kFullPreviewEdge = 1280;
 // Reference implementation: RotateRgba90Cw (VideoYuv.cpp); keep the two in sync.
@@ -79,7 +84,10 @@ class ScanFrameProcessor {
 public:
   ScanFrameProcessor(CameraDeviceLease& camera, int rotation, ScanClock::time_point scan_started,
                      bool full_frame_preview)
-      : camera_(camera), rotation_(rotation), full_frame_preview_(full_frame_preview) {
+      : camera_(camera),
+        rotation_(rotation),
+        full_frame_preview_(full_frame_preview),
+        decode_edge_(full_frame_preview ? kQrDesktopDecodeEdge : kQrMobileDecodeEdge) {
     policy_.Begin(scan_started);
   }
   bool DecodeDue(ScanClock::time_point now) const { return policy_.DecodeDue(now); }
@@ -109,8 +117,8 @@ public:
     std::optional<std::string> text;
     {
       const auto started = ScanClock::now();
-      auto result =
-          software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, kQrCaptureWidth)) : InspectQr(frame);
+      auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, decode_edge_), decode_edge_)
+                                         : InspectQr(frame, decode_edge_);
       const auto finished = ScanClock::now();
       decode_ms = ElapsedMs(started);
       detected = result.region.has_value();
@@ -191,6 +199,7 @@ private:
   int rotation_;
   float software_zoom_ = 1.f;
   bool full_frame_preview_ = false;
+  int decode_edge_ = kQrMobileDecodeEdge;
   bool native_zoom_ = false;
   bool candidate_zoom_ = false;
   QrScanPolicy policy_;
@@ -263,10 +272,9 @@ struct QrScanner::State {
     request.holder = "qr-scanner";
     request.format.display_rotation_deg = display_rotation;
     request.format.fps = 30;
-    // 1080p: the link handshake's codes are version 29 (141 modules with the quiet zone); filling 60% of a 720-line
-    // frame gives them barely 3 pixels per module, quirc's floor. A camera without 1080p delivers the closest it has.
-    request.format.capture_width = kQrCaptureWidth;
-    request.format.capture_height = kQrCaptureHeight;
+    // A camera without the asked size delivers the closest it has.
+    request.format.capture_width = full_frame_preview ? kDesktopCaptureWidth : kMobileCaptureWidth;
+    request.format.capture_height = full_frame_preview ? kDesktopCaptureHeight : kMobileCaptureHeight;
     request.format.prefer_front_facing = false;
     if (!Current(epoch)) {
       return;
