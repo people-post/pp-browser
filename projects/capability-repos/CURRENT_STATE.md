@@ -170,11 +170,15 @@
 
 ## Next
 
-1. Contracts repo (CR010): pp-specs, after release 1 — CR025 step 2 (the shared contracts, the vector files and
-   the cross-repo programs, this project included).
+1. Contracts repo (CR010): pp-specs, now that release 1 has shipped — CR025 step 2 (the shared contracts, the vector
+   files and the cross-repo programs, this project included). First, because [node-relay](../node-relay/README.md)'s
+   relay protocol and its vectors are specified there (its NR1).
 2. P3's namespaces when a second app needs a capability.
 3. The same standalone build for the next capability a second app asks for (net and base for the operator app,
    below): `-DPP_CAPABILITIES=net` configures today; a CI job of its own when it leaves.
+4. P4 after node-relay's mailbox works (2026-11-27): node-relay builds `pp-node-relay` and its `relay-services`
+   capability in this repository, where pp-node is; P4 then moves pp-node with both editions (and the operator app's
+   relay certificate code) rather than moving code still being built.
 
 ## A second app is waiting (2026-11-22)
 
