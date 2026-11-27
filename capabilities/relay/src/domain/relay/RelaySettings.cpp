@@ -19,7 +19,8 @@ std::string Trim(std::string s) {
 
 std::optional<bool> ParseBool(std::string text) {
   text = Trim(std::move(text));
-  std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+  std::transform(text.begin(), text.end(), text.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (text == "1" || text == "true" || text == "yes" || text == "on") {
     return true;
   }
