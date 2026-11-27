@@ -135,7 +135,7 @@ endfunction()
 # (people / net), pp-cpp-mesh (not its test harness), headless domain modules, the node app's own
 # sources, the Amp / common / crypto siblings and pp-ledger (the ledger role). Any other pp_* target
 # reachable from root_target fails configure — widening the node is a deliberate edit here.
-# pp-node-relay passes its relay services as EXTRA; the default pp-node passes none, so it cannot link them.
+# pp-node-plus passes its add-on services as EXTRA; the default pp-node passes none, so it cannot link them.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_app_node$"
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|product|runtime_core|tls)$"
@@ -183,14 +183,14 @@ function(pp_browser_assert_node_link_allowlist root_target)
       "${root_target} links first-party targets outside the node allowlist.\n"
       "Link edges:\n  ${_hit_text}\n"
       "The node may link foundation *_core, common, pp_lib_{people,net}, "
-      "pp_domain_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger (pp-node-relay also its relay "
+      "pp_domain_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger (pp-node-plus also its add-on "
       "services). See PP_BROWSER_NODE_LINK_ALLOWLIST in "
       "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()
 endfunction()
 
 # Post-link scan for an edition's code (projects/node-relay NR001): FORBID fails the build when any pattern is in the
-# binary's symbols, REQUIRE when one is missing — so pp-node-relay's own REQUIRE proves the scan sees what pp-node's
+# binary's symbols, REQUIRE when one is missing — so pp-node-plus's own REQUIRE proves the scan sees what pp-node's
 # FORBID looks for. Runs before the package script strips the binary. nm only: an MSVC binary keeps its symbols in
 # the PDB, so dumpbin would see none and every REQUIRE would fail (the link allowlist still holds there).
 #   pp_browser_add_symbol_check(<target> [FORBID <pattern>...] [REQUIRE <pattern>...] [WHY <text>])

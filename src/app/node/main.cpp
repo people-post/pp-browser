@@ -28,8 +28,8 @@
 #if defined(PP_BROWSER_HAS_LEDGER)
 #include "domain/node/NodeLedgerRole.h"
 #endif
-#if defined(PP_NODE_RELAY_EDITION)
-#include "domain/relay/RelayServices.h"
+#if defined(PP_NODE_PLUS)
+#include "domain/relay/RelayService.h"
 #endif
 
 #include <atomic>
@@ -48,9 +48,9 @@ namespace {
 
 std::atomic<bool> g_stop{false};
 
-/** Which build this is (projects/node-relay NR001): the default node, or pp-node-relay with the relay services. */
-#if defined(PP_NODE_RELAY_EDITION)
-constexpr const char* kEdition = "relay";
+/** Which build this is (projects/node-relay NR001): the default node, or pp-node-plus with the add-on services. */
+#if defined(PP_NODE_PLUS)
+constexpr const char* kEdition = "plus";
 #else
 constexpr const char* kEdition = "node";
 #endif
@@ -68,8 +68,8 @@ void PrintUsage(const char* argv0) {
   std::cerr << "Usage: " << argv0 << " [options]\n"
             << "\n"
             << "Headless Brief mesh node (N011). Always Node.\n"
-#if defined(PP_NODE_RELAY_EDITION)
-            << "pp-node-relay: pp-node with the relay services (projects/node-relay; none run yet).\n"
+#if defined(PP_NODE_PLUS)
+            << "pp-node-plus: pp-node with the add-on services (projects/node-relay; the message relay, empty yet).\n"
 #endif
             << "Precedence: CLI flags → environment → config file → defaults.\n"
             << "\n"
@@ -195,23 +195,20 @@ private:
 };
 
 /**
- * pp-node-relay's relay services (projects/node-relay): they run on the node's mesh runtime and stop before the mesh,
- * like the ledger role. The default pp-node has none: this slot is empty there.
+ * pp-node-plus's add-on services (projects/node-relay NR001): each runs on the node's mesh runtime and stops before the
+ * mesh, like the ledger role. One member per add-on capability, each with its own switch once it has settings (the
+ * relay's come with NR3). The default pp-node has none: this slot is empty there.
  */
-class RelayServicesSlot {
+class AddOnSlot {
 public:
   pbr::Roe<void> Start(pbr::NodeBootstrapResult& boot) {
-#if defined(PP_NODE_RELAY_EDITION)
-    pbr::RelayServices::Options options;
-    options.work_dir = boot.profile_data_dir + "/relay";
-    if (auto started = services_.Start(*boot.mesh, std::move(options)); !started) {
+#if defined(PP_NODE_PLUS)
+    pbr::plus::RelayService::Options relay_options;
+    relay_options.work_dir = boot.profile_data_dir + "/relay";
+    if (auto started = relay_.Start(*boot.mesh, std::move(relay_options)); !started) {
       return started;
     }
-    std::string running;
-    for (const std::string& name : services_.Running()) {
-      running += (running.empty() ? "" : ",") + name;
-    }
-    pbr::logging::getRootLogger().info << "relay services started: " << (running.empty() ? "none" : running);
+    pbr::logging::getRootLogger().info << "add-ons started: relay (empty until NR3)";
     return {};
 #else
     (void)boot;
@@ -219,10 +216,10 @@ public:
 #endif
   }
 
-  /** Why a service ended on its own; none while they run (or in the default node). */
+  /** Why an add-on ended on its own; none while they run (or in the default node). */
   std::optional<std::string> Failure() const {
-#if defined(PP_NODE_RELAY_EDITION)
-    return services_.Failure();
+#if defined(PP_NODE_PLUS)
+    return relay_.Failure();
 #else
     return std::nullopt;
 #endif
@@ -230,14 +227,14 @@ public:
 
   /** Before the mesh stops. */
   void Stop() {
-#if defined(PP_NODE_RELAY_EDITION)
-    services_.Stop();
+#if defined(PP_NODE_PLUS)
+    relay_.Stop();
 #endif
   }
 
 private:
-#if defined(PP_NODE_RELAY_EDITION)
-  pbr::RelayServices services_;
+#if defined(PP_NODE_PLUS)
+  pbr::plus::RelayService relay_;
 #endif
 };
 
@@ -624,9 +621,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  RelayServicesSlot relay_services;
-  if (auto started = relay_services.Start(*boot); !started) {
-    root.error << "relay services failed to start: " << started.error().message;
+  AddOnSlot add_ons;
+  if (auto started = add_ons.Start(*boot); !started) {
+    root.error << "add-on failed to start: " << started.error().message;
     ledger.Stop();
     status_http.Stop();
     node_metrics.Reset();
@@ -667,8 +664,8 @@ int main(int argc, char** argv) {
       exit_code = 1;
       break;
     }
-    if (const auto failed = relay_services.Failure()) {
-      root.error << "relay services ended: " << *failed;
+    if (const auto failed = add_ons.Failure()) {
+      root.error << "add-on ended: " << *failed;
       exit_code = 1;
       break;
     }
@@ -713,8 +710,8 @@ int main(int argc, char** argv) {
   if (heartbeat && relay_calls_allowed) {
     heartbeat->SendFinal(); // before the mesh stops; bounded by a short timeout
   }
-  relay_services.Stop(); // before the mesh stops, like the ledger role
-  ledger.Stop();         // its protocols withdrawn, its thread joined — before the mesh stops
+  add_ons.Stop(); // before the mesh stops, like the ledger role
+  ledger.Stop();  // its protocols withdrawn, its thread joined — before the mesh stops
   status_http.Stop();
   node_metrics.Reset();
   ShutdownNode(*boot);

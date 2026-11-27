@@ -6,7 +6,7 @@
 #   ./scripts/test/pp_node_image_smoke.sh
 #   PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 #   ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
-#   ./scripts/test/pp_node_image_smoke.sh --expect-edition relay   # pp-node-relay's image
+#   ./scripts/test/pp_node_image_smoke.sh --expect-edition plus    # pp-node-plus's image
 #
 # See packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail
@@ -25,7 +25,7 @@ Usage: $(basename "$0") [options]
   --status-url URL     Default: \$PP_NODE_STATUS_URL or http://127.0.0.1:18518
   --expect-circuit 0|1 Expect status.circuit_relay (default 1)
   --expect-media 0|1   Expect status.media_relay (default 1)
-  --expect-edition E   Expect status.edition: node (pp-node) or relay (pp-node-relay); default: not checked
+  --expect-edition E   Expect status.edition: node (pp-node) or plus (pp-node-plus); default: not checked
   --token TOKEN        Bearer for PP_NODE_STATUS_TOKEN
   --timeout SEC        Wait for /healthz (default 30)
   -h, --help

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build a stripped Linux pp-node binary, tarball, and Docker build context — or pp-node-relay's
-# (PP_NODE_EDITION=relay: pp-node with the relay services, projects/node-relay NR001; same tree, same version).
+# Build a stripped Linux pp-node binary, tarball, and Docker build context — or pp-node-plus's
+# (PP_NODE_EDITION=plus: pp-node with the add-on services, projects/node-relay NR001; same tree, same version).
 # Intended for Ubuntu 24.04 (same family as packaging/pp-node/Dockerfile and
 # release CI runners). See docs/ops/RELEASE.md.
 set -euo pipefail
@@ -8,8 +8,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 case "${PP_NODE_EDITION:-node}" in
   node) NAME=pp-node ;;
-  relay) NAME=pp-node-relay ;;
-  *) echo "error: PP_NODE_EDITION must be node or relay" >&2; exit 2 ;;
+  plus) NAME=pp-node-plus ;;
+  *) echo "error: PP_NODE_EDITION must be node or plus" >&2; exit 2 ;;
 esac
 BUILD_DIR="${PP_NODE_BUILD_DIR:-${ROOT}/build-pp-node}"
 OUT_DIR="${PP_NODE_OUT_DIR:-${ROOT}/dist/${NAME}}"
@@ -29,17 +29,17 @@ usage() {
 Usage: $(basename "$0") [configure|build|package|all]
 
   configure  CMake configure (headless; Ubuntu 24.04)
-  build      Build and strip pp-node (or pp-node-relay)
+  build      Build and strip pp-node (or pp-node-plus)
   package    Write tarball + Docker staging dir under dist/<name>/
   all        configure + build + package (default)
 
 Environment:
-  PP_NODE_EDITION     node (default: pp-node) or relay (pp-node-relay). Both build from one configured tree, so
+  PP_NODE_EDITION     node (default: pp-node) or plus (pp-node-plus). Both build from one configured tree, so
                       configure once and run build / package per edition; each packages into its own OUT_DIR
   PP_BROWSER_VERSION / PP_BROWSER_RELEASE_VERSION  version strings (default:
                       the values in CMakeLists.txt)
   PP_NODE_BUILD_DIR   build tree (default: ./build-pp-node)
-  PP_NODE_OUT_DIR     output dir (default: ./dist/pp-node, ./dist/pp-node-relay)
+  PP_NODE_OUT_DIR     output dir (default: ./dist/pp-node, ./dist/pp-node-plus)
   PP_NODE_JOBS        parallel compile jobs
   PP_API_URL_PROD     prod backend origin compiled in (registration / directory URLs derive
                       from it; empty = none, so set it or the node's config / env for a release)
@@ -101,17 +101,17 @@ do_build() {
   fi
 }
 
-# packaging/pp-node/<file> as pp-node-relay's: its binary name where the file names pp-node's binary or its unit.
-# Config, data and user stay pp-node's, so switching a node to the relay edition keeps them.
-relay_copy() {
+# packaging/pp-node/<file> as pp-node-plus's: its binary name where the file names pp-node's binary or its unit.
+# Config, data and user stay pp-node's, so switching a node to pp-node-plus keeps them.
+plus_copy() {
   local src="$1" dst="$2"
-  sed -e 's#^COPY --chmod=755 pp-node /usr/local/bin/pp-node$#COPY --chmod=755 pp-node-relay /usr/local/bin/pp-node-relay#' \
-    -e 's#^ENTRYPOINT \["/usr/local/bin/pp-node", #ENTRYPOINT ["/usr/local/bin/pp-node-relay", #' \
-    -e 's#^ExecStart=/usr/bin/pp-node #ExecStart=/usr/bin/pp-node-relay #' \
-    -e 's#^Description=Brief mesh node (pp-node)$#Description=Brief mesh node with relay services (pp-node-relay)#' \
+  sed -e 's#^COPY --chmod=755 pp-node /usr/local/bin/pp-node$#COPY --chmod=755 pp-node-plus /usr/local/bin/pp-node-plus#' \
+    -e 's#^ENTRYPOINT \["/usr/local/bin/pp-node", #ENTRYPOINT ["/usr/local/bin/pp-node-plus", #' \
+    -e 's#^ExecStart=/usr/bin/pp-node #ExecStart=/usr/bin/pp-node-plus #' \
+    -e 's#^Description=Brief mesh node (pp-node)$#Description=Brief mesh node with add-on services (pp-node-plus)#' \
     "${src}" >"${dst}"
   if grep -qE '^(COPY --chmod=755 pp-node |ENTRYPOINT \["/usr/local/bin/pp-node"|ExecStart=/usr/bin/pp-node )' "${dst}"; then
-    die "${src} still names pp-node's binary after the relay rename; update relay_copy"
+    die "${src} still names pp-node's binary after the pp-node-plus rename; update plus_copy"
   fi
 }
 
@@ -138,7 +138,7 @@ do_package() {
   if [[ "${NAME}" == pp-node ]]; then
     cp "${ROOT}/packaging/pp-node/pp-node.service" "${dir}/pp-node.service"
   else
-    relay_copy "${ROOT}/packaging/pp-node/pp-node.service" "${dir}/${NAME}.service"
+    plus_copy "${ROOT}/packaging/pp-node/pp-node.service" "${dir}/${NAME}.service"
   fi
 
   local tarball="${OUT_DIR}/${NAME}-${RELEASE_VERSION}-linux-${arch}.tar.gz"
@@ -149,7 +149,7 @@ do_package() {
   if [[ "${NAME}" == pp-node ]]; then
     cp "${ROOT}/packaging/pp-node/Dockerfile" "${docker_ctx}/Dockerfile"
   else
-    relay_copy "${ROOT}/packaging/pp-node/Dockerfile" "${docker_ctx}/Dockerfile"
+    plus_copy "${ROOT}/packaging/pp-node/Dockerfile" "${docker_ctx}/Dockerfile"
   fi
 
   ls -lh "${tarball}" "${docker_ctx}/${NAME}"

@@ -3,15 +3,30 @@
 Rationale for [DESIGN.md](DESIGN.md). Outcomes move to `docs/` when they ship; mark the entry **superseded by** that
 doc then.
 
-## NR001 — `pp-node-relay`: a second build of pp-node, not a plugin or a repo
+## NR001 — Two tiers: `pp-node` and `pp-node-plus`, one build for every add-on
 
-**Date:** 2026-11-25  
-**Status:** Accepted (Hongwei, 2026-11-25)  
-**Decision:** Relay services are a `relay-services` capability. `pp-node-relay` is pp-node built with it: the same
-commit, the same version line (RC016), its own image. The default `pp-node` does not link it; CI checks that, and the
-default image's size.  
+**Date:** 2026-11-25; widened 2026-11-27  
+**Status:** Accepted (Hongwei, 2026-11-25 as `pp-node-relay`; 2026-11-27: "I like plus", one generic build for every
+add-on, and the ledger stays in core)  
+**Decision:** Two builds of pp-node, no third.
+- **`pp-node`, the core:** what every node needs. It helps the mesh (circuit and media relay, DHT, directory) and holds
+  nothing for anyone. The ledger role is core, essential for the greater good; it runs only when asked
+  (`--ledger-role`), so an operator can leave it off, and `PP_BROWSER_WITH_LEDGER=OFF` builds without it.
+- **`pp-node-plus`, the add-ons:** pp-node plus every **add-on service**, a service that keeps data or acts for
+  accounts and that an owner offers (admission, offers, limits, a privacy statement: NR007, NR008, NR011). The message
+  relay is the first (the `relay` capability); file storage (NR010), the push gateway, lockers and cards follow.
+- Each add-on is its own capability with its own library and its own on/off setting. Their code is in namespace
+  `pbr::plus`. A build per add-on would multiply binaries, images and releases; an operator turns off what they don't
+  want.
+- Both builds come from the same commit, on the same version line (RC016), each with its own image. The default
+  `pp-node` links no add-on; CI checks that, and the default image's size.
+- A third build only if an add-on's dependencies, size or security surface are of a different order from the others',
+  so that operators who want the light add-ons would otherwise carry it (LLM inference, a full chain node). None is
+  planned.
+
 **Rationale:** The default node stays small for everyone who only wants to help the mesh. One commit and one version
-mean the two builds never disagree on a format, and one release flow covers both.  
+mean the two builds never disagree on a format, and one release flow covers both. A name for no one service
+(`pp-node-relay` was the first) lets files and the gateway join without another rename.  
 **Alternatives:** A runtime plugin (no stable C++ binary interface; version skew; loading code to sign and secure). A
 relay repo building pp-node through compile-time hooks (Hongwei's first idea): pin skew, a hook API nothing in pp-node
 exercises, relay releases lagging pp-node's; with tests and rules it works, and the same-repo build needs none of them.
@@ -34,7 +49,7 @@ own for node mailboxes (the first draft of this project): two protocols for one 
 
 **Date:** 2026-11-27  
 **Status:** Accepted (Hongwei, 2026-11-27)  
-**Decision:** A `pp-node-relay` has an operator set, a relay id and a certificate, and implements the relay protocol's
+**Decision:** A node relay (the message relay on a `pp-node-plus`) has an operator set, a relay id and a certificate, and implements the relay protocol's
 calls with their rules (registration, grants, strangers, cursors, `clear`). No separate "node mailbox" concept.  
 **Rationale:** Senders, recipients and the operator tools already know relays; everything they do applies.  
 **Alternatives:** Node mailboxes keyed by PeerId with their own subscribe and deposit (first draft; superseded).
@@ -78,7 +93,7 @@ fallback only (they would rarely get mail, and a home group would gain nothing w
 
 **Date:** 2026-11-27  
 **Status:** Accepted (Hongwei, 2026-11-27: configurable, with these defaults)  
-**Decision:** A `pp-node-relay`'s mailbox limits are settings in the node's config, each with an environment override as
+**Decision:** A node relay's mailbox limits are settings in the node's config, each with an environment override as
 the node's other settings have, defaulting to: records kept 7 days (a sender's shorter `ttl_s` tier sooner); at most
 1,000 records and 16 MiB per account; a node-wide budget from `mesh.capacity`. Past a limit the relay answers `busy`,
 with the service's load level (N033). The relay reports its limits in its `relay-identity` answer, so a recipient's app
@@ -143,7 +158,7 @@ unreachable from its own devices.
 changes, grants, attachment references), each within the sealed payload's 128 KiB (`kMaxE2ePlaintextBytes`). Files
 travel apart, as they do today: directly between devices (`/pp/blob/1.0.0`) or through a relay's file store, the message
 carrying only a reference. The mailbox's limits (NR007) count messages only. On node relays a `files` service comes after
-the mailbox, as a second part of `relay-services`, with its own configurable limits (file size, total per account,
+the mailbox, as a second add-on of `pp-node-plus` (NR001), with its own configurable limits (file size, total per account,
 retention, downloads).  
 **Rationale:** Messages and files differ in size, lifetime and cost; one set of limits for both would be wrong for each.
 It is already how the HTTPS relay works (its file store keeps files 7 days, 10 downloads, 1 GiB per account).  

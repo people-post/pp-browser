@@ -42,11 +42,13 @@ if(TARGET pp_domain_node_ledger)
 endif()
 pp_browser_apply_warnings(pp_app_node)
 
-# What tells the default node from pp-node-relay's relay services in a symbol listing (RelayServices).
-set(_pp_relay_symbols "13RelayServices")
-set(_pp_relay_why "The default pp-node never links the relay services (projects/node-relay NR001).")
+# The add-on capabilities pp-node-plus links (projects/node-relay NR001): one library each.
+set(_pp_add_ons pp_domain_relay)
+# Every add-on's code is in namespace pbr::plus: the mangled prefix tells it apart in a symbol listing.
+set(_pp_add_on_symbols "3pbr4plus")
+set(_pp_add_on_why "The default pp-node never links the add-on services (projects/node-relay NR001).")
 
-# The default node: what everyone who helps the mesh runs. It does not link the relay services.
+# The default node: what everyone who helps the mesh runs (the ledger role included). It links no add-on.
 add_executable(pp-node main.cpp)
 target_link_libraries(pp-node PRIVATE pp_app_node)
 pp_browser_apply_warnings(pp-node)
@@ -55,23 +57,26 @@ pp_browser_assert_no_ui_dependencies(pp-node)
 # First-party closure stays foundation / common / lib {people,net} / headless domain.
 pp_browser_assert_node_link_allowlist(pp-node)
 pp_browser_add_no_ui_link_check(pp-node)
-pp_browser_add_symbol_check(pp-node FORBID ${_pp_relay_symbols} WHY "${_pp_relay_why}")
+pp_browser_add_symbol_check(pp-node FORBID ${_pp_add_on_symbols} WHY "${_pp_add_on_why}")
 
-# pp-node-relay: the same node with the relay services (the relay capability), the same commit and version. A desktop
-# tree builds it only when asked (--target pp-node-relay); the headless build (the package script, CI's node-editions
-# job) builds both.
+# pp-node-plus: the same node with the add-on services, the same commit and version. A desktop tree builds it only
+# when asked (--target pp-node-plus); the headless build (the package script, CI's node-editions job) builds both.
 if(PP_BROWSER_HEADLESS)
-  add_executable(pp-node-relay main.cpp)
+  add_executable(pp-node-plus main.cpp)
 else()
-  add_executable(pp-node-relay EXCLUDE_FROM_ALL main.cpp)
+  add_executable(pp-node-plus EXCLUDE_FROM_ALL main.cpp)
 endif()
-target_compile_definitions(pp-node-relay PRIVATE PP_NODE_RELAY_EDITION)
-target_link_libraries(pp-node-relay PRIVATE pp_app_node pp_domain_relay)
-pp_browser_apply_warnings(pp-node-relay)
-pp_browser_assert_no_ui_dependencies(pp-node-relay)
-pp_browser_assert_node_link_allowlist(pp-node-relay EXTRA "^pp_domain_relay$")
-pp_browser_add_no_ui_link_check(pp-node-relay)
-pp_browser_add_symbol_check(pp-node-relay REQUIRE ${_pp_relay_symbols} WHY "${_pp_relay_why}")
+target_compile_definitions(pp-node-plus PRIVATE PP_NODE_PLUS)
+target_link_libraries(pp-node-plus PRIVATE pp_app_node ${_pp_add_ons})
+pp_browser_apply_warnings(pp-node-plus)
+pp_browser_assert_no_ui_dependencies(pp-node-plus)
+set(_pp_add_on_patterns "")
+foreach(_pp_add_on IN LISTS _pp_add_ons)
+  list(APPEND _pp_add_on_patterns "^${_pp_add_on}$")
+endforeach()
+pp_browser_assert_node_link_allowlist(pp-node-plus EXTRA ${_pp_add_on_patterns})
+pp_browser_add_no_ui_link_check(pp-node-plus)
+pp_browser_add_symbol_check(pp-node-plus REQUIRE ${_pp_add_on_symbols} WHY "${_pp_add_on_why}")
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 

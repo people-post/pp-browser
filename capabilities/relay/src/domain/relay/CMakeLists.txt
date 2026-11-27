@@ -1,9 +1,9 @@
 include(PpBrowserDomain)
 
-# The relay services of pp-node-relay (projects/node-relay): none yet — NR3 adds the mailbox. Headless.
+# The message relay, an add-on of pp-node-plus (projects/node-relay): empty until NR3 adds the mailbox. Headless.
 pp_browser_add_domain_library(pp_domain_relay
   SOURCES
-    RelayServices.cpp
+    RelayService.cpp
   PUBLIC_LIBS
     pp_mesh)
 

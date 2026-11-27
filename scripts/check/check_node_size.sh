@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The default pp-node stays small (projects/node-relay NR001): its stripped binary, and what its image adds to
-# ubuntu:24.04, each under a budget. pp-node-relay has no budget. Raising one is a deliberate edit here, in the PR that
+# ubuntu:24.04, each under a budget. pp-node-plus has no budget. Raising one is a deliberate edit here, in the PR that
 # needs it, with the reason in its description.
 #
 # Usage: check_node_size.sh <stripped pp-node> [<pp-node image>]

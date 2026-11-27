@@ -67,8 +67,8 @@ PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 # Caps intentionally off:
 ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
 
-# Which build answers (/status "edition"): node (pp-node) or relay (pp-node-relay, projects/node-relay)
-./scripts/test/pp_node_image_smoke.sh --expect-edition relay
+# Which build answers (/status "edition"): node (pp-node) or plus (pp-node-plus, projects/node-relay)
+./scripts/test/pp_node_image_smoke.sh --expect-edition plus
 
 Org / production seed images should keep **circuit + media on** (`--expect-circuit=1 --expect-media=1` or defaults from compose). `NodeBootstrap` sets an explicit **Public|Org** serve mask so stranger dialers are admitted without relying on an empty contact set.
 ```

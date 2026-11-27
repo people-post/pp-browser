@@ -1,6 +1,6 @@
 include(PpBrowserTesting)
 
-add_executable(pp_browser_domain_relay_test relay_services_test.cpp)
+add_executable(pp_browser_domain_relay_test relay_service_test.cpp)
 target_link_libraries(pp_browser_domain_relay_test PRIVATE
   pp_domain_relay
   GTest::gtest
