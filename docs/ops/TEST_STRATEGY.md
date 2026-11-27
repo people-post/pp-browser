@@ -280,8 +280,8 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 
 | Tag | What the scenarios check |
 |-----|--------------------------|
-| `people` `net` `social` `delivery` `pricing` `media` `messaging` `calls` `broadcast` `node` | one per capability folder (`capabilities/<name>/`, CTest label `capability:<name>`; [SRC_LAYOUT § Capabilities](../architecture/SRC_LAYOUT.md#capabilities-across-layers)). No scenario has `social`, `pricing` or `broadcast` yet |
-| `relay` | the relay service itself (pp-relay-apis): mailboxes, the directory, lockers, two relays |
+| `people` `net` `social` `delivery` `pricing` `media` `messaging` `calls` `broadcast` `node` `relay` | one per capability folder (`capabilities/<name>/`, CTest label `capability:<name>`; [SRC_LAYOUT § Capabilities](../architecture/SRC_LAYOUT.md#capabilities-across-layers)). No scenario has `social`, `pricing` or `broadcast` yet |
+| `relay` | also a capability tag: relays, the org's (pp-relay-apis) and, from node-relay NR5, the message relay on pp-node-plus (`capabilities/relay/`): mailboxes, the directory, lockers, two relays |
 | `mesh` | reach between users: seeds, parking, circuits, NATs, a network that drops or changes |
 | `groups` | group chats and group calls |
 | `devices` | one account on several devices: linking, signing out, restoring, the recovery phrase |

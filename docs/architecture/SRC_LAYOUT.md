@@ -83,7 +83,7 @@ every capability, and a capability's DTOs under `common/<capability>/` belong to
 base (common, foundation) ─► people ─┬─► net ─────┬─► delivery ─► pricing ─┬─► messaging (+ social, media)
                                      └─► social ──┘                         └─► calls ─► broadcast (+ media)
 base ─► media (devices, codecs, the engine)
-                             people, net ─► node ─► relay   app (shell, GUI, AI): anything
+                             people, net ─► node, relay     app (shell, GUI, AI): anything
 product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
                                                             (pp-node-plus: and the add-ons)
 ```

@@ -30,7 +30,7 @@ class CapabilityOrderTest(unittest.TestCase):
         self.assertEqual(S.above("calls"), {"calls", "broadcast"})
         self.assertEqual(S.above("messaging"), {"messaging"})
         self.assertEqual(S.above("people"), set(S.CAPABILITY_TAGS) - {"media"})
-        self.assertEqual(S.above("net"), {"net", "delivery", "pricing", "messaging", "calls", "broadcast", "node"})
+        self.assertEqual(S.above("net"), {"net", "delivery", "pricing", "messaging", "calls", "broadcast", "node", "relay"})
 
     def test_every_capability_folder_has_a_tag(self):
         folders = {d for d in os.listdir(os.path.join(ROOT, "capabilities"))

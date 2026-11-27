@@ -92,7 +92,7 @@ ALLOWED: dict[str, set[str]] = {
     "calls": {"base", "people", "net", "delivery", "pricing", "media"},
     "broadcast": {"base", "people", "net", "delivery", "pricing", "media", "calls"},
     "node": {"base", "people", "net"},
-    "relay": {"base", "people", "net", "node"},
+    "relay": {"base", "people", "net"},
     "product": {"base"},
     # pp-node-plus is built from the same sources; the default pp-node links no add-on (src/app/node).
     "node_app": {"base", "product", "people", "net", "node", "relay"},

@@ -158,11 +158,12 @@ jobs:
               - *net
               - 'capabilities/node/**'
             relay: &relay
-              - *node
+              - *net
               - 'capabilities/relay/**'
             # pp-node and pp-node-plus: the capabilities they link, the node app, the product's base it reads, and how
             # they are packaged and checked.
             node_editions:
+              - *node
               - *relay
               - 'src/app/node/**'
               - 'src/foundation/**'

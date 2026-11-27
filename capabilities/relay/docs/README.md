@@ -4,7 +4,7 @@ The message relay, the first add-on of `pp-node-plus` (node-relay NR001): a rela
 
 **Paths** (under this folder; includes read as before, e.g. `"domain/relay/…"`): [`src/domain/relay/`](../src/domain/relay/). Its targets are in [`CMakeLists.txt`](../CMakeLists.txt); its tests carry the CTest label `capability:relay`.
 
-**Below it:** node, people, net and the base ([capability-repos DESIGN § Target](../../../projects/capability-repos/DESIGN.md#target), [SRC_LAYOUT § Capabilities (across layers)](../../../docs/architecture/SRC_LAYOUT.md#capabilities-across-layers)).
+**Below it:** people, net and the base (beside node, not on it) ([capability-repos DESIGN § Target](../../../projects/capability-repos/DESIGN.md#target), [SRC_LAYOUT § Capabilities (across layers)](../../../docs/architecture/SRC_LAYOUT.md#capabilities-across-layers)).
 
 ## Docs about it
 

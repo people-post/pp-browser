@@ -36,10 +36,11 @@ CAPABILITY_TAGS = {
     "calls": "calls, 1:1 and group",
     "broadcast": "live broadcast",
     "node": "pp-node, which the lab's seeds run (hop, hop2): parks, circuits, hosting group calls",
+    "relay": "relays: the org's (pp-relay-apis) and, from node-relay NR5, the message relay on pp-node-plus "
+    "(capabilities/relay): mailboxes, the directory, lockers, two relays",
 }
 # Tags across capabilities, for the questions a capability does not answer.
 LAB_TAGS = {
-    "relay": "the relay service itself (pp-relay-apis): mailboxes, the directory, lockers, two relays",
     "mesh": "reach between users: seeds, parking, circuits, NATs, a network that drops or changes",
     "groups": "group chats and group calls",
     "devices": "one account on several devices: linking, signing out, restoring, the recovery phrase",
@@ -62,6 +63,7 @@ BELOW = {
     "calls": ("pricing", "media"),
     "broadcast": ("calls",),
     "node": ("net",),
+    "relay": ("net",),
 }
 
 ALL = "all"
