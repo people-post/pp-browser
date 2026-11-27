@@ -1768,6 +1768,16 @@ ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
         },
         std::move(progress));
   };
+  // The ids of the encrypted copies held for a retry in this chat (OutgoingAttachmentStore, via the hub), read on the UI
+  // thread like ChatController does. A send that fails after staging leaves one; the device's pace refusal, which comes
+  // before anything is staged, leaves none: that is how the run tells a server 429 from the pace.
+  ports.staged_attachments = [facade](const std::string& thread_id) {
+    std::vector<std::string> ids;
+    for (const OutgoingAttachmentRecord& record : facade->PendingOutgoingAttachments(thread_id)) {
+      ids.push_back(record.id);
+    }
+    return ids;
+  };
   ports.now_ms = []() { return SteadyNowMs(); };
   ports.after = [](const int64_t delay_ms, std::function<void()> task) {
     AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(std::max<int64_t>(delay_ms, 1)),

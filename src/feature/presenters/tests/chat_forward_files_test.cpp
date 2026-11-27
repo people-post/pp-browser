@@ -114,6 +114,8 @@ struct Fake {
   /** The encrypted copies the messaging layer holds for a retry, per chat (a send that failed after staging leaves one). */
   std::map<std::string, std::vector<std::string>> staged;
   size_t staged_ids = 0;
+  /** The staged-copies port is not provided (an unset port must fail safe). */
+  bool no_staged_port = false;
   size_t sent_ids = 0;
 
   struct Started {
@@ -187,7 +189,9 @@ struct Fake {
       }
       in_flight.push_back({thread, std::move(on_done), std::move(progress), attachment.filename});
     };
-    ports.staged_attachments = [this](const std::string& thread) { return staged[thread]; };
+    if (!no_staged_port) {
+      ports.staged_attachments = [this](const std::string& thread) { return staged[thread]; };
+    }
     ports.now_ms = [this]() {
       ++clock_reads;
       return now;
@@ -633,6 +637,24 @@ TEST_F(ChatForwardFilesTest, AServerRefusalAfterStagingIsNotRetriedAndCountsFail
   EXPECT_EQ(result->send_errors, 1u);
   EXPECT_EQ(result->attachments_failed, 1u);
   EXPECT_EQ(chats.attachment_calls.size(), 2u);
+}
+
+TEST_F(ChatForwardFilesTest, WithoutTheStagedPortARateLimitedAttachmentIsNotRetried) {
+  chats.no_staged_port = true;
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  chats.rate_limited_next = 1; // the device's own pace refusal, but nothing can tell it from a server 429
+  presenter.SetForwardPortsForTest(chats.Ports());
+  Start({"p1", "p2"}, {"bob"});
+  EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace) << "never the unsafe default: no retry";
+  Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg", "photo-p2.jpg"})) << "p1 once, then p2";
+  chats.AnswerOk();
+  Drain();
+  Advance(kForwardSettlePollMs);
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->attachments_failed, 1u);
+  EXPECT_EQ(result->forwarded, 1u);
 }
 
 TEST_F(ChatForwardFilesTest, ARecordLeftByAnEarlierSendDoesNotMakeAPaceRefusalAFailure) {
