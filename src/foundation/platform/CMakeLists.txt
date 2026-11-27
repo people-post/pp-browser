@@ -16,6 +16,7 @@ set(_pp_platform_core_sources
   ExecutablePath.cpp
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
+  os/OsDirLock_Posix.cpp
   os/OsLocaleTags.cpp
   os/KeychainStatus.cpp
   AssetIO.cpp
@@ -113,6 +114,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsThreadName_Win32.cpp
     os/OsProcess_Win32.cpp
+    os/OsDirLock_Win32.cpp
     os/OsLocale_Win32.cpp
     os/OsDeviceName_Win32.cpp
     os/OsExecutablePath_Win32.cpp
