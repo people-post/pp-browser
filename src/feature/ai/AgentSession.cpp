@@ -41,6 +41,7 @@
 #include "common/Metrics.h"
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -98,6 +99,16 @@ const LocalPlanContact* FindLocalContact(const LocalPlanContext& ctx, const std:
 
 /** brief_AI's answer routes a metric may name (constexpr: see ShareableLine::Pick); any other reads `other`. */
 constexpr ShareWord kTurnRoutes[] = {"none", "web", "chat", "app_action", "news", "image"};
+
+/** "is it going to rain?": a question of its own, never the answer to an open app question. */
+bool EndsWithQuestionMark(const std::string& text) {
+  size_t end = text.size();
+  while (end > 0 && std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+    --end;
+  }
+  const std::string_view body(text.data(), end);
+  return body.ends_with("?") || body.ends_with("\xEF\xBC\x9F"); // ？
+}
 
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
 void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
@@ -1380,8 +1391,10 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
     return false;
   }
   if (std::holds_alternative<LocalAsk>(plan)) {
-    if (IsAppOverviewQuestion(text) || ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
-      // Not an answer but a new command: the question is dropped and the message routed like any other.
+    if (IsAppOverviewQuestion(text) || EndsWithQuestionMark(text) ||
+        ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
+      // Not an answer but a new command or an ordinary question: the question is dropped and the message routed
+      // like any other.
       state->Log().info << "local action question dropped for a new command (" << taken.ask.tool << ")";
       return false;
     }

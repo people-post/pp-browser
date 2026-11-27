@@ -359,6 +359,43 @@ TEST_F(AgentSessionLocalActionTest, ANewCommandInsteadOfAnAnswerRunsTheNewComman
   ExpectNoModel();
 }
 
+TEST_F(AgentSessionLocalActionTest, ANewCommandWhileAQuestionIsOpenIsHandledAsANewCommand) {
+  StartLocal(Allow("set_appearance"));
+  session_->SubmitToThread("t1", "换个语言");
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("settings.ask.language", {{"list", "简体中文, English"}}));
+
+  session_->SubmitToThread("t1", "请把我的系统设为黑色");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(Calls(), std::vector<std::string>{R"(set_appearance {"appearance":"dark"})"});
+  EXPECT_NE(Ready(events).text, RenderLocalGaveUp());
+  EXPECT_TRUE(Requests().empty());
+  ExpectNoModel();
+
+  session_->SubmitToThread("t1", "chinese"); // the language question is gone
+  WaitForTurn();
+  EXPECT_EQ(Calls().size(), 1u);
+}
+
+TEST_F(AgentSessionLocalActionTest, AnOrdinaryQuestionWhileAQuestionIsOpenDropsTheQuestion) {
+  for (const char* line : {"今天北京天气怎么样", "is it going to rain tomorrow?"}) {
+    SCOPED_TRACE(line);
+    StartLocal();
+    requests_.clear();
+    session_->SubmitToThread("t1", "换个语言");
+    WaitForTurn();
+    session_->SubmitToThread("t1", line);
+    const std::string reply = Ready(WaitForTurn()).text;
+    EXPECT_EQ(Requests().size(), 1u); // went to the stream like any message
+    EXPECT_NE(reply, RenderLocalGaveUp());
+
+    session_->SubmitToThread("t1", "chinese"); // no question open: an ordinary message
+    WaitForTurn();
+    EXPECT_EQ(Requests().size(), 2u);
+    EXPECT_TRUE(Calls().empty());
+    ExpectNoModel();
+  }
+}
+
 TEST_F(AgentSessionLocalActionTest, AnEnglishOnlyBuildSaysSoInsteadOfAskingAboutLanguages) {
   locales_json_ = R"({"locales":[{"tag":"en","label":"English"}]})";
   StartLocal(Allow("set_language"));
