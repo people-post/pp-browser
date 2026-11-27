@@ -11,7 +11,10 @@
     <div class="ps-top-btn ps-top-btn--none"></div>
   </div>
   <!-- Computers only (ps_desktop): who this goes to. Hidden, never absent, on a phone. -->
-  <p class="ps-recipient" data-if="ps_desktop">{{ps_recipient}}</p>
+  <div class="ps-recipient" data-if="ps_desktop">
+    <span class="ps-chip-avatar">{{ps_recipient_initial}}</span>
+    <div class="ps-chip-text"><span class="ps-chip-prefix">{{ps_recipient_prefix}}</span><span class="ps-chip-name">{{ps_recipient_name}}</span><span class="ps-chip-suffix">{{ps_recipient_suffix}}</span></div>
+  </div>
   <div class="ps-stage" id="ps-stage" data-event-mousedown="ps_press()" data-event-mouseup="ps_release()">
     <img class="ps-image" data-if="ps_current_ready" data-attr-src="ps_current_src"
          data-style-width="ps_image_w" data-style-height="ps_image_h"/>
@@ -25,7 +28,9 @@
     <p class="ps-flag ps-flag--stage" data-if="ps_current_too_large">{{i18n:picture_send.too_large}}</p>
     <!-- A file has no picture: its card (type tile, name, size). Computers only. -->
     <div class="ps-file" data-if="ps_desktop && ps_current_is_file">
-      <div class="ps-file-tile">
+      <div class="ps-file-tile" data-class-ps-kind--txt="ps_current_kind == 'txt'" data-class-ps-kind--pdf="ps_current_kind == 'pdf'"
+           data-class-ps-kind--zip="ps_current_kind == 'zip'" data-class-ps-kind--doc="ps_current_kind == 'doc'"
+           data-class-ps-kind--xls="ps_current_kind == 'xls'" data-class-ps-kind--other="ps_current_kind == 'other'">
         <span class="ps-file-ext" data-if="ps_current_ext != ''">{{ps_current_ext}}</span>
         <svg class="ps-file-icon" data-if="ps_current_ext == ''" src="../icons/v2/file.svg" width="30" height="30"></svg>
       </div>
@@ -42,7 +47,10 @@
         <img class="ps-cell-image" data-if="cell.ready" data-attr-src="cell.thumb_src"
              data-style-width="cell.iw" data-style-height="cell.ih"
              data-style-margin-left="cell.ml" data-style-margin-top="cell.mt"/>
-        <div class="ps-cell-file" data-if="ps_desktop && cell.is_file">
+        <div class="ps-cell-file" data-if="ps_desktop && cell.is_file" data-class-ps-kind--txt="cell.kind == 'txt'"
+             data-class-ps-kind--pdf="cell.kind == 'pdf'" data-class-ps-kind--zip="cell.kind == 'zip'"
+             data-class-ps-kind--doc="cell.kind == 'doc'" data-class-ps-kind--xls="cell.kind == 'xls'"
+             data-class-ps-kind--other="cell.kind == 'other'">
           <span class="ps-cell-ext" data-if="cell.ext != ''">{{cell.ext}}</span>
           <svg class="ps-cell-icon" data-if="cell.ext == ''" src="../icons/v2/file.svg" width="24" height="24"></svg>
         </div>
@@ -60,9 +68,15 @@
       <textarea id="ps-text" class="ps-input" rows="1" max-rows="5" maxlength="65536" data-value="ps_text"></textarea>
       <!-- Phones: the engine draws no placeholder, so a label sits over the empty input. -->
       <p class="ps-placeholder" data-if="ps_text == ''">{{i18n:picture_send.placeholder}}</p>
+      <!-- Computers only: the round Send at the field's right end (a phone has the full-width Send below). -->
+      <button class="ps-send-round" type="button" data-if="ps_desktop" data-event-click="ps_send()"
+              data-attrif-disabled="!ps_can_send" data-class-ps-send-round--off="!ps_can_send" title="{{ps_send_label}}">
+        <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
+      </button>
     </div>
     <!-- Only where there is a picture to send as it is; a phone keeps the row as it always was. -->
-    <button class="ps-original" type="button" data-if="ps_show_original || !ps_desktop" data-event-click="ps_toggle_original()">
+    <button class="ps-original" type="button" data-if="ps_show_original || !ps_desktop" data-class-ps-original--on="ps_original"
+            data-event-click="ps_toggle_original()">
       <!-- A round check: a ring when empty, a filled disc with a tick when chosen; empty each time the page opens. -->
       <div class="ps-original-check" data-class-ps-original-check--on="ps_original">
         <div class="ps-original-hole" data-if="!ps_original"></div>
@@ -71,7 +85,7 @@
       <span class="ps-original-label">{{i18n:picture_send.original}}</span>
       <span class="ps-original-size" data-if="ps_original">{{ps_size_label}}</span>
     </button>
-    <button class="ps-send" type="button" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
+    <button class="ps-send" type="button" data-if="!ps_desktop" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
             data-class-ps-send--off="!ps_can_send">{{ps_send_label}}</button>
   </div>
   <!-- The bottom safe area, in the page's own colour (ShellHost gives it the height). -->

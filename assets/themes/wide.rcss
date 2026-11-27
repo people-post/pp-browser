@@ -2826,30 +2826,152 @@
   border-radius: 16dp;
 }
 
-/* ---- The send-preview page (picture_send_wide.rml): a card centred over the conversation, in the shell's frame ---- */
+/* ---- The send-preview page (picture_send_wide.rml): a tray rising from the composer's place at the bottom of the
+   conversation column. The shell's frame (key picture_send) is the column's own box, left and right set by ShellHost
+   (ApplySafeAreaLayout) from the pane, top and bottom the layer's; it carries the light dim and takes no click itself
+   (they fall through to the scrim under it, as a click beside the page always did). Its overlay body is the tray:
+   content-sized, bottom-anchored, 70% of the column's height at most, rounded on top, frosted while Transparency is on
+   (shell-frame--frost, ShellLayoutRml) and solid otherwise. The frame's own close button is not used: the tray has its
+   x. The stage has a height of its own (a share of the window's) so the picture's fit does not depend on the tray's. ---- */
 .shell-body--wide .shell-frame--picture_send {
-  top: 6%;
-  bottom: 6%;
-  left: 12%;
-  right: 12%;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  justify-content: flex-end;
   padding: 0;
-  border-radius: 16dp;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+.shell-body--wide .shell-frame--picture_send .shell-close-btn {
+  display: none;
+}
+
+.shell-body--wide .shell-frame--picture_send .shell-overlay-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 70%;
+  border-width: 1dp 1dp 0 1dp;
+  border-radius: 20dp 20dp 0 0;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.shell-body--wide .picture-send--wide {
+  flex: none;
+  height: auto;
+  padding: 16dp 24dp 18dp 24dp;
 }
 
 .shell-body--wide .picture-send--wide .ps-top {
+  flex-shrink: 0;
+  height: 32dp;
+  padding: 0;
+}
+
+.shell-body--wide .picture-send--wide .ps-recipient {
+  margin: 0;
+}
+
+.shell-body--wide .picture-send--wide .ps-title {
+  flex: none;
+  margin: 0 0 0 10dp;
+  font-size: 13dp;
+  font-weight: normal;
+  text-align: left;
+}
+
+.shell-body--wide .picture-send--wide .ps-top-fill {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-body--wide .picture-send--wide .ps-x {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 0 56dp;
+  width: 28dp;
+  height: 28dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 14dp;
+  cursor: pointer;
 }
 
 .shell-body--wide .picture-send--wide .ps-stage {
-  margin: 0 20dp;
+  flex: none;
+  height: 28vh;
+  max-height: 300dp;
+  margin: 14dp 0 0 0;
+  border-radius: 14dp;
 }
 
+/* One file alone: no picture to make room for, the tray is as tall as the tile. */
+.shell-body--wide .picture-send--wide .ps-stage--tile {
+  height: auto;
+  max-height: none;
+}
+
+.shell-body--wide .picture-send--wide .ps-image-clip {
+  flex-shrink: 0;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.shell-body--wide .picture-send--wide .ps-file {
+  width: 360dp;
+  max-width: 100%;
+}
+
+.shell-body--wide .picture-send--wide .ps-strip {
+  flex-shrink: 0;
+  height: 76dp;
+  gap: 10dp;
+  padding: 12dp 12dp 4dp 4dp;
+  margin-top: 2dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-cell,
+.shell-body--wide .picture-send--wide .ps-cell-clip {
+  width: 56dp;
+  height: 56dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-cell:first-child {
+  margin-left: auto;
+}
+
+.shell-body--wide .picture-send--wide .ps-cell:last-child {
+  margin-right: auto;
+}
+
+.shell-body--wide .picture-send--wide .ps-cell-clip {
+  border-radius: 12dp;
+}
+
+/* The thumbnail's offsets are worked out for a 64dp box: shift it so the 52dp window inside the 2dp ring shows its middle. */
+.shell-body--wide .picture-send--wide .ps-cell-image {
+  position: relative;
+  left: -6dp;
+  top: -6dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-badge-dot {
+  width: 18dp;
+  height: 18dp;
+  border-radius: 9dp;
+}
+
+/* The bottom row, where the composer sits: the "original" chip, then the pill field taking the rest. */
 .shell-body--wide .picture-send--wide .ps-bottom {
+  flex-shrink: 0;
   flex-direction: row;
-  align-items: center;
-  gap: 12dp;
-  padding: 12dp 20dp 20dp 20dp;
+  align-items: flex-end;
+  gap: 10dp;
+  padding: 14dp 0 0 0;
 }
 
 .shell-body--wide .picture-send--wide .ps-field {
@@ -2859,39 +2981,23 @@
 
 .shell-body--wide .picture-send--wide .ps-original {
   flex-shrink: 0;
-  width: auto;
-  min-height: 44dp;
-  padding: 0 4dp;
+  align-self: flex-end;
+  margin: 0 0 4dp 0;
 }
 
+/* Cancel is quiet: small grey words under the row (the x at the top does the same). */
 .shell-body--wide .picture-send--wide .ps-cancel {
   flex-shrink: 0;
-  height: 44dp;
-  margin: 0;
-  padding: 0 18dp;
+  align-self: center;
+  height: auto;
+  margin: 8dp 0 0 0;
+  padding: 6dp 14dp;
   border: 0;
-  border-radius: 22dp;
-  line-height: 44dp;
-  font-size: 16dp;
+  border-radius: 16dp;
+  line-height: 20dp;
+  font-size: 14dp;
   text-align: center;
   cursor: pointer;
-}
-
-.shell-body--wide .picture-send--wide .ps-send {
-  flex-shrink: 0;
-  width: 140dp;
-  height: 44dp;
-  line-height: 44dp;
-  border-radius: 22dp;
-}
-
-/* The card is wide: the recipient line lines up with the title, the file card is a little roomier. */
-.shell-body--wide .picture-send--wide .ps-recipient {
-  padding: 0 56dp 8dp 56dp;
-}
-
-.shell-body--wide .picture-send--wide .ps-file {
-  width: 420dp;
 }
 
 /* ---- Modal panels on the desktop (PaneSpec::modal; ShellLayoutRml::Overlays): the scrim is fixed to the whole window,

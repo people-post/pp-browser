@@ -152,6 +152,7 @@ protected:
     };
     host.is_desktop = [this]() { return fakes_.desktop; };
     host.recipient = []() { return std::string("To Ann Lee"); };
+    host.recipient_words = []() { return NameWords{"To ", "Ann Lee", ""}; };
     host.items_title = [](const size_t n) {
       // The real wording is looked up by the key the app uses, so the page's one-file / many-files split is what is tested.
       return std::string(PictureSendItemsTitleKey(n) == std::string("picture_send.title_one_file")
@@ -248,6 +249,8 @@ TEST_F(PictureSendControllerTest, ADesktopFlagAndTheRecipientComeFromTheHost) {
   Arrive("a.jpg");
   EXPECT_FALSE(controller_.Desktop());
   EXPECT_EQ(controller_.Recipient(), "To Ann Lee");
+  EXPECT_EQ(controller_.RecipientName(), "Ann Lee") << "the chip sets the name apart from the sentence";
+  EXPECT_EQ(controller_.RecipientInitial(), "A");
   fakes_.desktop = true;
   Arrive("b.jpg");
   EXPECT_TRUE(controller_.Desktop());
@@ -1060,13 +1063,30 @@ std::string BodyOf(const std::string& source, const std::string& signature) {
   return source.substr(start, end == std::string::npos ? std::string::npos : end - start);
 }
 
-// The wide window (views/picture_send_wide.rml): a card centred over the conversation, the field, the "original" check,
-// Cancel and Send in one row. The real page, the real stylesheets, in the shell's frame at computer-window sizes.
+// The wide window (views/picture_send_wide.rml): a tray rising from the composer's place at the bottom of the
+// conversation column. The real page, the real stylesheets, in the shell's frame at computer-window sizes. The harness
+// has what the shell has around it: a conversation column (`#chat-pane`) to the right of the rail and the list, and the
+// frame placed over exactly that column (ShellHost::ApplySafeAreaLayout sets its left and right).
+constexpr int kRailAndListDp = 320;
+
+std::string WideTrayPage(const std::string& body, const int width, const int height, const bool frost) {
+  const std::string size = "width: " + std::to_string(width) + "dp; height: " + std::to_string(height) + "dp;";
+  const std::string left = std::to_string(kRailAndListDp) + "dp";
+  return "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; " + size +
+         "\"><div id=\"chat-pane\" style=\"position: absolute; top: 0; bottom: 0; right: 0; left: " + left +
+         ";\"></div><div class=\"shell-layer shell-layer-overlay\"><div class=\"shell-scrim "
+         "shell-scrim--picture_send\">"
+         "</div><div class=\"shell-frame shell-frame--picture_send" +
+         std::string(frost ? " shell-frame--frost" : "") + "\" style=\"left: " + left +
+         "; right: 0dp;\"><div class=\"shell-overlay-body\">" + body + "</div></div></div></div>";
+}
+
 class PictureSendWidePageTest : public PictureSendControllerTest,
                                 public ::testing::WithParamInterface<std::pair<int, int>> {
 protected:
   void SetUp() override {
     PictureSendControllerTest::SetUp();
+    fakes_.desktop = true;
     ViewCatalog::ClearCache();
     IAssetLocator::SetInstance(nullptr);
     IAssetLocator::SetInstance(&locator_);
@@ -1083,15 +1103,10 @@ protected:
         ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("picture_send", true)));
     ASSERT_FALSE(body.empty());
     ASSERT_EQ(body.find("{{include:"), std::string::npos);
-    const std::string rml =
-        "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/wide.rcss")) +
-        ReadAll(AssetPath("themes/colors-light.rcss")) +
-        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
-        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
-        std::to_string(width()) + "dp; height: " + std::to_string(height()) +
-        "dp;\"><div class=\"shell-layer shell-layer-overlay\"><div class=\"shell-frame shell-frame--picture_send\">"
-        "<div class=\"shell-overlay-body\">" +
-        body + "</div></div></div></div></body></rml>";
+    const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/components.rcss")) +
+                            ReadAll(AssetPath("themes/wide.rcss")) + ReadAll(AssetPath("themes/colors-light.rcss")) +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" +
+                            WideTrayPage(body, width(), height(), /*frost=*/true) + "</body></rml>";
     document_ = context_->LoadDocumentFromMemory(rml);
     ASSERT_NE(document_, nullptr);
     document_->Show();
@@ -1126,6 +1141,51 @@ protected:
     }
     Frames();
   }
+  std::string Text(const char* selector) {
+    ui::Element* element = One(selector);
+    return element ? std::string(element->GetInnerRML().c_str()) : "<none>";
+  }
+  /** A fresh queue and an empty page for the next case of a test. */
+  void Reset() {
+    if (controller_.IsOpen()) {
+      controller_.OnBack();
+      Frames();
+    }
+    fakes_ = Fakes{};
+    fakes_.desktop = true;
+    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  }
+  /** What the tray must satisfy for whatever it holds: in the chat pane, bottom-anchored, short enough, all of it inside. */
+  void ExpectATrayInTheChatPane(const std::vector<const char*>& parts) {
+    const float dp = context_->GetDensityIndependentPixelRatio();
+    const Edges pane = BorderEdges(One("#chat-pane"));
+    const Edges tray = BorderEdges(One(".shell-overlay-body"));
+    EXPECT_GE(tray.left, pane.left - 0.5f) << "inside the chat pane, not over the list";
+    EXPECT_LE(tray.right, pane.right + 0.5f);
+    EXPECT_LE(tray.right - tray.left, pane.right - pane.left + 0.5f) << "never wider than the pane";
+    EXPECT_NEAR(tray.bottom, pane.bottom, 4.f * dp) << "sits where the composer sits";
+    ui::Element* chip_name = One(".ps-chip-name");
+    ASSERT_NE(chip_name, nullptr);
+    EXPECT_GT(BorderEdges(chip_name).right - BorderEdges(chip_name).left, 20.f * dp) << "the recipient's name has room";
+    EXPECT_LE(BorderEdges(One(".ps-recipient")).right, BorderEdges(One(".ps-x")).left + 0.5f)
+        << "the chip keeps clear of the x";
+    EXPECT_LE(tray.bottom - tray.top, 0.7f * (pane.bottom - pane.top) + 0.5f) << "70% of the pane at most";
+    EXPECT_GE(tray.top, pane.top) << "the chat shows above it";
+    for (const char* selector : parts) {
+      ui::Element* element = One(selector);
+      ASSERT_NE(element, nullptr) << selector;
+      ASSERT_TRUE(IsShown(element)) << selector;
+      const Edges edges = BorderEdges(element);
+      EXPECT_GE(edges.left, tray.left - 0.5f) << selector;
+      EXPECT_LE(edges.right, tray.right + 0.5f) << selector;
+      EXPECT_GE(edges.top, tray.top - 0.5f) << selector;
+      EXPECT_LE(edges.bottom, tray.bottom + 0.5f) << selector;
+    }
+  }
+  float TrayHeight() {
+    const Edges tray = BorderEdges(One(".shell-overlay-body"));
+    return tray.bottom - tray.top;
+  }
   AssetsLocator locator_;
   NullRender render_;
   ui::Context* context_ = nullptr;
@@ -1133,75 +1193,135 @@ protected:
 };
 
 INSTANTIATE_TEST_SUITE_P(ComputerWindows, PictureSendWidePageTest,
-                         ::testing::Values(std::make_pair(900, 640), std::make_pair(1280, 800)));
+                         ::testing::Values(std::make_pair(1280, 800), std::make_pair(1000, 700),
+                                           std::make_pair(820, 900)));
 
-TEST_P(PictureSendWidePageTest, TheCardIsCentredAndInsideTheWindowWithOneRowOfControls) {
+TEST_P(PictureSendWidePageTest, TheTrayRisesFromTheComposerInsideTheChatPaneForOnePictureAndNine) {
   for (const int count : {1, 9}) {
     SCOPED_TRACE("pictures: " + std::to_string(count));
-    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+    Reset();
     Fill(count);
-    const float dp = context_->GetDensityIndependentPixelRatio();
-    const float window_w = static_cast<float>(width()) * dp;
-    const float window_h = static_cast<float>(height()) * dp;
-    const Edges card = BorderEdges(One(".shell-frame--picture_send"));
-    EXPECT_NEAR(card.left, window_w - card.right, 1.f) << "centred sideways";
-    EXPECT_GE(card.left, 8.f * dp) << "at least 8dp from the window's edge";
-    EXPECT_GE(card.top, 8.f * dp);
-    EXPECT_LE(card.bottom, window_h - 8.f * dp);
-    EXPECT_LT(card.right - card.left, window_w * 0.9f) << "a card, not the whole window";
-    for (const char* selector : {".ps-stage", ".ps-field", "#ps-text", ".ps-original", ".ps-cancel", ".ps-send"}) {
-      ui::Element* element = One(selector);
-      ASSERT_NE(element, nullptr) << selector;
-      const Edges edges = BorderEdges(element);
-      EXPECT_GE(edges.left, card.left - 0.5f) << selector;
-      EXPECT_LE(edges.right, card.right + 0.5f) << selector;
-      EXPECT_GE(edges.top, card.top - 0.5f) << selector;
-      EXPECT_LE(edges.bottom, card.bottom + 0.5f) << selector;
-    }
-    // The field, the original check, Cancel and Send share one row.
-    const Edges field = BorderEdges(One(".ps-field"));
-    const Edges original = BorderEdges(One(".ps-original"));
-    const Edges cancel = BorderEdges(One(".ps-cancel"));
-    const Edges send = BorderEdges(One(".ps-send"));
-    EXPECT_LT(field.right, original.left + 0.5f);
-    EXPECT_LT(original.right, cancel.left + 0.5f);
-    EXPECT_LT(cancel.right, send.left + 0.5f);
-    const float centre = (send.top + send.bottom) / 2.f;
-    for (const Edges& edges : {field, original, cancel}) {
-      EXPECT_NEAR((edges.top + edges.bottom) / 2.f, centre, 2.f * dp) << "on the row's centre line";
-    }
-    EXPECT_GE(send.bottom - send.top, 44.f * dp - 0.5f);
-    EXPECT_GE(cancel.bottom - cancel.top, 44.f * dp - 0.5f);
-    // The picture stays in proportion inside its stage.
+    ASSERT_TRUE(controller_.IsOpen());
+    ExpectATrayInTheChatPane({".ps-recipient", ".ps-x", ".ps-stage", ".ps-image", ".ps-field", "#ps-text",
+                              ".ps-send-round", ".ps-cancel", ".ps-original"});
+    // The picture stays in proportion inside its stage and the stage is a share of the window, not of the tray.
     ui::Element* image = One(".ps-image");
-    ASSERT_NE(image, nullptr);
-    ASSERT_TRUE(IsShown(image));
     const ui::Vector2f image_size = image->GetBox().GetSize(ui::BoxArea::Border);
     const ui::Vector2f stage_size = One(".ps-stage")->GetBox().GetSize(ui::BoxArea::Border);
     EXPECT_NEAR(image_size.x / image_size.y, 4.f / 3.f, 0.03f);
     EXPECT_LE(image_size.x, stage_size.x + 0.5f);
     EXPECT_LE(image_size.y, stage_size.y + 0.5f);
-    controller_.OnBack();
-    Frames();
-    EXPECT_FALSE(controller_.IsOpen());
-    fakes_ = Fakes{};
-    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+    EXPECT_NEAR(stage_size.y, 0.28f * static_cast<float>(height()) * context_->GetDensityIndependentPixelRatio(),
+                0.28f * static_cast<float>(height()) * 0.1f)
+        << "28% of the window high (300dp at most)";
+    // The round Send lies inside the field at its right end; the field and the "original" chip share the row.
+    const Edges field = BorderEdges(One(".ps-field"));
+    const Edges send = BorderEdges(One(".ps-send-round"));
+    const float dp = context_->GetDensityIndependentPixelRatio();
+    EXPECT_GE(send.left, field.left + (field.right - field.left) * 0.5f);
+    EXPECT_LE(send.right, field.right + 0.5f);
+    EXPECT_GE(send.right, field.right - 12.f * dp) << "at the right end";
+    EXPECT_GE(send.top, field.top - 0.5f);
+    EXPECT_LE(send.bottom, field.bottom + 0.5f);
+    EXPECT_NEAR(send.right - send.left, 32.f * dp, 0.5f);
+    EXPECT_NEAR(send.bottom - send.top, 32.f * dp, 0.5f);
+    const Edges original = BorderEdges(One(".ps-original"));
+    EXPECT_LE(original.right, field.left + 0.5f);
+    // The pill field is filled and has no outline; its corners are round.
+    EXPECT_EQ(One(".ps-field")->GetComputedValues().border_top_width(), 0.f);
+    EXPECT_NEAR(One(".ps-field")->GetComputedValues().border_top_left_radius(), 20.f, 0.5f);
+    if (count > 1) {
+      ExpectATrayInTheChatPane({".ps-strip"});
+      const Edges tray = BorderEdges(One(".shell-overlay-body"));
+      for (ui::Element* cell : [this] {
+             ui::ElementList found;
+             document_->QuerySelectorAll(found, ".ps-cell");
+             return found;
+           }()) {
+        if (!IsShown(cell)) {
+          continue;
+        }
+        // A thumbnail is 56dp; the strip scrolls rather than push the tray wider.
+        const Edges box = BorderEdges(cell);
+        EXPECT_NEAR(box.right - box.left, 56.f * dp, 0.5f);
+        EXPECT_GE(box.left, tray.left - 0.5f);
+      }
+    }
   }
 }
 
-TEST_P(PictureSendWidePageTest, CancelClosesThePageAndSendSendsWithTheTextAndTheOriginalChoice) {
+TEST_P(PictureSendWidePageTest, OneFileMakesAShorterTrayThanOnePictureAndItsBadgeLabelIsCentred) {
+  Fill(1);
+  const float picture_tray = TrayHeight();
+  Reset();
+  Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
+  Frames();
+  ASSERT_TRUE(controller_.IsOpen());
+  ExpectATrayInTheChatPane({".ps-recipient", ".ps-x", ".ps-file", ".ps-file-tile", ".ps-file-ext", ".ps-field",
+                            ".ps-send-round", ".ps-cancel"});
+  EXPECT_LT(TrayHeight(), picture_tray - 40.f) << "no picture to make room for";
+  EXPECT_EQ(Text(".ps-file-ext"), "PDF");
+  const float dp = context_->GetDensityIndependentPixelRatio();
+  const Edges tile = BorderEdges(One(".ps-file-tile"));
+  const Edges ext = BorderEdges(One(".ps-file-ext"));
+  EXPECT_NEAR((ext.left + ext.right) / 2.f, (tile.left + tile.right) / 2.f, 1.f) << "the label is centred across";
+  EXPECT_NEAR((ext.top + ext.bottom) / 2.f, (tile.top + tile.bottom) / 2.f, 1.f) << "and down";
+  EXPECT_NEAR(tile.right - tile.left, 56.f * dp, 0.5f);
+  EXPECT_TRUE(One(".ps-file-tile")->IsClassSet("ps-kind--pdf")) << "coloured by its type";
+  EXPECT_EQ(One(".ps-file-ext")->GetComputedValues().text_align(), ui::Style::TextAlign::Center);
+}
+
+TEST_P(PictureSendWidePageTest, NineMixedItemsAndALongFileNameStayInsideTheTray) {
+  Arrive("/some/dir/" + std::string(120, 'n') + ".pdf", 3 * kMb, PictureSendKind::File);
+  for (int i = 1; i < 9; ++i) {
+    Arrive(i % 2 ? "p" + std::to_string(i) + ".jpg" : "/d/f" + std::to_string(i) + ".docx", kMb,
+           i % 2 ? PictureSendKind::Picture : PictureSendKind::File);
+  }
+  Frames();
+  ASSERT_TRUE(controller_.IsOpen());
+  ExpectATrayInTheChatPane({".ps-recipient", ".ps-x", ".ps-stage", ".ps-file", ".ps-file-name", ".ps-strip",
+                            ".ps-field", ".ps-send-round", ".ps-cancel", ".ps-original"});
+  EXPECT_EQ(Text(".ps-chip-name"), "Ann Lee");
+  // Every thumbnail's badge keeps its own type colour class.
+  controller_.OnSelect(2);
+  Frames();
+  ExpectATrayInTheChatPane({".ps-file", ".ps-file-name", ".ps-strip"});
+  EXPECT_TRUE(One(".ps-file-tile")->IsClassSet("ps-kind--doc"));
+}
+
+TEST_P(PictureSendWidePageTest, TheDimIsTheColumnsAndTheScrimUnderItStaysClear) {
+  Fill(1);
+  const Edges frame = BorderEdges(One(".shell-frame--picture_send"));
+  const Edges pane = BorderEdges(One("#chat-pane"));
+  EXPECT_NEAR(frame.left, pane.left, 0.5f) << "the dim covers the chat column and not the rail and the list";
+  EXPECT_NEAR(frame.right, pane.right, 0.5f);
+  EXPECT_NEAR(frame.top, pane.top, 0.5f);
+  EXPECT_NEAR(frame.bottom, pane.bottom, 0.5f);
+  EXPECT_EQ(One(".shell-frame--picture_send")->GetComputedValues().pointer_events(), ui::Style::PointerEvents::None)
+      << "a click beside the tray falls through to the scrim, which closes the page as it always did";
+  EXPECT_EQ(One(".shell-overlay-body")->GetComputedValues().pointer_events(), ui::Style::PointerEvents::Auto);
+  const std::string sheet = ReadAll(AssetPath("themes/colors-light.rcss"));
+  EXPECT_NE(sheet.find(".shell-scrim--picture_send"), std::string::npos) << "the whole-window scrim is not dimmed";
+}
+
+TEST_P(PictureSendWidePageTest, CancelAndTheXCloseThePageAndSendSendsWithTheTextAndTheOriginalChoice) {
   Fill(2);
   ASSERT_TRUE(controller_.IsOpen());
   One(".ps-cancel")->DispatchEvent(ui::EventId::Click, {});
   Frames();
   EXPECT_FALSE(controller_.IsOpen()) << "Cancel is Back";
-  fakes_ = Fakes{};
-  queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  Reset();
+  Fill(2);
+  ASSERT_TRUE(controller_.IsOpen());
+  One(".ps-x")->DispatchEvent(ui::EventId::Click, {});
+  Frames();
+  EXPECT_FALSE(controller_.IsOpen()) << "the x is Back too";
+  Reset();
   Fill(2);
   ASSERT_TRUE(controller_.IsOpen());
   controller_.SetTextForTest("hello");
   Frames();
-  One(".ps-send")->DispatchEvent(ui::EventId::Click, {});
+  One(".ps-send-round")->DispatchEvent(ui::EventId::Click, {});
   Frames();
   EXPECT_FALSE(controller_.IsOpen()) << "Send closes the page";
   EXPECT_TRUE(queue_->Started());
@@ -1239,15 +1359,9 @@ protected:
     const std::string sheets = ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/wide.rcss")) +
                                ReadAll(AssetPath("themes/colors-light.rcss"));
     const std::string size = "width: " + std::to_string(width()) + "dp; height: " + std::to_string(height()) + "dp;";
-    const std::string page =
-        GetParam().wide
-            ? "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; " + size +
-                  "\"><div class=\"shell-layer shell-layer-overlay\"><div class=\"shell-frame "
-                  "shell-frame--picture_send\">"
-                  "<div class=\"shell-overlay-body\">" +
-                  body + "</div></div></div></div>"
-            : "<div style=\"position: absolute; top: 0; left: 0; " + size + " box-sizing: border-box;\">" + body +
-                  "</div>";
+    const std::string page = GetParam().wide ? WideTrayPage(body, width(), height(), /*frost=*/false)
+                                             : "<div style=\"position: absolute; top: 0; left: 0; " + size +
+                                                   " box-sizing: border-box;\">" + body + "</div>";
     document_ = context_->LoadDocumentFromMemory(
         "<rml><head><style>" + sheets +
         "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" + page + "</body></rml>");
@@ -1308,10 +1422,10 @@ protected:
   }
   void ExpectEverythingInsideTheWindow() {
     if (GetParam().wide) {
-      ExpectShownInside(".shell-frame--picture_send");
+      ExpectShownInside(".shell-overlay-body");
     }
     for (const char* selector :
-         {".picture-send", ".ps-top", ".ps-recipient", ".ps-stage", ".ps-field", "#ps-text", ".ps-send"}) {
+         {".picture-send", ".ps-top", ".ps-recipient", ".ps-stage", ".ps-field", "#ps-text", ".ps-send-round"}) {
       ExpectShownInside(selector);
     }
   }
@@ -1329,8 +1443,13 @@ TEST_P(PictureSendDesktopPageTest, AFilesOnlyQueueShowsTheFileCardTheRecipientAn
   Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
   Frames();
   ASSERT_TRUE(controller_.IsOpen());
-  EXPECT_EQ(Text(".ps-recipient"), "To Ann Lee");
+  EXPECT_EQ(Text(".ps-chip-prefix"), "To ");
+  EXPECT_EQ(Text(".ps-chip-name"), "Ann Lee");
+  EXPECT_EQ(Text(".ps-chip-avatar"), "A");
   ExpectShownInside(".ps-recipient");
+  ExpectShownInside(".ps-chip-avatar", ".ps-recipient");
+  // The name's own span sits after the sentence's start, on its right, so the words keep a space between them.
+  EXPECT_GT(BorderEdges(One(".ps-chip-name")).left, BorderEdges(One(".ps-chip-prefix")).right - 0.5f);
   EXPECT_EQ(Count(".ps-file"), 1U);
   EXPECT_EQ(Text(".ps-file-name"), "report.pdf");
   EXPECT_EQ(Text(".ps-file-size"), FormatAttachmentByteSize(3 * kMb));

@@ -2411,6 +2411,29 @@ void ShellHost::ApplySafeAreaLayout() {
            bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
   }
 
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    // The send-preview tray rises from the conversation's own bottom edge, so its layer (the dim and the tray) spans the
+    // conversation column only: the frame takes the column's left and right edges. The scrim under it still covers the
+    // window, so the rail and the lists stay out of reach while the page is open.
+    for (const OverlayEntry& overlay : state_.overlay_stack) {
+      if (overlay.key != "picture_send") {
+        continue;
+      }
+      ui::Element* frame = doc->GetElementById(("shell-frame-" + std::to_string(overlay.id)).c_str());
+      ui::Element* pane = doc->GetElementById("pane-chat");
+      ui::Element* layer = frame ? frame->GetParentNode() : nullptr;
+      if (!frame || !pane || !layer) {
+        continue;
+      }
+      const float ratio = std::max(context_->GetDensityIndependentPixelRatio(), 0.5f);
+      const float layer_left = layer->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float layer_right = layer_left + layer->GetBox().GetSize(ui::BoxArea::Border).x;
+      const float pane_left = pane->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float pane_right = pane_left + pane->GetBox().GetSize(ui::BoxArea::Border).x;
+      set_dp(frame, "left", std::max(0.f, (pane_left - layer_left) / ratio));
+      set_dp(frame, "right", std::max(0.f, (layer_right - pane_right) / ratio));
+    }
+  }
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }

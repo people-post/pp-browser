@@ -4373,25 +4373,68 @@ input.checkbox:checked {
   color: {{label-3}};
 }
 
+/* The soft look on a computer (the wide tray and the narrow window): the recipient chip, the file's tile and its coloured
+   type badge, the pill field with the round Send, the "original" chip. */
+.picture-send--desktop .ps-stage {
+  background-color: transparent;
+}
+
 .picture-send--desktop .ps-recipient {
+  background-color: {{fill-2}};
   color: {{label-2}};
 }
 
-.picture-send--desktop .ps-file {
-  background-color: {{bg-card}};
+.picture-send--desktop .ps-chip-avatar {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
-.picture-send--desktop .ps-file-tile {
-  background-color: {{fill}};
-}
-
-.picture-send--desktop .ps-file-ext {
+.picture-send--desktop .ps-chip-name {
   color: {{label}};
+}
+
+.picture-send--desktop .ps-file {
+  background-color: {{x-tray-tile}};
+  border: 1dp {{x-tray-hair}};
+}
+
+.picture-send--desktop .ps-file-tile,
+.picture-send--desktop .ps-cell-file {
+  background-color: {{gray}};
+}
+
+.picture-send--desktop .ps-kind--txt {
+  background-color: {{x-kind-txt}};
+}
+
+.picture-send--desktop .ps-kind--pdf {
+  background-color: {{x-kind-pdf}};
+}
+
+.picture-send--desktop .ps-kind--zip {
+  background-color: {{x-kind-zip}};
+}
+
+.picture-send--desktop .ps-kind--doc {
+  background-color: {{accent}};
+}
+
+.picture-send--desktop .ps-kind--xls {
+  background-color: {{x-kind-xls}};
+}
+
+.picture-send--desktop .ps-kind--other {
+  background-color: {{gray}};
+}
+
+.picture-send--desktop .ps-file-ext,
+.picture-send--desktop .ps-cell-ext {
+  color: {{label-on-accent}};
 }
 
 .picture-send--desktop .ps-file-icon,
 .picture-send--desktop .ps-cell-icon {
-  image-color: {{label-2}};
+  image-color: {{label-on-accent}};
 }
 
 .picture-send--desktop .ps-file-name {
@@ -4402,8 +4445,56 @@ input.checkbox:checked {
   color: {{label-2}};
 }
 
-.picture-send--desktop .ps-cell-ext {
+.picture-send--desktop .ps-field,
+.picture-send--wide .ps-field {
+  background-color: {{fill-2}};
+}
+
+.ps-send-round {
+  background-color: {{accent}};
+}
+
+.ps-send-round svg {
+  image-color: {{label-on-accent}};
+}
+
+.ps-send-round--off,
+.ps-send-round--off:hover,
+.ps-send-round--off:focus {
+  background-color: {{fill}};
+}
+
+.ps-send-round--off svg {
+  image-color: {{label-3}};
+}
+
+.picture-send--desktop .ps-original,
+.picture-send--wide .ps-original {
+  background-color: {{fill-2}};
+}
+
+.picture-send--desktop .ps-original-label,
+.picture-send--wide .ps-original-label,
+.picture-send--desktop .ps-original-size,
+.picture-send--wide .ps-original-size {
   color: {{label-2}};
+}
+
+.picture-send--desktop .ps-original--on,
+.picture-send--wide .ps-original--on {
+  background-color: {{accent-tint}};
+}
+
+.picture-send--desktop .ps-original--on .ps-original-label,
+.picture-send--wide .ps-original--on .ps-original-label,
+.picture-send--desktop .ps-original--on .ps-original-size,
+.picture-send--wide .ps-original--on .ps-original-size {
+  color: {{accent}};
+}
+
+.picture-send--desktop .ps-original-hole,
+.picture-send--wide .ps-original-hole {
+  background-color: {{x-tray-solid}};
 }
 
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
@@ -4658,11 +4749,57 @@ input.checkbox:checked {
 }
 /* @end */
 
+/* The send-preview tray: the light dim on the frame (the conversation column), the tray the overlay body: solid, or
+   frosted with the glass colour and a blur while Transparency is on (shell-frame--frost). An upward stacked shadow. */
 .shell-body--wide .shell-frame--picture_send {
-  box-shadow: 0 3.9dp 0 0.85dp {{x-menu-shadow}}, 0 4.8dp 0 1.7dp {{x-menu-shadow}}, 0 5.7dp 0 2.55dp {{x-menu-shadow}}, 0 6.6dp 0 3.4dp {{x-menu-shadow}}, 0 7.5dp 0 4.25dp {{x-menu-shadow}}, 0 8.4dp 0 5.1dp {{x-menu-shadow}}, 0 9.3dp 0 5.95dp {{x-menu-shadow}}, 0 10.2dp 0 6.8dp {{x-menu-shadow}}, 0 11.1dp 0 7.65dp {{x-menu-shadow}}, 0 12dp 0 8.5dp {{x-menu-shadow}}, 0 12.9dp 0 9.35dp {{x-menu-shadow}}, 0 13.8dp 0 10.2dp {{x-menu-shadow}}, 0 14.7dp 0 11.05dp {{x-menu-shadow}}, 0 15.6dp 0 11.9dp {{x-menu-shadow}}, 0 16.5dp 0 12.75dp {{x-menu-shadow}}, 0 17.4dp 0 13.6dp {{x-menu-shadow}};
+  background-color: {{x-tray-dim}};
+}
+
+.shell-body--wide .shell-scrim--picture_send {
+  background-color: transparent;
+}
+
+.shell-body--wide .shell-frame--picture_send .shell-overlay-body {
+  background-color: {{x-tray-solid}};
+  border-color: {{x-tray-hair}};
+  box-shadow: 0 -3.9dp 0 -0.85dp {{x-menu-shadow}}, 0 -4.8dp 0 -1.7dp {{x-menu-shadow}}, 0 -5.7dp 0 -2.55dp {{x-menu-shadow}}, 0 -6.6dp 0 -3.4dp {{x-menu-shadow}}, 0 -7.5dp 0 -4.25dp {{x-menu-shadow}}, 0 -8.4dp 0 -5.1dp {{x-menu-shadow}}, 0 -9.3dp 0 -5.95dp {{x-menu-shadow}}, 0 -10.2dp 0 -6.8dp {{x-menu-shadow}}, 0 -11.1dp 0 -7.65dp {{x-menu-shadow}}, 0 -12dp 0 -8.5dp {{x-menu-shadow}}, 0 -12.9dp 0 -9.35dp {{x-menu-shadow}}, 0 -13.8dp 0 -10.2dp {{x-menu-shadow}}, 0 -14.7dp 0 -11.05dp {{x-menu-shadow}}, 0 -15.6dp 0 -11.9dp {{x-menu-shadow}}, 0 -16.5dp 0 -12.75dp {{x-menu-shadow}}, 0 -17.4dp 0 -13.6dp {{x-menu-shadow}};
+}
+
+.shell-body--wide .shell-frame--picture_send.shell-frame--frost .shell-overlay-body {
+  background-color: {{x-tray-glass}};
+  backdrop-filter: blur(20px);
+}
+
+.shell-body--wide .picture-send--wide {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-title {
+  color: {{label-2}};
+}
+
+.shell-body--wide .picture-send--wide .ps-x {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-x:hover {
+  background-color: {{fill-2}};
+}
+
+.shell-body--wide .picture-send--wide .ps-x svg {
+  image-color: {{label-2}};
+}
+
+.shell-body--wide .picture-send--wide .ps-badge-dot {
+  background-color: {{x-tray-x}};
 }
 
 .shell-body--wide .picture-send--wide .ps-cancel {
+  background-color: transparent;
+  color: {{label-2}};
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel:hover {
   background-color: {{fill-2}};
   color: {{label}};
 }

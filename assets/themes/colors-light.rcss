@@ -4287,25 +4287,68 @@ input.checkbox:checked {
   color: #3c3c434c;
 }
 
+/* The soft look on a computer (the wide tray and the narrow window): the recipient chip, the file's tile and its coloured
+   type badge, the pill field with the round Send, the "original" chip. */
+.picture-send--desktop .ps-stage {
+  background-color: transparent;
+}
+
 .picture-send--desktop .ps-recipient {
+  background-color: #7878801f;
   color: #3c3c4399;
 }
 
-.picture-send--desktop .ps-file {
-  background-color: #ffffff;
+.picture-send--desktop .ps-chip-avatar {
+  background-color: #007aff;
+  color: #ffffff;
 }
 
-.picture-send--desktop .ps-file-tile {
-  background-color: #78788033;
-}
-
-.picture-send--desktop .ps-file-ext {
+.picture-send--desktop .ps-chip-name {
   color: #000000;
+}
+
+.picture-send--desktop .ps-file {
+  background-color: #ffffff9e;
+  border: 1dp #3c3c432e;
+}
+
+.picture-send--desktop .ps-file-tile,
+.picture-send--desktop .ps-cell-file {
+  background-color: #8e8e93;
+}
+
+.picture-send--desktop .ps-kind--txt {
+  background-color: #8793ab;
+}
+
+.picture-send--desktop .ps-kind--pdf {
+  background-color: #e5484d;
+}
+
+.picture-send--desktop .ps-kind--zip {
+  background-color: #d98a00;
+}
+
+.picture-send--desktop .ps-kind--doc {
+  background-color: #007aff;
+}
+
+.picture-send--desktop .ps-kind--xls {
+  background-color: #30a46c;
+}
+
+.picture-send--desktop .ps-kind--other {
+  background-color: #8e8e93;
+}
+
+.picture-send--desktop .ps-file-ext,
+.picture-send--desktop .ps-cell-ext {
+  color: #ffffff;
 }
 
 .picture-send--desktop .ps-file-icon,
 .picture-send--desktop .ps-cell-icon {
-  image-color: #3c3c4399;
+  image-color: #ffffff;
 }
 
 .picture-send--desktop .ps-file-name {
@@ -4316,8 +4359,56 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.picture-send--desktop .ps-cell-ext {
+.picture-send--desktop .ps-field,
+.picture-send--wide .ps-field {
+  background-color: #7878801f;
+}
+
+.ps-send-round {
+  background-color: #007aff;
+}
+
+.ps-send-round svg {
+  image-color: #ffffff;
+}
+
+.ps-send-round--off,
+.ps-send-round--off:hover,
+.ps-send-round--off:focus {
+  background-color: #78788033;
+}
+
+.ps-send-round--off svg {
+  image-color: #3c3c434c;
+}
+
+.picture-send--desktop .ps-original,
+.picture-send--wide .ps-original {
+  background-color: #7878801f;
+}
+
+.picture-send--desktop .ps-original-label,
+.picture-send--wide .ps-original-label,
+.picture-send--desktop .ps-original-size,
+.picture-send--wide .ps-original-size {
   color: #3c3c4399;
+}
+
+.picture-send--desktop .ps-original--on,
+.picture-send--wide .ps-original--on {
+  background-color: #007aff1f;
+}
+
+.picture-send--desktop .ps-original--on .ps-original-label,
+.picture-send--wide .ps-original--on .ps-original-label,
+.picture-send--desktop .ps-original--on .ps-original-size,
+.picture-send--wide .ps-original--on .ps-original-size {
+  color: #007aff;
+}
+
+.picture-send--desktop .ps-original-hole,
+.picture-send--wide .ps-original-hole {
+  background-color: #ffffff;
 }
 
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
@@ -4551,11 +4642,57 @@ input.checkbox:checked {
 }
 
 
+/* The send-preview tray: the light dim on the frame (the conversation column), the tray the overlay body: solid, or
+   frosted with the glass colour and a blur while Transparency is on (shell-frame--frost). An upward stacked shadow. */
 .shell-body--wide .shell-frame--picture_send {
-  box-shadow: 0 3.9dp 0 0.85dp #00000005, 0 4.8dp 0 1.7dp #00000005, 0 5.7dp 0 2.55dp #00000005, 0 6.6dp 0 3.4dp #00000005, 0 7.5dp 0 4.25dp #00000005, 0 8.4dp 0 5.1dp #00000005, 0 9.3dp 0 5.95dp #00000005, 0 10.2dp 0 6.8dp #00000005, 0 11.1dp 0 7.65dp #00000005, 0 12dp 0 8.5dp #00000005, 0 12.9dp 0 9.35dp #00000005, 0 13.8dp 0 10.2dp #00000005, 0 14.7dp 0 11.05dp #00000005, 0 15.6dp 0 11.9dp #00000005, 0 16.5dp 0 12.75dp #00000005, 0 17.4dp 0 13.6dp #00000005;
+  background-color: #00000024;
+}
+
+.shell-body--wide .shell-scrim--picture_send {
+  background-color: transparent;
+}
+
+.shell-body--wide .shell-frame--picture_send .shell-overlay-body {
+  background-color: #ffffff;
+  border-color: #3c3c432e;
+  box-shadow: 0 -3.9dp 0 -0.85dp #00000005, 0 -4.8dp 0 -1.7dp #00000005, 0 -5.7dp 0 -2.55dp #00000005, 0 -6.6dp 0 -3.4dp #00000005, 0 -7.5dp 0 -4.25dp #00000005, 0 -8.4dp 0 -5.1dp #00000005, 0 -9.3dp 0 -5.95dp #00000005, 0 -10.2dp 0 -6.8dp #00000005, 0 -11.1dp 0 -7.65dp #00000005, 0 -12dp 0 -8.5dp #00000005, 0 -12.9dp 0 -9.35dp #00000005, 0 -13.8dp 0 -10.2dp #00000005, 0 -14.7dp 0 -11.05dp #00000005, 0 -15.6dp 0 -11.9dp #00000005, 0 -16.5dp 0 -12.75dp #00000005, 0 -17.4dp 0 -13.6dp #00000005;
+}
+
+.shell-body--wide .shell-frame--picture_send.shell-frame--frost .shell-overlay-body {
+  background-color: #ffffffb8;
+  backdrop-filter: blur(20px);
+}
+
+.shell-body--wide .picture-send--wide {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-title {
+  color: #3c3c4399;
+}
+
+.shell-body--wide .picture-send--wide .ps-x {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-x:hover {
+  background-color: #7878801f;
+}
+
+.shell-body--wide .picture-send--wide .ps-x svg {
+  image-color: #3c3c4399;
+}
+
+.shell-body--wide .picture-send--wide .ps-badge-dot {
+  background-color: #3c3c43d1;
 }
 
 .shell-body--wide .picture-send--wide .ps-cancel {
+  background-color: transparent;
+  color: #3c3c4399;
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel:hover {
   background-color: #7878801f;
   color: #000000;
 }

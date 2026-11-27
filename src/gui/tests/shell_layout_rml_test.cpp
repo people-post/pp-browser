@@ -323,6 +323,27 @@ TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
   }
 }
 
+// The send-preview tray (wide.rcss): its layer is a scrim with the page's own class (so the whole-window scrim can be
+// left clear), and a frame ShellHost can find by id to put over the conversation column; frosted only while
+// Transparency is on.
+TEST(ShellLayoutRmlTest, TheWideSendPreviewLayerHasItsOwnScrimClassAFrameIdAndFrostOnlyWithTransparency) {
+  ShellState state = WithChatPane(LayoutMode::Expanded);
+  OverlayEntry layer;
+  layer.id = 9;
+  layer.key = "picture_send";
+  layer.full_screen = true;
+  state.overlay_stack.push_back(layer);
+  state.compact_chrome_frost = true;
+  state.reduce_transparency = false;
+  std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-scrim shell-scrim--picture_send\""));
+  EXPECT_TRUE(Has(rml, "class=\"shell-frame shell-frame--picture_send shell-frame--frost\" id=\"shell-frame-9\""));
+  state.reduce_transparency = true;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-frame shell-frame--picture_send\" id=\"shell-frame-9\"")) << "solid";
+  EXPECT_FALSE(Has(rml, "shell-frame--frost"));
+}
+
 // Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half and --small also lighten the
 // scrim, full has none), and its X is a 44dp button around a small grey disc.
 TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {

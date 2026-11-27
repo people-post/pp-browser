@@ -13,6 +13,7 @@
 #include <ui/dom/Event.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -27,6 +28,24 @@ std::string FormatPickedSize(const uint64_t bytes) {
 }
 
 namespace {
+
+/** The first letter of a name for the chip's round avatar: its first character (a whole UTF-8 sequence), capitalised if ASCII. */
+std::string FirstLetterOf(const std::string& name) {
+  size_t at = 0;
+  while (at < name.size() && (name[at] == ' ' || name[at] == '\t')) {
+    ++at;
+  }
+  if (at >= name.size()) {
+    return {};
+  }
+  const unsigned char lead = static_cast<unsigned char>(name[at]);
+  const size_t length = lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+  std::string letter = name.substr(at, length);
+  if (letter.size() == 1) {
+    letter[0] = static_cast<char>(std::toupper(lead));
+  }
+  return letter;
+}
 
 /** A sideways move of a finger / pointer this long (dp) turns the page. */
 constexpr int kSwipeDp = 48;
@@ -76,6 +95,7 @@ bool PictureSendController::RegisterModel(ui::Context* context) {
       cell.RegisterMember("name", &PictureSendCell::name);
       cell.RegisterMember("size_label", &PictureSendCell::size_label);
       cell.RegisterMember("ext", &PictureSendCell::ext);
+      cell.RegisterMember("kind", &PictureSendCell::kind);
       cell.RegisterMember("iw", &PictureSendCell::iw);
       cell.RegisterMember("ih", &PictureSendCell::ih);
       cell.RegisterMember("ml", &PictureSendCell::ml);
@@ -96,9 +116,14 @@ bool PictureSendController::RegisterModel(ui::Context* context) {
     ctor.Bind("ps_current_name", &current_name_);
     ctor.Bind("ps_current_size", &current_size_);
     ctor.Bind("ps_current_ext", &current_ext_);
+    ctor.Bind("ps_current_kind", &current_kind_);
     ctor.Bind("ps_show_original", &show_original_);
     ctor.Bind("ps_desktop", &desktop_);
     ctor.Bind("ps_recipient", &recipient_);
+    ctor.Bind("ps_recipient_prefix", &recipient_prefix_);
+    ctor.Bind("ps_recipient_name", &recipient_name_);
+    ctor.Bind("ps_recipient_suffix", &recipient_suffix_);
+    ctor.Bind("ps_recipient_initial", &recipient_initial_);
     ctor.Bind("ps_has_items", &has_items_);
     ctor.Bind("ps_text", &text_);
     ctor.Bind("ps_original", &original_);
@@ -364,6 +389,7 @@ void PictureSendController::Refresh() {
       cell.name = item.display_name.c_str();
       cell.size_label = FormatAttachmentByteSize(item.bytes).c_str();
       cell.ext = FileTypeTileLabel(item.display_name).c_str();
+      cell.kind = FileTypeTileKind(FileTypeTileLabel(item.display_name)).c_str();
     }
     for (const auto& entry : dims_) {
       if (entry.first == item.id && entry.second.first > 0 && entry.second.second > 0) {
@@ -394,6 +420,16 @@ void PictureSendController::Refresh() {
                                [](const PictureSendItem& item) { return item.kind == PictureSendKind::Picture; });
   desktop_ = host_.is_desktop && host_.is_desktop();
   recipient_ = host_.recipient ? host_.recipient().c_str() : "";
+  NameWords words;
+  if (host_.recipient_words) {
+    words = host_.recipient_words();
+  } else {
+    words.prefix = std::string(recipient_.c_str());
+  }
+  recipient_prefix_ = words.prefix.c_str();
+  recipient_name_ = words.name.c_str();
+  recipient_suffix_ = words.suffix.c_str();
+  recipient_initial_ = FirstLetterOf(words.name).c_str();
 
   std::string src;
   current_video_ = false;
@@ -403,6 +439,7 @@ void PictureSendController::Refresh() {
   current_name_ = "";
   current_size_ = "";
   current_ext_ = "";
+  current_kind_ = "other";
   if (count > 0) {
     const PictureSendItem& item = items[static_cast<size_t>(current_)];
     src = item.preview_path;
@@ -414,6 +451,7 @@ void PictureSendController::Refresh() {
       current_name_ = item.display_name.c_str();
       current_size_ = FormatAttachmentByteSize(item.bytes).c_str();
       current_ext_ = FileTypeTileLabel(item.display_name).c_str();
+      current_kind_ = FileTypeTileKind(FileTypeTileLabel(item.display_name)).c_str();
     }
     const bool failed = std::find(failed_.begin(), failed_.end(), item.id) != failed_.end();
     current_preparing_ = src.empty() && !failed && !item.too_large && !current_is_file_;

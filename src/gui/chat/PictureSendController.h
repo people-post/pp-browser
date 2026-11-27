@@ -3,6 +3,7 @@
 #include "feature/presenters/PictureSendQueue.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
+#include "lib/ui/NameWords.h"
 
 #include <ui/base/Types.h>
 
@@ -36,6 +37,8 @@ struct PictureSendCell {
   ui::String size_label;
   /** The chat file card's type label ("PDF"); empty: the generic file icon. */
   ui::String ext;
+  /** The label's colour family (FileTypeTileKind: "pdf", "zip", ... "other"): the badge's class. */
+  ui::String kind = "other";
   /** The thumbnail covering the square cell without stretching: its size and offset in dp, with the unit. */
   ui::String iw = "0dp";
   ui::String ih = "0dp";
@@ -90,6 +93,8 @@ struct PictureSendHost {
    * None: no recipient, the pictures' own title, not a computer.
    */
   std::function<std::string()> recipient;
+  /** The same sentence cut at the name (the tray's chip sets the name in its own weight); None: the whole line is the prefix. */
+  std::function<NameWords()> recipient_words;
   std::function<std::string(size_t items)> items_title;
   std::function<bool()> is_desktop;
   /** Deletes a file / a folder (default: std::filesystem). */
@@ -158,6 +163,9 @@ public:
   bool Desktop() const { return desktop_; }
   std::string Title() const { return std::string(title_.c_str()); }
   std::string Recipient() const { return std::string(recipient_.c_str()); }
+  std::string RecipientName() const { return std::string(recipient_name_.c_str()); }
+  std::string RecipientInitial() const { return std::string(recipient_initial_.c_str()); }
+  std::string CurrentKind() const { return std::string(current_kind_.c_str()); }
   std::string CurrentSrc() const { return std::string(current_src_.c_str()); }
   bool CanSend() const { return can_send_; }
   /** The "original" check: off every time the page opens, set only by a tap, never stored anywhere. */
@@ -232,9 +240,14 @@ private:
   ui::String current_name_;
   ui::String current_size_;
   ui::String current_ext_;
+  ui::String current_kind_ = "other";
   bool show_original_ = true;
   bool desktop_ = false;
   ui::String recipient_;
+  ui::String recipient_prefix_;
+  ui::String recipient_name_;
+  ui::String recipient_suffix_;
+  ui::String recipient_initial_;
   bool has_items_ = false;
   ui::String text_;
   bool original_ = false;

@@ -4090,6 +4090,10 @@ PictureSendHost ChatController::MakePictureSendHost() {
     return Tr("picture_send.recipient",
               {{"name", ThreadTitleFor(picture_queue_ ? picture_queue_->ThreadId() : std::string())}});
   };
+  host.recipient_words = [this]() {
+    const std::string name = ThreadTitleFor(picture_queue_ ? picture_queue_->ThreadId() : std::string());
+    return SplitAtNameMarker(Tr("picture_send.recipient", {{"name", std::string(1, kNameMarker)}}), name);
+  };
   host.items_title = [](const size_t items) {
     return Tr(PictureSendItemsTitleKey(items), {{"n", std::to_string(items)}});
   };
