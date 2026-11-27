@@ -29,4 +29,11 @@ struct AppEventHooks {
 void SetAppEventHooks(AppEventHooks hooks);
 const AppEventHooks& GetAppEventHooks();
 
+/**
+ * Whether the key-down being handled is one the keyboard repeated (a key held down). SdlAppEvents::PreProcess sets it
+ * from the SDL event just before the key reaches the key bindings, which have no event of their own to ask.
+ */
+void SetKeyDownIsRepeat(bool repeat);
+bool KeyDownIsRepeat();
+
 } // namespace pbr

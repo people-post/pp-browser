@@ -92,7 +92,7 @@ struct PictureSendItem {
   uint64_t bytes = 0;
   /** What the page calls it: the path's file name unless the caller gave one (a pasted picture has no name of its own). */
   std::string display_name;
-  /** The path is a file this app made for the item (not the person's own): later steps delete only those. Stored only. */
+  /** The path is a file this app made for the item (not the person's own): only those go through `release_owned`. */
   bool owned = false;
   /** Width × height from the file's head; 0 when it could not be read. */
   uint64_t pixels = 0;
@@ -173,6 +173,11 @@ struct PictureSendPorts {
   std::function<void(const std::string& thread_id, const std::string& text)> put_back_text;
   /** Deletes a picked copy that is no longer needed (once per item). */
   std::function<void(const std::string& path)> release;
+  /**
+   * Deletes a file this app made for an item (`PictureSendItem::owned`, a pasted picture) that is no longer needed.
+   * Called instead of `release` for those items; when unset they go through `release`.
+   */
+  std::function<void(const std::string& path)> release_owned;
   /** Deletes a preview page file of an item. */
   std::function<void(const std::string& path)> remove_file;
   /** A steady clock in milliseconds. */
@@ -199,6 +204,8 @@ public:
   static constexpr int64_t kRateLimitRetryMs = 15000;
 
   PictureSendQueue(std::string thread_id, AttachmentLimits limits, PictureSendPorts ports);
+  /** A queue let go before it ended: the owned files of the items still waiting are deleted (nothing else is touched). */
+  ~PictureSendQueue();
 
   /** The chat the pictures were picked in: they and the text go there, and the text goes back there. */
   const std::string& ThreadId() const { return thread_id_; }
@@ -267,6 +274,7 @@ private:
   PictureSendItem* Find(uint64_t id);
   void RemovePreviewFiles(PictureSendItem& item);
   void ReleaseItem(PictureSendItem& item, PictureItemState final_state);
+  void ReleaseFile(const std::string& path, bool owned);
   void Pump();
   void PumpOnce();
   void End(PictureSendExit exit);

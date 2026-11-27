@@ -86,6 +86,7 @@
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -498,6 +499,17 @@ private:
    * unless `owned`.
    */
   void OpenAttachPreview(std::vector<AttachCandidate> candidates, AttachSource source);
+  /**
+   * Ctrl/Cmd+V or the menu's Paste in the chat's message box (a computer only): a picture on the clipboard, with no
+   * file and no text beside it, goes to the send preview. True = handled (the text paste must not run). UI thread.
+   */
+  bool TryPasteAttachment();
+  /** Installs both paste triggers (key binding, context-menu interceptor); nothing on a phone. */
+  void InstallPasteTriggers();
+  /** `<cache>/pasted`: where pasted pictures are written (outside the profile). */
+  std::filesystem::path PastedDir() const;
+  /** Once per run, after the first unlock: empties PastedDir() (a crash or a kill leaves files there). */
+  void SweepPastedFilesOnce();
   /** What AttachIntake decides on, read from the controller now. */
   AttachState CurrentAttachState() const;
   AttachIntakePorts MakeAttachIntakePorts();
@@ -740,6 +752,9 @@ private:
   PictureSendController picture_send_;
   /** Made on first use (OpenAttachPreview). */
   std::unique_ptr<AttachIntake> attach_intake_;
+  /** Made on first use (TryPasteAttachment). */
+  std::unique_ptr<PasteAttach> paste_attach_;
+  bool pasted_swept_ = false;
   /** The several-photo pick being copied out of the library (iPhone / iPad); none otherwise. */
   struct PhotoBatch {
     uint64_t pick_serial = 0;

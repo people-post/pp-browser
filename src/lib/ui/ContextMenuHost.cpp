@@ -395,6 +395,13 @@ bool ContextMenuHost::OnContextPointer(ui::Context* context, int x, int y) {
   return true;
 }
 
+void ContextMenuHost::PasteInto(ui::Element* editor) const {
+  if (editor && paste_interceptor_ && paste_interceptor_(editor)) {
+    return;
+  }
+  PasteIntoEditor(editor);
+}
+
 std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   std::vector<ContextMenuAction> actions;
   ui::Context* context = menu_context_ ? menu_context_ : context_;
@@ -444,7 +451,7 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   };
 
   auto paste_enabled = [editor]() { return editor != nullptr; };
-  auto paste_run = [editor]() { PasteIntoEditor(editor); };
+  auto paste_run = [this, editor]() { PasteInto(editor); };
 
   if (menu_touch_ && editor) {
     // Phone text field, two steps: with nothing selected offer Paste / Select / Select all; choosing a

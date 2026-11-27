@@ -76,6 +76,26 @@ DropVerdict DecideDrop(const bool has_position, const bool inside_chat, const At
   return refusal == AttachRefusal::None ? DropVerdict::Take : DropVerdict::Refuse;
 }
 
+PasteAction DecidePaste(const ClipboardSummary& clipboard, const AttachRefusal refusal) {
+  PasteAction action;
+  if (clipboard.has_files || clipboard.has_text) {
+    return action; // D1: copied files are not read; text always goes to the field, a picture beside it or not
+  }
+  const bool readable = !clipboard.image_type.empty();
+  if (!readable && !clipboard.has_unusable_image) {
+    return action;
+  }
+  action.take_over = true;
+  if (refusal != AttachRefusal::None) {
+    action.pill_key = AttachRefusalKey(refusal);
+  } else if (readable) {
+    action.read_image = true;
+  } else {
+    action.pill_key = "chat.paste.unsupported";
+  }
+  return action;
+}
+
 const char* DropHintKey(const bool inside_chat, const AttachRefusal refusal) {
   if (!inside_chat) {
     return nullptr;
@@ -155,6 +175,7 @@ AttachPlan PlanAttachCandidates(const std::vector<AttachCandidate>& candidates, 
       item.bytes = fact.size;
       item.pixels = fact.pixels;
       item.owned = candidate.owned;
+      item.display_name = candidate.display_name;
       switch (fact.sniffed) {
         case SniffedType::Png:
         case SniffedType::Jpeg:
@@ -264,11 +285,79 @@ void AttachIntake::Finish(const std::string& thread_id, const uint64_t session,
   }
   std::vector<AttachCandidate> handed;
   for (const AttachPlannedItem& item : plan.items) {
-    handed.push_back({item.path, item.owned});
+    handed.push_back({item.path, item.owned, {}});
   }
   if (!ports_.open_page(thread_id, std::move(plan.items))) {
     Release(handed); // the page did not open: the owned files that went with it are deleted here
   }
+}
+
+PasteAttach::PasteAttach(PastePorts ports) : ports_(std::move(ports)) {}
+
+bool PasteAttach::TryPaste() {
+  if (in_flight_) {
+    return true; // a file is being written: swallowed, nothing said, the clipboard not touched
+  }
+  const ClipboardSummary clipboard = ports_.peek();
+  AttachState state = ports_.state();
+  state.paste_in_flight = in_flight_;
+  const PasteAction action = DecidePaste(clipboard, RefusalFor(state));
+  if (!action.take_over) {
+    return false;
+  }
+  if (action.pill_key && ports_.say) {
+    ports_.say(action.pill_key, 0);
+  }
+  if (!action.read_image) {
+    return true;
+  }
+  const std::optional<ClipboardImage> image = ports_.read_image();
+  if (!image) {
+    if (ports_.say) {
+      ports_.say("chat.paste.unsupported", 0); // gone since the peek, or not really a PNG
+    }
+    return true;
+  }
+  if (image->too_large) {
+    if (ports_.say) {
+      ports_.say("chat.paste.too_large", 0);
+    }
+    return true;
+  }
+  in_flight_ = true;
+  const std::string thread_id = ports_.chat_id();
+  const uint64_t session = ports_.session();
+  const std::weak_ptr<int> alive = alive_;
+  auto write = ports_.write;
+  auto release = ports_.release_owned;
+  auto post_ui = ports_.post_ui;
+  ports_.post_worker([this, alive, write = std::move(write), release = std::move(release), post_ui = std::move(post_ui),
+                      thread_id, session, bytes = image->bytes, extension = image->extension]() {
+    std::optional<std::string> path = write(bytes, extension);
+    post_ui([this, alive, release, path = std::move(path), thread_id, session]() {
+      if (alive.expired()) {
+        if (path && release) {
+          release(*path);
+        }
+        return;
+      }
+      in_flight_ = false; // first, whatever came out of the write
+      if (!path) {
+        if (ports_.say) {
+          ports_.say("chat.paste.failed", 0);
+        }
+        return;
+      }
+      if (thread_id != ports_.chat_id() || session != ports_.session()) {
+        if (ports_.release_owned) {
+          ports_.release_owned(*path); // the chat changed or the app locked meanwhile: no page
+        }
+        return;
+      }
+      ports_.open_preview({AttachCandidate{*path, true, kDisplayName}});
+    });
+  });
+  return true;
 }
 
 } // namespace pbr

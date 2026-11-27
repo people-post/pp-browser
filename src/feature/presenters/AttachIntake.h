@@ -1,11 +1,13 @@
 #pragma once
 
 #include "feature/presenters/PictureSendQueue.h"
+#include "foundation/platform/ClipboardAttachments.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +25,8 @@ enum class AttachSource { Picker, Drop, Paste };
 struct AttachCandidate {
   std::string path;
   bool owned = false;
+  /** What the page calls it; empty = the path's file name (a pasted picture has a fixed name). */
+  std::string display_name;
 };
 
 /** What decides whether files may come in now; the default is "all clear". */
@@ -81,6 +85,22 @@ enum class DropVerdict {
 /** `has_position` first: a drop with no known place is never taken, even when the chat would take files. */
 DropVerdict DecideDrop(bool has_position, bool inside_chat, AttachRefusal refusal);
 
+/** What a paste key / menu Paste does (DEV/PLAN-desktop-drop-paste.md, D1). */
+struct PasteAction {
+  /** The paste is ours: the key is swallowed and the text paste does not run. */
+  bool take_over = false;
+  /** A picture is to be read and written (only with `take_over`, and only when files are accepted now). */
+  bool read_image = false;
+  /** A pill to show when taken over without reading (nullptr = silent). */
+  const char* pill_key = nullptr;
+};
+
+/**
+ * The clipboard decides: files (D1: never taken), then text (even with a picture), then a readable picture, then a
+ * picture type we cannot read ("can't paste this image"). Taken over but refused now: swallowed with the refusal's pill.
+ */
+PasteAction DecidePaste(const ClipboardSummary& clipboard, AttachRefusal refusal);
+
 /** The hover hint's locale key: the "drop to send" line, a refusal's own line, or nullptr = no hint (outside the chat, or a refusal that says nothing). */
 const char* DropHintKey(bool inside_chat, AttachRefusal refusal);
 
@@ -106,6 +126,7 @@ struct AttachPlannedItem {
   uint64_t bytes = 0;
   uint64_t pixels = 0;
   bool owned = false;
+  std::string display_name;
 };
 
 struct AttachPlan {
@@ -140,7 +161,7 @@ struct AttachIntakePorts {
   std::function<FileFacts(const std::string& path)> gather;
   /** Show a pill: a locale key and, for the keys that count something, `n`. UI thread. */
   std::function<void(const char* key, int n)> say;
-  /** Delete a file this app made for an attachment that is not used. Default: nothing (no owned source yet). */
+  /** Delete a file this app made for an attachment that is not used (a pasted picture). */
   std::function<void(const std::string& path)> release_owned;
   /** The batch goes on to the page, for chat `thread_id`; false when the page could not open (the caller released the items). */
   std::function<bool(const std::string& thread_id, std::vector<AttachPlannedItem> items)> open_page;
@@ -162,6 +183,47 @@ private:
               const std::vector<FileFacts>& facts);
 
   AttachIntakePorts ports_;
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+};
+
+struct PastePorts {
+  /** The state now, without the paste flag (PasteAttach adds its own). UI thread. */
+  std::function<AttachState()> state;
+  /** Types only. UI thread. */
+  std::function<ClipboardSummary()> peek;
+  /** The picture's bytes (UI thread; SDL's rule). */
+  std::function<std::optional<ClipboardImage>()> read_image;
+  std::function<std::string()> chat_id;
+  std::function<uint64_t()> session;
+  std::function<void(std::function<void()> work)> post_worker;
+  std::function<void(std::function<void()> work)> post_ui;
+  /** Writes the bytes to a new file of ours and returns its path; nullopt = failed, nothing left behind. Worker thread. */
+  std::function<std::optional<std::string>(const std::string& bytes, const std::string& extension)> write;
+  std::function<void(const char* key, int n)> say;
+  std::function<void(const std::string& path)> release_owned;
+  /** The written file on to the preview (an owned candidate). UI thread. */
+  std::function<void(std::vector<AttachCandidate> candidates)> open_preview;
+};
+
+/**
+ * One paste of a picture: reads the clipboard, writes the file off the UI thread and hands it on. While a file is being
+ * written a second paste is swallowed (no pill, no read). Pure apart from the ports.
+ */
+class PasteAttach {
+public:
+  /** What the page calls a pasted picture. */
+  static constexpr const char* kDisplayName = "Pasted image.png";
+
+  explicit PasteAttach(PastePorts ports);
+
+  /** True = the paste was handled (the key is swallowed); false = leave it to the text field. UI thread. */
+  bool TryPaste();
+  /** A file is being written: files are refused (RefusalFor's PasteInFlight). */
+  bool InFlight() const { return in_flight_; }
+
+private:
+  PastePorts ports_;
+  bool in_flight_ = false;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
 };
 

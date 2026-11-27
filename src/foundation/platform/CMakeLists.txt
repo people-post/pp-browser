@@ -42,6 +42,8 @@ set(_pp_platform_gui_sources
   PlatformLifecycleEvents.cpp
   ScreenAwake.cpp
   AiImagePrep.cpp
+  ClipboardAttachments.cpp
+  PastedFiles.cpp
   ImageEncode.cpp
   ImageSampleAffine.cpp
   ProfileIconImagePrep.cpp

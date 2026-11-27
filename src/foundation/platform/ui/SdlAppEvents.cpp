@@ -119,6 +119,7 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
   const AppEventHooks& hooks = GetAppEventHooks();
   switch (event.type) {
     case SDL_EVENT_KEY_DOWN:
+      SetKeyDownIsRepeat(event.key.repeat); // for the key bindings, which run after this on the same event
       if (event.key.key == SDLK_AC_BACK) {
         return PlatformNavigation::OnSystemBack();
       }

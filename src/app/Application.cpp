@@ -341,7 +341,7 @@ bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_
   if (!g_input_coordinator) {
     return true;
   }
-  return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority);
+  return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority, KeyDownIsRepeat());
 }
 
 void ApplyUiDocumentLanguage(ui::Context* context) {

@@ -73,6 +73,10 @@
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ClipboardAttachments.h"
+#include "foundation/platform/PastedFiles.h"
+#include "foundation/data/AppPaths.h"
+#include "gui/chat/PasteTrigger.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/MentionAlert.h"
@@ -3942,15 +3946,21 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
   ports.send_item = [this, current](const PictureSendItem& item, const bool original) {
     const uint64_t id = item.id;
     const std::string path = item.path;
-    auto on_finished = [this, id, path, current,
+    const bool owned = item.owned;
+    auto on_finished = [this, id, path, owned, current,
                         alive = std::weak_ptr<int>(send_mark_alive_)](const AttachmentSendOutcome outcome) {
       // Always a later UI task: never inside StartAttachmentUpload's own callback, which goes on after it.
-      AppRuntime::PostUI([this, id, path, current, alive, outcome]() {
+      AppRuntime::PostUI([this, id, path, owned, current, alive, outcome]() {
         if (!alive.lock()) {
           return;
         }
         if (!current()) {
-          release_pick_(path); // its queue is gone (sign-out, teardown): the copy it held is released here, once
+          // its queue is gone (sign-out, teardown): the copy it held is released here, once
+          if (owned) {
+            ReleasePastedFile(path, PastedDir());
+          } else {
+            release_pick_(path);
+          }
           return;
         }
         picture_queue_->OnItemFinished(id, outcome);
@@ -3995,6 +4005,7 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
     PutTextBack(thread_id, text, DraftPutBack::Append);
   };
   ports.release = [this](const std::string& path) { release_pick_(path); };
+  ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
   ports.remove_file = [](const std::string& path) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
@@ -4202,7 +4213,7 @@ AttachState ChatController::CurrentAttachState() const {
   state.send_held = state.chat_open && presenter_.SendHeld(thread_id);
   state.preview_open = picture_send_.IsOpen();
   state.layer_above = ChromeSnapshot().layer_over_chat;
-  state.paste_in_flight = false; // a pasted picture is written to disk from step D1 on
+  state.paste_in_flight = paste_attach_ && paste_attach_->InFlight();
   state.attachment_busy = AttachmentBusy();
   return state;
 }
@@ -4215,8 +4226,8 @@ AttachIntakePorts ChatController::MakeAttachIntakePorts() {
   ports.post_worker = [](std::function<void()> work) { AppRuntime::PostWorkerNormal(std::move(work)); };
   ports.post_ui = [](std::function<void()> work) { AppRuntime::PostUI(std::move(work)); };
   ports.say = [this](const char* key, const int n) { ShowToast(Tr(key, {{"n", std::to_string(n)}})); };
-  // Nothing of ours is written for an attachment yet (a pasted picture will be, step D1): nothing to delete.
-  ports.release_owned = [](const std::string& /*path*/) {};
+  // A pasted picture is the one file we write for an attachment: it is deleted when it is not used.
+  ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
   ports.open_page = [this](const std::string& thread_id, std::vector<AttachPlannedItem> items) {
     return OpenAttachItems(thread_id, std::move(items));
   };
@@ -4301,6 +4312,62 @@ void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, 
   attach_intake_->Open(std::move(candidates), source);
 }
 
+std::filesystem::path ChatController::PastedDir() const {
+  return std::filesystem::path(AppPaths::CacheDir()) / "pasted";
+}
+
+void ChatController::SweepPastedFilesOnce() {
+  if (pasted_swept_) {
+    return;
+  }
+  pasted_swept_ = true;
+  // Only <cache>/pasted, and only now: after the first unlock nothing of this run can be writing there yet.
+  SweepPastedDir(PastedDir());
+}
+
+bool ChatController::TryPasteAttachment() {
+  if (Platform::IsMobile() || !facade_) {
+    return false;
+  }
+  if (!paste_attach_) {
+    PastePorts ports;
+    ports.state = [this]() { return CurrentAttachState(); };
+    ports.peek = []() { return PeekClipboard(); };
+    ports.read_image = [this]() {
+      return ReadClipboardImage(static_cast<size_t>(facade_->CurrentAttachmentLimits().max_file_bytes));
+    };
+    ports.chat_id = [this]() { return ActiveThreadId(); };
+    ports.session = [this]() { return messaging_session_; };
+    ports.post_worker = [](std::function<void()> work) { AppRuntime::PostWorkerNormal(std::move(work)); };
+    ports.post_ui = [](std::function<void()> work) { AppRuntime::PostUI(std::move(work)); };
+    ports.write = [dir = PastedDir()](const std::string& bytes, const std::string& extension) {
+      return WritePastedFile(dir, bytes, extension);
+    };
+    ports.say = [this](const char* key, const int n) { ShowToast(Tr(key, {{"n", std::to_string(n)}})); };
+    ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
+    ports.open_preview = [this](std::vector<AttachCandidate> candidates) {
+      OpenAttachPreview(std::move(candidates), AttachSource::Paste);
+    };
+    paste_attach_ = std::make_unique<PasteAttach>(std::move(ports));
+  }
+  return paste_attach_->TryPaste();
+}
+
+void ChatController::InstallPasteTriggers() {
+  if (Platform::IsMobile()) {
+    return; // no keyboard paste, no desktop menu
+  }
+  PasteTriggerPorts ports;
+  ports.in_chat_composer_context = [this]() {
+    return !InAiComposerContext() && !chat_.editing_message && !ActiveThreadId().empty();
+  };
+  ports.paste = [this]() { return TryPasteAttachment(); };
+  if (input_) {
+    input_->Register(PasteKeyBinding(ports, PasteKeyModifier()));
+  }
+  ContextMenuHost::Instance().SetPasteInterceptor(PasteMenuInterceptor(ports));
+}
+
 bool ChatController::OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items) {
   PictureSendQueue* queue = BeginPictureQueue(thread_id);
   if (!queue) {
@@ -4310,8 +4377,8 @@ bool ChatController::OpenAttachItems(const std::string& thread_id, std::vector<A
   picture_picker_done_ms_ = 0;
   bool shown = false;
   for (AttachPlannedItem& item : items) {
-    const std::optional<uint64_t> id = queue->Add(std::move(item.path), item.kind, item.bytes, item.pixels, {},
-                                                  item.owned); // a full queue releases it
+    const std::optional<uint64_t> id = queue->Add(std::move(item.path), item.kind, item.bytes, item.pixels,
+                                                  std::move(item.display_name), item.owned); // a full queue releases it
     if (!id) {
       continue;
     }
@@ -7137,6 +7204,7 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  SweepPastedFilesOnce();
   recovery_phrase_present_.reset();
   device_removed_.Check(); // still on the account's device list? (also listens for the next change)
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
@@ -7408,6 +7476,7 @@ bool ChatController::Setup(ui::Context* context) {
   };
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
+  InstallPasteTriggers();
   // The send-preview page on the wide layout: Enter in its text sends the pictures, Shift+Enter is a new line (a phone's
   // Enter key stays a new line there).
   for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
@@ -8407,6 +8476,7 @@ void ChatController::KeepClearOfComposer(ui::Element* overlay, const char* mount
 }
 
 void ChatController::Shutdown() {
+  ContextMenuHost::Instance().SetPasteInterceptor({}); // it holds this controller
   voice_->Shutdown();
   voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);

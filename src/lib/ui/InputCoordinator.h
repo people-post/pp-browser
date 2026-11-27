@@ -18,6 +18,8 @@ struct KeyBinding {
   std::function<bool()> action;
   int priority = 0;
   bool priority_phase = true;
+  /** Not for a key the keyboard repeats (a key held down): the binding is skipped and the key goes on untouched. */
+  bool skip_repeat = false;
 };
 
 class InputCoordinator {
@@ -28,7 +30,8 @@ public:
   void Clear();
 
   /// Returns false when a binding consumed the key (stop further handling).
-  bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, bool priority_phase);
+  bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, bool priority_phase,
+                      bool repeat = false);
 
 private:
   std::vector<KeyBinding> bindings_;
