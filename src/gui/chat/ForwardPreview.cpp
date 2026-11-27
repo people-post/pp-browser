@@ -1,13 +1,18 @@
 #include "gui/chat/ForwardPreview.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "gui/chat/ChatPictureTextures.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/voice/VoiceFile.h"
 
+#include <ui/Core.h>
+
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 
 namespace pbr {
 
@@ -77,8 +82,9 @@ int JpegLongSide(const std::vector<uint8_t>& jpeg) {
 
 } // namespace
 
-ForwardPreviewFiles::ForwardPreviewFiles(std::string profile_dir)
-    : dir_((std::filesystem::path(AttachmentViewRoot(profile_dir, kForwardPreviewViewThread))).string()) {}
+ForwardPreviewFiles::ForwardPreviewFiles(std::string profile_dir, std::function<void(const std::string& path)> release)
+    : dir_((std::filesystem::path(AttachmentViewRoot(profile_dir, kForwardPreviewViewThread))).string()),
+      release_(std::move(release)) {}
 
 std::string ForwardPreviewFiles::Put(const std::vector<uint8_t>& jpeg, const size_t index) {
   const int side = JpegLongSide(jpeg);
@@ -91,16 +97,35 @@ std::string ForwardPreviewFiles::Put(const std::vector<uint8_t>& jpeg, const siz
     started_ = true;
   }
   std::filesystem::create_directories(dir_, ec);
-  const std::string path = (std::filesystem::path(dir_) / (std::to_string(index) + ".jpg")).string();
+  // Another name for every page that opens: the UI library keeps an <img> by its path until its texture is released,
+  // so a second page that wrote the same name would show the first page's picture. Counters only, never an id or a hash.
+  if (open_serial_ == 0) {
+    static std::atomic<uint64_t> opens{0};
+    open_serial_ = ++opens;
+  }
+  const std::string path =
+      (std::filesystem::path(dir_) / (std::to_string(open_serial_) + "-" + std::to_string(index) + ".jpg")).string();
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(jpeg.data()), static_cast<std::streamsize>(jpeg.size()));
-  return out ? path : std::string();
+  if (!out) {
+    return {};
+  }
+  made_.push_back(path);
+  return path;
 }
 
 void ForwardPreviewFiles::RemoveAll() {
   std::error_code ec;
   std::filesystem::remove_all(dir_, ec);
   started_ = false;
+  // The files are gone: let the library drop what it drew from them.
+  for (const std::string& path : std::exchange(made_, {})) {
+    if (release_) {
+      release_(path);
+    } else {
+      ui::ReleaseTexture(TextureKeyForImageSrc(path));
+    }
+  }
 }
 
 ForwardPreviewContent BuildForwardPreview(const ForwardCheck& check, const std::string& text,

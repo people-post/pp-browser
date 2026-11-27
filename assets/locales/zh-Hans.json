@@ -1536,7 +1536,7 @@
     "chat.forward.limit_targets": "一次最多转发给 3 个聊天",
     "chat.forward.interrupted": "只转发了一部分",
     "chat.forward.note_without_bytes": "有 {n} 条本机没有内容，不会转发",
-    "chat.forward.limit_uploads": "图片和文件一次最多发 5 份（现在是 {n} 份），请少选几条或少选几个聊天",
+    "chat.forward.limit_uploads": "一次最多转发 3 个图片或文件（现在选了 {n} 个）",
     "chat.forward.limit_size": "这次选的文件太大（约 {n} MB，一次最多 25 MB），请分几次转发",
     "chat.forward.too_big_single": "这个文件太大（约 {n} MB），不能转发",
     "chat.forward.busy": "还有附件在发送，等它发完再转发",

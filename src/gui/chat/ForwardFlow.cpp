@@ -33,7 +33,8 @@ std::string AfterDoneWord(const std::string& text, const std::string& done, std:
 ForwardProgressView MakeForwardProgressView(const ForwardProgress& progress, const int64_t now_ms) {
   ForwardProgressView view;
   const size_t shown = progress.finishing ? progress.done : std::min(progress.done + 1, progress.total);
-  view.title = Tr("chat.forward.progress_title", {{"done", std::to_string(shown)}, {"total", std::to_string(progress.total)}});
+  view.title =
+      Tr("chat.forward.progress_title", {{"done", std::to_string(shown)}, {"total", std::to_string(progress.total)}});
   view.finishing = progress.finishing;
   view.can_close = progress.finishing && progress.can_close;
   if (progress.finishing) {
@@ -215,15 +216,17 @@ void ForwardFlow::OpenPicker() {
   PeoplePickerChooseOptions options;
   options.title = Tr("chat.forward.pick_title");
   options.send_label = Tr("picture_send.send_one"); // the app's plain "Send"
-  const auto count_text = [](const size_t count) { return Tr("chat.forward.preview_count", {{"n", std::to_string(count)}}); };
+  const auto count_text = [](const size_t count) {
+    return Tr("chat.forward.preview_count", {{"n", std::to_string(count)}});
+  };
   // What is chosen, before any chat is: the tiles and the note (attachments), the words (text and cards).
-  ForwardPreviewContent content = BuildForwardPreview(presenter_.CheckForward(0), presenter_.ForwardPreview(count_text),
-                                                      count_text, ports_.preview);
+  ForwardPreviewContent content =
+      BuildForwardPreview(presenter_.CheckForward(), presenter_.ForwardPreview(count_text), count_text, ports_.preview);
   options.preview = std::move(content.text);
   options.preview_items = std::move(content.items);
   options.preview_note = std::move(content.note);
-  // The limits depend on how many chats are ticked: asked each time, so Send is off with the reason showing.
-  options.refusal = [this](const size_t chats) { return ForwardRefusalText(presenter_.CheckForward(chats)); };
+  // The limits do not depend on the chats ticked (only the cap of chats does): Send is off with the reason showing.
+  options.refusal = [this](const size_t) { return ForwardRefusalText(presenter_.CheckForward()); };
   options.limit_message = Tr("chat.forward.limit_targets");
   options.max_targets = kMaxForwardTargets;
   options.list = [this]() { return presenter_.ForwardTargets(); };
@@ -265,7 +268,7 @@ void ForwardFlow::OnChosen(std::vector<ForwardTarget> chosen) {
   }
   // The picker keeps Send off while a limit is broken; this is for an answer that slipped through (a send that began
   // while it was open). The selection stays so the person can take something away and go again.
-  const ForwardCheck check = presenter_.CheckForward(chosen.size());
+  const ForwardCheck check = presenter_.CheckForward();
   if (check.refusal != ForwardRefusal::None) {
     Show(ForwardRefusalText(check));
     if (single_) {
@@ -275,8 +278,9 @@ void ForwardFlow::OnChosen(std::vector<ForwardTarget> chosen) {
     Changed();
     return;
   }
-  const bool page = check.attachments > 0; // text and cards alone never show a page (they are queued at once)
-  single_ = false; // the presenter ends the selection itself; a multi-select was never "single"
+  const bool page =
+      check.uploads > 0; // the same test as the call refusal: text, cards and attachments held nowhere never show one
+  single_ = false;       // the presenter ends the selection itself; a multi-select was never "single"
   presenter_.ForwardSelectedTo(std::move(chosen), [this](const ForwardResult& result) { OnForwardDone(result); });
   if (page && presenter_.Forwarding()) {
     OpenProgress();
@@ -333,7 +337,8 @@ void ForwardFlow::Tick(const bool chat_visible) {
     if (!presenter_.Forwarding()) {
       CloseProgress(); // the run ended or was taken away without telling the page
     } else if (ports_.show_progress) {
-      ports_.show_progress(MakeForwardProgressView(presenter_.ForwardProgressNow(), ports_.now_ms ? ports_.now_ms() : 0));
+      ports_.show_progress(
+          MakeForwardProgressView(presenter_.ForwardProgressNow(), ports_.now_ms ? ports_.now_ms() : 0));
     }
   }
   if (chat_visible && !progress_open_ && presenter_.ForwardNoticeDue()) {
@@ -391,7 +396,7 @@ void ForwardFlow::OnCallStarted() {
     return;
   }
   presenter_.NoteAppEnteredBackground(); // the same stop: nothing new starts, the item under way is not cut
-  CloseProgress(); // what it did is told when the item under way has answered (Tick)
+  CloseProgress();                       // what it did is told when the item under way has answered (Tick)
 }
 
 void ForwardFlow::Stop() {
@@ -424,7 +429,8 @@ void ForwardFlow::Leave() {
 void ForwardFlow::OnThreadGone(const std::string& thread_id) {
   // The presenter has usually forgotten the selection already (it does so when it closes the chat), so this goes by the
   // chat the flow began in and always draws the bars again.
-  presenter_.NoteForwardSourceGone(thread_id); // a forward with uploads from that chat stops, told at once through the sink
+  presenter_.NoteForwardSourceGone(
+      thread_id); // a forward with uploads from that chat stops, told at once through the sink
   if (progress_open_ && !presenter_.Forwarding()) {
     CloseProgress();
   }

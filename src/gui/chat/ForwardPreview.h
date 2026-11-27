@@ -34,7 +34,8 @@ inline constexpr int kForwardPreviewMaxLongSidePx = 256;
  */
 class ForwardPreviewFiles {
 public:
-  explicit ForwardPreviewFiles(std::string profile_dir);
+  /** `release`: told each file's path when it goes, to let the UI library drop its texture (default: ui::ReleaseTexture). */
+  explicit ForwardPreviewFiles(std::string profile_dir, std::function<void(const std::string& path)> release = {});
   /** Writes the JPEG as `<index>.jpg`; returns its path, or empty when it is not a JPEG of at most 256 px a side. */
   std::string Put(const std::vector<uint8_t>& jpeg, size_t index);
   /** Removes the folder and what is in it. */
@@ -43,6 +44,9 @@ public:
 private:
   std::string dir_;
   bool started_ = false;
+  std::function<void(const std::string& path)> release_;
+  std::vector<std::string> made_;
+  uint64_t open_serial_ = 0;
 };
 
 struct ForwardPreviewPorts {

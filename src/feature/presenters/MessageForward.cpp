@@ -26,6 +26,11 @@ bool CanForwardMessage(const ThreadMessage& message) {
       // Sent again as stored: the card must still read as one (nothing is rebuilt from the contact it names).
       return static_cast<bool>(ChatPayloadCodec::DecodeContactCardJson(message.payload_json));
     case ChatContentType::Attachment: {
+      // Ours that is still queued, or did not go out: its bytes are not settled (its red mark has its own tap).
+      if (message.sender_contact_id == kLocalSelfContactId &&
+          (message.delivery == MessageDelivery::Pending || message.delivery == MessageDelivery::Failed)) {
+        return false;
+      }
       // Resent from the stored fields and bytes: it needs a name for the file and a hash to find the bytes by.
       auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
       return fields && !fields->content_hash.empty();
@@ -64,7 +69,7 @@ ForwardItemKind ForwardKindOf(const ThreadMessage& message) {
   return ForwardItemKind::File;
 }
 
-ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, const size_t targets, const bool attachment_busy) {
+ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, const bool attachment_busy) {
   ForwardCheck check;
   for (const ForwardItemFacts& item : items) {
     if (item.kind == ForwardItemKind::Text || item.kind == ForwardItemKind::Card) {
@@ -79,8 +84,6 @@ ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, const size_
     check.upload_bytes += item.byte_length;
     check.largest_bytes = std::max(check.largest_bytes, item.byte_length);
   }
-  check.uploads *= targets;
-  check.upload_bytes *= targets;
   check.items = std::move(items);
   if (check.uploads == 0 && check.attachments == 0) {
     return check; // nothing but text and cards: the limits and the busy attachment slot do not matter
@@ -89,7 +92,7 @@ ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, const size_
     check.refusal = ForwardRefusal::AttachmentBusy;
   } else if (check.largest_bytes > kMaxForwardUploadBytes) {
     check.refusal = ForwardRefusal::SingleTooLarge;
-  } else if (check.uploads > kMaxForwardUploads) {
+  } else if (check.uploads > kMaxForwardAttachments) {
     check.refusal = ForwardRefusal::TooManyUploads;
   } else if (check.upload_bytes > kMaxForwardUploadBytes) {
     check.refusal = ForwardRefusal::TooLarge;
@@ -282,6 +285,8 @@ bool ForwardRun::BeginTarget() {
   message_at_ = 0;
   last_sent_id_.clear();
   last_was_attachment_ = false;
+  settle_wait_since_ms_.reset();
+  uploaded_bytes_ = 0; // the size limit is on what one chat is given, not on the chats added up
   return true;
 }
 
@@ -305,6 +310,7 @@ void ForwardRun::FailRestOfTarget() {
   ++target_at_;
   last_sent_id_.clear();
   last_was_attachment_ = false;
+  settle_wait_since_ms_.reset();
 }
 
 void ForwardRun::NextItem() {
@@ -400,8 +406,10 @@ void ForwardRun::Collect() {
     NextItem();
     return;
   }
-  if (IsAttachmentRateLimited(answer.error())) {
-    // Refused before anything was stored: the same item goes again, as often as it takes. Not a failure.
+  if (IsAttachmentRateLimited(answer.error()) && !StagedSinceStart()) {
+    // The device's own pace refused it before anything was stored: the same item goes again, as often as it takes. Not
+    // a failure. (The server's 429 has the same code but comes after the encrypted copy was staged: a failed bubble with
+    // Retry is in the chat then, and sending it again would be a second copy.)
     if (!stopped_) {
       rate_limited_ = true;
       retry_at_ms_ = (ports_.now_ms ? ports_.now_ms() : 0) + kForwardRateLimitRetryMs;
@@ -415,6 +423,18 @@ void ForwardRun::Collect() {
   NextItem();
 }
 
+bool ForwardRun::StagedSinceStart() const {
+  if (!ports_.staged_attachments) {
+    return false;
+  }
+  for (const std::string& id : ports_.staged_attachments(target_thread_)) {
+    if (std::find(staged_before_.begin(), staged_before_.end(), id) == staged_before_.end()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ForwardRun::StartAttachment() {
   const ChatAttachmentFields& fields = *fields_[message_at_];
   const auto fail = [this]() {
@@ -424,9 +444,15 @@ bool ForwardRun::StartAttachment() {
     NextItem();
     return false;
   };
-  if (!ports_.local_bytes || ports_.local_bytes(fields.content_hash) == 0 || !ports_.load_plaintext ||
-      !ports_.send_attachment) {
+  const uint64_t stored = ports_.local_bytes ? ports_.local_bytes(fields.content_hash) : 0;
+  if (stored == 0 || !ports_.load_plaintext || !ports_.send_attachment) {
     return fail(); // this device does not hold it (never downloaded, or cleaned away): not fetched for a forward
+  }
+  // The stored copy is never smaller than the bytes in it: one that is clearly too big for what is left of the limit is
+  // refused before it is decrypted.
+  const uint64_t room = uploaded_bytes_ >= kMaxForwardUploadBytes ? 0 : kMaxForwardUploadBytes - uploaded_bytes_;
+  if (stored > room + kForwardStoredOverheadSlack) {
+    return fail();
   }
   Roe<ByteVector> plain = ports_.load_plaintext(fields.content_hash);
   if (!plain) {
@@ -442,6 +468,7 @@ bool ForwardRun::StartAttachment() {
   attachment.bytes = std::move(*plain);
   attachment.image_is_shrunk = false; // the bytes are final: no shrink, and the 50 MB file limit applies
   in_flight_bytes_ = attachment.bytes.size();
+  staged_before_ = ports_.staged_attachments ? ports_.staged_attachments(target_thread_) : std::vector<std::string>();
   completion_ = std::make_shared<Completion>();
   completion_->wake = wake_;
   completion_->bytes_total = attachment.bytes.size();
@@ -517,9 +544,20 @@ ForwardRun::State ForwardRun::Step(size_t budget, const std::function<bool()>& s
       const bool next_is_attachment = fields_[message_at_].has_value();
       if ((next_is_attachment || last_was_attachment_) && !last_sent_id_.empty() &&
           !Settled(target_thread_, last_sent_id_)) {
+        // Not for ever: with no network the item before never leaves the queue. After a minute the rest of this chat
+        // is failed and the next chat goes on (a Cancel is answered at the top of this loop meanwhile).
+        const int64_t now = ports_.now_ms ? ports_.now_ms() : 0;
+        if (!settle_wait_since_ms_) {
+          settle_wait_since_ms_ = now;
+        }
+        if (now - *settle_wait_since_ms_ >= kForwardSettleGiveUpMs) {
+          FailRestOfTarget();
+          continue;
+        }
         WakeAfter(kForwardSettlePollMs);
         return State::Waiting;
       }
+      settle_wait_since_ms_.reset();
       if (message_at_ > 0 &&
           (!ports_.target_of || ports_.target_of(target_thread_) == ForwardTargetKind::Unavailable)) {
         FailRestOfTarget();

@@ -111,6 +111,9 @@ struct Fake {
   int rate_limited_next = 0;
   /** Texts the messaging layer refuses. */
   std::set<std::string> refused_texts;
+  /** The encrypted copies the messaging layer holds for a retry, per chat (a send that failed after staging leaves one). */
+  std::map<std::string, std::vector<std::string>> staged;
+  size_t staged_ids = 0;
   size_t sent_ids = 0;
 
   struct Started {
@@ -184,6 +187,7 @@ struct Fake {
       }
       in_flight.push_back({thread, std::move(on_done), std::move(progress), attachment.filename});
     };
+    ports.staged_attachments = [this](const std::string& thread) { return staged[thread]; };
     ports.now_ms = [this]() {
       ++clock_reads;
       return now;
@@ -227,6 +231,12 @@ struct Fake {
     started.on_done(answer);
   }
   void AnswerOk() { Answer(ThreadMessage{}); }
+  /** The server's 429 for the oldest send: it came after the ciphertext was staged (a failed bubble with Retry exists). */
+  void AnswerServerRateLimit() {
+    ASSERT_FALSE(in_flight.empty());
+    staged[in_flight.front().thread].push_back("staged-" + std::to_string(++staged_ids));
+    Answer(AppError::Blob(Err::Blob::RateLimited, "server 429"));
+  }
 
   /** Marks every queued send of ours as sent. */
   void SettleAll() {
@@ -522,7 +532,7 @@ TEST_F(ChatForwardFilesTest, PlaintextIsLoadedOnlyWhenItsTurnComesAndReleasedAft
   chats.HoldFilled(Picture("p2", 2, 2));
   chats.HoldFilled(Picture("p3", 3, 3));
   Choose({"p1", "p2", "p3"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::None);
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None);
   EXPECT_EQ(chats.loads, 0u) << "nothing is read while only choosing";
   presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
     result = r;
@@ -604,6 +614,41 @@ TEST_F(ChatForwardFilesTest, CancelWorksWhileWaitingForTheRateLimit) {
   EXPECT_EQ(chats.attachment_calls.size(), 1u) << "the retry timer finds the run gone";
 }
 
+TEST_F(ChatForwardFilesTest, AServerRefusalAfterStagingIsNotRetriedAndCountsFailed) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  Start({"p1", "p2"}, {"bob"});
+  chats
+      .AnswerServerRateLimit(); // the same error code as the device's own pace, but a failed bubble with Retry is there
+  Drain();
+  EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace) << "not 'one moment': it is failed";
+  Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg", "photo-p2.jpg"}))
+      << "p1 is never sent again (that would be a second copy next to its Retry bubble); p2 goes on";
+  chats.AnswerOk();
+  Drain();
+  Advance(kForwardSettlePollMs);
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->forwarded, 1u);
+  EXPECT_EQ(result->send_errors, 1u);
+  EXPECT_EQ(result->attachments_failed, 1u);
+  EXPECT_EQ(chats.attachment_calls.size(), 2u);
+}
+
+TEST_F(ChatForwardFilesTest, ARecordLeftByAnEarlierSendDoesNotMakeAPaceRefusalAFailure) {
+  chats.HoldFilled(Picture("p", 1, 1));
+  chats.staged["bob"] = {"older-failed-bubble"}; // another send of ours in this chat failed before: not this one's
+  chats.rate_limited_next = 1;
+  Start({"p"}, {"bob"});
+  EXPECT_TRUE(presenter.ForwardProgressNow().waiting_for_pace);
+  Advance(kForwardRateLimitRetryMs);
+  EXPECT_EQ(chats.attachment_calls.size(), 2u) << "the device's own pace refusal left nothing staged: tried again";
+  chats.AnswerOk();
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->attachments_failed, 0u);
+}
+
 TEST_F(ChatForwardFilesTest, NoItemIsEverSentTwiceExceptAfterRateLimited) {
   chats.HoldFilled(Picture("p1", 1, 1));
   chats.HoldFilled(Picture("p2", 2, 2));
@@ -654,23 +699,54 @@ TEST_F(ChatForwardFilesTest, NoItemIsEverSentTwiceExceptAfterRateLimited) {
   }
   EXPECT_EQ(pace.attachment_calls.size(), 2u) << "never a third";
   EXPECT_TRUE(pace.in_flight.empty());
+
+  // The same code from the server, after staging: the item has a Retry bubble in the chat and is never sent by the run again.
+  Fake server;
+  server.targets = {{"bob", ForwardTargetKind::Direct}};
+  server.HoldFilled(Picture("s", 1, 1));
+  ChatPresenter third;
+  std::deque<std::function<void()>> queue3;
+  third.SetForwardPortsForTest(server.Ports());
+  third.SetForwardPostForTest([&queue3](std::function<void()> task) { queue3.push_back(std::move(task)); });
+  ASSERT_TRUE(third.BeginForwardSelection("s"));
+  third.ForwardSelected({"bob"}, nullptr);
+  const auto drain3 = [&queue3]() {
+    while (!queue3.empty()) {
+      auto task = std::move(queue3.front());
+      queue3.pop_front();
+      task();
+    }
+  };
+  drain3();
+  server.AnswerServerRateLimit();
+  drain3();
+  server.now += 10 * kForwardRateLimitRetryMs;
+  while (!server.timers.empty()) {
+    auto task = std::move(server.timers.back().task);
+    server.timers.pop_back();
+    task();
+    drain3();
+  }
+  EXPECT_EQ(server.attachment_calls.size(), 1u) << "a staged copy was left: never a second send";
 }
 
-TEST_F(ChatForwardFilesTest, MoreThanFiveUploadsIsRefusedBeforeAnythingStarts) {
-  for (int i = 1; i <= 3; ++i) {
+TEST_F(ChatForwardFilesTest, MoreThanThreeAttachmentsIsRefusedBeforeAnythingStarts) {
+  for (int i = 1; i <= 4; ++i) {
     chats.HoldFilled(Picture("p" + std::to_string(i), i, static_cast<uint8_t>(i)));
   }
   Choose({"p1", "p2", "p3"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::None) << "3 uploads";
-  const ForwardCheck six = presenter.CheckForward(2);
-  EXPECT_EQ(six.refusal, ForwardRefusal::TooManyUploads) << "3 attachments x 2 chats";
-  EXPECT_EQ(six.uploads, 6u);
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "3 items";
+  presenter.EndForwardSelection();
+  Choose({"p1", "p2", "p3", "p4"});
+  const ForwardCheck four = presenter.CheckForward();
+  EXPECT_EQ(four.refusal, ForwardRefusal::TooManyUploads);
+  EXPECT_EQ(four.uploads, 4u) << "ticked items, not multiplied by chats";
 
-  presenter.ForwardSelected({"bob", "carol"}, [this](const ForwardResult& r) {
+  presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
     result = r;
     ++done_calls;
   });
-  ASSERT_EQ(done_calls, 1) << "told at once";
+  ASSERT_EQ(done_calls, 1) << "told at once, even to one chat";
   EXPECT_EQ(result->refusal, ForwardRefusal::TooManyUploads);
   EXPECT_TRUE(result->nothing_sent);
   EXPECT_TRUE(chats.log.empty()) << "nothing was read or sent";
@@ -678,8 +754,10 @@ TEST_F(ChatForwardFilesTest, MoreThanFiveUploadsIsRefusedBeforeAnythingStarts) {
   EXPECT_TRUE(presenter.ForwardChoosing()) << "the choosing stays: take some away and send again";
   EXPECT_FALSE(presenter.Forwarding());
 
-  presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) { result = r; });
-  EXPECT_FALSE(presenter.ForwardChoosing()) << "three uploads are fine";
+  presenter.ToggleForwardSelection("p4");
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None);
+  presenter.ForwardSelected({"bob", "carol", "club"}, [this](const ForwardResult& r) { result = r; });
+  EXPECT_FALSE(presenter.ForwardChoosing()) << "three items to three chats are fine";
   EXPECT_TRUE(presenter.Forwarding());
 }
 
@@ -688,7 +766,7 @@ TEST_F(ChatForwardFilesTest, MoreThanTwentyFiveMegabytesIsRefusedBeforeAnythingS
   chats.HoldFilled(Picture("b", 2, 2, 10 * kMb));
   chats.HoldFilled(Picture("c", 3, 3, 10 * kMb));
   Choose({"a", "b", "c"});
-  const ForwardCheck check = presenter.CheckForward(1);
+  const ForwardCheck check = presenter.CheckForward();
   EXPECT_EQ(check.refusal, ForwardRefusal::TooLarge);
   EXPECT_EQ(check.upload_bytes, 30 * kMb);
   presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
@@ -701,20 +779,25 @@ TEST_F(ChatForwardFilesTest, MoreThanTwentyFiveMegabytesIsRefusedBeforeAnythingS
   EXPECT_EQ(chats.loads, 0u);
   presenter.EndForwardSelection();
 
-  // Each chat takes its own upload: 2 x 10 MB to two chats is 40 MB.
+  // The size is counted over the ticked items once, not once per chat: 2 x 10 MB is 20 MB to one chat or to three.
   Choose({"a", "b"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::None) << "20 MB";
-  EXPECT_EQ(presenter.CheckForward(2).refusal, ForwardRefusal::TooLarge) << "40 MB";
-  presenter.EndForwardSelection();
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "20 MB";
+  presenter.ForwardSelected({"bob", "carol", "club"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  });
+  EXPECT_EQ(done_calls, 1) << "no new refusal: the first call's answer is still the only one";
+  EXPECT_TRUE(presenter.Forwarding()) << "three chats do not multiply the 20 MB";
+  presenter.AbortForward();
   // The limit itself is allowed.
   chats.HoldFilled(Picture("e", 4, 4, kMaxForwardUploadBytes / 2));
   chats.HoldFilled(Picture("f", 5, 5, kMaxForwardUploadBytes / 2));
   Choose({"e", "f"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::None) << "exactly 25 MB";
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "exactly 25 MB";
   presenter.EndForwardSelection();
   chats.HoldFilled(Picture("g", 6, 6, kMaxForwardUploadBytes / 2 + 1));
   Choose({"e", "g"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::TooLarge) << "a byte over";
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::TooLarge) << "a byte over";
 }
 
 TEST_F(ChatForwardFilesTest, TextAndCardsDoNotCountTowardsTheLimits) {
@@ -727,20 +810,52 @@ TEST_F(ChatForwardFilesTest, TextAndCardsDoNotCountTowardsTheLimits) {
   chats.Add(CardRow("card", 40));
   ids.push_back("card");
   Choose(ids);
-  const ForwardCheck check = presenter.CheckForward(3);
+  const ForwardCheck check = presenter.CheckForward();
   EXPECT_EQ(check.refusal, ForwardRefusal::None);
-  EXPECT_EQ(check.uploads, 3u) << "only the picture, once per chat";
-  EXPECT_EQ(check.upload_bytes, 24 * kMb);
+  EXPECT_EQ(check.uploads, 1u) << "only the picture";
+  EXPECT_EQ(check.upload_bytes, 8 * kMb);
   EXPECT_EQ(check.attachments, 1u);
   presenter.EndForwardSelection();
 
   Choose({"t0", "t1", "card"});
-  const ForwardCheck texts_only = presenter.CheckForward(9);
+  const ForwardCheck texts_only = presenter.CheckForward();
   EXPECT_EQ(texts_only.refusal, ForwardRefusal::None);
   EXPECT_EQ(texts_only.uploads, 0u);
   EXPECT_EQ(texts_only.upload_bytes, 0u);
   presenter.SetForwardAttachmentBusy([]() { return true; });
-  EXPECT_EQ(presenter.CheckForward(9).refusal, ForwardRefusal::None) << "text and cards go while an attachment is busy";
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "text and cards go while an attachment is busy";
+}
+
+TEST_F(ChatForwardFilesTest, ACallDoesNotRefuseAForwardThatUploadsNothing) {
+  chats.Add(Picture("far", 1, 1, 4 * kMb)); // the bytes are not held: it will not be sent
+  chats.Add(TextRow("t", "text", 2));
+  chats.HoldFilled(Picture("held", 3, 3));
+  presenter.SetForwardCallActive([]() { return true; });
+  Choose({"far", "t"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "nothing would be uploaded";
+  presenter.EndForwardSelection();
+  Choose({"far", "t", "held"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::CallActive) << "one upload hides the call's controls";
+}
+
+TEST_F(ChatForwardFilesTest, NoProgressPageWhenNothingWillBeUploaded) {
+  chats.Add(Picture("far", 1, 1, 4 * kMb));
+  chats.Add(TextRow("t", "text", 2));
+  chats.HoldFilled(Picture("held", 3, 3));
+  Choose({"far", "t"});
+  presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  });
+  EXPECT_TRUE(presenter.Forwarding());
+  EXPECT_FALSE(presenter.ForwardHasProgressPage()) << "a picture without bytes is only counted failed";
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->attachments_failed, 1u);
+
+  Choose({"t", "held"});
+  presenter.ForwardSelected({"bob"}, nullptr);
+  EXPECT_TRUE(presenter.ForwardHasProgressPage()) << "one upload: the page";
 }
 
 TEST_F(ChatForwardFilesTest, ATargetThatCanNoLongerBeWrittenToFailsItsRemainingItems) {
@@ -805,6 +920,160 @@ TEST_F(ChatForwardFilesTest, BackgroundingStopsTheRunAndMarksPartialForThatAccou
   EXPECT_EQ(notice->done, 2u);
   EXPECT_EQ(notice->total, 4u);
   EXPECT_FALSE(presenter.TakeForwardNotice().has_value()) << "once";
+}
+
+TEST_F(ChatForwardFilesTest, BackgroundingWithThePickerOpenKeepsTheSelectionAndSendStillWorks) {
+  chats.Add(TextRow("t1", "one", 1));
+  chats.Add(TextRow("t2", "two", 2));
+  Choose({"t1", "t2"});                 // the picker is open: no run yet
+  presenter.NoteAppEnteredBackground(); // switch apps and come back
+  EXPECT_TRUE(presenter.ForwardChoosing());
+  EXPECT_EQ(presenter.ForwardSelectedIds(), (std::vector<std::string>{"t1", "t2"}));
+  presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  });
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->forwarded, 2u) << "Send works";
+}
+
+TEST_F(ChatForwardFilesTest, BackgroundingInSelectionModeKeepsTheTicks) {
+  chats.HoldFilled(Picture("p", 1, 1));
+  chats.Add(TextRow("t1", "one", 2));
+  Choose({"p", "t1"});
+  presenter.NoteAppEnteredBackground();
+  EXPECT_EQ(presenter.ForwardSelectedIds(), (std::vector<std::string>{"p", "t1"}));
+  EXPECT_TRUE(presenter.ForwardChoosing());
+}
+
+TEST_F(ChatForwardFilesTest, BackgroundingDoesNotStopATextOnlyForward) {
+  std::vector<std::string> ids;
+  for (int i = 1; i <= 12; ++i) {
+    chats.Add(TextRow("t" + std::to_string(i), "text " + std::to_string(i), i));
+    ids.push_back("t" + std::to_string(i));
+  }
+  Choose(ids);
+  presenter.ForwardSelected({"bob", "carol"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  }); // 24 sends: more than one batch, still queued
+  presenter.NoteAppEnteredBackground();
+  EXPECT_TRUE(presenter.Forwarding()) << "no progress page: nothing to stop";
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->forwarded, 24u);
+  EXPECT_FALSE(result->interrupted);
+  EXPECT_FALSE(presenter.TakeForwardNotice().has_value());
+}
+
+TEST_F(ChatForwardFilesTest, ALateTimerOrUploadAnswerNeverTouchesADestroyedPresenter) {
+  Fake gone;
+  gone.targets = {{"bob", ForwardTargetKind::Direct}};
+  gone.HoldFilled(Picture("p1", 1, 1));
+  gone.HoldFilled(Picture("p2", 2, 2));
+  gone.rate_limited_next = 1; // a retry timer is set (the settle poll and the close offer use the same wake)
+  std::deque<std::function<void()>> queue;
+  auto doomed = std::make_unique<ChatPresenter>();
+  doomed->SetForwardPortsForTest(gone.Ports());
+  doomed->SetForwardPostForTest([&queue](std::function<void()> task) { queue.push_back(std::move(task)); });
+  ASSERT_TRUE(doomed->BeginForwardSelection("p1"));
+  doomed->ToggleForwardSelection("p2");
+  doomed->ForwardSelected({"bob"}, nullptr);
+  while (!queue.empty()) {
+    auto task = std::move(queue.front());
+    queue.pop_front();
+    task();
+  }
+  ASSERT_EQ(gone.timers.size(), 1u);
+  doomed.reset(); // the app let go of the presenter while a timer is set and an answer is still to come
+  queue.clear();
+  gone.now += kForwardRateLimitRetryMs;
+  gone.timers.front().task(); // the late timer
+  EXPECT_TRUE(queue.empty()) << "nothing is posted into a presenter that is gone";
+}
+
+TEST_F(ChatForwardFilesTest, ALateUploadAnswerNeverTouchesADestroyedPresenter) {
+  Fake gone;
+  gone.targets = {{"bob", ForwardTargetKind::Direct}};
+  gone.HoldFilled(Picture("p1", 1, 1));
+  std::deque<std::function<void()>> queue;
+  auto doomed = std::make_unique<ChatPresenter>();
+  doomed->SetForwardPortsForTest(gone.Ports());
+  doomed->SetForwardPostForTest([&queue](std::function<void()> task) { queue.push_back(std::move(task)); });
+  ASSERT_TRUE(doomed->BeginForwardSelection("p1"));
+  doomed->ForwardSelected({"bob"}, nullptr);
+  while (!queue.empty()) {
+    auto task = std::move(queue.front());
+    queue.pop_front();
+    task();
+  }
+  ASSERT_EQ(gone.in_flight.size(), 1u);
+  doomed.reset();
+  queue.clear();
+  gone.AnswerOk();
+  EXPECT_TRUE(queue.empty()) << "the answer finds no presenter and posts nothing";
+}
+
+TEST_F(ChatForwardFilesTest, TheWaitForThePreviousItemToLeaveTheQueueEndsAfterSixtySeconds) {
+  chats.text_delivery = MessageDelivery::Pending; // the first text is sent but stays queued (no network)
+  chats.Add(TextRow("t1", "one", 1));
+  chats.HoldFilled(Picture("p", 2, 2));
+  Start({"t1", "p"}, {"bob", "carol"});
+  EXPECT_EQ(chats.log, (std::vector<std::string>{"text:bob:one"}));
+  for (int i = 0; i < 118; ++i) {
+    Advance(kForwardSettlePollMs); // 59 seconds
+  }
+  EXPECT_TRUE(chats.attachment_calls.empty());
+  EXPECT_EQ(done_calls, 0);
+  EXPECT_EQ(chats.log.size(), 1u) << "still waiting for bob's first text; carol has not been reached";
+  for (int i = 0; i < 4; ++i) {
+    Advance(kForwardSettlePollMs); // past 60 seconds
+  }
+  EXPECT_TRUE(chats.attachment_calls.empty()) << "the picture to bob is failed, never sent";
+  EXPECT_EQ(chats.log.back(), "text:carol:one") << "the next chat goes on";
+  for (int i = 0; i < 130; ++i) {
+    Advance(kForwardSettlePollMs);
+  }
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_TRUE(chats.attachment_calls.empty());
+  EXPECT_EQ(result->forwarded, 2u) << "the two texts";
+  EXPECT_EQ(result->attachments_failed, 2u) << "the picture in each chat";
+  EXPECT_EQ(result->send_errors, 1u) << "one message, counted once";
+}
+
+TEST_F(ChatForwardFilesTest, CancelStaysLiveWhileTheRunWaitsForThePreviousItem) {
+  chats.text_delivery = MessageDelivery::Pending;
+  chats.Add(TextRow("t1", "one", 1));
+  chats.HoldFilled(Picture("p", 2, 2));
+  Start({"t1", "p"}, {"bob"});
+  Advance(30000);
+  ASSERT_EQ(done_calls, 0);
+  presenter.CancelForward();
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->stop, ForwardStop::Cancelled);
+  EXPECT_EQ(result->forwarded, 1u);
+}
+
+TEST_F(ChatForwardFilesTest, ANotificationTapWhoseUploadNeverAnswersReleasesTheRunAfterSixtySeconds) {
+  chats.HoldFilled(Picture("p", 1, 1));
+  chats.Add(TextRow("t", "text", 2));
+  Start({"p"}, {"bob"});
+  presenter.CancelForward(ForwardStop::Tapped); // the page is gone; the upload never calls back
+  Advance(kForwardNoticeWaitMs - 1);
+  EXPECT_TRUE(presenter.Forwarding());
+  ASSERT_TRUE(presenter.BeginForwardSelection("t") == false) << "a forward is still in the way";
+  Advance(1);
+  EXPECT_FALSE(presenter.Forwarding()) << "released";
+  EXPECT_EQ(done_calls, 1);
+  ASSERT_TRUE(presenter.BeginForwardSelection("t"));
+  presenter.ForwardSelected({"carol"}, nullptr);
+  Drain();
+  EXPECT_FALSE(presenter.Forwarding()) << "a new forward goes through";
+  EXPECT_EQ(chats.log.back(), "text:carol:text");
+  chats.AnswerOk(); // the late answer finds nobody to tell
+  Drain();
 }
 
 TEST_F(ChatForwardFilesTest, LosingFocusOnlyDoesNotStopTheRun) {
@@ -958,7 +1227,7 @@ TEST_F(ChatForwardFilesTest, ItemsWithoutLocalBytesDoNotCountTowardsTheLimits) {
     chats.Add(Picture("far" + std::to_string(i), i, static_cast<uint8_t>(i), 40 * kMb)); // bytes not held
   }
   Choose({"held", "far2", "far3", "far4", "far5", "far6", "far7"});
-  const ForwardCheck check = presenter.CheckForward(1);
+  const ForwardCheck check = presenter.CheckForward();
   EXPECT_EQ(check.refusal, ForwardRefusal::None) << "six far ones over the count and over the size, but not held";
   EXPECT_EQ(check.attachments, 7u);
   EXPECT_EQ(check.without_local_bytes, 6u);
@@ -976,7 +1245,7 @@ TEST_F(ChatForwardFilesTest, HavingLocalBytesIsDecidedWithoutDecrypting) {
   chats.targets["bob"] = ForwardTargetKind::Direct;
   EXPECT_TRUE(presenter.CanForward("held"));
   Choose({"held", "far", "t"});
-  const ForwardCheck check = presenter.CheckForward(2);
+  const ForwardCheck check = presenter.CheckForward();
   EXPECT_EQ(check.without_local_bytes, 1u);
   (void)presenter.ForwardPreview([](size_t count) { return std::to_string(count); });
   (void)presenter.ForwardTargets();
@@ -987,7 +1256,7 @@ TEST_F(ChatForwardFilesTest, HavingLocalBytesIsDecidedWithoutDecrypting) {
 TEST_F(ChatForwardFilesTest, ASingleAttachmentOverTheSizeLimitGetsItsOwnMessage) {
   chats.HoldFilled(Picture("big", 1, 1, 30 * kMb));
   Choose({"big"});
-  const ForwardCheck alone = presenter.CheckForward(1);
+  const ForwardCheck alone = presenter.CheckForward();
   EXPECT_EQ(alone.refusal, ForwardRefusal::SingleTooLarge) << "not the 'split it over several' message";
   EXPECT_EQ(alone.largest_bytes, 30 * kMb);
   presenter.EndForwardSelection();
@@ -995,10 +1264,10 @@ TEST_F(ChatForwardFilesTest, ASingleAttachmentOverTheSizeLimitGetsItsOwnMessage)
   chats.HoldFilled(Picture("a", 2, 2, 20 * kMb));
   chats.HoldFilled(Picture("b", 3, 3, 20 * kMb));
   Choose({"a", "b"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::TooLarge) << "each fits; together they do not";
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::TooLarge) << "each fits; together they do not";
   presenter.EndForwardSelection();
   Choose({"big", "a", "b"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::SingleTooLarge) << "the one that can never go is named";
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::SingleTooLarge) << "the one that can never go is named";
   presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
     result = r;
     ++done_calls;
@@ -1119,9 +1388,8 @@ TEST_F(ChatForwardFilesTest, AnItemWhoseRealSizeBreaksTheLimitIsCountedFailedAnd
   chats.Hold(Picture("p1", 1, 1, kMb), ByteVector(20 * kMb, 1));
   chats.Hold(Picture("p2", 2, 2, kMb), ByteVector(10 * kMb, 2));
   chats.Hold(Picture("p3", 3, 3, kMb), ByteVector(26 * kMb, 3));
-  chats.HoldFilled(Picture("p4", 4, 4, kMb), 1000);
-  Choose({"p1", "p2", "p3", "p4"});
-  EXPECT_EQ(presenter.CheckForward(1).refusal, ForwardRefusal::None) << "the messages claim 4 MB";
+  Choose({"p1", "p2", "p3"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "the messages claim 3 MB";
   presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
     result = r;
     ++done_calls;
@@ -1129,15 +1397,28 @@ TEST_F(ChatForwardFilesTest, AnItemWhoseRealSizeBreaksTheLimitIsCountedFailedAnd
   Drain();
   chats.AnswerOk(); // p1: 20 MB went
   Drain();
-  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg", "photo-p4.jpg"}))
-      << "p2 would take it over 25 MB, p3 alone is over 25 MB: neither is sent; p4 still fits";
-  chats.AnswerOk();
-  Drain();
   Advance(kForwardSettlePollMs);
+  chats.SettleAll();
+  Advance(kForwardSettlePollMs);
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg"}))
+      << "p2 would take it over 25 MB, p3 alone is over 25 MB: neither is sent";
   ASSERT_EQ(done_calls, 1);
-  EXPECT_EQ(result->forwarded, 2u);
+  EXPECT_EQ(result->forwarded, 1u);
   EXPECT_EQ(result->send_errors, 2u);
   EXPECT_EQ(result->attachments_failed, 2u);
+  EXPECT_EQ(chats.loads, 1u) << "the stored size already says p2 and p3 cannot fit: they are not decrypted at all";
+}
+
+TEST_F(ChatForwardFilesTest, TheRealSizeIsCountedPerChatNotOverTheChatsAddedUp) {
+  chats.Hold(Picture("p1", 1, 1, kMb), ByteVector(20 * kMb, 1));
+  Start({"p1"}, {"bob", "carol"});
+  chats.AnswerOk();
+  Drain();
+  AnswerUntilDone();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(Attachments("carol"), (std::vector<std::string>{"photo-p1.jpg"})) << "20 MB to each: 40 MB in all is fine";
+  EXPECT_EQ(result->forwarded, 2u);
+  EXPECT_EQ(result->attachments_failed, 0u);
 }
 
 TEST_F(ChatForwardFilesTest, AVoiceMessageIsResentWithItsOriginalMimeAndFilename) {
