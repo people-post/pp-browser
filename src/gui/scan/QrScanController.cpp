@@ -18,6 +18,9 @@
 #include <utility>
 
 namespace pbr {
+bool QrScanController::CanScan() const {
+  return ScanOffered(Platform::IsDesktop(), scanner_.CameraAvailable());
+}
 
 namespace {
 logging::Logger& ScanLog() {

@@ -55,8 +55,14 @@ public:
    */
   void Open(QrScanResultCallback on_result, std::function<void()> on_closed);
   void Close();
-  /** A camera is listed, so a scan could open one: pages offer "Scan" only then (nothing is opened to find out). */
-  bool CanScan() const { return scanner_.CameraAvailable(); }
+  /**
+   * Pages offer "Scan" when a scan can start. A phone always can: before the camera is allowed the OS may list none,
+   * and hiding Scan would hide the very path that asks for the permission. A computer offers it only while a camera is
+   * listed (nothing is opened to find out).
+   */
+  bool CanScan() const;
+  /** The rule of CanScan, apart from the platform and the camera list it reads. */
+  static bool ScanOffered(bool desktop, bool camera_listed) { return !desktop || camera_listed; }
   bool IsOpen() const { return layer_id_ >= 0; }
   void Tick();
   /** After Context::Update: keep capture preview responsive during power-save. */
