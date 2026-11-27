@@ -531,14 +531,3 @@ TEST(AppActionClassifierTest, OpenSupportOnlyForAnAskForCustomerService) {
     EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
   }
 }
-
-// Sentences that only mention a colour or "dark" / "light" are not appearance commands.
-TEST(AppActionClassifierTest, SentencesThatOnlyMentionDarkOrLightAreNotCommands) {
-  for (const std::string& message :
-       {"为什么天空是黑色的", "黑色星期五是什么", "白色的车好还是黑色的好", "把这段话改成白话", "what is dark matter",
-        "is the dark web dangerous", "how do I make my room dark", "set an alarm for dark o'clock",
-        "my phone gets dark at night", "what is the light speed", "夜间开车要注意什么", "把头发染成黑色好看吗",
-        "他设为黑名单了", "the theme of this book is dark", "make dark chocolate cake"}) {
-    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::nullopt) << Describe(message);
-  }
-}

@@ -2,7 +2,6 @@
 
 #include "common/ShareableLine.h"
 
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -25,71 +24,6 @@ struct AppActionWords {
   /** The object word on its own ("通知呢", "Notifications?") hits the tool; the planner then asks on or off. */
   bool bare_object = false;
 };
-
-/**
- * set_appearance phrases that are too many to type: a setting verb and a value ("设为黑色", "set it to dark"), with or
- * without the thing being set ("主题改成深色", "set the theme to light"). A sentence needs both the value and the verb
- * or the object, so "黑色星期五" or "make my room dark" stay ordinary talk. Words are lowercase, Chinese without spaces.
- */
-inline const std::vector<std::string>& AppearancePhrasesZh() {
-  static const std::vector<std::string> phrases = [] {
-    const char* const values[] = {"黑色", "深色", "暗色", "夜间",     "白色", "浅色",
-                                  "亮色", "白天", "日间", "跟随系统", "自动"};
-    const char* const set_verbs[] = {"设为", "设成", "设置为", "设置成", "调成", "调为", "切换到", "切到"};
-    const char* const change_verbs[] = {"改成", "改为", "换成", "变成"};
-    const char* const nouns[] = {"主题", "外观", "界面", "系统", "模式", "背景"};
-    std::vector<std::string> out;
-    for (const char* value : values) {
-      for (const char* verb : set_verbs) {
-        out.push_back(std::string(verb) + value);
-      }
-      for (const char* noun : nouns) {
-        for (const char* verb : set_verbs) {
-          out.push_back(std::string(noun) + verb + value);
-        }
-        for (const char* verb : change_verbs) {
-          out.push_back(std::string(noun) + verb + value);
-        }
-      }
-    }
-    return out;
-  }();
-  return phrases;
-}
-
-inline const std::vector<std::string>& AppearancePhrasesEn() {
-  static const std::vector<std::string> phrases = [] {
-    const char* const values[] = {"dark", "light", "system", "auto"};
-    const char* const verbs[] = {"set", "change", "switch"};
-    const char* const nouns[] = {"theme", "the theme", "appearance", "the appearance", "it", "the app", "pp"};
-    std::vector<std::string> out;
-    for (const char* value : values) {
-      for (const char* verb : verbs) {
-        for (const char* noun : nouns) {
-          out.push_back(std::string(verb) + " " + noun + " " + value);
-          out.push_back(std::string(verb) + " " + noun + " to " + value);
-        }
-      }
-    }
-    for (const char* value : {"dark", "light"}) {
-      out.push_back(std::string("make it ") + value);
-      out.push_back(std::string("make the app ") + value);
-      out.push_back(std::string("make pp ") + value);
-      out.push_back(std::string("switch to ") + value);
-      out.push_back(std::string("use ") + value + " theme");
-      out.push_back(std::string(value) + " theme");
-    }
-    return out;
-  }();
-  return phrases;
-}
-
-/** `literal` and the generated phrases, as the views a wordlist entry holds. */
-inline std::vector<std::string_view> WithPhrases(std::vector<std::string_view> literal,
-                                                 const std::vector<std::string>& generated) {
-  literal.insert(literal.end(), generated.begin(), generated.end());
-  return literal;
-}
 
 inline const std::vector<AppActionWords>& AppActionTable() {
   static const std::vector<AppActionWords> table = {
@@ -235,18 +169,14 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        false,
        {"换成", "切换", "改成", "换", "开", "打开", "用", "改到", "改为"},
        {"深色模式", "浅色模式", "夜间模式", "暗色", "跟随系统", "外观"},
-       WithPhrases(
-           {"换成深色", "换成浅色", "切换深色", "切换浅色", "开深色模式", "开夜间模式", "跟随系统外观", "改外观",
-            "深色模式", "浅色模式", "夜间模式", "暗色模式", "跟随系统",   "深色主题",   "浅色主题",     "黑色主题",
-            "白色主题", "暗色主题", "亮色主题", "黑色模式", "白色模式",   "白天模式",   "日间模式"},
-           AppearancePhrasesZh()),
-       {"switch", "change", "turn", "enable", "set", "make"},
+       {"换成深色", "换成浅色", "切换深色", "切换浅色", "开深色模式", "开夜间模式", "跟随系统外观", "改外观",
+        "深色模式", "浅色模式", "夜间模式", "暗色模式", "跟随系统"},
+       {"switch", "change", "turn", "enable", "set"},
        {"dark mode", "light mode", "night mode", "dark theme", "light theme", "appearance"},
-       WithPhrases({"follow the system", "follow system", "match the system", "system theme", "system appearance",
-                    "switch to dark mode", "switch to light mode", "enable dark mode", "turn on dark mode",
-                    "turn off dark mode", "use dark mode", "use light mode", "change the appearance",
-                    "change appearance", "dark mode", "light mode", "night mode", "make it follow the system"},
-                   AppearancePhrasesEn()),
+       {"follow the system", "follow system", "match the system", "system theme", "system appearance",
+        "switch to dark mode", "switch to light mode", "enable dark mode", "turn on dark mode", "turn off dark mode",
+        "use dark mode", "use light mode", "change the appearance", "change appearance", "dark mode", "light mode",
+        "night mode"},
        true},
       {"set_language",
        false,
@@ -267,7 +197,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"关掉", "关闭", "关", "打开", "开启", "开", "静音"},
        {"通知", "提醒", "推送"},
        {"关掉通知", "关闭通知", "打开通知", "开启通知", "别再通知", "通知关了", "关通知", "开通知"},
-       {"turn", "disable", "enable", "mute", "set"},
+       {"turn", "disable", "enable", "mute"},
        {"notifications", "notification", "alerts"},
        {"turn off notifications", "turn on notifications", "disable notifications", "enable notifications",
         "mute notifications", "stop notifications"},
@@ -278,7 +208,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"关掉", "关闭", "关", "打开", "开启", "开", "减少"},
        {"毛玻璃", "透明效果", "透明度", "半透明"},
        {"关掉毛玻璃", "毛玻璃效果", "减少透明", "透明效果", "关掉透明"},
-       {"turn", "disable", "enable", "reduce", "set"},
+       {"turn", "disable", "enable", "reduce"},
        {"transparency", "blur", "frosted glass"},
        {"reduce transparency", "turn off transparency", "disable transparency", "turn off the blur", "disable blur",
         "reduce the blur", "turn off frosted glass", "disable frosted glass"},
@@ -299,7 +229,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"打开", "开启", "关掉", "关闭", "开", "关"},
        {"自动续期", "续期", "自动续约"},
        {"自动续期", "打开续期", "关掉续期", "自动续约"},
-       {"turn", "enable", "disable", "set"},
+       {"turn", "enable", "disable"},
        {"auto renew", "auto renewal", "automatic renewal"},
        {"auto renew my registration", "auto renew registration", "renew my registration automatically",
         "registration auto renew"},
@@ -310,7 +240,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"打开", "开启", "关掉", "关闭", "显示", "开", "关"},
        {"通话诊断", "诊断信息"},
        {"通话诊断", "诊断信息", "打开诊断", "关掉诊断"},
-       {"turn", "enable", "disable", "show", "hide", "set"},
+       {"turn", "enable", "disable", "show", "hide"},
        {"call diagnostics"},
        {"call diagnostics", "turn on call diagnostics", "turn off call diagnostics"},
        false,
@@ -320,7 +250,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"打开", "开启", "关掉", "关闭", "开", "关", "当"},
        {"节点模式", "节点", "中继节点"},
        {"节点模式", "打开节点", "关掉节点", "当节点", "作为节点"},
-       {"turn", "enable", "disable", "become", "set"},
+       {"turn", "enable", "disable", "become"},
        {"node mode", "relay node"},
        {"node mode", "enable node mode", "become a node", "run as a node", "act as a node"},
        false,
@@ -330,7 +260,7 @@ inline const std::vector<AppActionWords>& AppActionTable() {
        {"打开", "开启", "关掉", "关闭", "开", "关"},
        {"中继", "dht", "mesh", "网络能力"},
        {"打开中继", "关掉中继", "打开dht", "关掉dht", "中继功能", "dht功能", "开中继", "关中继"},
-       {"turn", "enable", "disable", "set"},
+       {"turn", "enable", "disable"},
        {"relay", "dht", "mesh", "network capabilities"},
        {"turn on relay", "turn off relay", "enable relay", "disable relay", "turn on dht", "turn off dht", "enable dht",
         "disable dht", "mesh capabilities"}},
