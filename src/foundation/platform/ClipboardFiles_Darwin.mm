@@ -14,6 +14,10 @@ NSDictionary* FileUrlsOnly() {
 
 } // namespace
 
+bool ClipboardImageQueryIsCheap() {
+  return true;
+}
+
 bool ClipboardFilePasteEnabled() {
   return kFilePasteEnabled;
 }

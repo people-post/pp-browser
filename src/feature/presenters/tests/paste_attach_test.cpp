@@ -104,6 +104,29 @@ TEST(DecidePasteTest, OnlyAnUnusablePictureIsSwallowedWithTheUnsupportedPill) {
   EXPECT_STREQ(action.pill_key, "chat.paste.unsupported");
 }
 
+// The one DEBUG line per paste key: type names and flags only, never what is on the clipboard.
+TEST(DecidePasteTest, TheDebugLineNamesTheTypesAndTheDecisionAndNothingFromTheClipboard) {
+  ClipboardSummary summary = Summary(false, false, "image/png", false);
+  PasteAction action = DecidePaste(summary, AttachRefusal::None);
+  EXPECT_EQ(DescribePasteDecision(summary, action), "paste: files=0 text=0 image=image/png unusable=0 -> take over");
+  summary = Summary(false, true, "", false);
+  action = DecidePaste(summary, AttachRefusal::None);
+  EXPECT_EQ(DescribePasteDecision(summary, action),
+            "paste: files=0 text=1 image=none unusable=0 -> leave to the text field");
+  summary = Summary(false, false, "", true);
+  action = DecidePaste(summary, AttachRefusal::None);
+  EXPECT_EQ(DescribePasteDecision(summary, action), "paste: files=0 text=0 image=none unusable=1 -> take over");
+  summary = Summary(false, false, "image/jpeg", false);
+  EXPECT_EQ(DescribePasteDecision(summary, DecidePaste(summary, AttachRefusal::None)),
+            "paste: files=0 text=0 image=image/jpeg unusable=0 -> take over");
+}
+
+TEST(DecidePasteTest, AJpegIsTakenOverAndRead) {
+  const PasteAction action = DecidePaste(Summary(false, false, "image/jpeg", false), AttachRefusal::None);
+  EXPECT_TRUE(action.take_over);
+  EXPECT_TRUE(action.read_image);
+}
+
 TEST(DecidePasteTest, NothingUsefulIsNotTaken) {
   EXPECT_FALSE(DecidePaste(Summary(false, false, "", false), AttachRefusal::None).take_over);
 }

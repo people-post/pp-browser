@@ -46,6 +46,10 @@ private:
 
 } // namespace
 
+bool ClipboardImageQueryIsCheap() {
+  return true;
+}
+
 bool ClipboardFilePasteEnabled() {
   return kFilePasteEnabled;
 }

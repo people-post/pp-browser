@@ -16,6 +16,10 @@ constexpr const char* kUriList = "text/uri-list";
 
 } // namespace
 
+bool ClipboardImageQueryIsCheap() {
+  return false;
+}
+
 bool ClipboardFilePasteEnabled() {
   return kFilePasteEnabled;
 }

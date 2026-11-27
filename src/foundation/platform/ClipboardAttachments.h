@@ -19,7 +19,7 @@ struct ClipboardSummary {
   bool files_enabled = false;
   /** A text type is advertised and, when a picture is there too, the text is not blank. */
   bool has_text = false;
-  /** The picture type that can be read: "image/png" or empty. */
+  /** The picture type that can be read: "image/png", "image/jpeg" (PNG first) or empty. */
   std::string image_type;
   /** Some image type (image/...) is there but not a readable one (BMP, TIFF, ...). */
   bool has_unusable_image = false;
@@ -34,7 +34,7 @@ struct ClipboardImage {
   bool too_large = false;
 };
 
-/** The three SDL calls this module needs, as a seam so tests can fake the clipboard. */
+/** The SDL calls this module needs, as a seam so tests can fake the clipboard. */
 struct ClipboardSource {
   /** The types on offer (SDL_GetClipboardMimeTypes). */
   std::function<std::vector<std::string>()> mime_types;
@@ -46,18 +46,30 @@ struct ClipboardSource {
   std::function<bool()> has_files;
   std::function<std::vector<std::string>()> read_files;
   std::function<bool()> files_enabled;
+  /**
+   * SDL_HasClipboardData(mime): a FRESH answer. SDL's own type list is cached on macOS and Windows (refreshed when the window
+   * gains focus), so a picture a screenshot tool put on the clipboard meanwhile is missing from it. Unset (a test's fake):
+   * only the type list is used.
+   */
+  std::function<bool(const std::string& mime)> has_data;
+  /** ClipboardImageQueryIsCheap: has_data is only asked where it is (on X11 it would transfer the whole picture). */
+  std::function<bool()> fresh_query_cheap;
 };
 
 /** The real clipboard through SDL. */
 ClipboardSource SdlClipboardSource();
 
-/** Types only (the text is read only when a picture type is there as well; for files see ClipboardHasText). Never SDL_HasClipboardData. */
+/**
+ * What is on the clipboard, by type only (the text is read only when a picture type is there as well; for files see
+ * ClipboardHasText). The picture types are asked afresh (has_data) where that is cheap, and the cached type list is
+ * the fallback hint; elsewhere the type list alone is used and has_data is never called.
+ */
 ClipboardSummary PeekClipboard(const ClipboardSource& source);
 ClipboardSummary PeekClipboard();
 
 /**
- * The PNG on the clipboard. nullopt: none, empty, or the bytes do not start with the PNG signature. `too_large` set:
- * more than `max_bytes`.
+ * The picture on the clipboard: a PNG, else a JPEG (extension "jpg"). nullopt: none, empty, or the bytes do not start
+ * with the type's signature. `too_large` set: more than `max_bytes`.
  */
 std::optional<ClipboardImage> ReadClipboardImage(const ClipboardSource& source, size_t max_bytes);
 std::optional<ClipboardImage> ReadClipboardImage(size_t max_bytes);

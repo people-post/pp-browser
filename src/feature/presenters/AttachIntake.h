@@ -107,6 +107,12 @@ struct PasteAction {
  */
 PasteAction DecidePaste(const ClipboardSummary& clipboard, AttachRefusal refusal);
 
+/**
+ * The one DEBUG line for a paste key: what the clipboard offered and what was decided, by type NAMES and flags only,
+ * e.g. "paste: files=0 text=0 image=image/png unusable=0 -> take over". Never clipboard contents, text or file names.
+ */
+std::string DescribePasteDecision(const ClipboardSummary& clipboard, const PasteAction& action);
+
 /** The hover hint's locale key: the "drop to send" line, a refusal's own line, or nullptr = no hint (outside the chat, or a refusal that says nothing). */
 const char* DropHintKey(bool inside_chat, AttachRefusal refusal);
 

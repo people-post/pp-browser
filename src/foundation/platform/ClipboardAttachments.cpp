@@ -45,6 +45,25 @@ bool HasPngSignature(const std::string& bytes) {
   return bytes.size() >= sizeof(kSignature) && std::memcmp(bytes.data(), kSignature, sizeof(kSignature)) == 0;
 }
 
+bool HasJpegSignature(const std::string& bytes) {
+  static constexpr unsigned char kSignature[3] = {0xFF, 0xD8, 0xFF};
+  return bytes.size() >= sizeof(kSignature) && std::memcmp(bytes.data(), kSignature, sizeof(kSignature)) == 0;
+}
+
+/** The picture types the paste reads, in the order it prefers them. */
+struct ReadableImage {
+  const char* mime;
+  const char* extension;
+  bool (*has_signature)(const std::string&);
+};
+constexpr ReadableImage kReadableImages[] = {
+    {"image/png", "png", &HasPngSignature},
+    {"image/jpeg", "jpg", &HasJpegSignature},
+};
+
+/** Image types that are on the clipboard but cannot be read: asked about afresh, so a TIFF-only screenshot says so. */
+constexpr const char* kUnreadableImageTypes[] = {"image/tiff", "image/bmp"};
+
 } // namespace
 
 ClipboardSource SdlClipboardSource() {
@@ -81,6 +100,8 @@ ClipboardSource SdlClipboardSource() {
     SDL_free(raw);
     return bytes;
   };
+  source.has_data = [](const std::string& mime) { return SDL_HasClipboardData(mime.c_str()); };
+  source.fresh_query_cheap = []() { return ClipboardImageQueryIsCheap(); };
   source.has_files = []() { return ClipboardHasFiles(); };
   source.read_files = []() { return ReadClipboardFiles(); };
   source.files_enabled = []() { return ClipboardFilePasteEnabled(); };
@@ -94,6 +115,7 @@ ClipboardSummary PeekClipboard(const ClipboardSource& source) {
   }
   bool text_type = false;
   bool any_image = false;
+  std::vector<std::string> listed_images;
   for (const std::string& type : source.mime_types()) {
     const std::string lower = Lower(type);
     if (IsFileType(type) || IsFileType(lower)) {
@@ -102,11 +124,28 @@ ClipboardSummary PeekClipboard(const ClipboardSource& source) {
       text_type = true;
     } else if (lower.rfind("image/", 0) == 0) {
       any_image = true;
-      if (lower == "image/png") {
-        summary.image_type = "image/png";
-      }
+      listed_images.push_back(lower);
     }
   }
+  // The picture types: asked afresh where that is cheap (the type list is a cache that a screenshot tool can outdate),
+  // the list as the fallback hint; where it is not cheap, the list alone.
+  const bool fresh = source.has_data && source.fresh_query_cheap && source.fresh_query_cheap();
+  const auto listed = [&listed_images](const std::string& mime) {
+    return std::find(listed_images.begin(), listed_images.end(), mime) != listed_images.end();
+  };
+  for (const ReadableImage& image : kReadableImages) {
+    if (summary.image_type.empty() && (listed(image.mime) || (fresh && source.has_data(image.mime)))) {
+      summary.image_type = image.mime;
+      any_image = true;
+    }
+  }
+  bool unreadable_found = false;
+  if (fresh && summary.image_type.empty()) {
+    for (const char* mime : kUnreadableImageTypes) {
+      unreadable_found = unreadable_found || source.has_data(mime);
+    }
+  }
+  any_image = any_image || unreadable_found;
   summary.has_unusable_image = any_image && summary.image_type.empty();
   if (source.has_files) {
     summary.has_files = source.has_files(); // the platform's own answer, not the type list's
@@ -131,21 +170,24 @@ std::optional<ClipboardImage> ReadClipboardImage(const ClipboardSource& source, 
   if (!source.data) {
     return std::nullopt;
   }
-  std::optional<std::string> bytes = source.data("image/png");
-  if (!bytes || bytes->empty()) {
-    return std::nullopt;
-  }
-  ClipboardImage image;
-  if (bytes->size() > max_bytes) {
-    image.too_large = true;
+  for (const ReadableImage& type : kReadableImages) {
+    std::optional<std::string> bytes = source.data(type.mime);
+    if (!bytes || bytes->empty()) {
+      continue;
+    }
+    ClipboardImage image;
+    if (bytes->size() > max_bytes) {
+      image.too_large = true;
+      return image;
+    }
+    if (!type.has_signature(*bytes)) {
+      return std::nullopt;
+    }
+    image.bytes = std::move(*bytes);
+    image.extension = type.extension;
     return image;
   }
-  if (!HasPngSignature(*bytes)) {
-    return std::nullopt;
-  }
-  image.bytes = std::move(*bytes);
-  image.extension = "png";
-  return image;
+  return std::nullopt;
 }
 
 std::optional<ClipboardImage> ReadClipboardImage(const size_t max_bytes) {

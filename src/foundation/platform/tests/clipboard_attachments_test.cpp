@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -20,9 +21,21 @@ struct FakeClipboard {
   int type_calls = 0;
   int text_calls = 0;
   int data_calls = 0;
+  /** The fresh query (SDL_HasClipboardData): which types it says are there, and whether it is cheap on this platform. */
+  bool with_fresh_query = false;
+  bool query_is_cheap = true;
+  std::vector<std::string> fresh_types;
+  int has_data_calls = 0;
 
   ClipboardSource Source() {
     ClipboardSource source;
+    if (with_fresh_query) {
+      source.has_data = [this](const std::string& mime) {
+        ++has_data_calls;
+        return std::find(fresh_types.begin(), fresh_types.end(), mime) != fresh_types.end();
+      };
+      source.fresh_query_cheap = [this]() { return query_is_cheap; };
+    }
     source.mime_types = [this]() {
       ++type_calls;
       return types;
@@ -44,6 +57,83 @@ struct FakeClipboard {
 };
 
 const std::string kPngHead = std::string("\x89PNG\r\n\x1a\n", 8);
+const std::string kJpegHead = std::string("\xFF\xD8\xFF\xE0", 4);
+
+// A screenshot tool wrote the clipboard after SDL's cached type list was taken (macOS and Windows refresh it only when
+// the window gains focus): the list still shows the old content, the fresh query shows the picture.
+TEST(ClipboardPeekTest, AStaleTypeListWithAFreshPngIsAReadablePicture) {
+  FakeClipboard clipboard;
+  clipboard.with_fresh_query = true;
+  clipboard.types = {}; // the cache: nothing, or only what was copied before
+  clipboard.fresh_types = {"image/png"};
+  ClipboardSummary summary = PeekClipboard(clipboard.Source());
+  EXPECT_EQ(summary.image_type, "image/png");
+  EXPECT_FALSE(summary.has_unusable_image);
+  EXPECT_FALSE(summary.has_text);
+  EXPECT_EQ(clipboard.data_calls, 0) << "types only: no data is fetched";
+  // The old copy was text: the stale list still says text, but a picture is there now, so the text must be non-blank to win
+  // (the real text is read afresh: the screenshot has none).
+  clipboard.types = {"text/plain;charset=utf-8"};
+  clipboard.text = "";
+  summary = PeekClipboard(clipboard.Source());
+  EXPECT_EQ(summary.image_type, "image/png");
+  EXPECT_FALSE(summary.has_text) << "the text of the old copy is gone: the picture is pasted";
+}
+
+TEST(ClipboardPeekTest, WhereTheFreshQueryIsNotCheapOnlyTheTypeListIsUsedAndHasDataIsNeverCalled) {
+  FakeClipboard clipboard;
+  clipboard.with_fresh_query = true;
+  clipboard.query_is_cheap = false;
+  clipboard.fresh_types = {"image/png", "image/jpeg", "image/tiff"};
+  clipboard.types = {};
+  ClipboardSummary summary = PeekClipboard(clipboard.Source());
+  EXPECT_TRUE(summary.image_type.empty());
+  EXPECT_FALSE(summary.has_unusable_image);
+  clipboard.types = {"image/png"};
+  summary = PeekClipboard(clipboard.Source());
+  EXPECT_EQ(summary.image_type, "image/png") << "the list is read as before";
+  EXPECT_EQ(clipboard.has_data_calls, 0) << "SDL_HasClipboardData would transfer the picture on X11";
+}
+
+TEST(ClipboardPeekTest, ATiffOnlyOrBmpOnlyFreshAnswerIsAnUnusableImage) {
+  for (const char* type : {"image/tiff", "image/bmp"}) {
+    FakeClipboard clipboard;
+    clipboard.with_fresh_query = true;
+    clipboard.types = {};
+    clipboard.fresh_types = {type};
+    const ClipboardSummary summary = PeekClipboard(clipboard.Source());
+    EXPECT_TRUE(summary.image_type.empty()) << type;
+    EXPECT_TRUE(summary.has_unusable_image) << type << ": the pill, not silence";
+  }
+}
+
+TEST(ClipboardPeekTest, AJpegIsReadableAndAPngIsPreferredToIt) {
+  FakeClipboard clipboard;
+  clipboard.types = {"image/jpeg"};
+  EXPECT_EQ(PeekClipboard(clipboard.Source()).image_type, "image/jpeg");
+  EXPECT_FALSE(PeekClipboard(clipboard.Source()).has_unusable_image);
+  clipboard.types = {};
+  clipboard.with_fresh_query = true;
+  clipboard.fresh_types = {"image/jpeg", "image/png"};
+  EXPECT_EQ(PeekClipboard(clipboard.Source()).image_type, "image/png");
+  clipboard.fresh_types = {"image/jpeg"};
+  EXPECT_EQ(PeekClipboard(clipboard.Source()).image_type, "image/jpeg");
+}
+
+TEST(ClipboardReadTest, AJpegIsReadWithItsSignatureAndTheExtensionJpg) {
+  FakeClipboard clipboard;
+  clipboard.data["image/jpeg"] = kJpegHead + "body";
+  const auto image = ReadClipboardImage(clipboard.Source(), 1000);
+  ASSERT_TRUE(image.has_value());
+  EXPECT_EQ(image->extension, "jpg");
+  EXPECT_EQ(image->bytes, kJpegHead + "body");
+  clipboard.data["image/jpeg"] = "not a jpeg";
+  EXPECT_FALSE(ReadClipboardImage(clipboard.Source(), 1000).has_value()) << "the signature is checked like the PNG's";
+  clipboard.data["image/png"] = kPngHead + "x";
+  const auto png = ReadClipboardImage(clipboard.Source(), 1000);
+  ASSERT_TRUE(png.has_value());
+  EXPECT_EQ(png->extension, "png") << "a PNG wins when both are there";
+}
 
 TEST(ClipboardPeekTest, PngOnlyIsAReadablePictureWithNoTextAndNoFiles) {
   FakeClipboard clipboard;

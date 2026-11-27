@@ -26,6 +26,14 @@ std::vector<std::string> ReadClipboardFiles();
 bool ClipboardFilePasteEnabled();
 
 /**
+ * Whether asking the system afresh "is an image of this type on the clipboard?" (SDL_HasClipboardData) is cheap here:
+ * true on macOS (the pasteboard's canReadItem...) and Windows (IsClipboardFormatAvailable), where SDL's type list is a
+ * cache refreshed only when the window gains focus, so a screenshot copied meanwhile is not in it; false elsewhere (X11
+ * transfers the whole data to answer), where the type list is all the paste looks at.
+ */
+bool ClipboardImageQueryIsCheap();
+
+/**
  * Portable and pure: the local files named by a text/uri-list body. One URI per line (CR, LF or CRLF), blank lines and
  * "#" comments skipped; only file:// with an empty host or "localhost" is accepted (percent-decoded as UTF-8 bytes);
  * every other scheme, a remote host, a relative path or a malformed percent sequence is dropped.

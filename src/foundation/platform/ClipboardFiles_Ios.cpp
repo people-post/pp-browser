@@ -3,6 +3,10 @@
 
 namespace pbr {
 
+bool ClipboardImageQueryIsCheap() {
+  return false;
+}
+
 bool ClipboardFilePasteEnabled() {
   return false;
 }

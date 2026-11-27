@@ -1,6 +1,7 @@
 #include "feature/presenters/AttachIntake.h"
 
 #include "common/ImageMetadata.h"
+#include "common/Logger.h"
 #include "lib/messaging/AttachmentCache.h"
 
 #include <algorithm>
@@ -108,6 +109,14 @@ PasteAction DecidePaste(const ClipboardSummary& clipboard, const AttachRefusal r
     action.pill_key = "chat.paste.unsupported";
   }
   return action;
+}
+
+std::string DescribePasteDecision(const ClipboardSummary& clipboard, const PasteAction& action) {
+  return std::string("paste: files=") + (clipboard.has_files ? "1" : "0") +
+         " text=" + (clipboard.has_text ? "1" : "0") +
+         " image=" + (clipboard.image_type.empty() ? "none" : clipboard.image_type) +
+         " unusable=" + (clipboard.has_unusable_image ? "1" : "0") + " -> " +
+         (action.take_over ? "take over" : "leave to the text field");
 }
 
 const char* DropHintKey(const bool inside_chat, const AttachRefusal refusal) {
@@ -322,6 +331,7 @@ bool PasteAttach::TryPaste() {
   AttachState state = ports_.state();
   state.paste_in_flight = in_flight_;
   const PasteAction action = DecidePaste(clipboard, RefusalFor(state));
+  logging::getLogger("Platform.Paste").debug << DescribePasteDecision(clipboard, action);
   if (!action.take_over) {
     return false;
   }
