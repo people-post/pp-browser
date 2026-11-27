@@ -22,6 +22,7 @@
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/PictureSendController.h"
+#include "feature/presenters/AttachIntake.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "feature/presenters/PictureSendQueue.h"
 #include "feature/presenters/VoiceSendQueue.h"
@@ -479,11 +480,17 @@ private:
   /** The library has handed over every picture of the pick (or none: it was cancelled). */
   void OnPhotoBatchDone(uint64_t pick_serial);
   /**
-   * Pictures and videos that are already files (the computer's picker, and later files dropped on the window): opens
-   * the send-preview page with them, up to PictureSendQueue::kMaxItems, the same way the phone's library pick does.
-   * UI thread; `paths` are the user's own files (never deleted).
+   * The one way files reach the send-preview page on a computer (the "+" menu's pickers now; a drop and a paste later):
+   * AttachIntake checks the state (RefusalFor), reads the files' facts off the UI thread, checks again, and opens the
+   * page with the first PictureSendQueue::kMaxItems that can go. UI thread. `candidates` are the user's own files
+   * unless `owned`.
    */
-  void OpenPictureSendWithPaths(std::vector<std::string> paths);
+  void OpenAttachPreview(std::vector<AttachCandidate> candidates, AttachSource source);
+  /** What AttachIntake decides on, read from the controller now. */
+  AttachState CurrentAttachState() const;
+  AttachIntakePorts MakeAttachIntakePorts();
+  /** AttachIntake's last step: the queue and the page for `items` in `thread_id`; false when the page could not open. */
+  bool OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
   void ShowPictureProgress();
   /** How the queue ended: the pill's last word, and the metrics line. */
@@ -716,6 +723,8 @@ private:
   uint64_t picture_queue_serial_ = 0;
   /** The preview page of the pictures picked together (hosted here like OpenHomeEdit's layer). */
   PictureSendController picture_send_;
+  /** Made on first use (OpenAttachPreview). */
+  std::unique_ptr<AttachIntake> attach_intake_;
   /** The several-photo pick being copied out of the library (iPhone / iPad); none otherwise. */
   struct PhotoBatch {
     uint64_t pick_serial = 0;

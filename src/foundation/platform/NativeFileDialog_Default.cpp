@@ -86,12 +86,12 @@ void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback ca
   ShowOpenImageFileDialog(window, std::move(callback), include_heic);
 }
 
-void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const int max_count) {
   if (!callback) {
     return;
   }
   auto* state = new DialogState{.callback = std::move(callback)};
-  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, nullptr, 0, nullptr, false);
+  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, nullptr, 0, nullptr, max_count > 1);
 }
 
 namespace {

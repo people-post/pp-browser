@@ -597,7 +597,7 @@ TEST(PendingPictureSourcePinTest, PickResultsCarryTheirSerialAndEveryEndClosesTh
        at = attach.find("= TakePickResult(serial, paths);", at + 1)) {
     ++taken;
   }
-  EXPECT_EQ(taken, 2u) << "the file picker's and the library's results";
+  EXPECT_EQ(taken, 3u) << "the file picker's, the library's (Android) and the computer pickers' results";
   EXPECT_NE(Body(source, "void ChatController::OpenCameraCapture(").find("= TakePickResult(serial, paths);"),
             std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::ShowPictureSendChoice(").find("picks_.EndCurrent();"),
@@ -608,7 +608,8 @@ TEST(PendingPictureSourcePinTest, PickResultsCarryTheirSerialAndEveryEndClosesTh
 }
 
 // Kenneth 2026-11-19: the system camera's "Use Photo" is the confirmation, so a camera picture goes straight on, sent
-// smaller, with no "Send / Send original / Cancel" choice. The choice stays for the desktop and Android library pick.
+// smaller, with no "Send / Send original / Cancel" choice. The choice stays for the Android library pick (a computer's
+// pickers go into the send-preview page since the drop / paste work).
 TEST(PendingPictureSourcePinTest, ACameraPictureGoesStraightOnWithoutTheSendChoice) {
   const std::string source = Controller();
   const std::string ports = Body(source, "CaptureFlowPorts ChatController::MakeCaptureFlowPorts(");
@@ -629,7 +630,7 @@ TEST(PendingPictureSourcePinTest, ACameraPictureGoesStraightOnWithoutTheSendChoi
                 "OutgoingPickSource::Photo,/*voice_file=*/false,thread_id,PendingUploadKind::Picture,pick_serial);"),
             std::string::npos)
       << "shrunk, to the armed chat";
-  // The library pick of the desktop and Android still asks.
+  // The library pick of Android still asks.
   EXPECT_NE(Body(source, "void ChatController::OnAttachFile(").find("ShowPictureSendChoice(std::move(path), *thread);"),
             std::string::npos);
 }
@@ -654,6 +655,109 @@ TEST(PendingPictureSourcePinTest, APickIsSentOnlyToTheChatItWasArmedIn) {
   EXPECT_NE(Body(source, "std::optional<std::string> ChatController::TakePickResult(")
                 .find("picks_.TakeResult(serial, ActiveThreadId(), files"),
             std::string::npos);
+}
+
+/** `source` from the first `from` to the first `to` after it. */
+std::string Between(const std::string& source, const std::string& from, const std::string& to) {
+  const size_t start = source.find(from);
+  if (start == std::string::npos) {
+    return {};
+  }
+  const size_t end = source.find(to, start + from.size());
+  return source.substr(start, end == std::string::npos ? std::string::npos : end - start);
+}
+
+// DEV/PLAN-desktop-drop-paste.md step 2 (source pins only): on a computer, "+" -> picture and "+" -> file both take
+// several files and hand them to the one intake (OpenAttachPreview); the "Send / Send original / Cancel" small menu is
+// no longer asked there (Android still asks).
+TEST(AttachIntakeSourcePinTest, TheComputersPickersGoOnlyThroughOpenAttachPreview) {
+  const std::string source = Controller();
+  EXPECT_EQ(source.find("OpenPictureSendWithPaths"), std::string::npos) << "replaced by the one intake";
+  const std::string attach = Body(source, "void ChatController::OnAttachFile(");
+  ASSERT_FALSE(attach.empty());
+  EXPECT_EQ(attach.find("ShowOpenImageFileDialog"), std::string::npos)
+      << "no single-image dialog on a computer any more";
+  EXPECT_EQ(attach.find("pick_image"), std::string::npos);
+
+  const std::string result = Between(attach, "const auto picked_for_preview", "const auto pick_computer_photos");
+  ASSERT_FALSE(result.empty());
+  EXPECT_NE(result.find("= TakePickResult(serial, paths);"), std::string::npos) << "the pick serial is checked";
+  EXPECT_NE(result.find("OpenAttachPreview("), std::string::npos);
+  EXPECT_NE(result.find("AttachSource::Picker"), std::string::npos);
+  EXPECT_EQ(result.find("ShowPictureSendChoice"), std::string::npos);
+  EXPECT_EQ(result.find("StartAttachmentUpload"), std::string::npos);
+
+  const std::string photos = Between(attach, "const auto pick_computer_photos", "// A picture is asked about");
+  ASSERT_FALSE(photos.empty());
+  EXPECT_NE(photos.find("ShowOpenPhotoLibraryDialog("), std::string::npos) << "the multi-select picker";
+  EXPECT_NE(photos.find("picked_for_preview(ArmPick())"), std::string::npos);
+  EXPECT_NE(photos.find("PictureSendQueue::kMaxItems"), std::string::npos);
+  EXPECT_EQ(photos.find("ShowPictureSendChoice"), std::string::npos);
+
+  const std::string file = Between(attach, "const auto pick_file", "// A phone's chat");
+  ASSERT_FALSE(file.empty());
+  EXPECT_NE(file.find("Platform::IsMobile()"), std::string::npos) << "a phone keeps its own file path";
+  EXPECT_NE(file.find("ShowOpenFileDialog(Backend::GetWindow(), picked_for_preview(ArmPick()),"), std::string::npos);
+  EXPECT_NE(file.find("PictureSendQueue::kMaxItems"), std::string::npos) << "up to nine files at once";
+  EXPECT_NE(file.find("picked(OutgoingPickSource::File, ArmPick())"), std::string::npos) << "the phone's file pick";
+}
+
+TEST(AttachIntakeSourcePinTest, BothComputerMenusPickPicturesAndFilesThroughThoseSamePickers) {
+  const std::string attach = Body(Controller(), "void ChatController::OnAttachFile(");
+  // The wide menu: Photos -> pick_photo_or_video, whose computer branch is pick_computer_photos.
+  const std::string photo_or_video = Between(attach, "const auto pick_photo_or_video", "const auto pick_file");
+  ASSERT_FALSE(photo_or_video.empty());
+  const std::string computer_branch =
+      Between(photo_or_video, "if (!Platform::IsMobile())",
+              "ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial)");
+  EXPECT_NE(computer_branch.find("pick_computer_photos()"), std::string::npos);
+  EXPECT_EQ(computer_branch.find("ShowPictureSendChoice"), std::string::npos);
+  // The narrow menu: its own "picture" entry.
+  EXPECT_NE(attach.find("{\"attach_picture\", Tr(\"chat.attach.picture\"), nullptr, pick_computer_photos()}"),
+            std::string::npos);
+  EXPECT_NE(attach.find("{\"home_attach_file\", Tr(\"chat.attach.file\"), nullptr, pick_file(),"), std::string::npos);
+  EXPECT_NE(attach.find("{\"attach_file\", Tr(\"chat.attach.file\"), nullptr, pick_file(),"), std::string::npos);
+  // Android is the one place left that asks "send smaller / original / cancel".
+  EXPECT_EQ(Controller().find("ShowPictureSendChoice(std::move(path), *thread);"),
+            Controller().rfind("ShowPictureSendChoice(std::move(path), *thread);"));
+}
+
+TEST(AttachIntakeSourcePinTest, TheIntakeIsWiredToTheRealStateThePresenterTheWorkerAndTheQueue) {
+  const std::string source = Controller();
+  const std::string open = Body(source, "void ChatController::OpenAttachPreview(");
+  ASSERT_FALSE(open.empty());
+  EXPECT_NE(open.find("AttachIntake"), std::string::npos);
+  const std::string state = Body(source, "AttachState ChatController::CurrentAttachState(");
+  ASSERT_FALSE(state.empty());
+  for (const char* part : {"chat_.editing_message", "chat_.composer_input_disabled", "InAiComposerContext()",
+                           "presenter_.SendHeld(", "picture_send_.IsOpen()", "layer_over_chat", "AttachmentBusy()"}) {
+    EXPECT_NE(state.find(part), std::string::npos) << part;
+  }
+  const std::string ports = Body(source, "AttachIntakePorts ChatController::MakeAttachIntakePorts(");
+  ASSERT_FALSE(ports.empty());
+  EXPECT_NE(ports.find("AppRuntime::PostWorkerNormal("), std::string::npos)
+      << "the file system is asked off the UI thread";
+  EXPECT_NE(ports.find("AppRuntime::PostUI("), std::string::npos);
+  EXPECT_NE(ports.find("ports.release_owned"), std::string::npos);
+  EXPECT_NE(ports.find("ShowToast("), std::string::npos) << "the bottom pill";
+  const std::string page = Body(source, "bool ChatController::OpenAttachItems(");
+  ASSERT_FALSE(page.empty());
+  EXPECT_NE(ports.find("OpenAttachItems("), std::string::npos);
+  EXPECT_NE(page.find("BeginPictureQueue("), std::string::npos);
+  EXPECT_NE(page.find("queue->Add("), std::string::npos);
+  EXPECT_NE(page.find("picture_send_.OnItemAdded("), std::string::npos);
+}
+
+TEST(AttachIntakeSourcePinTest, TheFileDialogTakesAHowManyAndTheComputerPassesItOn) {
+  const std::string header = ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/NativeFileDialog.h");
+  EXPECT_NE(header.find("NativeFileDialogCallback callback, int max_count = 1);"), std::string::npos);
+  const std::string desktop =
+      ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/NativeFileDialog_Default.cpp");
+  const std::string fn = Body(desktop, "void ShowOpenFileDialog(");
+  EXPECT_NE(fn.find("max_count > 1"), std::string::npos) << "allow_many";
+  const std::string ios = ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/NativeFileDialog_Ios.mm");
+  const std::string ios_fn = Body(ios, "void ShowOpenFileDialog(");
+  EXPECT_NE(ios_fn.find("const int"), std::string::npos) << "the iOS picker takes the argument and ignores it";
 }
 
 // S1 / S5 / S4 (source-order pins): every pick end also ends preparing; a stale video poster builds nothing; a refused

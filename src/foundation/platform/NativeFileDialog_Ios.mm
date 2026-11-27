@@ -441,7 +441,8 @@ void ReleasePickedFile(const std::string& path) {
   }
 }
 
-void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback,
+                        const int /*max_count: one at a time here*/) {
   if (!callback) {
     return;
   }

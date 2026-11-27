@@ -23,7 +23,11 @@ using NativePhotoItemCallback = std::function<void(size_t index, size_t total, c
  */
 void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false,
                              std::function<void(const std::string& name)> on_preparing = nullptr);
-void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
+/**
+ * Any file. `max_count` > 1 lets several be chosen at once (desktop: the system dialog's multi-select, the paths in the
+ * order the system lists them); iOS and Android pick one (the argument is ignored there).
+ */
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback, int max_count = 1);
 /**
  * The "Photo" entry of a chat: a picture or a video from the phone's library. iOS: PHPicker offering images and
  * videos; a video is kept as the library has it (.mov, HEVC) and a HEIC photo is handed over as JPEG. Android and
