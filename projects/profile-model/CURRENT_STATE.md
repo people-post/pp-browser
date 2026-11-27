@@ -2,7 +2,8 @@
 
 **As of:** 2026-11-24
 
-P0: inventory written ([INVENTORY.md](INVENTORY.md)); PM001–PM012 accepted by Hongwei (2026-11-23). Release 1 builds the
+P0: inventory written ([INVENTORY.md](INVENTORY.md)); PM001–PM012 accepted by Hongwei (2026-11-23). PM013 (2026-11-27): the ledger network
+is a choice of its own, by network card; not built (no ledger client in the app yet). Release 1 builds the
 whole layout; a profile has exactly one home backend (PM009, PM012). In [DESIGN § Open questions](DESIGN.md#open-questions), 2–3 are
 defaults and 4–6 are closed by PM012 (one home backend per profile, permanently); P0 is done.
 The issues found in the inventory are #738–#751; the phases are tracked in #752–#757.
