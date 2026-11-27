@@ -3225,8 +3225,8 @@ input.checkbox:checked {
 /* The Advanced page's banner strip: pale amber with a warn-coloured edge; the words stay in the normal text colour. */
 .shell-layer-compact .settings-banner {
   background-color: #fff4e0;
-  border-top: 1dp solid #ff950040;
-  border-bottom: 1dp solid #ff950040;
+  border-top: 1dp #ff950040;
+  border-bottom: 1dp #ff950040;
 }
 
 .settings-banner-text {
@@ -3286,7 +3286,7 @@ input.checkbox:checked {
   background-color: transparent;
   color: #007aff;
   border: 0;
-  border-top: 1dp solid #3c3c434a;
+  border-top: 1dp #3c3c434a;
 }
 
 .shell-layer-compact .settings-section--grouped .group-card .btn.settings-action-row:active {

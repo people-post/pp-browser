@@ -3601,7 +3601,6 @@ select selectbox option {
   padding: 0 12dp;
   box-sizing: border-box;
   border-top-width: 1dp;
-  border-top-style: solid;
   z-index: 50;
 }
 
@@ -4996,7 +4995,6 @@ select selectbox option {
   margin-top: -17dp;
   margin-left: -17dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite photo-preview-spin;
 }
@@ -8256,7 +8254,6 @@ input.checkbox {
   width: 28dp;
   height: 28dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite sync-pending-spin;
 }
@@ -9848,11 +9845,11 @@ input.checkbox {
 
 /* The switch animating is the only feedback a toggle gives (no "saved" toast). */
 .settings-switch {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s quadratic-in-out;
 }
 
 .settings-switch-knob {
-  transition: transform 0.15s ease-in-out;
+  transition: transform 0.15s quadratic-in-out;
 }
 
 .settings-choice-row {
@@ -14220,7 +14217,6 @@ textarea:composing ~ .prompt-composer-label,
   margin: 16dp 16dp 0 16dp;
   padding: 16dp 18dp 8dp 18dp;
   border-width: 2dp;
-  border-style: solid;
   border-radius: 14dp;
   box-sizing: border-box;
 }
