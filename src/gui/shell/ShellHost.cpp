@@ -2427,6 +2427,16 @@ void ShellHost::ApplySafeAreaLayout() {
     // conversation column only: the frame takes the column's left and right edges. The scrim under it still covers the
     // window, so the rail and the lists stay out of reach while the page is open.
     for (const OverlayEntry& overlay : state_.overlay_stack) {
+      if (overlay.modal) {
+        // A modal desktop panel covers the whole window: its scrim and the stage that centres the frame reach out of
+        // #shell-root (the engine's `fixed` is relative to the nearest positioned ancestor) over the title bar's strip
+        // and the status bar. The window buttons of the title bar sit above them (z-index).
+        for (const char* part : {"shell-modal-scrim-", "shell-modal-stage-"}) {
+          ui::Element* element = doc->GetElementById((part + std::to_string(overlay.id)).c_str());
+          set_dp(element, "top", -layout.content_top_dp);
+          set_dp(element, "bottom", -root_bottom_dp);
+        }
+      }
       if (overlay.key != "picture_send") {
         continue;
       }
@@ -2489,16 +2499,6 @@ void ShellHost::ApplySafeAreaLayout() {
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
   const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
-    if (overlay.modal && state_.layout_mode == LayoutMode::Expanded) {
-      // A modal desktop panel covers the whole window: its scrim and the stage that centres the frame reach out of
-      // #shell-root (the engine's `fixed` is relative to the nearest positioned ancestor) over the title bar's strip and
-      // the status bar. The window buttons of the title bar sit above them (z-index).
-      for (const char* part : {"shell-modal-scrim-", "shell-modal-stage-"}) {
-        ui::Element* element = doc->GetElementById((part + std::to_string(overlay.id)).c_str());
-        set_dp(element, "top", -layout.content_top_dp);
-        set_dp(element, "bottom", -root_bottom_dp);
-      }
-    }
     if (overlay.full_screen) {
       // Edge to edge: the layer reaches up under the status bar (#shell-root starts below it; a narrow desktop
       // window's own title bar stays uncovered) and down to the screen bottom; its body keeps the view's controls
