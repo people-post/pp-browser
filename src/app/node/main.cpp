@@ -28,6 +28,9 @@
 #if defined(PP_BROWSER_HAS_LEDGER)
 #include "domain/node/NodeLedgerRole.h"
 #endif
+#if defined(PP_NODE_RELAY_EDITION)
+#include "domain/relay/RelayServices.h"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -45,6 +48,13 @@ namespace {
 
 std::atomic<bool> g_stop{false};
 
+/** Which build this is (projects/node-relay NR001): the default node, or pp-node-relay with the relay services. */
+#if defined(PP_NODE_RELAY_EDITION)
+constexpr const char* kEdition = "relay";
+#else
+constexpr const char* kEdition = "node";
+#endif
+
 void OnSignal(int) {
   g_stop.store(true);
 }
@@ -58,6 +68,9 @@ void PrintUsage(const char* argv0) {
   std::cerr << "Usage: " << argv0 << " [options]\n"
             << "\n"
             << "Headless Brief mesh node (N011). Always Node.\n"
+#if defined(PP_NODE_RELAY_EDITION)
+            << "pp-node-relay: pp-node with the relay services (projects/node-relay; none run yet).\n"
+#endif
             << "Precedence: CLI flags → environment → config file → defaults.\n"
             << "\n"
             << "Options:\n"
@@ -178,6 +191,53 @@ private:
   std::optional<pbr::NodeLedgerRole::Role> role_;
   std::string dir_;
   pbr::NodeLedgerRole ledger_;
+#endif
+};
+
+/**
+ * pp-node-relay's relay services (projects/node-relay): they run on the node's mesh runtime and stop before the mesh,
+ * like the ledger role. The default pp-node has none: this slot is empty there.
+ */
+class RelayServicesSlot {
+public:
+  pbr::Roe<void> Start(pbr::NodeBootstrapResult& boot) {
+#if defined(PP_NODE_RELAY_EDITION)
+    pbr::RelayServices::Options options;
+    options.work_dir = boot.profile_data_dir + "/relay";
+    if (auto started = services_.Start(*boot.mesh, std::move(options)); !started) {
+      return started;
+    }
+    std::string running;
+    for (const std::string& name : services_.Running()) {
+      running += (running.empty() ? "" : ",") + name;
+    }
+    pbr::logging::getRootLogger().info << "relay services started: " << (running.empty() ? "none" : running);
+    return {};
+#else
+    (void)boot;
+    return {};
+#endif
+  }
+
+  /** Why a service ended on its own; none while they run (or in the default node). */
+  std::optional<std::string> Failure() const {
+#if defined(PP_NODE_RELAY_EDITION)
+    return services_.Failure();
+#else
+    return std::nullopt;
+#endif
+  }
+
+  /** Before the mesh stops. */
+  void Stop() {
+#if defined(PP_NODE_RELAY_EDITION)
+    services_.Stop();
+#endif
+  }
+
+private:
+#if defined(PP_NODE_RELAY_EDITION)
+  pbr::RelayServices services_;
 #endif
 };
 
@@ -359,6 +419,7 @@ pbr::NodeCompatFloor MakeNodeCompatFloor(const pbr::NodeBootstrapResult& boot, s
 
 pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
   pbr::StatusHttpSnapshot snap;
+  snap.edition = kEdition;
   snap.host_running = boot.mesh && boot.mesh->IsRunning();
   if (boot.mesh) {
     // Prefer ranked advertised front (global /ip6 or LAN) over raw wildcard bind.
@@ -454,8 +515,8 @@ int main(int argc, char** argv) {
 
   // Which build this is, so a node's log names it (release-compatibility "A build says what it is"). Local only:
   // the relay still gets node_version alone (frozen wire).
-  root.info << "pp-node.build version=" << pbr::AppVersionString() << " commit=" << pbr::BuildCommit()
-            << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
+  root.info << "pp-node.build edition=" << kEdition << " version=" << pbr::AppVersionString()
+            << " commit=" << pbr::BuildCommit() << " tag=" << (*pbr::BuildTag() != '\0' ? pbr::BuildTag() : "-");
 
   pbr::NodeBootstrapOptions options;
   options.argc = argc;
@@ -563,6 +624,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  RelayServicesSlot relay_services;
+  if (auto started = relay_services.Start(*boot); !started) {
+    root.error << "relay services failed to start: " << started.error().message;
+    ledger.Stop();
+    status_http.Stop();
+    node_metrics.Reset();
+    ShutdownNode(*boot);
+    return 1;
+  }
+
   auto schedule_probe = [&]() { boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false); };
   schedule_probe();
 
@@ -593,6 +664,11 @@ int main(int argc, char** argv) {
   while (!g_stop.load()) {
     if (const auto failed = ledger.Failure()) {
       root.error << "ledger role ended: " << *failed;
+      exit_code = 1;
+      break;
+    }
+    if (const auto failed = relay_services.Failure()) {
+      root.error << "relay services ended: " << *failed;
       exit_code = 1;
       break;
     }
@@ -637,7 +713,8 @@ int main(int argc, char** argv) {
   if (heartbeat && relay_calls_allowed) {
     heartbeat->SendFinal(); // before the mesh stops; bounded by a short timeout
   }
-  ledger.Stop(); // its protocols withdrawn, its thread joined — before the mesh stops
+  relay_services.Stop(); // before the mesh stops, like the ledger role
+  ledger.Stop();         // its protocols withdrawn, its thread joined — before the mesh stops
   status_http.Stop();
   node_metrics.Reset();
   ShutdownNode(*boot);

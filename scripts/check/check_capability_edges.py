@@ -69,7 +69,10 @@ GROUPS: dict[str, list[str]] = {
     "calls": ["lib/calls", "lib/call_audio", "common/media", "domain/call_media", "feature/calls"],
     "broadcast": ["lib/broadcast", "feature/broadcast"],
     "node": ["domain/node"],
-    # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node.
+    # The relay services only pp-node-relay links (node-relay NR001).
+    "relay": ["domain/relay"],
+    # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node, and
+    # pp-node-relay relay too.
     "node_app": ["app/node"],
     # The app: shell, GUI, composition — and AI, the shell's planner rather than a capability (CR007).
     "app": ["app", "gui", "feature/product", "feature/presenters", "feature/settings", "lib/ui", "lib/ai", "lib/storage", "lib/scan", "feature/ai", "common/ui"],
@@ -89,8 +92,10 @@ ALLOWED: dict[str, set[str]] = {
     "calls": {"base", "people", "net", "delivery", "pricing", "media"},
     "broadcast": {"base", "people", "net", "delivery", "pricing", "media", "calls"},
     "node": {"base", "people", "net"},
+    "relay": {"base", "people", "net", "node"},
     "product": {"base"},
-    "node_app": {"base", "product", "people", "net", "node"},
+    # pp-node-relay is built from the same sources; the default pp-node does not link relay (src/app/node).
+    "node_app": {"base", "product", "people", "net", "node", "relay"},
     "app": set(GROUPS),
 }
 

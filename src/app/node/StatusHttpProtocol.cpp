@@ -334,6 +334,9 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, con
       }
     }
     reach.set("host_running", snap.host_running);
+    if (!snap.edition.empty()) {
+      reach.set("edition", snap.edition);
+    }
     if (!snap.listen_multiaddr.empty()) {
       reach.set("listen", snap.listen_multiaddr);
     }

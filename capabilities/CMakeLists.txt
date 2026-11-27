@@ -51,8 +51,9 @@ set(PP_CAPABILITY_BELOW_messaging base people net social delivery pricing media)
 set(PP_CAPABILITY_BELOW_calls base people net delivery pricing media)
 set(PP_CAPABILITY_BELOW_broadcast base people net delivery pricing media calls)
 set(PP_CAPABILITY_BELOW_node base people net)
+set(PP_CAPABILITY_BELOW_relay base people net node)
 # The folders in the order a capability's targets need the ones below it defined first (src/CMakeLists.txt's order).
-set(_pp_order base people net social delivery pricing media messaging calls broadcast node)
+set(_pp_order base people net social delivery pricing media messaging calls broadcast node relay)
 
 set(PP_CAPABILITIES "calls" CACHE STRING "The capabilities to build, with everything below them (;-list)")
 set(_pp_built "")

@@ -50,6 +50,8 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       # calls or anything below it, or the standalone root: the capabilities job (CR023 step 4).
       calls_standalone: ${{ steps.filter.outputs.calls_standalone }}
+      # What the two pp-node editions are built from: the node-editions job (projects/node-relay NR2).
+      node_editions: ${{ steps.filter.outputs.node_editions }}
       # The filters that matched, as a JSON list: the Test step reads the capability folders' from it.
       changes: ${{ steps.filter.outputs.changes }}
     steps:
@@ -155,6 +157,20 @@ jobs:
             node: &node
               - *net
               - 'capabilities/node/**'
+            relay: &relay
+              - *node
+              - 'capabilities/relay/**'
+            # pp-node and pp-node-relay: the capabilities they link, the node app, the product's base it reads, and how
+            # they are packaged and checked.
+            node_editions:
+              - *relay
+              - 'src/app/node/**'
+              - 'src/foundation/**'
+              - 'src/common/**'
+              - 'packaging/pp-node/**'
+              - 'scripts/platform/pp_node_package_linux.sh'
+              - 'scripts/check/check_node_size.sh'
+              - 'scripts/test/pp_node_image_smoke.sh'
             # The standalone calls build (capabilities/CMakeLists.txt; the capabilities job): calls and what is below it.
             calls_standalone:
               - *calls
@@ -363,7 +379,7 @@ jobs:
           fi
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in base people net social delivery pricing media messaging calls broadcast node; do
+            for capability in base people net social delivery pricing media messaging calls broadcast node relay; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;
@@ -735,11 +751,97 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
+  # The two pp-node editions (projects/node-relay NR001, NR2): the headless Release build the release ships
+  # (scripts/platform/pp_node_package_linux.sh), pp-node and pp-node-relay from one tree. Their link checks run at
+  # configure and after each link: the default pp-node may not link the relay services, pp-node-relay must have them.
+  # Then the default node's size budget (binary and image), and each image's L0 smoke. Images are built here, not pushed.
+  node-editions:
+    needs: changes
+    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.node_editions == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_COMPRESSLEVEL: 5
+      PP_NODE_BUILD_DIR: ${{ github.workspace }}/build-pp-node
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build deps
+        # release-pp-node.yml's, so its ccache serves this build.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build ccache pkg-config \
+            python3 ca-certificates binutils curl file
+
+      - name: Ensure ccache directory exists
+        run: mkdir -p "$CCACHE_DIR"
+
+      - name: Runner image (ccache key)
+        run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
+
+      - name: Restore ccache (the node release's)
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: linux-pp-node-ubuntu2404-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release-pp-node.yml', 'scripts/platform/pp_node_package_linux.sh') }}
+          restore-keys: |
+            linux-pp-node-ubuntu2404-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-
+            linux-pp-node-ubuntu2404-ccache-v1-
+
+      - name: Build and package pp-node
+        run: |
+          ccache --zero-stats || true
+          PP_NODE_OUT_DIR=dist/pp-node bash scripts/platform/pp_node_package_linux.sh all
+
+      - name: Build and package pp-node-relay
+        env:
+          PP_NODE_EDITION: relay
+          PP_NODE_OUT_DIR: dist/pp-node-relay
+        run: |
+          bash scripts/platform/pp_node_package_linux.sh build
+          bash scripts/platform/pp_node_package_linux.sh package
+
+      - name: Build both images (not pushed)
+        run: |
+          docker build -q -t pp-node:ci dist/pp-node/docker
+          docker build -q -t pp-node-relay:ci dist/pp-node-relay/docker
+
+      - name: The default pp-node's size
+        run: ./scripts/check/check_node_size.sh dist/pp-node/docker/pp-node pp-node:ci
+
+      - name: L0 image smoke (both)
+        run: |
+          set -euo pipefail
+          for edition in node relay; do
+            image="pp-node:ci"
+            [ "$edition" = relay ] && image="pp-node-relay:ci"
+            docker rm -f pp-node-ci-smoke >/dev/null 2>&1 || true
+            docker run -d --name pp-node-ci-smoke \
+              -e PP_BROWSER_PIN=ci-smoke-pin \
+              -e PP_NODE_AMP_UDP_PORT=18517 \
+              -e PP_NODE_STATUS_ADDR=0.0.0.0:18518 \
+              -p 18518:18518 \
+              "$image"
+            if ! PP_NODE_STATUS_URL=http://127.0.0.1:18518 \
+                bash scripts/test/pp_node_image_smoke.sh --timeout 60 --expect-edition "$edition"; then
+              docker logs pp-node-ci-smoke || true
+              exit 1
+            fi
+            docker logs pp-node-ci-smoke 2>&1 | grep -E 'pp-node.build|relay services' || true
+            docker rm -f pp-node-ci-smoke
+          done
+
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats || true
+
   # The one check branch protection requires (release-compatibility P2): it passes when every job above passed or was
   # skipped (a docs-only PR, a platform the PR does not touch), and fails on any failure or cancellation. A skipped
   # matrix job reports under its bare name, so the matrix checks themselves cannot be the required ones.
   required:
-    needs: [changes, lint, build, ios, android, capabilities]
+    needs: [changes, lint, build, ios, android, capabilities, node-editions]
     if: always()
     runs-on: ubuntu-24.04
     steps:

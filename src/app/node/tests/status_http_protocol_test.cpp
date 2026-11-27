@@ -78,6 +78,20 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   EXPECT_EQ(sj->getObject("dht_stats")->getIf<int64_t>("cached_records").value_or(0), 2);
 }
 
+// projects/node-relay NR2: /status says which build answers; a snapshot that does not say leaves it out.
+TEST(StatusHttpProtocolTest, StatusNamesTheEdition) {
+  pbr::StatusHttpSnapshot snap;
+  pbr::StatusHttpRequest status{.method = "GET", .path = "/status", .authorization = {}};
+  auto unnamed = pbr::TryParseObject(pbr::HandleStatusHttpRequest(status, {}, snap).body);
+  ASSERT_TRUE(unnamed);
+  EXPECT_FALSE(unnamed->getString("edition").has_value());
+
+  snap.edition = "relay";
+  auto named = pbr::TryParseObject(pbr::HandleStatusHttpRequest(status, {}, snap).body);
+  ASSERT_TRUE(named);
+  EXPECT_EQ(named->getString("edition").value_or(""), "relay");
+}
+
 TEST(StatusHttpProtocolTest, BearerAuth) {
   pbr::StatusHttpAuthConfig auth;
   auth.bearer_token = "s3cret";

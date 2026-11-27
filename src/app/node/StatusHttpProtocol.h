@@ -34,6 +34,8 @@ struct StatusHttpAuthConfig {
 };
 
 struct StatusHttpSnapshot {
+  /** Which build answers: "node" (pp-node) or "relay" (pp-node-relay, projects/node-relay). Empty: not said. */
+  std::string edition;
   bool host_running = false;
   std::string listen_multiaddr;
   /** Ranked advertised listen MAs (global /ip6 first when present). */

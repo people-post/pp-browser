@@ -83,8 +83,9 @@ every capability, and a capability's DTOs under `common/<capability>/` belong to
 base (common, foundation) ─► people ─┬─► net ─────┬─► delivery ─► pricing ─┬─► messaging (+ social, media)
                                      └─► social ──┘                         └─► calls ─► broadcast (+ media)
 base ─► media (devices, codecs, the engine)
-                             people, net ─► node            app (shell, GUI, AI): anything
+                             people, net ─► node ─► relay   app (shell, GUI, AI): anything
 product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
+                                                            (pp-node-relay: and relay)
 ```
 
 | Capability | Paths |
@@ -99,7 +100,8 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | calls | `lib/calls`, `lib/call_audio`, `common/media`, `domain/call_media`, `feature/calls` |
 | broadcast | `lib/broadcast`, `feature/broadcast` |
 | node | `domain/node` |
-| node_app | `app/node` — pp-node, an app (CR017) |
+| relay | `domain/relay` — the relay services only pp-node-relay links (node-relay NR001) |
+| node_app | `app/node` — pp-node, an app (CR017), and pp-node-relay |
 | product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |
 

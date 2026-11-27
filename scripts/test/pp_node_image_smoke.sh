@@ -6,6 +6,7 @@
 #   ./scripts/test/pp_node_image_smoke.sh
 #   PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 #   ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
+#   ./scripts/test/pp_node_image_smoke.sh --expect-edition relay   # pp-node-relay's image
 #
 # See packaging/pp-node/IMAGE_SMOKE.md
 set -euo pipefail
@@ -15,6 +16,7 @@ EXPECT_CIRCUIT="${PP_NODE_EXPECT_CIRCUIT:-1}"
 EXPECT_MEDIA="${PP_NODE_EXPECT_MEDIA:-1}"
 STATUS_TOKEN="${PP_NODE_STATUS_TOKEN:-}"
 TIMEOUT_SEC="${PP_NODE_SMOKE_TIMEOUT_SEC:-30}"
+EXPECT_EDITION="${PP_NODE_EXPECT_EDITION:-}"
 
 usage() {
   cat <<EOF
@@ -23,6 +25,7 @@ Usage: $(basename "$0") [options]
   --status-url URL     Default: \$PP_NODE_STATUS_URL or http://127.0.0.1:18518
   --expect-circuit 0|1 Expect status.circuit_relay (default 1)
   --expect-media 0|1   Expect status.media_relay (default 1)
+  --expect-edition E   Expect status.edition: node (pp-node) or relay (pp-node-relay); default: not checked
   --token TOKEN        Bearer for PP_NODE_STATUS_TOKEN
   --timeout SEC        Wait for /healthz (default 30)
   -h, --help
@@ -34,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --status-url) STATUS_URL="$2"; shift 2 ;;
     --expect-circuit) EXPECT_CIRCUIT="$2"; shift 2 ;;
     --expect-media) EXPECT_MEDIA="$2"; shift 2 ;;
+    --expect-edition) EXPECT_EDITION="$2"; shift 2 ;;
     --token) STATUS_TOKEN="$2"; shift 2 ;;
     --timeout) TIMEOUT_SEC="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -88,6 +92,7 @@ status="$(curl_get /status)"
 export PP_NODE_SMOKE_STATUS_JSON="${status}"
 export PP_NODE_SMOKE_EXPECT_CIRCUIT="${EXPECT_CIRCUIT}"
 export PP_NODE_SMOKE_EXPECT_MEDIA="${EXPECT_MEDIA}"
+export PP_NODE_SMOKE_EXPECT_EDITION="${EXPECT_EDITION}"
 
 python3 <<'PY'
 import json, os, sys
@@ -95,6 +100,7 @@ import json, os, sys
 s = json.loads(os.environ["PP_NODE_SMOKE_STATUS_JSON"])
 expect_c = os.environ["PP_NODE_SMOKE_EXPECT_CIRCUIT"] == "1"
 expect_m = os.environ["PP_NODE_SMOKE_EXPECT_MEDIA"] == "1"
+expect_e = os.environ["PP_NODE_SMOKE_EXPECT_EDITION"]
 
 def fail(msg: str) -> None:
     raise SystemExit(f"error: {msg}: {s}")
@@ -117,7 +123,12 @@ if c != expect_c:
 if m != expect_m:
     fail(f"media_relay={m} expected {expect_m}")
 
+if expect_e and s.get("edition") != expect_e:
+    fail(f"edition={s.get('edition')} expected {expect_e}")
+
 print(f"ok  /status peer_id={peer}")
+if expect_e:
+    print(f"ok  edition={expect_e}")
 print(f"ok  listen={listen}")
 print(f"ok  circuit_relay={c} media_relay={m}")
 PY

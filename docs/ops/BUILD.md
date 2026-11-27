@@ -187,7 +187,20 @@ cmake --build build-pp-node -j --target pp-node
 
 Or: `scripts/platform/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
 
-**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_lib_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt). Beyond UI-free, its first-party closure is an **allowlist** (`pp_browser_assert_node_link_allowlist`, `PP_BROWSER_NODE_LINK_ALLOWLIST` in [`cmake/PpBrowserNoUiDeps.cmake`](../../cmake/PpBrowserNoUiDeps.cmake)): foundation `*_core`-style libs, `pp_pbr_common`, `pp_lib_{people,net}`, headless `pp_feature_{registration,node,node_ledger}`, the Amp / common / crypto / mesh siblings (not `pp_mesh_testing`), and pp-ledger. Any other `pp_*` target fails configure — widening the node is a deliberate edit to that list.
+**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_lib_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt). Beyond UI-free, its first-party closure is an **allowlist** (`pp_browser_assert_node_link_allowlist`, `PP_BROWSER_NODE_LINK_ALLOWLIST` in [`cmake/PpBrowserNoUiDeps.cmake`](../../cmake/PpBrowserNoUiDeps.cmake)): foundation `*_core`-style libs, `pp_pbr_common`, `pp_lib_{people,net}`, headless `pp_domain_{registration,node,node_ledger}`, the node app's own `pp_app_node`, the Amp / common / crypto / mesh siblings (not `pp_mesh_testing`), and pp-ledger. Any other `pp_*` target fails configure — widening the node is a deliberate edit to that list.
+
+**`pp-node-relay`** (projects/node-relay NR001) is pp-node with the relay services (the `relay` capability, `capabilities/relay/`; none run yet, NR3 adds the mailbox): the same sources, commit and version, its own binary and image. Configure once and build both (`--target pp-node-relay`; a desktop tree builds it only when asked). `/status` says which build answers (`"edition": "node"` or `"relay"`), and so does the `pp-node.build` log line. The default node stays small, and CI's `node-editions` job checks it on every PR that touches what it is built from:
+
+- **It does not link the relay services.** pp-node's link allowlist has no `pp_domain_relay` (only pp-node-relay's `EXTRA` adds it), and a post-link symbol check (`pp_browser_add_symbol_check`, [`cmake/CheckSymbols.cmake`](../../cmake/CheckSymbols.cmake)) fails pp-node when `RelayServices` is in its symbols and pp-node-relay when it is not. It runs on the unstripped binary and needs `nm` (not MSVC).
+- **Its size.** [`scripts/check/check_node_size.sh`](../../scripts/check/check_node_size.sh) holds the stripped binary (14 MiB) and what the image adds to `ubuntu:24.04` (18 MiB) to budgets. Raise one only in the PR that needs it, and say why there.
+- Both images are built (not pushed) and pass the L0 smoke (`pp_node_image_smoke.sh --expect-edition node|relay`). A `pp-node-relay` release is NR5's.
+
+```bash
+scripts/platform/pp_node_package_linux.sh all                                   # pp-node → dist/pp-node/
+PP_NODE_EDITION=relay scripts/platform/pp_node_package_linux.sh build           # same tree
+PP_NODE_EDITION=relay scripts/platform/pp_node_package_linux.sh package         # → dist/pp-node-relay/
+scripts/check/check_node_size.sh dist/pp-node/docker/pp-node [<pp-node image>]
+```
 
 ```bash
 cmake --build build -j --target pp-node
