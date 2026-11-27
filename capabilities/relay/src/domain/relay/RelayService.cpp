@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace pbr::plus {
+namespace pbr::relay {
 
 RelayService::~RelayService() {
   Stop();
@@ -28,4 +28,4 @@ std::optional<std::string> RelayService::Failure() const {
   return std::nullopt;
 }
 
-} // namespace pbr::plus
+} // namespace pbr::relay

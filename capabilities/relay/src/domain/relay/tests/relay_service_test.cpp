@@ -11,7 +11,7 @@ using namespace pbr;
 
 TEST(RelayServiceTest, AStoppedMeshTakesNoService) {
   mesh::MeshHost mesh{mesh::MeshExecutors{}, MetricsRegistry::Global()};
-  plus::RelayService relay;
+  relay::RelayService relay;
   const auto started = relay.Start(mesh, {});
   ASSERT_FALSE(static_cast<bool>(started));
   EXPECT_NE(started.error().message.find("not started"), std::string::npos);
@@ -19,7 +19,7 @@ TEST(RelayServiceTest, AStoppedMeshTakesNoService) {
 }
 
 TEST(RelayServiceTest, StopIsIdempotent) {
-  plus::RelayService relay;
+  relay::RelayService relay;
   EXPECT_FALSE(relay.Failure().has_value());
   relay.Stop();
   relay.Stop();

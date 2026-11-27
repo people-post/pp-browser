@@ -9,11 +9,11 @@
 #include "common/MeshAlias.h"
 
 /**
- * Add-on services (projects/node-relay NR001): what pp-node-plus runs beside the node's own and the default pp-node
- * never links. Every add-on capability's code is in this namespace, so one symbol check keeps them all out of pp-node
- * (src/app/node/CMakeLists.txt).
+ * The relay capability (projects/node-relay NR001). A node service's code is in its own namespace, pbr::<service>:
+ * the symbol check that keeps a build's services out of the other build is made from the service's name
+ * (src/app/node/CMakeLists.txt), so moving a service between pp-node and pp-node-plus renames nothing here.
  */
-namespace pbr::plus {
+namespace pbr::relay {
 
 /**
  * The message relay, pp-node-plus's first add-on: a relay of the relay protocol on the node's mesh runtime. Empty
@@ -50,4 +50,4 @@ private:
   Options options_;
 };
 
-} // namespace pbr::plus
+} // namespace pbr::relay

@@ -9,8 +9,8 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
 - **NR1:** the protocol is drafted in pp-specs `contracts/relay/` ([pp-specs #4](https://github.com/people-post/pp-specs/pull/4), draft, under review).
   Its vectors come with NR3 and NR4.
 - **NR2:** the edition is in review. It adds `pp-node-plus`, built beside `pp-node` from the same sources, and its first
-  add-on, the empty `relay` capability (`capabilities/relay/`, `pp_domain_relay`: `plus::RelayService`). Every add-on's
-  code is in namespace `pbr::plus`. `/status`
+  add-on, the empty `relay` capability (`capabilities/relay/`, `pp_domain_relay`: `relay::RelayService`). Which build
+  links a service is one list each in `src/app/node/CMakeLists.txt` (NR001: a tier is a build decision only). `/status`
   carries `edition`. CI's `node-editions` job runs on every PR that touches what the node is built from. It builds
   both editions headless, and the link allowlist and symbol checks keep every add-on out of `pp-node`. It also
   holds the default binary (14 MiB) and its image over `ubuntu:24.04` (18 MiB) to their budgets. The budgets were
@@ -18,8 +18,8 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
   [BUILD § Headless mesh node](../../docs/ops/BUILD.md#headless-mesh-node-pp-node).
 
 **Open, with defaults until decided:**
-- The settings' names (NR007): one section per add-on in the node's config (`plus.relay.…`, its on/off switch among
-  them), each with a `PP_NODE_…` override. NR3 adds the relay's.
+- The settings' names (NR007): one section per service in the node's config (`node.relay.…`, its on/off switch among
+  them; tier-free, NR001), each with a `PP_NODE_…` override. NR3 adds the relay's.
 - Where the add-ons live in the tree: each its own capability beside the others, gated like them (`capabilities/relay`
   first, taken in NR2).
 - What `pp-node-plus` shares with `pp-node`: its config (`/etc/pp-node`), data dir, user and ports, so switching a

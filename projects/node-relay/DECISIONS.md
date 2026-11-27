@@ -17,11 +17,19 @@ add-on, and the ledger stays in core)
   relay is the first (the `relay` capability: the mailbox, then the relay protocol's lockers, cards and directory, and
   its call to the org's push gateway); file storage (NR010) is the second. The push gateway itself is the org's (it
   holds the app's APNs / FCM keys), not an add-on.
-- One folder per add-on: in the tree (`capabilities/<add-on>/`), in the config (`plus.<add-on>`) and on disk
-  (`<profile dir>/<add-on>/`, beside the ledger role's `ledger/`). Each keeps its own store; none reads another's.
-- Each add-on is its own capability with its own library and its own on/off setting. Their code is in namespace
-  `pbr::plus`. A build per add-on would multiply binaries, images and releases; an operator turns off what they don't
-  want.
+- One folder per service: in the tree (`capabilities/<service>/`), in the config (`node.<service>.…`, with
+  `PP_NODE_<SERVICE>_…` overrides) and on disk (`<profile dir>/<service>/`, beside the ledger role's `ledger/`). Each
+  keeps its own store; none reads another's.
+- Each add-on is its own capability with its own library and its own on/off setting. A build per add-on would multiply
+  binaries, images and releases; an operator turns off what they don't want.
+- **A tier is a build decision only.** Nothing on the wire, in a record, on disk, in the config or in a metric names
+  it: clients find a service by what a node advertises (its protocols, its directory row), never by its build, and
+  `/status`'s `edition` is for operators. A service's code is in its own namespace (`pbr::<service>`), and its library
+  defines `PP_NODE_HAS_<SERVICE>`, which starts it in whichever build links it. Moving a service between the tiers is
+  moving its name between two lists in `src/app/node/CMakeLists.txt`. What a move still costs is operational: core →
+  plus takes the service away from default nodes at the next node release (release notes, and one release in which the
+  default node warns when the service is on); plus → core grows the default node (its size budget) and the service
+  must stay off by default there, since a core node never keeps data for accounts unasked.
 - Both builds come from the same commit, on the same version line (RC016), each with its own image. The default
   `pp-node` links no add-on; CI checks that, and the default image's size.
 - A third build only if an add-on's dependencies, size or security surface are of a different order from the others',
