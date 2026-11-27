@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <string>
 
@@ -85,15 +86,20 @@ void ApplyMacFrame(SDL_Window* window) {
   desktop::ApplyMacWindowRoundedCorners(window, square, g_frame_dark);
 }
 
-void SDLCALL FrameSettleOnMainThread(void* /*userdata*/) {
-  g_frame_settle_timer = 0;
+// `userdata` is the id of the timer that queued this run. A newer ScheduleFrameSettle may have replaced the global by
+// now: clearing it then would lose the newer handle, which a reschedule or Uninstall could no longer cancel.
+void SDLCALL FrameSettleOnMainThread(void* userdata) {
+  if (g_frame_settle_timer == static_cast<SDL_TimerID>(reinterpret_cast<uintptr_t>(userdata))) {
+    g_frame_settle_timer = 0;
+  }
   if (SDL_Window* window = Backend::GetWindow()) {
     ApplyMacFrame(window);
   }
 }
 
-Uint32 SDLCALL FrameSettleTimer(void* /*userdata*/, SDL_TimerID /*id*/, Uint32 /*interval*/) {
-  SDL_RunOnMainThread(FrameSettleOnMainThread, nullptr, false); // the timer runs on its own thread; AppKit needs main
+Uint32 SDLCALL FrameSettleTimer(void* /*userdata*/, SDL_TimerID id, Uint32 /*interval*/) {
+  SDL_RunOnMainThread(FrameSettleOnMainThread, reinterpret_cast<void*>(static_cast<uintptr_t>(id)),
+                      false); // the timer runs on its own thread; AppKit needs main
   return 0;
 }
 
