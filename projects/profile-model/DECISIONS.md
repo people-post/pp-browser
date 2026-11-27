@@ -258,8 +258,9 @@ works this way. The screens' words are Kenneth's (default: below).
   as it never opens `main` (PM001), and it cannot tell which other network carries value.
 - **A successor of our mainnet** (pp-ledger's re-genesis, after its keys were stolen or lost) comes in an app update,
   its card the new default, with our announcement. Opening it, the app says it continues the user's accounts once its
-  import checks against the old network (pp-ledger `check-predecessor`): that proves the state carried over, not who
-  runs it; trust comes from the announcement and the app's default.
+  import checks out against the old network (the user's accounts proven on both, as pp-ledger's `check-predecessor`
+  checks a whole ledger for nodes): that proves the state carried over, not who runs it; trust comes from the
+  announcement and the app's default.
 - **A ledger key belongs to one ledger network:** kept under its network id, it never signs for another, so nothing
   made for a test network spends on the real one.
 - **The ledger network is always shown** on every screen that reads or signs for it; a test network says so plainly
