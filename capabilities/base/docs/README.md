@@ -10,7 +10,7 @@ The mechanisms every capability uses: `common` (the shared vocabulary, text by k
 
 - Architecture: [SRC_LAYOUT § What `capabilities/base/src/common` provides](../../../docs/architecture/SRC_LAYOUT.md#what-capabilitiesbasesrccommon-provides), [common/README](../../../capabilities/base/src/common/README.md), [THREADING](../../../docs/architecture/THREADING.md), [LOGGING](../../../docs/architecture/LOGGING.md), [MESH_IDENTITY](../../../docs/architecture/MESH_IDENTITY.md)
 - Contracts: [SIGNED_EXTENSIONS](../../../docs/contracts/SIGNED_EXTENSIONS.md), [CODED_FAILURE](../../../docs/contracts/CODED_FAILURE.md), [DIAGNOSTICS](../../../docs/contracts/DIAGNOSTICS.md)
-- Vectors: `src/foundation/crypto/tests/data/`: `alg_id_vectors.json`, `ext_area_vectors.json` (copies of pp-cpp-crypto's and pp-cpp-common's), `kem_binding_vectors.json`
+- Vectors: pp-specs `vectors/`: `alg_id_vectors.json`, `ext_area_vectors.json` (pp-cpp-crypto's and pp-cpp-common's), `kem_binding_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [capability-repos](../../../projects/capability-repos/)
 - Decisions: [CR002](../../../projects/capability-repos/DECISIONS.md#cr002--runtime-core-goes-to-pp-cpp-common), [CR015](../../../projects/capability-repos/DECISIONS.md#cr015--p2-is-gated-like-p1-the-products-base-is-the-apps), [CR021](../../../projects/capability-repos/DECISIONS.md#cr021--pp-browsers-crypto-formats-are-deliverys-pp-cpp-crypto-takes-only-generic-pieces), [CR023](../../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first)
 

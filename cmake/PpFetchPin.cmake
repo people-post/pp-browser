@@ -6,9 +6,10 @@
 #     records a pin. Its cache variables are named after the repo, upper case, '-' → '_':
 #     PP_CPP_COMMON_GIT_TAG (the tag; pp_fetch_git_tag below), PP_CPP_COMMON_GIT_REPOSITORY,
 #     PP_CPP_COMMON_SOURCE_DIR (a local checkout, overriding the tag).
-#   pp_pin_make_available(pp-cpp-common)
+#   pp_pin_make_available(pp-cpp-common [FILES_ONLY])
 #     adds the library, from the first of: its *_SOURCE_DIR, ${PP_SIBLINGS_DIR}/<repo> (sibling mode), its tag
-#     (FetchContent). A local checkout whose HEAD is not the pinned tag is warned about.
+#     (FetchContent). A local checkout whose HEAD is not the pinned tag is warned about. FILES_ONLY: a repo with
+#     nothing to build (pp-specs): its files are fetched or found the same ways, and nothing is added to the build.
 #   pp_pin_source_dir(pp-cpp-common <out>)
 #     the source tree that build used (for a test that reads a library's own files).
 #
@@ -104,6 +105,13 @@ function(pp_pin_check_head name dir tag)
 endfunction()
 
 function(pp_pin_make_available name)
+  cmake_parse_arguments(ARG "FILES_ONLY" "" "" ${ARGN})
+  # How a checkout is recognised: a CMake project, or, for a files-only repo, its README.
+  if(ARG_FILES_ONLY)
+    set(_marker "README.md")
+  else()
+    set(_marker "CMakeLists.txt")
+  endif()
   get_property(_pins GLOBAL PROPERTY PP_PINS)
   if(NOT name IN_LIST _pins)
     message(FATAL_ERROR "pp_pin_make_available(${name}): no pp_pin(${name} …) in the pin list (cmake/PpPins.cmake)")
@@ -121,7 +129,7 @@ function(pp_pin_make_available name)
   set(_src "")
   set(_how "")
   if(${_p}_SOURCE_DIR)
-    if(EXISTS "${${_p}_SOURCE_DIR}/CMakeLists.txt")
+    if(EXISTS "${${_p}_SOURCE_DIR}/${_marker}")
       set(_src "${${_p}_SOURCE_DIR}")
       set(_how "${_p}_SOURCE_DIR")
     else()
@@ -132,7 +140,7 @@ function(pp_pin_make_available name)
       message(FATAL_ERROR "PP_SIBLINGS_DIR is for development: a packaged build compiles the pinned tags (PB-001)")
     endif()
     get_filename_component(_siblings "${PP_SIBLINGS_DIR}" ABSOLUTE BASE_DIR "${PP_PINS_REPO_ROOT}")
-    if(EXISTS "${_siblings}/${name}/CMakeLists.txt")
+    if(EXISTS "${_siblings}/${name}/${_marker}")
       set(_src "${_siblings}/${name}")
       set(_how "sibling")
     else()
@@ -143,13 +151,16 @@ function(pp_pin_make_available name)
   if(_src)
     message(STATUS "${PROJECT_NAME}: ${name} from ${_src} (${_how}; pin ${_tag})")
     pp_pin_check_head("${name}" "${_src}" "${_tag}")
-    add_subdirectory("${_src}" "${CMAKE_BINARY_DIR}/_deps/${_fc}-build" EXCLUDE_FROM_ALL)
+    if(NOT ARG_FILES_ONLY)
+      add_subdirectory("${_src}" "${CMAKE_BINARY_DIR}/_deps/${_fc}-build" EXCLUDE_FROM_ALL)
+    endif()
   else()
     FetchContent_Declare(
       ${_fc}
       GIT_REPOSITORY ${${_p}_GIT_REPOSITORY}
       GIT_TAG ${_tag}
     )
+    # A repo without a CMakeLists.txt (FILES_ONLY) is only fetched: MakeAvailable adds nothing for it.
     FetchContent_MakeAvailable(${_fc})
     FetchContent_GetProperties(${_fc} SOURCE_DIR _src)
   endif()

@@ -1,5 +1,5 @@
 // The sealed link handshake (docs/contracts/LINK_DEVICE.md; multi-device M027): the offer and the reply, the receiver's
-// order for each, the 4-digit code, the text forms, and the frozen vectors in data/link_handshake_vectors.json (an
+// order for each, the 4-digit code, the text forms, and the frozen vectors in pp-specs' vectors/link_handshake_vectors.json (an
 // offer from fixed coins, its code, and committed replies the fixed key opens — encapsulation is randomized, so only
 // the replies differ between runs). PP_WRITE_LINK_HANDSHAKE_VECTORS=<path> writes a fresh file.
 

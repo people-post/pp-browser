@@ -77,6 +77,12 @@ Each pin `<repo>` has cache variables named after it (`pp-cpp-mesh` → `PP_CPP_
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DPP_SIBLINGS_DIR=..   # ../pp-cpp-common, ../pp-cpp-mesh, …
 ```
 
+**pp-specs** is pinned the same way but only fetched when tests are built, and nothing in it is compiled: it holds the
+shared contracts' frozen vectors, which the tests read from `PP_SPECS_VECTORS_DIR` (`cmake/PpSpecs.cmake`;
+`-DPP_SPECS_SOURCE_DIR=<path>` or sibling mode for a local checkout). A check that reads them without a configure
+(`check_relay_ids.sh --self-test`) finds them through `PP_SPECS_DIR`, a sibling `../pp-specs` or a build's fetched copy;
+`scripts/dev/pp_specs_at_pin.sh <dir>` clones the pinned tag (CI's lint job does).
+
 A local checkout (either way) is checked at configure: when its HEAD is not the pinned tag, CMake warns, saying whether it is past the pin (it has library changes CI's build does not) or does not contain it (update it, or the build differs from CI's); with no such tag in the checkout, it asks for `git fetch --tags`. Configure prints where each library came from (`pp-browser: pp-cpp-mesh from … (sibling; pin v10.1.0)`). A packaged build (`PP_BROWSER_PACKAGED_BUILD=ON`) refuses sibling mode: a release compiles its pinned tags (PB-001). Nothing beside the repo is picked up unasked — `../pp-cpp-ui` was until CR012; configure says so once when one is there.
 
 A pin bump follows a tag (`pp_fetch_git_tag`): an existing build tree takes the new pin at its next configure, unless that tree overrides the tag with `-D…_GIT_TAG`.

@@ -64,7 +64,7 @@ critical entry (update needed, only after the signature). A device then opens th
 that locker** (rollback protection: a provider serving an old snapshot is refused). Among several, the newest valid one
 wins (`PickNewest`); **one a newer app wrote** (a higher `record_version` or `state_version`, an unknown algorithm or
 critical entry) is skipped and noted: the device reads the newest it can and **stops publishing** with "update needed"
-(`AppError::NewerFormat`), never writing over what it cannot read. Vectors: `lib/people/tests/data/account_locker_vectors.json`
+(`AppError::NewerFormat`), never writing over what it cannot read. Vectors: pp-specs `vectors/account_locker_vectors.json`
 (the signed bytes of fixed inputs, signed fixtures and each refusal's verdict), read by the relay byte for byte.
 
 ## State JSON

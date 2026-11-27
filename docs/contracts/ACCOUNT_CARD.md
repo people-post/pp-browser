@@ -79,7 +79,7 @@ order: the version (none or 1: older, refused; above 2: update needed, nothing a
 signature's length with no byte after it (malformed), the three typed blobs (an unknown algorithm: update needed), the
 signature over the rebuilt bytes (a forgery), the area's critical entries (update needed); then the signing key's hash
 is the Account ID. The blob is kept as received, its area too. Vectors: `kem_binding_vectors.json`
-(`capabilities/base/src/foundation/crypto/tests/data/`, `kem_key_binding_test.cpp`), which the relay reads byte for byte.
+(pp-specs `vectors/kem_binding_vectors.json`, `kem_key_binding_test.cpp`), which the relay reads byte for byte.
 
 ## Account card
 
@@ -177,7 +177,7 @@ device's (an algorithm migration happens per device). `nickname` and `ext_b64` a
 
 The preferred relay is signed as the first. The KEM binding is not in these bytes: it is its own signature. Golden
 vectors: the SHA-256 of a fixed card's bytes (9797 of them) in `AccountCardSignBytesTest.MatchTheGoldenVector`
-(`account_card_test.cpp`), and `account_card_vectors.json` (`capabilities/people/src/lib/people/tests/data/`,
+(`account_card_test.cpp`), and pp-specs `vectors/account_card_vectors.json` (
 `account_card_vectors_test.cpp`): a signed card of keys from fixed seeds with its signed bytes, the same with one
 unknown non-critical entry, its key card, and the cards that must be refused, each with its verdict. The relay
 (`account-card.ts`) reads it byte for byte; `relay_sign_vectors.json` carries a card v5 too.
@@ -416,7 +416,7 @@ pair, the lifetime, not expired. The relay checks it the same way with the recip
 grantor's key resolved as [above](#resolving-keys). **A grant the app cannot read** (a newer `grant_version`, an
 unknown algorithm, an unknown critical entry) is none, never a forgery: its grantor runs a newer app, and is not asked
 for a grant again (`RelayGrantCoordinator::NeedsNewerApp`). A grant kept or forwarded keeps its entries. Vectors:
-`lib/delivery/tests/data/relay_grant_vectors.json` (the signed bytes of fixed grants, signed fixtures, each refusal's
+pp-specs `vectors/relay_grant_vectors.json` (the signed bytes of fixed grants, signed fixtures, each refusal's
 verdict), read by the relay byte for byte.
 
 **Who gets one.** Every contact not blocked (added; an opening offer accepted or waived adds the contact)

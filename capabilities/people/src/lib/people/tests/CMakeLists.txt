@@ -4,8 +4,8 @@ pp_browser_add_lib_folder_tests(
   pp_lib_people
   pp_browser_people_test
   PRIVATE_DEFINITIONS
-    PP_ACCOUNT_LOCKER_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data/account_locker_vectors.json"
-    PP_ACCOUNT_CARD_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data/account_card_vectors.json")
+    PP_ACCOUNT_LOCKER_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/account_locker_vectors.json"
+    PP_ACCOUNT_CARD_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/account_card_vectors.json")
 
 # retired_keychain_backup_test reads the build's version (at-rest A011 reminder).
 target_link_libraries(pp_browser_people_test PRIVATE pp_foundation_runtime_core)

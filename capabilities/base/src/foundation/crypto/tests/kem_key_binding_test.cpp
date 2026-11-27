@@ -1,6 +1,6 @@
 // KEM binding v2 (docs/contracts/ACCOUNT_CARD.md § KEM binding; release-compatibility SIGNED_FORMATS § 2.3, § 6): its
 // signed bytes and blob, the producer, the receiver's order (version → parse → algorithm ids → verify → extensions,
-// then who signed), and the frozen vectors. The committed file is data/kem_binding_vectors.json, which pp-relay-apis
+// then who signed), and the frozen vectors. The file is pp-specs' vectors/kem_binding_vectors.json, which pp-relay-apis
 // (R2) reads byte for byte: register/finish's `kem_binding_b64`, checked and stored as received.
 // PP_WRITE_KEM_BINDING_VECTORS=<path> writes a fresh one (keys from fixed seeds; ML-DSA signatures are randomized, so
 // only the bindings differ between runs).

@@ -1,7 +1,7 @@
 // Account card v5's and the key card's frozen vectors (release-compatibility SIGNED_FORMATS § 2.2, § 6;
 // docs/contracts/ACCOUNT_CARD.md): a signed card of fixed keys with its signed bytes, the same card with one unknown
 // non-critical entry (verifies, entry kept), its key card, and the cards that must be refused, each with the verdict
-// the receiver's order gives it. The committed file is data/account_card_vectors.json, which pp-relay-apis (R2) reads
+// the receiver's order gives it. The file is pp-specs' vectors/account_card_vectors.json, which pp-relay-apis (R2) reads
 // byte for byte: register/finish's `account_card`, stored and served as received. PP_WRITE_ACCOUNT_CARD_VECTORS=<path>
 // writes a fresh one (keys from fixed seeds; ML-DSA signatures are randomized, so only they differ between runs).
 

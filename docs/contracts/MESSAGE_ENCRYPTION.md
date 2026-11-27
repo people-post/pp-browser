@@ -210,7 +210,7 @@ Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-messa
 
 ## Frozen test vectors
 
-The envelope v4 signing bytes are frozen in `capabilities/delivery/src/lib/delivery/tests/data/envelope_vectors.json` (`envelope_vectors_test`: a fixed envelope with an empty area and with one unknown non-critical entry, and signed fixtures with the receiver's verdict: accepted, older, update needed before and after verifying, forged, malformed) and by hash in `envelope_signer_test.cpp`; the `e2e` sign-bytes table below is the v1 layout, kept for its body hash. Identity strings in these vectors (`relay:alice123`, …) are test inputs only — any string works there.
+The envelope v4 signing bytes are frozen in pp-specs `vectors/envelope_vectors.json` (`envelope_vectors_test`: a fixed envelope with an empty area and with one unknown non-critical entry, and signed fixtures with the receiver's verdict: accepted, older, update needed before and after verifying, forged, malformed) and by hash in `envelope_signer_test.cpp`; the `e2e` sign-bytes table below is the v1 layout, kept for its body hash. Identity strings in these vectors (`relay:alice123`, …) are test inputs only — any string works there.
 
 Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 

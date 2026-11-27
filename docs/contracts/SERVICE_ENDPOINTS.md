@@ -105,7 +105,7 @@ the changes) and every one it carries verifies (else forged); no unknown critica
 (update needed); then `sequence ≥ 1`, its origins within the card's origin bounds (`IsCardRelayOrigin`; `http://` too,
 for the local stack and the lab) and none twice, transport and signing keys distinct and neither an operator key of any
 set in it, and `expires_at` 0 or in the future (release 1's operators write 0; the reader ships, Q7). Frozen vectors:
-`capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json` (written by `relay_certificate_test.cpp`,
+pp-specs `vectors/relay_certificate_vectors.json` (written by `relay_certificate_test.cpp`,
 `PP_WRITE_RELAY_CERTIFICATE_VECTORS=<path>`; pp-relay-apis and pp-node read it byte for byte).
 
 `GET {base}/v1/relay-identity` (unauthenticated, rate-limited per address) answers
@@ -243,7 +243,7 @@ it is ours); a send into a contact's relay the PeerId the certificate of the rel
 locator) names for that relay proves (`ContactAudience`, [Sending by the list](#sending-by-the-list)); pp-node its relay's
 pin's.
 
-**Golden vectors:** `capabilities/delivery/src/lib/delivery/tests/data/relay_sign_vectors.json` (v2, release-compatibility
+**Golden vectors:** pp-specs `vectors/relay_sign_vectors.json` (v2, release-compatibility
 F5), written by `relay_sign_vectors_test.cpp` (`PP_WRITE_RELAY_SIGN_VECTORS=<path>`) and checked there: the layout,
 each domain's fields and the answers' meaning; every domain and relay API op at version 4 signed by one account for
 relay `a`, with an empty area and with one unknown non-critical entry (`a` answers `ok`, `b` `wrong_audience`); on

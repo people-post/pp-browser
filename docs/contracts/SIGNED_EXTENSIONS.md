@@ -159,18 +159,19 @@ Every signed object's bytes are frozen in a JSON vector file read by each side t
 bytes without a version bump fails CI. ML-DSA signing is hedged, so signatures are not compared: the signed bytes
 are, and each committed signed fixture must verify.
 
-| File | Written by | Copies |
-|------|------------|--------|
-| `ext_area_vectors.json` | pp-cpp-common (`tests/data/`) | pp-browser `capabilities/base/src/foundation/crypto/tests/data/`, pp-cpp-mesh, the relay |
-| `alg_id_vectors.json` | pp-cpp-crypto (`tests/data/`) | pp-browser (same folder), the relay |
-| per object (`relay_sign_vectors.json`, `relay_certificate_vectors.json`, …) | pp-browser, beside the object's test | the relay, pp-node |
-| `relay_grant_vectors.json` (grant v2), `account_locker_vectors.json` (locker record v2) | pp-browser `lib/delivery/tests/data/`, `lib/people/tests/data/` | the relay (its grant check, its locker store) |
-| `group_roster_vectors.json` (statement and dissolved v4, owner transfer v2, roster change v2) | pp-browser `lib/messaging/tests/data/` | — (app only) |
-| `link_handshake_vectors.json` (link offer and reply v1, [LINK_DEVICE.md](LINK_DEVICE.md)) | pp-browser `foundation/crypto/tests/data/` | — (app only) |
+Every vector file lives in [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md) `vectors/`
+(its index: format, contract, who writes it, who reads it), and pp-browser's tests read it at the tag
+`cmake/PpPins.cmake` pins (`cmake/PpSpecs.cmake` sets `PP_SPECS_VECTORS_DIR`; `-DPP_SPECS_SOURCE_DIR=…` or sibling
+mode reads a local checkout) — capability-repos CR025 step 2. pp-browser keeps no copy.
 
-- A copy is the pinned tag's bytes exactly (`library_vector_copies_test`); pp-browser's helpers read every case of
-  it. After a library bump, `PP_WRITE_EXT_AREA_VECTORS=<path>` / `PP_WRITE_ALG_ID_VECTORS=<path>` write the pinned
-  tag's file.
-- pp-browser's own files use `common/tests/VectorFile.h`: the committed path from the test target's definition
-  (`PP_<NAME>_VECTORS_PATH`), `PP_WRITE_<NAME>_VECTORS=<path>` to write a fresh file (two-space JSON, final newline),
-  `WithoutKeys` to compare without the randomized signatures.
+- **Who writes a file:** the repository whose tests generate it: pp-cpp-common `ext_area`, pp-cpp-crypto `alg_id` and
+  `seeded_keygen`, pp-cpp-mesh `dht_record`, pp-browser the rest (per object, beside the object's test). New cases are
+  generated there and brought to pp-specs by pull request; then the pins move.
+- **Who still keeps copies:** pp-cpp-common, pp-cpp-crypto and pp-cpp-mesh their own files, and the relay nine
+  (`scripts/vector-copies.json` there, by sha256), until each pins pp-specs. `library_vector_copies_test` checks that
+  pp-specs' `ext_area` and `alg_id` files are the libraries' at their pinned tags; after a library bump,
+  `PP_WRITE_EXT_AREA_VECTORS=<path>` / `PP_WRITE_ALG_ID_VECTORS=<path>` write the pinned tag's file, for a pp-specs pull
+  request.
+- pp-browser's files use `common/tests/VectorFile.h`: the path from the test target's definition
+  (`PP_<NAME>_VECTORS_PATH`, in pp-specs), `PP_WRITE_<NAME>_VECTORS=<path>` to write a fresh file (two-space JSON, final
+  newline) for a pp-specs pull request, `WithoutKeys` to compare without the randomized signatures.

@@ -143,11 +143,27 @@ check() {
   [[ ${fatal} -eq 0 && ( "${mode}" != "release" || ${#problems[@]} -eq 0 ) ]]
 }
 
+# pp-specs' vectors/ folder (the vectors live there, at the tag cmake/PpPins.cmake pins): PP_SPECS_DIR, else a sibling
+# checkout (../pp-specs), else a build's fetched copy (build*/_deps/pp_specs-src). CI's lint job sets PP_SPECS_DIR
+# (scripts/dev/pp_specs_at_pin.sh).
+pp_specs_vectors() {
+  local d
+  for d in "${PP_SPECS_DIR:-}" "${root}/../pp-specs" "${root}"/build*/_deps/pp_specs-src; do
+    if [[ -n "${d}" && -f "${d}/vectors/manifest.json" ]]; then
+      echo "${d}/vectors"
+      return 0
+    fi
+  done
+  echo "pp-specs not found: set PP_SPECS_DIR (scripts/dev/pp_specs_at_pin.sh <dir> clones the pinned tag)" >&2
+  return 1
+}
+
 self_test() {
   # Real certificates from the frozen vectors (SIGNED_FORMATS § 6): certificate 1 of the vectors' relay, wrapped and
   # commented as a .cert file is; another relay's; a version this build does not read; a truncated one.
   local good="relay:lelZMZgWuhoMQTvLLUT1C5qlJBPX66oxOLzIT_VsEs4" failures=0 dir
-  local vectors="${root}/capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json"
+  local vectors
+  vectors="$(pp_specs_vectors)/relay_certificate_vectors.json" || return 1
   dir="$(mktemp -d)"
   python3 - "${vectors}" "${dir}" <<'PY_VECTORS'
 import json, sys, textwrap

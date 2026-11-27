@@ -1,6 +1,6 @@
 // Typed keys and signatures (docs/contracts/SIGNED_EXTENSIONS.md § Typed blobs): pp-browser's reads and writes over
 // pp-cpp-crypto's AlgId, their error mapping (an unknown algorithm is "update needed", anything else a refusal), and
-// the copy of pp-cpp-crypto's frozen alg_id_vectors.json read through them byte for byte.
+// pp-specs' copy of pp-cpp-crypto's frozen alg_id_vectors.json read through them byte for byte.
 
 #include "foundation/crypto/TypedBlob.h"
 

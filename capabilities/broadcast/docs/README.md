@@ -8,7 +8,7 @@ Live broadcast: join tickets, viewer ladders, relay media, the RPC codec, the si
 
 ## Docs about it
 
-- Vectors: `src/lib/broadcast/tests/data/`: `broadcast_join_ticket_vectors.json`, `peer_announce_tip_vectors.json`
+- Vectors: pp-specs `vectors/`: `broadcast_join_ticket_vectors.json`, `peer_announce_tip_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [peer-scoped-broadcast](../../../projects/peer-scoped-broadcast/), [media-client-layers](../../../projects/media-client-layers/)
 - Decisions: [CR003](../../../projects/capability-repos/DECISIONS.md#cr003--calls-and-broadcast-are-one-repo-realtime), [CR022](../../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)
 
