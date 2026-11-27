@@ -6,7 +6,7 @@ Ordering only; status lives in [CURRENT_STATE.md](CURRENT_STATE.md). Design: [DE
 - [ ] **NR1** The protocol in pp-specs (capability-repos CR025 step 2): the relay calls apart from transport, the HTTPS
       binding as it is, the Amp binding's frames, the vectors; certificate version 2 and the card's `amp_relays` and
       `delivery` entries; the invite, the revoke, the offer and both halves of ownership (NR008, NR011); their vectors
-- [ ] **NR2** The edition: `pp-node-plus` built beside `pp-node` with its own image, with the `relay` capability, its first
+- [x] **NR2** The edition: `pp-node-plus` built beside `pp-node` with its own image, with the `relay` capability, its first
       add-on (empty); CI checks that the default `pp-node` links no add-on, and the default image's size
 - [ ] **NR3** The mailbox on `pp-node-plus`: registration, send, poll, ack, clear and `watch` over `/pp/rpc/relay/1.0.0`;
       certificate v2 and `relay-identity` over Amp; admission by invite, the owner's revoke and the collect-only
