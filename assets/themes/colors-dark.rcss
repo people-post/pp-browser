@@ -5162,7 +5162,12 @@ input.checkbox:checked {
 }
 
 .shell-body--wide .shell-frame--forward_progress {
-  background-color: #2c2c2e;
+  background-color: #2c2c2ed6;
+  border: 1dp #54545899;
+}
+
+.shell-body--wide .forward-progress-card .forward-progress-bar {
+  background-color: #78788080;
 }
 
 }

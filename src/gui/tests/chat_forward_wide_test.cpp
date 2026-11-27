@@ -985,6 +985,26 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
   }
 }
 
+// The wide progress card is translucent (the chat shows through), not blurred, in both themes, and its progress track
+// stays visible on that surface.
+TEST_F(ForwardWideTest, ForwardProgressCardSurfaceIsTranslucentInBothThemes) {
+  const std::regex frame(
+      "\\.shell-body--wide \\.shell-frame--forward_progress \\{\\s*background-color: #[0-9a-f]{6}([0-9a-f]{2});");
+  const std::regex track(
+      "\\.shell-body--wide \\.forward-progress-card \\.forward-progress-bar \\{\\s*background-color: "
+      "#[0-9a-f]{6}([0-9a-f]{2});");
+  for (const char* theme : {"themes/colors-light.rcss", "themes/colors-dark.rcss"}) {
+    const std::string css = Asset(theme);
+    std::smatch found;
+    ASSERT_TRUE(std::regex_search(css, found, frame)) << theme;
+    const int alpha = std::stoi(found[1].str(), nullptr, 16);
+    EXPECT_LT(alpha, 255) << "the card surface is translucent: " << theme;
+    EXPECT_GE(alpha, 0xb0) << "but dense enough to read over unblurred chat text: " << theme;
+    ASSERT_TRUE(std::regex_search(css, found, track)) << theme;
+    EXPECT_GE(std::stoi(found[1].str(), nullptr, 16), 0x50) << "the track stays visible: " << theme;
+  }
+}
+
 // Words and spelling of the desktop line, and that it is the one the wide page shows.
 TEST_F(ForwardWideTest, TheWideProgressPageSaysToKeepPPOpen) {
   LocalizationService& tr = LocalizationService::Instance();
