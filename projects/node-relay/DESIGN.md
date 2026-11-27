@@ -33,8 +33,8 @@ arrives twice is dropped by its id (`RelayReceivePipeline`, `BenignDuplicate`).
                          └── Amp binding  /pp/rpc/relay/1.0.0 ── pp-node-plus (and later the org's relay too)
 
  pp-node (default)  = mesh, DHT, directory, circuits, media hop, the ledger role when asked   (stays small)
- pp-node-plus       = the same  + the add-ons: the message relay (mailbox first), later files, the push gateway,
-                      lockers, cards — each a capability with its own switch, each with its own small store
+ pp-node-plus       = the same  + the add-ons: the message relay (mailbox first; then lockers, cards, directory),
+                      later files (NR010) — each a capability with its own switch and its own small store
 ```
 
 ### 1. Two tiers: a second build, not a plugin (NR001)

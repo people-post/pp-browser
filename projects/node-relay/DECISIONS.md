@@ -14,7 +14,11 @@ add-on, and the ledger stays in core)
   (`--ledger-role`), so an operator can leave it off, and `PP_BROWSER_WITH_LEDGER=OFF` builds without it.
 - **`pp-node-plus`, the add-ons:** pp-node plus every **add-on service**, a service that keeps data or acts for
   accounts and that an owner offers (admission, offers, limits, a privacy statement: NR007, NR008, NR011). The message
-  relay is the first (the `relay` capability); file storage (NR010), the push gateway, lockers and cards follow.
+  relay is the first (the `relay` capability: the mailbox, then the relay protocol's lockers, cards and directory, and
+  its call to the org's push gateway); file storage (NR010) is the second. The push gateway itself is the org's (it
+  holds the app's APNs / FCM keys), not an add-on.
+- One folder per add-on: in the tree (`capabilities/<add-on>/`), in the config (`plus.<add-on>`) and on disk
+  (`<profile dir>/<add-on>/`, beside the ledger role's `ledger/`). Each keeps its own store; none reads another's.
 - Each add-on is its own capability with its own library and its own on/off setting. Their code is in namespace
   `pbr::plus`. A build per add-on would multiply binaries, images and releases; an operator turns off what they don't
   want.
