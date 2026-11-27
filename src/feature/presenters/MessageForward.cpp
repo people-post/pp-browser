@@ -316,6 +316,7 @@ void ForwardRun::FailRestOfTarget(const bool count_as_skipped) {
   last_sent_id_.clear();
   last_was_attachment_ = false;
   settle_wait_since_ms_.reset();
+  rate_limited_ = false; // a pace wait belonged to the chat that is left
 }
 
 void ForwardRun::NextItem() {
@@ -580,7 +581,8 @@ ForwardRun::State ForwardRun::Step(size_t budget, const std::function<bool()>& s
         return State::Waiting;
       }
       settle_wait_since_ms_.reset();
-      if (message_at_ > 0 &&
+      // Also the retry of a chat's first item after the device's pace refused it: it may be a quarter of a minute later.
+      if ((message_at_ > 0 || rate_limited_) &&
           (!ports_.target_of || ports_.target_of(target_thread_) == ForwardTargetKind::Unavailable)) {
         FailRestOfTarget();
         continue;

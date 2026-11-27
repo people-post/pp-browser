@@ -704,9 +704,11 @@ public:
    */
   ForwardCheck CheckForward();
   /**
-   * A forward's attachment is being uploaded now: by the run in progress, or by one that was let go of (Close, a tap,
-   * the background) and has not answered yet (for at most kForwardOrphanBusyMs). The composer, the picture and voice
-   * queues and a new forward with uploads wait while it is true, so two uploads never run together.
+   * A forward's attachment is being sent now: the run in progress is uploading one, or waits the device's send pace out
+   * to try the same one again; or a run that was let go of (Close, a tap, the background) has an upload that has not
+   * answered yet. The composer, the picture and voice queues and a new forward with uploads wait while it is true, so two
+   * uploads do not run together. The guarantee for a let-go upload ends after kForwardOrphanBusyMs: one the messaging
+   * layer never answers stops counting then, and a new upload may start next to it.
    */
   bool ForwardUploadBusy() const;
   /** The forward being sent has a page: at least one ticked attachment this device holds the bytes of is uploaded. */
@@ -754,6 +756,12 @@ public:
   void SetForwardAttachmentBusy(std::function<bool()> busy) { forward_attachment_busy_ = std::move(busy); }
   /** A call is on: a forward with an upload does not start (its progress page would cover the call's controls). */
   void SetForwardCallActive(std::function<bool()> active) { forward_call_active_ = std::move(active); }
+  /**
+   * The forward upload slot came free (ForwardUploadBusy turned false): the run with an upload ended, a let-go upload
+   * answered, or its kForwardOrphanBusyMs bound expired. The host refreshes the composer and goes on with its queues.
+   * Called on the UI thread; not for a run that uploaded nothing.
+   */
+  void SetForwardUploadFreed(std::function<void()> freed) { forward_upload_freed_ = std::move(freed); }
   /** The open chat's message is an attachment (a picture, video, file or voice message, whatever its state). */
   bool IsAttachmentMessage(const std::string& message_id);
 
@@ -805,6 +813,9 @@ private:
   std::function<void(const ForwardNotice&)> forward_notice_sink_;
   std::function<bool()> forward_attachment_busy_;
   std::function<bool()> forward_call_active_;
+  std::function<void()> forward_upload_freed_;
+  /** Tells the host the slot is free when it is (see SetForwardUploadFreed). */
+  void NoteForwardUploadSlot();
   /** Runs let go of with an upload that has not answered yet (kept so that their answer is collected and counted as busy). */
   struct ForwardOrphan {
     std::shared_ptr<ForwardRun> run;
