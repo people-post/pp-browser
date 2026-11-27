@@ -20,6 +20,11 @@ struct KeyBinding {
   bool priority_phase = true;
   /** Not for a key the keyboard repeats (a key held down): the binding is skipped and the key goes on untouched. */
   bool skip_repeat = false;
+  /**
+   * With `skip_repeat`: asked instead of skipping when the key repeats (the binding still has to match: key, modifiers,
+   * `when`). False = the repeat is taken as well (the key does not go on); true / unset = it goes on untouched.
+   */
+  std::function<bool()> repeat_action;
 };
 
 class InputCoordinator {

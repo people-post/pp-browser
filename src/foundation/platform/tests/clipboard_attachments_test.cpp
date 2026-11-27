@@ -127,6 +127,34 @@ TEST(ClipboardPeekTest, AnEmptySourceIsEmptyToo) {
   EXPECT_TRUE(PeekClipboard(ClipboardSource{}).image_type.empty());
 }
 
+// S2: asked only when copied files read back empty and the text paste might be the right one after all.
+TEST(ClipboardHasTextTest, ATextTypeWithNonBlankTextIsText) {
+  FakeClipboard clipboard;
+  clipboard.types = {"public.file-url", "text/plain;charset=utf-8"};
+  clipboard.text = "photo.png";
+  EXPECT_TRUE(ClipboardHasText(clipboard.Source()));
+}
+
+TEST(ClipboardHasTextTest, NoTextTypeBlankTextAndNoSourceAreNotText) {
+  FakeClipboard clipboard;
+  clipboard.types = {"text/uri-list"};
+  clipboard.text = "left over";
+  EXPECT_FALSE(ClipboardHasText(clipboard.Source())) << "no text type: the text is not even read";
+  EXPECT_EQ(clipboard.text_calls, 0);
+  clipboard.types = {"text/plain"};
+  clipboard.text = " \n ";
+  EXPECT_FALSE(ClipboardHasText(clipboard.Source()));
+  EXPECT_FALSE(ClipboardHasText(ClipboardSource{}));
+}
+
+TEST(ClipboardHasTextTest, PeekDoesNotReadTheTextWhenOnlyFilesAreThere) {
+  FakeClipboard clipboard;
+  clipboard.types = {"public.file-url", "text/plain"};
+  clipboard.text = "photo.png";
+  PeekClipboard(clipboard.Source());
+  EXPECT_EQ(clipboard.text_calls, 0) << "the text is read lazily, at the empty-read fallback only";
+}
+
 TEST(ClipboardReadTest, APngComesBackWithItsExtension) {
   FakeClipboard clipboard;
   clipboard.data["image/png"] = kPngHead + "rest";

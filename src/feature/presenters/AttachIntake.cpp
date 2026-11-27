@@ -16,6 +16,9 @@ AttachRefusal RefusalFor(const AttachState& state) {
   if (!state.chat_open) {
     return AttachRefusal::NoChat;
   }
+  if (state.attach_unavailable) {
+    return AttachRefusal::AttachUnavailable;
+  }
   if (state.ai_composer) {
     return AttachRefusal::AiComposer;
   }
@@ -47,6 +50,7 @@ const char* AttachRefusalKey(const AttachRefusal refusal) {
   switch (refusal) {
     case AttachRefusal::NoChat:
       return "chat.attach.no_chat";
+    case AttachRefusal::AttachUnavailable:
     case AttachRefusal::AiComposer:
     case AttachRefusal::Editing:
     case AttachRefusal::InputDisabled:
@@ -252,16 +256,27 @@ void AttachIntake::Open(std::vector<AttachCandidate> candidates, const AttachSou
   const uint64_t session = ports_.session();
   const std::weak_ptr<int> alive = alive_;
   auto gather = ports_.gather ? ports_.gather : std::function<FileFacts(const std::string&)>(&GatherFileFacts);
-  // The file system (a network drive or a cloud placeholder can be slow) is asked off the UI thread.
-  ports_.post_worker([this, alive, gather = std::move(gather), candidates = std::move(candidates), thread_id,
-                      session]() mutable {
+  auto post_ui = ports_.post_ui;
+  auto release = ports_.release_owned;
+  // The file system (a network drive or a cloud placeholder can be slow) is asked off the UI thread. The worker never
+  // touches this intake (it may be gone by then): everything it needs is copied in, as PasteAttach does.
+  ports_.post_worker([this, alive, gather = std::move(gather), post_ui = std::move(post_ui),
+                      release = std::move(release), candidates = std::move(candidates), thread_id, session]() mutable {
     std::vector<FileFacts> facts;
     facts.reserve(candidates.size());
     for (const AttachCandidate& candidate : candidates) {
       facts.push_back(gather(candidate.path));
     }
-    ports_.post_ui([this, alive, candidates = std::move(candidates), facts = std::move(facts), thread_id, session]() {
+    post_ui([this, alive, release = std::move(release), candidates = std::move(candidates), facts = std::move(facts),
+             thread_id, session]() {
       if (alive.expired()) {
+        if (release) {
+          for (const AttachCandidate& candidate : candidates) {
+            if (candidate.owned) {
+              release(candidate.path); // the intake is gone: the files this app made for the batch go with it
+            }
+          }
+        }
         return;
       }
       Finish(thread_id, session, candidates, facts);
@@ -293,21 +308,16 @@ void AttachIntake::Finish(const std::string& thread_id, const uint64_t session,
   if (plan.items.empty()) {
     return;
   }
-  std::vector<AttachCandidate> handed;
-  for (const AttachPlannedItem& item : plan.items) {
-    handed.push_back({item.path, item.owned, {}});
-  }
-  if (!ports_.open_page(thread_id, std::move(plan.items))) {
-    Release(handed); // the page did not open: the owned files that went with it are deleted here
-  }
+  // From here open_page owns the items, whatever it answers: the queue releases what it took, the opener what it never
+  // gave to the queue. Releasing them here too would delete a reused name's new file (N1).
+  ports_.open_page(thread_id, std::move(plan.items));
 }
 
 PasteAttach::PasteAttach(PastePorts ports) : ports_(std::move(ports)) {}
 
 bool PasteAttach::TryPaste() {
-  if (in_flight_) {
-    return true; // a file is being written: swallowed, nothing said, the clipboard not touched
-  }
+  // While a picture is being written another paste of a picture or files is swallowed quietly (RefusalFor's
+  // PasteInFlight says nothing), but plain text still goes to the text field: DecidePaste only takes over what is ours.
   const ClipboardSummary clipboard = ports_.peek();
   AttachState state = ports_.state();
   state.paste_in_flight = in_flight_;
@@ -324,6 +334,9 @@ bool PasteAttach::TryPaste() {
       candidates.push_back(AttachCandidate{std::move(path), false, {}}); // the user's own files: never deleted by us
     }
     if (candidates.empty()) {
+      if (ports_.has_text && ports_.has_text()) {
+        return false; // the files read back as nothing (gone, or a stale type list): the text on the clipboard pastes as text
+      }
       if (ports_.say) {
         ports_.say("chat.paste.failed", 0); // gone since the peek, or could not be read
       }
@@ -335,7 +348,7 @@ bool PasteAttach::TryPaste() {
   if (!action.read_image) {
     return true;
   }
-  const std::optional<ClipboardImage> image = ports_.read_image();
+  std::optional<ClipboardImage> image = ports_.read_image();
   if (!image) {
     if (ports_.say) {
       ports_.say("chat.paste.unsupported", 0); // gone since the peek, or not really a PNG
@@ -356,7 +369,7 @@ bool PasteAttach::TryPaste() {
   auto release = ports_.release_owned;
   auto post_ui = ports_.post_ui;
   ports_.post_worker([this, alive, write = std::move(write), release = std::move(release), post_ui = std::move(post_ui),
-                      thread_id, session, bytes = image->bytes, extension = image->extension]() {
+                      thread_id, session, bytes = std::move(image->bytes), extension = image->extension]() {
     std::optional<std::string> path = write(bytes, extension);
     post_ui([this, alive, release, path = std::move(path), thread_id, session]() {
       if (alive.expired()) {

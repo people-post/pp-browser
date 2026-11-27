@@ -12,7 +12,7 @@ namespace {
 constexpr AttachRefusal kAllRefusals[] = {
     AttachRefusal::None,       AttachRefusal::NotReady,      AttachRefusal::NoChat,   AttachRefusal::AiComposer,
     AttachRefusal::Editing,    AttachRefusal::InputDisabled, AttachRefusal::SendHeld, AttachRefusal::PreviewOpen,
-    AttachRefusal::LayerAbove, AttachRefusal::PasteInFlight, AttachRefusal::Busy,
+    AttachRefusal::LayerAbove, AttachRefusal::PasteInFlight, AttachRefusal::Busy,     AttachRefusal::AttachUnavailable,
 };
 
 TEST(DropDecisionTest, InsideTheChatAndSendableIsTaken) {
@@ -70,6 +70,19 @@ TEST(DropHintTest, InsideButRefusedShowsTheRefusalsOwnLine) {
     }
   }
   EXPECT_STREQ(DropHintKey(true, AttachRefusal::PreviewOpen), "chat.attach.finish_current");
+}
+
+TEST(DropDecisionTest, AChatWithoutAPlusButtonRefusesADropWithTheNotHereLine) {
+  AttachState state;
+  state.attach_unavailable = true; // a dissolved group (G016), or messaging / the mesh not ready
+  const AttachRefusal refusal = RefusalFor(state);
+  EXPECT_EQ(refusal, AttachRefusal::AttachUnavailable);
+  EXPECT_EQ(DecideDrop(true, true, refusal), DropVerdict::Refuse);
+  EXPECT_STREQ(DropHintKey(true, refusal), "chat.attach.not_here");
+  EXPECT_STREQ(AttachRefusalKey(refusal), "chat.attach.not_here");
+  EXPECT_TRUE(DecidePaste(ClipboardSummary{.has_files = true, .files_enabled = true}, refusal).take_over);
+  EXPECT_STREQ(DecidePaste(ClipboardSummary{.has_files = true, .files_enabled = true}, refusal).pill_key,
+               "chat.attach.not_here");
 }
 
 TEST(DropHintTest, OutsideTheChatThereIsNoHint) {

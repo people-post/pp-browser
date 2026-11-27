@@ -167,6 +167,10 @@ protected:
       ++file_reads_;
       return files_;
     };
+    ports.has_text = [this]() {
+      ++text_reads_;
+      return clipboard_has_text_;
+    };
     ports.read_image = [this]() {
       ++reads_;
       return image_result_;
@@ -231,6 +235,8 @@ protected:
   int peeks_ = 0;
   int reads_ = 0;
   int file_reads_ = 0;
+  int text_reads_ = 0;
+  bool clipboard_has_text_ = false;
   std::vector<std::string> files_;
   int writes_ = 0;
   std::vector<std::string> pills_;
@@ -297,11 +303,33 @@ TEST_F(PasteAttachTest, TwoCopiedFilesGoToThePreviewAsTwoNotOwnedCandidatesAtOnc
 }
 
 TEST_F(PasteAttachTest, CopiedFilesThatReadBackEmptyAreSwallowedWithTheCouldNotPastePill) {
-  clipboard_ = FilesSummary(true, "");
+  clipboard_ = FilesSummary(false, ""); // and no text to paste instead
   PasteAttach paste(Ports());
   EXPECT_TRUE(paste.TryPaste());
   EXPECT_EQ(pills_, std::vector<std::string>{"chat.paste.failed"});
   EXPECT_TRUE(opened_.empty());
+}
+
+// S2: files that read back empty must not eat a text paste (Finder also puts the name there; a stale types list).
+TEST_F(PasteAttachTest, CopiedFilesThatReadBackEmptyWithTextOnTheClipboardLeaveThePasteToTheTextField) {
+  clipboard_ = FilesSummary(false, "");
+  clipboard_has_text_ = true;
+  PasteAttach paste(Ports());
+  EXPECT_FALSE(paste.TryPaste());
+  EXPECT_TRUE(pills_.empty()) << "no pill: the text goes in";
+  EXPECT_TRUE(opened_.empty());
+  EXPECT_FALSE(paste.InFlight());
+  EXPECT_EQ(text_reads_, 1);
+}
+
+TEST_F(PasteAttachTest, TheTextIsOnlyLookedAtWhenTheFilesReadBackEmpty) {
+  clipboard_ = FilesSummary(true, "");
+  clipboard_has_text_ = true;
+  files_ = {"/a/one.txt"};
+  PasteAttach paste(Ports());
+  EXPECT_TRUE(paste.TryPaste());
+  EXPECT_EQ(text_reads_, 0) << "read lazily, not on every paste";
+  ASSERT_EQ(opened_.size(), 1u);
 }
 
 TEST_F(PasteAttachTest, RefusedCopiedFilesAreSwallowedWithThePillAndNotRead) {
@@ -313,6 +341,16 @@ TEST_F(PasteAttachTest, RefusedCopiedFilesAreSwallowedWithThePillAndNotRead) {
   EXPECT_EQ(pills_, std::vector<std::string>{"chat.attach.previous_still_sending"});
   EXPECT_EQ(file_reads_, 0);
   EXPECT_TRUE(opened_.empty());
+}
+
+// N4: while a picture is being written, plain text still pastes.
+TEST_F(PasteAttachTest, APasteOfPlainTextWhileAPictureIsBeingWrittenGoesToTheTextField) {
+  PasteAttach paste(Ports());
+  ASSERT_TRUE(paste.TryPaste()); // a picture, in flight
+  clipboard_ = Summary(false, true, "", false);
+  EXPECT_FALSE(paste.TryPaste());
+  EXPECT_TRUE(pills_.empty());
+  EXPECT_EQ(reads_, 1);
 }
 
 TEST_F(PasteAttachTest, APasteWhileAPictureIsBeingWrittenSwallowsCopiedFilesToo) {
@@ -363,11 +401,9 @@ TEST_F(PasteAttachTest, APictureThatCannotBeReadAnyMoreIsUnsupported) {
 TEST_F(PasteAttachTest, ASecondPasteWhileOneIsBeingWrittenIsSwallowedWithNoPillAndNoSecondRead) {
   PasteAttach paste(Ports());
   ASSERT_TRUE(paste.TryPaste());
-  const int peeks = peeks_;
+  EXPECT_TRUE(paste.TryPaste()) << "a picture again: ours, quietly";
   EXPECT_TRUE(paste.TryPaste());
-  EXPECT_TRUE(paste.TryPaste());
-  EXPECT_EQ(reads_, 1);
-  EXPECT_EQ(peeks_, peeks) << "the clipboard is not even looked at";
+  EXPECT_EQ(reads_, 1) << "the picture is not read twice";
   EXPECT_TRUE(pills_.empty());
   RunWorkerThenUi();
   EXPECT_EQ(writes_, 1);

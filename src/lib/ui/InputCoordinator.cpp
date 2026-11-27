@@ -25,9 +25,6 @@ bool InputCoordinator::ProcessKeyDown(ui::Context* context, ui::Input::KeyIdenti
     if (binding.key != key) {
       continue;
     }
-    if (repeat && binding.skip_repeat) {
-      continue;
-    }
     if ((key_modifier & binding.required_modifiers) != binding.required_modifiers) {
       continue;
     }
@@ -35,6 +32,12 @@ bool InputCoordinator::ProcessKeyDown(ui::Context* context, ui::Input::KeyIdenti
       continue;
     }
     if (binding.when && !binding.when(context)) {
+      continue;
+    }
+    if (repeat && binding.skip_repeat) {
+      if (binding.repeat_action && !binding.repeat_action()) {
+        return false;
+      }
       continue;
     }
     if (!binding.action) {

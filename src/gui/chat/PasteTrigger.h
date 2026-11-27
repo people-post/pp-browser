@@ -29,7 +29,7 @@ bool IsChatComposerField(ui::Element* element, const PasteTriggerPorts& ports);
 /** The modifier of a paste on this OS: Cmd (meta) on a Mac, Ctrl elsewhere. */
 int PasteKeyModifier();
 
-/** V with `modifier` (and no Shift / Alt / the other of Ctrl and Meta) while the focus is the chat's message box. Key repeats are skipped. */
+/** V with `modifier` (and no Shift / Alt / the other of Ctrl and Meta) while the focus is the chat's message box. A repeat never pastes again: it is swallowed when the press it follows was taken over, and goes on to the field otherwise. */
 KeyBinding PasteKeyBinding(PasteTriggerPorts ports, int modifier);
 
 /** For ContextMenuHost::SetPasteInterceptor. */

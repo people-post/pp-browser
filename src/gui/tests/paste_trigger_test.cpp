@@ -136,6 +136,48 @@ TEST_F(PasteTriggerTest, AKeyHeldDownPassesThroughWithoutTouchingTheClipboard) {
   EXPECT_EQ(clipboard_touches_, 0);
 }
 
+// N3: holding Cmd/Ctrl+V after a taken-over paste must not paste the file NAME (Finder also puts it on the clipboard).
+TEST_F(PasteTriggerTest, RepeatsOfATakenPasteAreSwallowedWithoutPastingAgain) {
+  Focus("draft-input");
+  InputCoordinator input;
+  input.Register(PasteKeyBinding(ports_, ui::Input::KM_CTRL));
+  EXPECT_FALSE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, false));
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_FALSE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, true)) << "repeat " << i;
+  }
+  EXPECT_EQ(paste_calls_, 1) << "the paste ran once; the repeats did not run it";
+}
+
+TEST_F(PasteTriggerTest, RepeatsOfAPressThatWasNotTakenPassThroughAsBefore) {
+  Focus("draft-input");
+  paste_result_ = false;
+  InputCoordinator input;
+  input.Register(PasteKeyBinding(ports_, ui::Input::KM_CTRL));
+  EXPECT_TRUE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, false));
+  EXPECT_TRUE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, true));
+  EXPECT_EQ(paste_calls_, 1);
+}
+
+TEST_F(PasteTriggerTest, ANewPressEndsTheSwallowingOfTheOldOnesRepeats) {
+  Focus("draft-input");
+  InputCoordinator input;
+  input.Register(PasteKeyBinding(ports_, ui::Input::KM_CTRL));
+  EXPECT_FALSE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, false));
+  paste_result_ = false; // the next press is plain text
+  EXPECT_TRUE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, false));
+  EXPECT_TRUE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, true))
+      << "its repeats go to the text field";
+}
+
+TEST_F(PasteTriggerTest, RepeatsOutsideTheChatBoxAreNeverSwallowed) {
+  Focus("draft-input");
+  InputCoordinator input;
+  input.Register(PasteKeyBinding(ports_, ui::Input::KM_CTRL));
+  EXPECT_FALSE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, false));
+  Focus("search-input");
+  EXPECT_TRUE(input.ProcessKeyDown(context_, ui::Input::KI_V, ui::Input::KM_CTRL, true, true));
+}
+
 TEST_F(PasteTriggerTest, OtherFieldsAreNeverTouchedAndTheClipboardStaysUnread) {
   for (const char* id : {"ask-ai-input", "search-input", "ps-text"}) {
     Focus(id);
@@ -292,10 +334,61 @@ TEST(PasteWiringTest, TheStartUpSweepRunsOnceAfterTheFirstUnlockAndOnlyEmptiesTh
   EXPECT_GT(wire.find("SweepPastedFilesOnce();"), wire.find("messaging_ready_ = true;"));
   const std::string sweep = Body(source, "void ChatController::SweepPastedFilesOnce()");
   EXPECT_NE(sweep.find("pasted_swept_"), std::string::npos);
-  EXPECT_NE(sweep.find("SweepPastedDir(PastedDir())"), std::string::npos);
+  EXPECT_NE(sweep.find("SweepStalePastedRuns(PastedRoot(), PastedDir())"), std::string::npos)
+      << "other runs' folders only, and only stale ones; never this run's";
+  EXPECT_EQ(sweep.find("SweepPastedDir("), std::string::npos);
+  const std::string root = Body(source, "std::filesystem::path ChatController::PastedRoot() const");
+  EXPECT_NE(root.find("AppPaths::CacheDir()"), std::string::npos);
+  EXPECT_NE(root.find("\"pasted\""), std::string::npos);
   const std::string dir = Body(source, "std::filesystem::path ChatController::PastedDir() const");
-  EXPECT_NE(dir.find("AppPaths::CacheDir()"), std::string::npos);
-  EXPECT_NE(dir.find("\"pasted\""), std::string::npos);
+  EXPECT_NE(dir.find("PastedRoot()"), std::string::npos);
+  EXPECT_NE(dir.find("NewPastedRunId()"), std::string::npos) << "this process's own folder under the shared root";
+}
+
+// ChatController cannot be built in a unit test (a started messaging hub, the shell): OnFilesDropped, the state and the
+// recipient line are checked from the source, as the tests above do; the decisions themselves are tested purely.
+TEST(DropWiringTest, ADropGoesToTheIntakeAsTheUsersOwnFilesFromTheDropSource) {
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const std::string drop = Body(source, "void ChatController::OnFilesDropped(");
+  ASSERT_FALSE(drop.empty());
+  EXPECT_NE(drop.find("AttachCandidate{std::move(path), false}"), std::string::npos)
+      << "not owned: never deleted by us";
+  EXPECT_NE(drop.find("OpenAttachPreview(std::move(candidates), AttachSource::Drop)"), std::string::npos);
+  EXPECT_NE(drop.find("RefusalFor(attach)"), std::string::npos);
+  const std::string preview = Body(source, "void ChatController::OpenAttachPreview(");
+  EXPECT_NE(preview.find("attach_intake_->Open(std::move(candidates), source)"), std::string::npos);
+}
+
+// S3: the "+" button's own gate is part of the state every entry (drop, paste, picker) is judged by.
+TEST(DropWiringTest, TheAttachStateCarriesTheButtonsOwnGate) {
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const std::string state = Body(source, "AttachState ChatController::CurrentAttachState() const");
+  EXPECT_NE(state.find("state.attach_unavailable = state.chat_open && !chat_.show_attach_button"), std::string::npos);
+}
+
+// N5: the page names the chat its queue belongs to, not whichever chat is open now.
+TEST(DropWiringTest, TheRecipientLineIsTheTitleOfTheQueuesOwnThread) {
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const std::string host = Body(source, "PictureSendHost ChatController::MakePictureSendHost()");
+  ASSERT_FALSE(host.empty());
+  const size_t recipient = host.find("host.recipient");
+  ASSERT_NE(recipient, std::string::npos);
+  const std::string line = host.substr(recipient, host.find("host.items_title") - recipient);
+  EXPECT_NE(line.find("picture_queue_->ThreadId()"), std::string::npos);
+  EXPECT_EQ(line.find("chat_.thread_title"), std::string::npos) << "the live title of the open chat can go stale";
+}
+
+// N1: the page that cannot open leaves every item with exactly one owner: the queue after Add, this function before.
+TEST(DropWiringTest, AnItemTheQueueNeverTookIsReleasedByTheFunctionThatOpensThePage) {
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const std::string items = Body(source, "bool ChatController::OpenAttachItems(");
+  ASSERT_FALSE(items.empty());
+  const size_t no_queue = items.find("if (!queue)");
+  ASSERT_NE(no_queue, std::string::npos);
+  EXPECT_NE(items.substr(no_queue, 200).find("release_from(0)"), std::string::npos);
+  EXPECT_NE(items.find("ReleasePastedFile(items[i].path, PastedDir())"), std::string::npos);
+  EXPECT_NE(items.find("release_from(index + 1)"), std::string::npos)
+      << "the items after a failed one never reached the queue";
 }
 
 } // namespace

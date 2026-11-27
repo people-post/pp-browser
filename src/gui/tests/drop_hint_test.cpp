@@ -2,6 +2,7 @@
 // Dirty / set), the overlay in both desktop chat layouts (and in no other pane), and its real styles: the words show
 // when `drop_hint_visible` is true, not when false, centred on the chat, and it never takes a click.
 #include "foundation/i18n/LocalizationService.h"
+#include "gui/chat/DropPane.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/shell/ShellLayoutRml.h"
@@ -14,6 +15,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -238,6 +240,39 @@ TEST_P(DropHintRenderTest, TheHintCoversTheChatCentresItsLabelAndTakesNoClick) {
   EXPECT_NEAR(label_at.y + label_size.y * 0.5f, hint_at.y + hint_size.y * 0.5f, 1.f) << "and down";
   EXPECT_EQ(hint->GetComputedValues().pointer_events(), ui::Style::PointerEvents::None);
   EXPECT_GE(label->GetComputedValues().font_size(), 20.f) << "big readable words";
+}
+
+// ChatController::ChatPaneContains is this function on the live document: a drop counts only inside the chat's own pane.
+TEST_P(DropHintRenderTest, ThePaneHitTestIncludesTheTopLeftEdgeAndExcludesTheBottomRightEdge) {
+  Load();
+  ui::Element* pane = Pane();
+  ASSERT_NE(pane, nullptr);
+  const ui::Vector2f origin = pane->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = pane->GetBox().GetSize(ui::BoxArea::Border);
+  ASSERT_GT(size.x, 50.f);
+  ASSERT_GT(size.y, 50.f);
+  const LayoutMode mode = GetParam();
+  const int left = static_cast<int>(std::ceil(origin.x));
+  const int top = static_cast<int>(std::ceil(origin.y));
+  const int right = static_cast<int>(std::ceil(origin.x + size.x)) - 1; // the last whole point inside
+  const int bottom = static_cast<int>(std::ceil(origin.y + size.y)) - 1;
+  const int mid_x = (left + right) / 2;
+  const int mid_y = (top + bottom) / 2;
+
+  EXPECT_TRUE(DropPaneContains(document, mode, {mid_x, mid_y}));
+  EXPECT_TRUE(DropPaneContains(document, mode, {left, top})) << "just inside, top left";
+  EXPECT_TRUE(DropPaneContains(document, mode, {right, bottom})) << "just inside, bottom right";
+  EXPECT_FALSE(DropPaneContains(document, mode, {left - 1, mid_y})) << "just outside, left";
+  EXPECT_FALSE(DropPaneContains(document, mode, {mid_x, top - 1})) << "just outside, above";
+  EXPECT_FALSE(DropPaneContains(document, mode, {right + 1, mid_y})) << "just outside, right";
+  EXPECT_FALSE(DropPaneContains(document, mode, {mid_x, bottom + 1})) << "just outside, below";
+}
+
+TEST_P(DropHintRenderTest, AnotherLayoutsPaneOrNoDocumentIsNeverHit) {
+  Load();
+  const LayoutMode other = GetParam() == LayoutMode::Expanded ? LayoutMode::Compact : LayoutMode::Expanded;
+  EXPECT_FALSE(DropPaneContains(document, other, {500, 300})) << "that layout's pane is not in this page";
+  EXPECT_FALSE(DropPaneContains(nullptr, GetParam(), {500, 300}));
 }
 
 INSTANTIATE_TEST_SUITE_P(DesktopChatLayouts, DropHintRenderTest,

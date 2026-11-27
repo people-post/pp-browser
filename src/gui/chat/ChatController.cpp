@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "feature/presenters/QuickReactions.h"
+#include "feature/presenters/StrangerChat.h"
 #include "gui/chat/ChatController.h"
 #include "gui/RecoveryReminder.h"
 #include "gui/UpdateCard.h"
@@ -76,6 +77,7 @@
 #include "foundation/platform/ClipboardAttachments.h"
 #include "foundation/platform/PastedFiles.h"
 #include "foundation/data/AppPaths.h"
+#include "gui/chat/DropPane.h"
 #include "gui/chat/PasteTrigger.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/DeleteForEveryone.h"
@@ -4084,7 +4086,9 @@ PictureSendHost ChatController::MakePictureSendHost() {
   // The computer page names who it goes to (the chat header's own title) and says how many items a batch with a file has.
   host.is_desktop = []() { return !Platform::IsMobile(); };
   host.recipient = [this]() {
-    return Tr("picture_send.recipient", {{"name", std::string(chat_.thread_title.c_str())}});
+    // The queue's own chat, not whichever chat is open now (the title there can have changed or the chat can be another).
+    return Tr("picture_send.recipient",
+              {{"name", ThreadTitleFor(picture_queue_ ? picture_queue_->ThreadId() : std::string())}});
   };
   host.items_title = [](const size_t items) {
     return Tr(PictureSendItemsTitleKey(items), {{"n", std::to_string(items)}});
@@ -4207,6 +4211,8 @@ AttachState ChatController::CurrentAttachState() const {
   }
   const std::string& thread_id = ActiveThreadId();
   state.chat_open = !thread_id.empty();
+  // The "+" button's own gate (a dissolved group, G016; the mesh not ready).
+  state.attach_unavailable = state.chat_open && !chat_.show_attach_button;
   state.ai_composer = InAiComposerContext();
   state.editing_message = chat_.editing_message;
   state.input_disabled = chat_.composer_input_disabled;
@@ -4235,21 +4241,7 @@ AttachIntakePorts ChatController::MakeAttachIntakePorts() {
 }
 
 bool ChatController::ChatPaneContains(const DropUiPoint point) const {
-  ui::ElementDocument* document = context_ ? context_->GetDocument(0) : nullptr;
-  if (!document) {
-    return false;
-  }
-  // The wide layout's conversation column, or the narrow layout's chat page (absent while the list shows).
-  ui::Element* pane = document->GetElementById(
-      ChromeSnapshot().layout_mode == LayoutMode::Expanded ? "pane-chat" : "shell-chat-overlay");
-  if (!pane || !pane->IsVisible()) {
-    return false;
-  }
-  const ui::Vector2f origin = pane->GetAbsoluteOffset(ui::BoxArea::Border);
-  const ui::Vector2f size = pane->GetBox().GetSize(ui::BoxArea::Border);
-  const float x = static_cast<float>(point.x);
-  const float y = static_cast<float>(point.y);
-  return x >= origin.x && x < origin.x + size.x && y >= origin.y && y < origin.y + size.y;
+  return DropPaneContains(context_ ? context_->GetDocument(0) : nullptr, ChromeSnapshot().layout_mode, point);
 }
 
 void ChatController::HideDropHint() {
@@ -4312,8 +4304,15 @@ void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, 
   attach_intake_->Open(std::move(candidates), source);
 }
 
-std::filesystem::path ChatController::PastedDir() const {
+std::filesystem::path ChatController::PastedRoot() const {
   return std::filesystem::path(AppPaths::CacheDir()) / "pasted";
+}
+
+std::filesystem::path ChatController::PastedDir() const {
+  // The cache folder is shared by every running instance and profile on this machine: each process writes (and deletes)
+  // only inside its own random folder under the shared root.
+  static const std::string run_id = NewPastedRunId();
+  return PastedRoot() / run_id;
 }
 
 void ChatController::SweepPastedFilesOnce() {
@@ -4321,8 +4320,8 @@ void ChatController::SweepPastedFilesOnce() {
     return;
   }
   pasted_swept_ = true;
-  // Only <cache>/pasted, and only now: after the first unlock nothing of this run can be writing there yet.
-  SweepPastedDir(PastedDir());
+  // Only other runs' stale folders under <cache>/pasted: a second instance's live files are not ours to delete.
+  SweepStalePastedRuns(PastedRoot(), PastedDir());
 }
 
 bool ChatController::TryPasteAttachment() {
@@ -4334,6 +4333,7 @@ bool ChatController::TryPasteAttachment() {
     ports.state = [this]() { return CurrentAttachState(); };
     ports.peek = []() { return PeekClipboard(); };
     ports.read_files = []() { return ReadClipboardFileList(); };
+    ports.has_text = []() { return ClipboardHasText(); };
     ports.read_image = [this]() {
       return ReadClipboardImage(static_cast<size_t>(facade_->CurrentAttachmentLimits().max_file_bytes));
     };
@@ -4369,15 +4369,40 @@ void ChatController::InstallPasteTriggers() {
   ContextMenuHost::Instance().SetPasteInterceptor(PasteMenuInterceptor(ports));
 }
 
+std::string ChatController::ThreadTitleFor(const std::string& thread_id) {
+  if (facade_ && !thread_id.empty()) {
+    const auto thread = facade_->GetThread(thread_id);
+    if (thread && *thread) {
+      const PeerDisplayLabel label = facade_->ResolveThreadLabel(**thread);
+      if ((*thread)->kind == ThreadKind::Ai && label.title == "New chat") {
+        return Tr("chat.new_chat"); // the stored default AI title is English (as the header shows it)
+      }
+      return IsStrangerDirectChat((*thread)->kind, label) ? StrangerChatTitle(label) : label.title;
+    }
+  }
+  return thread_id == ActiveThreadId() ? std::string(chat_.thread_title.c_str()) : std::string();
+}
+
 bool ChatController::OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items) {
+  // Every item has exactly one owner from here: the queue once it took it (Add / Back release what it holds), this
+  // function for the ones it never handed over. AttachIntake releases nothing after this call (N1).
+  const auto release_from = [this, &items](const size_t from) {
+    for (size_t i = from; i < items.size(); ++i) {
+      if (items[i].owned) {
+        ReleasePastedFile(items[i].path, PastedDir());
+      }
+    }
+  };
   PictureSendQueue* queue = BeginPictureQueue(thread_id);
   if (!queue) {
     ShowToast(Tr("chat.attach.previous_still_sending"));
+    release_from(0);
     return false;
   }
   picture_picker_done_ms_ = 0;
   bool shown = false;
-  for (AttachPlannedItem& item : items) {
+  for (size_t index = 0; index < items.size(); ++index) {
+    AttachPlannedItem& item = items[index];
     const std::optional<uint64_t> id = queue->Add(std::move(item.path), item.kind, item.bytes, item.pixels,
                                                   std::move(item.display_name), item.owned); // a full queue releases it
     if (!id) {
@@ -4386,6 +4411,7 @@ bool ChatController::OpenAttachItems(const std::string& thread_id, std::vector<A
     if (!picture_send_.OnItemAdded(*id)) {
       queue->Back(); // no page to show them on: nothing is sent, the copies are released
       SettlePictureQueue();
+      release_from(index + 1); // the ones after it never reached the queue
       return false;
     }
     shown = true;

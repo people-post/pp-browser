@@ -34,6 +34,8 @@ struct AttachState {
   /** Unlocked and messaging up. */
   bool ready = true;
   bool chat_open = true;
+  /** The chat has no "+" button now (a dissolved group is read-only; messaging or the mesh is not ready): files are not taken either. */
+  bool attach_unavailable = false;
   /** The open composer is the AI's. */
   bool ai_composer = false;
   bool editing_message = false;
@@ -55,6 +57,7 @@ enum class AttachRefusal {
   None,
   NotReady,
   NoChat,
+  AttachUnavailable,
   AiComposer,
   Editing,
   InputDisabled,
@@ -166,7 +169,7 @@ struct AttachIntakePorts {
   std::function<void(const char* key, int n)> say;
   /** Delete a file this app made for an attachment that is not used (a pasted picture). */
   std::function<void(const std::string& path)> release_owned;
-  /** The batch goes on to the page, for chat `thread_id`; false when the page could not open (the caller released the items). */
+  /** The batch goes on to the page, for chat `thread_id`. It owns the items from the call on: whatever it answers, it has released the owned ones the page did not take (false = the page could not open). */
   std::function<bool(const std::string& thread_id, std::vector<AttachPlannedItem> items)> open_page;
 };
 
@@ -196,6 +199,8 @@ struct PastePorts {
   std::function<ClipboardSummary()> peek;
   /** The copied files' paths (UI thread). */
   std::function<std::vector<std::string>()> read_files;
+  /** Read only when copied files read back empty: is there text to paste instead? (UI thread.) */
+  std::function<bool()> has_text;
   /** The picture's bytes (UI thread; SDL's rule). */
   std::function<std::optional<ClipboardImage>()> read_image;
   std::function<std::string()> chat_id;
@@ -212,7 +217,8 @@ struct PastePorts {
 
 /**
  * One paste of a picture: reads the clipboard, writes the file off the UI thread and hands it on. While a file is being
- * written a second paste is swallowed (no pill, no read). Pure apart from the ports.
+ * written a second paste of a picture or files is swallowed (no pill, no read); plain text still goes to the text
+ * field. Pure apart from the ports.
  */
 class PasteAttach {
 public:
@@ -221,7 +227,7 @@ public:
 
   explicit PasteAttach(PastePorts ports);
 
-  /** True = the paste was handled (the key is swallowed); false = leave it to the text field. UI thread. */
+  /** True = the paste was handled (the key is swallowed); false = leave it to the text field (also files that read back empty beside text). UI thread. */
   bool TryPaste();
   /** A file is being written: files are refused (RefusalFor's PasteInFlight). */
   bool InFlight() const { return in_flight_; }

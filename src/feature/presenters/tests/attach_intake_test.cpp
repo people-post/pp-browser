@@ -12,6 +12,8 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <memory>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -28,6 +30,7 @@ TEST(AttachRefusalTest, EachConditionAloneGivesItsOwnRefusal) {
   const std::vector<std::pair<std::function<void(AttachState&)>, AttachRefusal>> cases = {
       {[](AttachState& s) { s.ready = false; }, AttachRefusal::NotReady},
       {[](AttachState& s) { s.chat_open = false; }, AttachRefusal::NoChat},
+      {[](AttachState& s) { s.attach_unavailable = true; }, AttachRefusal::AttachUnavailable},
       {[](AttachState& s) { s.ai_composer = true; }, AttachRefusal::AiComposer},
       {[](AttachState& s) { s.editing_message = true; }, AttachRefusal::Editing},
       {[](AttachState& s) { s.input_disabled = true; }, AttachRefusal::InputDisabled},
@@ -48,6 +51,7 @@ TEST(AttachRefusalTest, WhenSeveralHoldTheFirstInTheFixedOrderWins) {
   AttachState state;
   state.ready = false;
   state.chat_open = false;
+  state.attach_unavailable = true;
   state.ai_composer = true;
   state.editing_message = true;
   state.input_disabled = true;
@@ -59,6 +63,7 @@ TEST(AttachRefusalTest, WhenSeveralHoldTheFirstInTheFixedOrderWins) {
   const std::vector<std::pair<AttachRefusal, std::function<void(AttachState&)>>> peel = {
       {AttachRefusal::NotReady, [](AttachState& s) { s.ready = true; }},
       {AttachRefusal::NoChat, [](AttachState& s) { s.chat_open = true; }},
+      {AttachRefusal::AttachUnavailable, [](AttachState& s) { s.attach_unavailable = false; }},
       {AttachRefusal::AiComposer, [](AttachState& s) { s.ai_composer = false; }},
       {AttachRefusal::Editing, [](AttachState& s) { s.editing_message = false; }},
       {AttachRefusal::InputDisabled, [](AttachState& s) { s.input_disabled = false; }},
@@ -80,6 +85,7 @@ TEST(AttachRefusalTest, EveryRefusalThatSpeaksHasALocaleKeyAndTheQuietOnesHaveNo
   EXPECT_EQ(AttachRefusalKey(AttachRefusal::NotReady), nullptr) << "locked: nothing to say";
   EXPECT_EQ(AttachRefusalKey(AttachRefusal::PasteInFlight), nullptr) << "a paste is already being written";
   EXPECT_STREQ(AttachRefusalKey(AttachRefusal::NoChat), "chat.attach.no_chat");
+  EXPECT_STREQ(AttachRefusalKey(AttachRefusal::AttachUnavailable), "chat.attach.not_here");
   EXPECT_STREQ(AttachRefusalKey(AttachRefusal::AiComposer), "chat.attach.not_here");
   EXPECT_STREQ(AttachRefusalKey(AttachRefusal::Editing), "chat.attach.not_here");
   EXPECT_STREQ(AttachRefusalKey(AttachRefusal::InputDisabled), "chat.attach.not_here");
@@ -520,16 +526,26 @@ TEST(AttachIntakeTest, TheReleaseHookRunsForOwnedFilesThatAreRefusedOrDroppedAnd
     world.RunUi();
     EXPECT_EQ(world.released, std::vector<std::string>{"/p/pasted3.png"});
   }
-  // The page could not open: the intake releases the owned ones it handed over.
+  // The page could not open: open_page owns the items from the call on (the queue releases them, as the real one does),
+  // so the intake must not release them a second time (N1: a reused file name would be deleted under its new owner).
   {
     World world;
     world.open_ok = false;
     world.facts["/p/pasted4.png"] = Regular(SniffedType::Png);
     world.facts["/u/mine.png"] = Regular(SniffedType::Png);
-    AttachIntake intake(world.Ports());
+    AttachIntakePorts ports = world.Ports();
+    ports.open_page = [&world](const std::string&, std::vector<AttachPlannedItem> items) {
+      for (const AttachPlannedItem& item : items) {
+        if (item.owned) {
+          world.released.push_back(item.path); // what the queue's Back() does
+        }
+      }
+      return false;
+    };
+    AttachIntake intake(std::move(ports));
     intake.Open({{"/p/pasted4.png", true}, {"/u/mine.png", false}}, AttachSource::Paste);
     world.Settle();
-    EXPECT_EQ(world.released, std::vector<std::string>{"/p/pasted4.png"});
+    EXPECT_EQ(world.released, std::vector<std::string>{"/p/pasted4.png"}) << "exactly one release";
   }
   // Opened: nothing is released here (the queue owns them now).
   {
@@ -562,6 +578,51 @@ TEST(AttachIntakeTest, AnIntakeThatIsGoneBeforeTheWorkerReportsLeavesNoDanglingC
   }
   world.RunUi();
   EXPECT_TRUE(world.opened.empty());
+}
+
+TEST(AttachIntakeTest, AChatWithoutAPlusButtonRefusesWithTheNotHerePillAndReleasesOwnedFiles) {
+  World world;
+  world.state.attach_unavailable = true; // a dissolved group, or messaging not ready
+  AttachIntake intake(world.Ports());
+  intake.Open({{"/p/pasted.png", true}, {"/u/mine.png", false}}, AttachSource::Drop);
+  ASSERT_EQ(world.said.size(), 1U);
+  EXPECT_EQ(world.said[0].first, "chat.attach.not_here");
+  EXPECT_TRUE(world.worker.empty()) << "the file system is never touched";
+  EXPECT_EQ(world.released, std::vector<std::string>{"/p/pasted.png"});
+}
+
+// S1: the worker must not touch the intake: it may be gone (the controller destroyed) by the time the files are read.
+TEST(AttachIntakeTest, AnIntakeGoneBeforeTheWorkerRunsIsNeverTouchedAndTheOwnedFileIsReleased) {
+  namespace fs = std::filesystem;
+  const fs::path dir =
+      fs::temp_directory_path() /
+      ("pp_intake_gone_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  fs::create_directories(dir);
+  const fs::path owned = dir / "pasted.png";
+  const fs::path mine = dir / "mine.png";
+  std::ofstream(owned) << "x";
+  std::ofstream(mine) << "x";
+
+  World world;
+  world.facts[owned.string()] = Regular(SniffedType::Png);
+  world.facts[mine.string()] = Regular(SniffedType::Png);
+  AttachIntakePorts ports = world.Ports();
+  ports.release_owned = [](const std::string& path) {
+    std::error_code ec;
+    fs::remove(path, ec);
+  };
+  {
+    auto intake = std::make_unique<AttachIntake>(std::move(ports));
+    intake->Open({{owned.string(), true}, {mine.string(), false}}, AttachSource::Paste);
+    ASSERT_EQ(world.worker.size(), 1U);
+  } // the intake is destroyed with its worker task still queued
+  world.Settle();
+  EXPECT_TRUE(world.opened.empty());
+  EXPECT_TRUE(world.said.empty());
+  EXPECT_FALSE(fs::exists(owned)) << "the file this app made is deleted";
+  EXPECT_TRUE(fs::exists(mine)) << "the user's own file stays";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
 }
 
 } // namespace

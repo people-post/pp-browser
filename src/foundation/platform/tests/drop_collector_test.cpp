@@ -194,10 +194,12 @@ protected:
     AppRuntime::Shutdown();
   }
 
-  bool Feed(const SDL_EventType type, const char* data = nullptr, const float x = 0.f, const float y = 0.f) {
+  bool Feed(const SDL_EventType type, const char* data = nullptr, const float x = 0.f, const float y = 0.f,
+            const SDL_WindowID window = 1) {
     SDL_Event event;
     SDL_zero(event);
     event.type = type;
+    event.drop.windowID = window;
     event.drop.data = data;
     event.drop.x = x;
     event.drop.y = y;
@@ -258,6 +260,35 @@ TEST_F(SdlDropEventsTest, ALoneLinkDropDeliversNoFiles) {
   EXPECT_TRUE(dropped.empty()) << "a complete with only a link in it is a leave";
   ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
   EXPECT_EQ(links.size(), 1u);
+}
+
+// N2: a file dropped on the Dock icon arrives with no window (windowID 0): it is not a drop on the chat, and it must
+// not show "drag and drop isn't available" either.
+TEST_F(SdlDropEventsTest, ADropWithNoWindowIsIgnored) {
+  Feed(SDL_EVENT_DROP_BEGIN, nullptr, 0.f, 0.f, 0);
+  Feed(SDL_EVENT_DROP_POSITION, nullptr, 5.f, 5.f, 0);
+  Feed(SDL_EVENT_DROP_FILE, "/a/dock.png", 0.f, 0.f, 0);
+  Feed(SDL_EVENT_DROP_COMPLETE, nullptr, 0.f, 0.f, 0);
+  EXPECT_TRUE(dropped.empty());
+  EXPECT_TRUE(hovers.empty());
+}
+
+TEST_F(SdlDropEventsTest, ADockDropDoesNotSpoilADragThatIsGoingOnInTheWindow) {
+  Feed(SDL_EVENT_DROP_POSITION, nullptr, 7.f, 8.f);
+  Feed(SDL_EVENT_DROP_FILE, "/a/dock.png", 0.f, 0.f, 0);
+  Feed(SDL_EVENT_DROP_COMPLETE, nullptr, 0.f, 0.f, 0);
+  EXPECT_TRUE(dropped.empty()) << "nothing of the Dock's reached the collector, and it ended nothing";
+  Feed(SDL_EVENT_DROP_FILE, "/a/real.png", 7.f, 8.f);
+  Feed(SDL_EVENT_DROP_COMPLETE);
+  ASSERT_EQ(dropped.size(), 1u);
+  EXPECT_EQ(dropped[0].paths, (std::vector<std::string>{"/a/real.png"}));
+}
+
+TEST_F(SdlDropEventsTest, ALinkWithNoWindowIsStillALink) {
+  EXPECT_TRUE(Feed(SDL_EVENT_DROP_FILE, "ppbrowser://add?x=1", 0.f, 0.f, 0));
+  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+  EXPECT_EQ(links, (std::vector<std::string>{"ppbrowser://add?x=1"}));
+  EXPECT_TRUE(dropped.empty());
 }
 
 TEST_F(SdlDropEventsTest, FocusLossHidesTheHintAndForgetsTheDrag) {

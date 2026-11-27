@@ -54,6 +54,14 @@ bool DropCollected(const AppEventHooks& hooks) {
   return Platform::IsDesktop() && hooks.on_files_dropped;
 }
 
+/**
+ * A drop that is not on one of our windows (windowID 0: a file dropped on the Dock icon, which macOS hands over as a
+ * drop with no window) is not a drop on the chat: it never enters the collector and says nothing.
+ */
+bool NoWindow(const SDL_Event& event) {
+  return event.drop.windowID == 0;
+}
+
 int64_t NowMs() {
   return static_cast<int64_t>(SDL_GetTicks());
 }
@@ -175,6 +183,9 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
     case SDL_EVENT_DROP_BEGIN:
       // Not relied on (SDL sends it once per window until a COMPLETE; a drop macOS rejects sends none): when it
       // does come, it is a new drag.
+      if (NoWindow(event)) {
+        break;
+      }
       if (Collector().HintVisible()) {
         Collector().OnBegin();
         HideDropHint(hooks);
@@ -183,6 +194,9 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
       }
       break;
     case SDL_EVENT_DROP_POSITION:
+      if (DropCollected(hooks) && NoWindow(event)) {
+        return true;
+      }
       if (DropCollected(hooks)) {
         if (!FirstPositionSeen()) {
           FirstPositionSeen() = true;
@@ -201,6 +215,9 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
         IncomingLink::Deliver(event.drop.data);
         return true;
       }
+      if (DropCollected(hooks) && NoWindow(event)) {
+        return true; // not a link (checked above) and not on a window: Dock drops are not handled here
+      }
       if (DropCollected(hooks)) {
         if (event.drop.data) {
           Collector().OnFile(std::string(event.drop.data)); // SDL's string dies at the next poll: copied now
@@ -209,12 +226,18 @@ bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& prop
       }
       break;
     case SDL_EVENT_DROP_TEXT:
+      if (DropCollected(hooks) && NoWindow(event)) {
+        return true;
+      }
       if (DropCollected(hooks)) {
         Collector().OnText();
         return true;
       }
       break;
     case SDL_EVENT_DROP_COMPLETE:
+      if (DropCollected(hooks) && NoWindow(event)) {
+        return true; // it ends nothing of a drag that is going on in the window
+      }
       if (DropCollected(hooks)) {
         DropCollector::Completed done = Collector().OnComplete();
         HideDropHint(hooks);

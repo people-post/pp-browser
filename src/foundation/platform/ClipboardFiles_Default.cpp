@@ -26,12 +26,14 @@ bool ClipboardHasFiles() {
   if (list == nullptr) {
     return false;
   }
-  bool found = false;
-  for (size_t i = 0; i < count && !found; ++i) {
-    found = list[i] != nullptr && std::string_view(list[i]) == kUriList;
+  bool offered = false;
+  for (size_t i = 0; i < count && !offered; ++i) {
+    offered = list[i] != nullptr && std::string_view(list[i]) == kUriList;
   }
   SDL_free(list);
-  return found;
+  // Only a uri-list that names at least one local file counts (a stale or remote-only list is not "files"): the list's
+  // text is read only when the type is offered.
+  return offered && !ReadClipboardFiles().empty();
 }
 
 std::vector<std::string> ReadClipboardFiles() {

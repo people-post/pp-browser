@@ -7,6 +7,7 @@
 #include <ui/dom/Element.h>
 
 #include <cstring>
+#include <memory>
 #include <utility>
 
 namespace pbr {
@@ -29,10 +30,17 @@ KeyBinding PasteKeyBinding(PasteTriggerPorts ports, const int modifier) {
   binding.when = [ports](ui::Context* context) {
     return IsChatComposerField(context ? context->GetFocusElement() : nullptr, ports);
   };
+  // Whether the last press (not a repeat) was taken over: its repeats are swallowed with it, else holding the key would
+  // paste the copied file's NAME (Finder also puts it on the clipboard) through the text field.
+  const auto taken = std::make_shared<bool>(false);
   // false = the key is taken (ProcessKeyDown stops); true = it goes on to the text field as it always did.
-  binding.action = [ports]() { return !(ports.paste && ports.paste()); };
+  binding.action = [ports, taken]() {
+    *taken = ports.paste && ports.paste();
+    return !*taken;
+  };
   binding.priority = 50;
-  binding.skip_repeat = true;
+  binding.skip_repeat = true; // a repeat never pastes again
+  binding.repeat_action = [taken]() { return !*taken; };
   return binding;
 }
 

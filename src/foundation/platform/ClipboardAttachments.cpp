@@ -152,6 +152,22 @@ std::optional<ClipboardImage> ReadClipboardImage(const size_t max_bytes) {
   return ReadClipboardImage(ActiveSource(), max_bytes);
 }
 
+bool ClipboardHasText(const ClipboardSource& source) {
+  if (!source.mime_types || !source.text) {
+    return false;
+  }
+  for (const std::string& type : source.mime_types()) {
+    if (IsTextType(type) || IsTextType(Lower(type))) {
+      return !IsBlank(source.text());
+    }
+  }
+  return false;
+}
+
+bool ClipboardHasText() {
+  return ClipboardHasText(ActiveSource());
+}
+
 std::vector<std::string> ReadClipboardFileList(const ClipboardSource& source) {
   return source.read_files ? source.read_files() : std::vector<std::string>();
 }

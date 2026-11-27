@@ -1,6 +1,11 @@
 #include "foundation/platform/PastedFiles.h"
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <fstream>
+#include <random>
 #include <system_error>
 #include <vector>
 
@@ -8,20 +13,32 @@ namespace pbr {
 
 namespace fs = std::filesystem;
 
+std::string NewPastedRunId() {
+  std::random_device device;
+  std::mt19937_64 engine((static_cast<uint64_t>(device()) << 32) ^ device() ^
+                         static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+  char text[17];
+  std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(engine()));
+  return text;
+}
+
 std::optional<std::string> WritePastedFile(const fs::path& dir, const std::string& bytes,
                                            const std::string& extension) {
+  // A name is never handed out twice in a run, even after its file is gone: a late second release of an old path
+  // cannot delete a newer file that took the same name (N1).
+  static std::atomic<uint64_t> counter{0};
   std::error_code ec;
   fs::create_directories(dir, ec);
   if (ec) {
     return std::nullopt;
   }
   fs::path target;
-  for (int n = 1; n < 10000; ++n) {
-    target = dir / ("Pasted image " + std::to_string(n) + "." + extension);
-    if (!fs::exists(fs::symlink_status(target, ec))) {
+  for (int attempt = 0; attempt < 10000; ++attempt) {
+    const fs::path candidate = dir / ("Pasted image " + std::to_string(++counter) + "." + extension);
+    if (!fs::exists(fs::symlink_status(candidate, ec))) {
+      target = candidate;
       break;
     }
-    target.clear();
   }
   if (target.empty()) {
     return std::nullopt;
@@ -67,20 +84,58 @@ bool ReleasePastedFile(const std::string& path, const fs::path& dir) {
   return fs::remove(file, ec) && !ec;
 }
 
-size_t SweepPastedDir(const fs::path& dir) {
+namespace {
+
+/** The newest write time of `entry` and everything inside it (links are not followed); `fallback` when it cannot be told. */
+fs::file_time_type NewestWrite(const fs::path& entry, const fs::file_time_type fallback) {
   std::error_code ec;
-  if (dir.empty() || fs::is_symlink(dir, ec) || !fs::is_directory(dir, ec)) {
+  fs::file_time_type newest = fs::last_write_time(entry, ec);
+  if (ec) {
+    return fallback;
+  }
+  if (fs::is_directory(fs::symlink_status(entry, ec))) {
+    for (fs::recursive_directory_iterator it(entry, ec), end; !ec && it != end; it.increment(ec)) {
+      std::error_code time_ec;
+      const fs::file_time_type time = fs::last_write_time(it->path(), time_ec);
+      if (!time_ec && time > newest) {
+        newest = time;
+      }
+    }
+    if (ec) {
+      return fallback; // could not read it all: not provably stale
+    }
+  }
+  return newest;
+}
+
+} // namespace
+
+size_t SweepStalePastedRuns(const fs::path& root, const fs::path& own_run_dir, const std::chrono::hours stale_after,
+                            const fs::file_time_type now) {
+  std::error_code ec;
+  if (root.empty() || fs::is_symlink(root, ec) || !fs::is_directory(root, ec)) {
     return 0;
   }
+  const fs::path own = own_run_dir.lexically_normal();
+  const auto limit = std::chrono::duration_cast<fs::file_time_type::duration>(stale_after);
   std::vector<fs::path> entries;
-  for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+  for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
     entries.push_back(it->path());
   }
   size_t removed = 0;
   for (const fs::path& entry : entries) {
-    std::error_code remove_ec;
-    fs::remove_all(entry, remove_ec); // a link inside is removed itself, never followed
-    if (!remove_ec) {
+    if (entry.lexically_normal() == own) {
+      continue; // this run's own folder is never swept
+    }
+    std::error_code entry_ec;
+    // A link is removed as itself (its target is never looked at); anything else only when nothing in it is recent:
+    // a folder of a run that is still going has the files it wrote lately.
+    const bool link = fs::is_symlink(entry, entry_ec);
+    if (!link && now - NewestWrite(entry, now) <= limit) {
+      continue;
+    }
+    fs::remove_all(entry, entry_ec);
+    if (!entry_ec) {
       ++removed;
     }
   }

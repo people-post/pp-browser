@@ -507,8 +507,13 @@ private:
   /** Installs both paste triggers (key binding, context-menu interceptor); nothing on a phone. */
   void InstallPasteTriggers();
   /** `<cache>/pasted`: where pasted pictures are written (outside the profile). */
+  /** `<cache>/pasted`: shared by every running instance, never emptied or deleted from. */
+  std::filesystem::path PastedRoot() const;
+  /** This run's own folder under PastedRoot() (a random id per process): the only place this process writes and deletes. */
   std::filesystem::path PastedDir() const;
-  /** Once per run, after the first unlock: empties PastedDir() (a crash or a kill leaves files there). */
+  /** The chat title the header shows for `thread_id` (not the open chat's live title); empty when unknown. */
+  std::string ThreadTitleFor(const std::string& thread_id);
+  /** Once per run, after the first unlock: removes other runs' stale folders under PastedRoot() (a crash or a kill leaves files there). */
   void SweepPastedFilesOnce();
   /** What AttachIntake decides on, read from the controller now. */
   AttachState CurrentAttachState() const;

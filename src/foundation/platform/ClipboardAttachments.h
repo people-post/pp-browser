@@ -51,7 +51,7 @@ struct ClipboardSource {
 /** The real clipboard through SDL. */
 ClipboardSource SdlClipboardSource();
 
-/** Types only (the text is read only when a picture type is there as well). Never SDL_HasClipboardData. */
+/** Types only (the text is read only when a picture type is there as well; for files see ClipboardHasText). Never SDL_HasClipboardData. */
 ClipboardSummary PeekClipboard(const ClipboardSource& source);
 ClipboardSummary PeekClipboard();
 
@@ -61,6 +61,10 @@ ClipboardSummary PeekClipboard();
  */
 std::optional<ClipboardImage> ReadClipboardImage(const ClipboardSource& source, size_t max_bytes);
 std::optional<ClipboardImage> ReadClipboardImage(size_t max_bytes);
+
+/** A text type is on the clipboard and the text is not blank (reads the text; call it only when it decides something). */
+bool ClipboardHasText(const ClipboardSource& source);
+bool ClipboardHasText();
 
 /** The copied files' paths (D2); empty when the source has none. Main thread. */
 std::vector<std::string> ReadClipboardFileList(const ClipboardSource& source);
