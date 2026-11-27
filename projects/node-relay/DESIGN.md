@@ -1,6 +1,6 @@
 # Node relay — design
 
-**Status:** Direction accepted (Hongwei, 2026-11-25 and 2026-11-27: NR001–NR005); NR006–NR008 proposed. No code.  
+**Status:** Accepted (Hongwei, 2026-11-25 and 2026-11-27): NR001–NR007, NR009, NR010; NR008 proposed. No code.  
 **Date:** 2026-11-27  
 **Related:** [p2p-mesh N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later),
 [N032](../p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes),
@@ -84,20 +84,36 @@ protocol's, unchanged. Its operator decides whom it registers (NR008).
   id, the highest kept as today) → the transport key's PeerId → an address from the hints, the mesh directory or the
   DHT. The Amp handshake proves the PeerId the certificate names.
 
-### 5. Where a send goes (NR006)
+### 5. Where a send goes (NR009, NR006)
 
-A send goes to the first `https://` relay that takes it, as today, **and also** to the first healthy Amp relay of
-`amp_relays`. The `https://` copy keeps phones waking (a node cannot push, until the push gateway) and keeps mail when a
-home node is off; the second copy is dropped by id. A failed Amp deposit never fails the send. Once the push gateway
-exists, an account may list Amp relays only.
+The recipient chooses, in its card (NR009):
 
-### 6. Light (NR007)
+| `delivery` | A contact's send goes to | Push |
+|------------|--------------------------|------|
+| `first` (default) | the first `https://` relay that takes it, as today, and also the first healthy Amp relay (NR006) | the copy at the `https://` relay |
+| `all` | every relay of `relays` and of `amp_relays` | only the first copy accepted carries the push hints; the rest are stored silently |
 
-Records expire after 7 days (a sender's shorter `ttl_s` tier sooner); at most 1,000 records and 16 MiB per account; the
-node's total is its operator's budget (`mesh.capacity`); a full relay answers `busy` and its load level says so (N033).
-The relay's other limits (quotas, sizes) are the protocol's.
+`first` suits a recipient whose relays are all reachable to it; `all` suits one whose access changes (some hosts blocked
+at times, UDP blocked at work or in hotels, a home node unreachable from outside), since any one reachable relay then
+delivers. A stranger's send always stops at the first relay. A failed Amp deposit never fails a send. Duplicates are
+dropped by message id. Once the push gateway exists, an account may list Amp relays only.
 
-### 7. Phones: the push gateway (later)
+### 6. Light, and configurable (NR007)
+
+Every mailbox limit is a setting with a default: records kept 7 days (a sender's shorter `ttl_s` tier sooner); 1,000
+records and 16 MiB per account; a node-wide budget from `mesh.capacity`. A full relay answers `busy` and its load level
+says so (N033). The relay reports its limits in `relay-identity`, so a recipient's app can show how long its relay keeps
+mail.
+
+### 7. Files (NR010)
+
+The mailbox carries messages only, each within the sealed payload's 128 KiB; files travel apart, as today: directly
+between devices (`/pp/blob/1.0.0`) or through a relay's file store, with the message carrying a reference. The mailbox's
+limits count messages only, and `all` multiplies messages, not files. On node relays a `files` service, with limits of
+its own, comes after the mailbox. Until then an attachment's link names the sender's relay: a recipient who cannot reach
+it fetches from the sender's devices when they are online.
+
+### 8. Phones: the push gateway (later)
 
 The app registers its APNs or FCM token with the org's **push gateway** and gets an opaque, revocable **wake token** per
 relay, which it gives the relay at registration. The relay calls the gateway with a signed `wake(token)`; the gateway
@@ -119,5 +135,5 @@ unchanged.
 ## Not in this project
 
 Replacing the org's HTTPS relay; the Amp binding on the org's relay (it runs on serverless functions; later, if ever);
-lockers, cards, files and directory on node relays (after the mailbox, the same way); paying a relay (pricing); node-only
+lockers, cards and directory on node relays (after the mailbox, the same way; files are NR010's later service); paying a relay (pricing); node-only
 accounts before the push gateway.
