@@ -138,7 +138,7 @@
 |------|-------|
 | Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
 | **media_relay attach SM (N026)** | **s3a+s3b landed** — inbound + client `AcceptAndAttach` phases + Detach abort; circuit compose loopbacks green — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
-| Peer message_relay | Deferred (N017); HTTP Brief remains |
+| Peer message_relay | Deferred (N017); HTTP Brief remains. Proposed as node mailboxes beside the HTTP relays: [node-message-relay](../node-message-relay/README.md) (2026-11-26) |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |

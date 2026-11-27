@@ -49,6 +49,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [qr-scanning](qr-scanning/) | In-app friend QR scanning and reusable scan entry |
 | [chat-storage-and-memory](chat-storage-and-memory/) | SQLite threads, relay/history, memory/compaction |
 | [multi-relay](multi-relay/) | Users on several relays: inboxes by Account ID, the relay list in the account card, cross-relay delivery |
+| [node-message-relay](node-message-relay/) | Proposed: pp-nodes as lightweight message relays — node mailboxes an account chooses and lists in its card, beside its HTTP relays (p2p-mesh N017's `message_relay`) |
 | [platform-safety-limits](platform-safety-limits/) | Non-chat limits (LLM HTTP, profile JSON, MCP, parsers) |
 | [e2e-message-crypto](e2e-message-crypto/) | Message AEAD / key UX residuals (contracts promoted) |
 | [push-notifications](push-notifications/) | FCM wake + local alerts |
