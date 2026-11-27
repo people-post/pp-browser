@@ -17,6 +17,13 @@ std::string ResolvedUrl(const std::vector<MarkdownLink>& links, const int index)
   return link ? link->url : std::string();
 }
 
+/** Whether a click on link `index` opens anything. The index is read through a volatile: GCC 13 follows a constant
+ * out-of-range index into the guarded branch and reports a bogus -Warray-bounds. */
+bool Opens(const std::vector<MarkdownLink>& links, const int index) {
+  const volatile int opaque = index;
+  return ResolveChatLink(links, opaque).has_value();
+}
+
 /** The bubble as stored: its links' entry placeholder replaced by the message id "m-1". */
 std::string InjectEntryPlaceholdersForTest(std::string rml) {
   for (size_t at = rml.find("__ENTRY__"); at != std::string::npos; at = rml.find("__ENTRY__", at)) {
@@ -95,17 +102,17 @@ TEST(ChatAnswerTest, DetailsLinkDestinationCannotBreakOutOfTheLink) {
 TEST(ChatAnswerTest, ResolveChatLinkOnlyOpensInRangeHttps) {
   const std::vector<MarkdownLink> links = {{"https://a.test/"}, {"javascript:alert(1)"}, {"http://b.test/"}};
   EXPECT_EQ(ResolvedUrl(links, 0), "https://a.test/");
-  EXPECT_FALSE(ResolveChatLink(links, 1));
-  EXPECT_FALSE(ResolveChatLink(links, 2));
-  EXPECT_FALSE(ResolveChatLink(links, 3));
-  EXPECT_FALSE(ResolveChatLink(links, -1));
+  EXPECT_FALSE(Opens(links, 1));
+  EXPECT_FALSE(Opens(links, 2));
+  EXPECT_FALSE(Opens(links, 3));
+  EXPECT_FALSE(Opens(links, -1));
 }
 
 TEST(ChatAnswerTest, RecoveredLinksComeFromStoredMarkdownOnly) {
   const auto links = RecoverChatLinks("a [x](https://x.test/) b [y](http://y.test/) c [z](https://z.test/)");
   EXPECT_EQ(ResolvedUrl(links, 0), "https://x.test/");
   EXPECT_EQ(ResolvedUrl(links, 1), "https://z.test/");
-  EXPECT_FALSE(ResolveChatLink(links, 2));
+  EXPECT_FALSE(Opens(links, 2));
 }
 
 // A single news pick (done.answer_kind "news_pick"): the details link is marked, so a tap opens the reader.

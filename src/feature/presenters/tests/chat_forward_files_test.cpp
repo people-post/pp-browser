@@ -24,6 +24,19 @@
 namespace pbr {
 namespace {
 
+// A hand-written order for the hash keys: GCC 13 reports a bogus -Wstringop-overread in std::vector's own <=> here.
+struct HashKeyLess {
+  bool operator()(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) const {
+    const size_t common = a.size() < b.size() ? a.size() : b.size();
+    for (size_t i = 0; i < common; ++i) {
+      if (a[i] != b[i]) {
+        return a[i] < b[i];
+      }
+    }
+    return a.size() < b.size();
+  }
+};
+
 constexpr uint64_t kMb = 1000ULL * 1000ULL;
 
 std::vector<uint8_t> HashOf(const uint8_t tag) {
@@ -95,8 +108,8 @@ struct Fake {
   std::vector<AttachmentCall> attachment_calls;
 
   /** The bytes this device holds, by content hash; `unreadable` ones are stored but cannot be decrypted. */
-  std::map<std::vector<uint8_t>, ByteVector> store;
-  std::set<std::vector<uint8_t>> unreadable;
+  std::map<std::vector<uint8_t>, ByteVector, HashKeyLess> store;
+  std::set<std::vector<uint8_t>, HashKeyLess> unreadable;
   size_t stats = 0;
   size_t loads = 0;
   size_t answered_loads = 0;

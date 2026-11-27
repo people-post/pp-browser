@@ -649,7 +649,7 @@ TEST_F(WideFrostLayoutTest, ThePanelGrowingOrTheWindowResizingKeepsTheNewestMess
   EXPECT_GE(gap(), 8.f);
   EXPECT_LE(gap(), 40.f);
   // The window resized (a reload at each size: the column is the window's width and height).
-  for (const std::pair<int, int> size : {std::pair<int, int>{1340, 700}, {900, 560}, {1600, 1000}}) {
+  for (const std::pair<int, int>& size : {std::pair<int, int>{1340, 700}, {900, 560}, {1600, 1000}}) {
     window_w_ = size.first;
     window_h_ = size.second;
     Load(Wide(NavTab::Sessions, "chat"));

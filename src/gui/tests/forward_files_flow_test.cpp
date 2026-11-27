@@ -28,6 +28,19 @@
 namespace pbr {
 namespace {
 
+// A hand-written order for the hash keys: GCC 13 reports a bogus -Wstringop-overread in std::vector's own <=> here.
+struct HashKeyLess {
+  bool operator()(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) const {
+    const size_t common = a.size() < b.size() ? a.size() : b.size();
+    for (size_t i = 0; i < common; ++i) {
+      if (a[i] != b[i]) {
+        return a[i] < b[i];
+      }
+    }
+    return a.size() < b.size();
+  }
+};
+
 constexpr uint64_t kMb = 1000ULL * 1000ULL;
 
 std::string ReadAll(const std::string& path) {
@@ -252,7 +265,7 @@ struct World {
   ChatPresenter presenter;
   std::unique_ptr<ForwardFlow> flow;
   std::map<std::string, ThreadMessage> rows;
-  std::map<std::vector<uint8_t>, ByteVector> store;
+  std::map<std::vector<uint8_t>, ByteVector, HashKeyLess> store;
   std::vector<ForwardCandidate> candidates;
   std::vector<std::string> log;
   std::deque<Upload> uploads;

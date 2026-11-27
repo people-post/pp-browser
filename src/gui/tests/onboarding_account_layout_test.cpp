@@ -155,7 +155,7 @@ protected:
 
 TEST_F(OnboardingAccountLayoutTest, TheThreeAccountButtonsEachSitOnOneLineInBothLanguagesWideAndOnAPhone) {
   for (const char* language : {"en", "zh-Hans"}) {
-    for (const auto [width, wide] : {std::pair{768, true}, std::pair{390, false}, std::pair{320, false}}) {
+    for (const auto& [width, wide] : {std::pair{768, true}, std::pair{390, false}, std::pair{320, false}}) {
       SCOPED_TRACE(std::string(language) + " " + std::to_string(width));
       Show(language, width, wide, "account");
       ExpectTheButtonsFit(3);
@@ -166,7 +166,7 @@ TEST_F(OnboardingAccountLayoutTest, TheThreeAccountButtonsEachSitOnOneLineInBoth
 
 TEST_F(OnboardingAccountLayoutTest, TheFriendsStepsThreeButtonsFitToo) {
   for (const char* language : {"en", "zh-Hans"}) {
-    for (const auto [width, wide] : {std::pair{768, true}, std::pair{390, false}, std::pair{320, false}}) {
+    for (const auto& [width, wide] : {std::pair{768, true}, std::pair{390, false}, std::pair{320, false}}) {
       SCOPED_TRACE(std::string(language) + " " + std::to_string(width));
       Show(language, width, wide, "friends");
       ExpectTheButtonsFit(3);
