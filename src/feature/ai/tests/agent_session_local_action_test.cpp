@@ -109,6 +109,20 @@ protected:
           out.set("show_notifications", args.getIf<bool>("enabled").value_or(false));
           return DumpJson(out);
         });
+    add("list_locales", ToolMeta{.provider = "settings", .domain = "settings", .risk = "read"},
+        [this](const Object&) -> Roe<std::string> { return locales_json_; });
+    add("set_appearance", ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
+        [](const Object& args) -> Roe<std::string> {
+          Object out;
+          out.set("appearance", args.getString("appearance").value_or(""));
+          return DumpJson(out);
+        });
+    add("set_language", ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
+        [](const Object& args) -> Roe<std::string> {
+          Object out;
+          out.set("language", args.getString("language").value_or(""));
+          return DumpJson(out);
+        });
     add("open_support", ToolMeta{.provider = "settings", .domain = "support", .risk = "write", .mutating = true},
         [this](const Object&) -> Roe<std::string> {
           if (support_off_) {
@@ -118,9 +132,13 @@ protected:
         });
   }
 
+  /** The tools that ran; reading the locale list for a language question is not an action. */
   std::vector<std::string> Calls() {
     std::lock_guard lock(mu_);
-    return calls_;
+    std::vector<std::string> out;
+    std::copy_if(calls_.begin(), calls_.end(), std::back_inserter(out),
+                 [](const std::string& call) { return call.rfind("list_locales", 0) != 0; });
+    return out;
   }
 
   /** The one AssistantReady of a turn. */
@@ -160,6 +178,7 @@ protected:
   }
 
   MemoryThreadStore store_;
+  std::string locales_json_ = R"({"locales":[{"tag":"zh-Hans","label":"简体中文"},{"tag":"en","label":"English"}]})";
   std::atomic<bool> support_off_{false};
   std::vector<std::string> calls_;
   std::mutex contacts_mu_;
@@ -337,6 +356,56 @@ TEST_F(AgentSessionLocalActionTest, ANewCommandInsteadOfAnAnswerRunsTheNewComman
   EXPECT_EQ(Ready(WaitForTurn()).render_mode, RenderMode::PeopleList);
   EXPECT_EQ(Calls(), std::vector<std::string>{R"(search_people {"query":"ken"})"});
   EXPECT_TRUE(Requests().empty());
+  ExpectNoModel();
+}
+
+TEST_F(AgentSessionLocalActionTest, ANewCommandWhileAQuestionIsOpenIsHandledAsANewCommand) {
+  StartLocal(Allow("set_appearance"));
+  session_->SubmitToThread("t1", "换个语言");
+  EXPECT_EQ(Ready(WaitForTurn()).text, Tr("settings.ask.language", {{"list", "简体中文, English"}}));
+
+  session_->SubmitToThread("t1", "把外观设为深色模式");
+  const auto events = WaitForTurn();
+  EXPECT_EQ(Calls(), std::vector<std::string>{R"(set_appearance {"appearance":"dark"})"});
+  EXPECT_NE(Ready(events).text, RenderLocalGaveUp());
+  EXPECT_TRUE(Requests().empty());
+  ExpectNoModel();
+
+  session_->SubmitToThread("t1", "chinese"); // the language question is gone
+  WaitForTurn();
+  EXPECT_EQ(Calls().size(), 1u);
+}
+
+TEST_F(AgentSessionLocalActionTest, AnOrdinaryQuestionWhileAQuestionIsOpenDropsTheQuestion) {
+  for (const char* line : {"今天北京天气怎么样", "is it going to rain tomorrow?"}) {
+    SCOPED_TRACE(line);
+    StartLocal();
+    requests_.clear();
+    session_->SubmitToThread("t1", "换个语言");
+    WaitForTurn();
+    session_->SubmitToThread("t1", line);
+    const std::string reply = Ready(WaitForTurn()).text;
+    EXPECT_EQ(Requests().size(), 1u); // went to the stream like any message
+    EXPECT_NE(reply, RenderLocalGaveUp());
+
+    session_->SubmitToThread("t1", "chinese"); // no question open: an ordinary message
+    WaitForTurn();
+    EXPECT_EQ(Requests().size(), 2u);
+    EXPECT_TRUE(Calls().empty());
+    ExpectNoModel();
+  }
+}
+
+TEST_F(AgentSessionLocalActionTest, AnEnglishOnlyBuildSaysSoInsteadOfAskingAboutLanguages) {
+  locales_json_ = R"({"locales":[{"tag":"en","label":"English"}]})";
+  StartLocal(Allow("set_language"));
+  session_->SubmitToThread("t1", "切换到中文");
+  const std::string said = Tr("settings.language.only_one", {{"language", "English"}});
+  EXPECT_EQ(Ready(WaitForTurn()).text, said);
+  session_->SubmitToThread("t1", "chinese"); // nothing was left open
+  WaitForTurn();
+  EXPECT_TRUE(Calls().empty());
+  EXPECT_EQ(Requests().size(), 1u);
   ExpectNoModel();
 }
 

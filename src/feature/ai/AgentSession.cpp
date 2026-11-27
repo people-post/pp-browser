@@ -42,6 +42,7 @@
 #include "common/Metrics.h"
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -102,6 +103,16 @@ constexpr ShareWord kTurnRoutes[] = {"none", "web", "chat", "app_action", "news"
 /** A news read's done.answer_kind and done.unavailable_kind (contract section 15) for "ai.news_read"; else `other`. */
 constexpr ShareWord kNewsAnswerKinds[] = {"news_digest", "news_unavailable"};
 constexpr ShareWord kNewsUnavailableKinds[] = {"not_article", "blocked", "mismatch", "other"};
+
+/** "is it going to rain?": a question of its own, never the answer to an open app question. */
+bool EndsWithQuestionMark(const std::string& text) {
+  size_t end = text.size();
+  while (end > 0 && std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+    --end;
+  }
+  const std::string_view body(text.data(), end);
+  return body.ends_with("?") || body.ends_with("\xEF\xBC\x9F"); // ？
+}
 
 /** "ai.local_action": tool, outcome and whether parameters were taken; never their content. */
 void EmitLocalActionMetric(logging::Logger& log, const std::string& tool, const ShareWord outcome,
@@ -1457,8 +1468,10 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
     return false;
   }
   if (std::holds_alternative<LocalAsk>(plan)) {
-    if (IsAppOverviewQuestion(text) || ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
-      // Not an answer but a new command: the question is dropped and the message routed like any other.
+    if (IsAppOverviewQuestion(text) || EndsWithQuestionMark(text) ||
+        ClassifyAppActionMatch(text, AppActionCapabilities(state))) {
+      // Not an answer but a new command or an ordinary question: the question is dropped and the message routed
+      // like any other.
       state->Log().info << "local action question dropped for a new command (" << taken.ask.tool << ")";
       return false;
     }
@@ -1492,10 +1505,10 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
   if (match && match->tool == capability) {
     plan = BuildLocalTurnPlan(*match, state->pending_user_text, BuildLocalPlanContext(state, capability));
     if (std::holds_alternative<LocalQuestion>(plan)) {
-      plan = AskForTool(capability, state->pending_user_text);
+      plan = AskForTool(capability, state->pending_user_text, BuildLocalPlanContext(state, capability));
     }
   } else {
-    plan = AskForTool(capability, state->pending_user_text);
+    plan = AskForTool(capability, state->pending_user_text, BuildLocalPlanContext(state, capability));
   }
   if (!std::holds_alternative<TurnPlan>(plan) &&
       IsLocalActionQuestion(state->pending_user_text, ToolIsSettingsRead(capability))) {
@@ -1540,6 +1553,11 @@ void AgentSession::HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan
   if (const auto* ambiguous = std::get_if<LocalAmbiguous>(&plan)) {
     EmitLocalActionMetric(state->Log(), ambiguous->tool, "ambiguous", false);
     FinishLocalAnswer(state, RenderLocalAmbiguous(*ambiguous, ambiguous->query), RenderMode::PeopleList);
+    return;
+  }
+  if (const auto* statement = std::get_if<LocalStatement>(&plan)) {
+    EmitLocalActionMetric(state->Log(), tool, "stated", false);
+    FinishLocalAnswer(state, RenderLocalStatement(*statement), RenderMode::Markdown);
     return;
   }
   if (std::holds_alternative<LocalCancelled>(plan)) {

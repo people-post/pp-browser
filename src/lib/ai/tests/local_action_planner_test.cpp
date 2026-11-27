@@ -1,9 +1,12 @@
+#include "common/ValueJson.h"
 #include "lib/ai/AppActionClassifier.h"
 #include "lib/ai/AppActionWords.h"
 #include "lib/ai/LocalActionPlanner.h"
 #include "lib/ai/LocalActionWords.h"
 
 #include <gtest/gtest.h>
+#include <sstream>
+#include <fstream>
 
 #include <optional>
 #include <algorithm>
@@ -628,4 +631,143 @@ TEST(LocalActionPlannerTest, ABareSettingNameAsksOnOrOff) {
   }
   ExpectAsk(PlanFor("透明度呢"), "settings.ask.on_or_off", "透明度呢");
   EXPECT_EQ(std::get<LocalAsk>(PlanFor("透明度呢")).tool, "set_reduce_transparency");
+}
+
+// --- Language that the build does not offer; natural appearance words (2026-11-27 device log) ---------------
+
+namespace {
+
+const LocalStatement* AsStatement(const LocalPlan& p) {
+  return std::get_if<LocalStatement>(&p);
+}
+
+std::string ArgOf(const std::vector<std::pair<std::string, std::string>>& args, const std::string& key) {
+  for (const auto& [k, v] : args) {
+    if (k == key) {
+      return v;
+    }
+  }
+  return "<missing>";
+}
+
+LocalPlanContext Offered(std::vector<std::pair<std::string, std::string>> locales) {
+  LocalPlanContext ctx;
+  ctx.locales = std::move(locales);
+  return ctx;
+}
+
+} // namespace
+
+TEST(LocalActionPlannerTest, SetLanguageWithOneLocaleSaysSoAndNeverAsks) {
+  const LocalPlanContext only_english = Offered({{"en", "English"}});
+  const LocalAsk open{"set_language", "language", "settings.ask.language", ""};
+  const std::vector<LocalPlan> plans = {
+      PlanFor("界面改成中文", only_english),
+      PlanFor("请切换到中文", only_english),
+      PlanFor("switch to Chinese", only_english),
+      PlanFor("switch to English", only_english),
+      PlanAs("set_language", "set the language to English", "set the language to", only_english),
+      PlanAs("set_language", "换个语言", "换个语言", only_english),
+      AskForTool("set_language", "换个语言", only_english),
+      ResolvePendingAnswer(open, "chinese", only_english),
+      ResolvePendingAnswer(open, "中文", only_english),
+  };
+  for (size_t i = 0; i < plans.size(); ++i) {
+    const LocalStatement* statement = AsStatement(plans[i]);
+    ASSERT_NE(statement, nullptr) << "case " << i;
+    EXPECT_EQ(statement->key, "settings.language.only_one") << "case " << i;
+    EXPECT_EQ(ArgOf(statement->args, "language"), "English") << "case " << i;
+  }
+}
+
+TEST(LocalActionPlannerTest, AnsweringALanguageThatIsNotOfferedIsRefusedOnce) {
+  const LocalPlanContext ctx = Offered({{"en", "English"}, {"fr", "Français"}});
+  const LocalAsk open{"set_language", "language", "settings.ask.language", ""};
+  const std::vector<LocalPlan> plans = {
+      PlanFor("切换到中文", ctx),
+      PlanFor("switch to Chinese", ctx),
+      ResolvePendingAnswer(open, "chinese", ctx),
+      ResolvePendingAnswer(open, "繁体中文", ctx),
+  };
+  for (size_t i = 0; i < plans.size(); ++i) {
+    const LocalStatement* statement = AsStatement(plans[i]);
+    ASSERT_NE(statement, nullptr) << "case " << i;
+    EXPECT_EQ(statement->key, "settings.language.not_offered") << "case " << i;
+    EXPECT_EQ(ArgOf(statement->args, "list"), "English, Français") << "case " << i;
+  }
+  // An offered language still works, and a reply that names nothing is still asked again.
+  ExpectText(ResolvePendingAnswer(open, "français", ctx), "set_language", "language", "fr", "offered");
+  ExpectAsk(ResolvePendingAnswer(open, "嗯", ctx), "settings.ask.language", "unclear");
+}
+
+TEST(LocalActionPlannerTest, TheLanguageQuestionListsOnlyTheLocalesOffered) {
+  const LocalPlanContext ctx = Offered({{"en", "English"}, {"fr", "Français"}});
+  for (const LocalPlan& plan :
+       {AskForTool("set_language", "换个语言", ctx), PlanAs("set_language", "换个语言", "换个语言", ctx)}) {
+    const auto* ask = std::get_if<LocalAsk>(&plan);
+    ASSERT_NE(ask, nullptr);
+    EXPECT_EQ(ask->question_key, "settings.ask.language");
+    EXPECT_EQ(ArgOf(ask->args, "list"), "English, Français");
+  }
+  // Nothing known: the two languages the app has always shipped.
+  const LocalPlan plain = AskForTool("set_language", "换个语言");
+  const auto* ask = std::get_if<LocalAsk>(&plain);
+  ASSERT_NE(ask, nullptr);
+  EXPECT_EQ(ArgOf(ask->args, "list"), "简体中文, English");
+}
+
+namespace {
+
+std::string LocaleText(const char* file, const char* key) {
+  std::ifstream in(std::string(PP_BROWSER_SOURCE_ROOT) + "/assets/locales/" + file, std::ios::binary);
+  std::ostringstream text;
+  text << in.rdbuf();
+  const auto doc = TryParseObject(text.str());
+  const Object* strings = doc ? doc->getObject("strings") : nullptr;
+  return strings ? strings->getString(key).value_or("") : "";
+}
+
+} // namespace
+
+// Owner decision 2026-11-27: the wordlist is a small fast path for the terms the app itself shows (Me > Appearance);
+// anything else goes to the model. Do not add words to make a new phrasing pass.
+TEST(LocalActionPlannerTest, TheAppearanceFastPathKnowsOnlyStandardTerms) {
+  struct Row {
+    const char* file;
+    const char* title; // settings.appearance.title
+    const char* system;
+    const char* light;
+    const char* dark;
+  };
+  for (const Row& row : {Row{"en.json", "settings.appearance.title", "ai.option.appearance.system",
+                             "settings.theme.light", "settings.theme.dark"},
+                         Row{"zh-Hans.json", "settings.appearance.title", "ai.option.appearance.system",
+                             "settings.theme.light", "settings.theme.dark"}}) {
+    const bool en = std::string(row.file) == "en.json";
+    const std::string title = LocaleText(row.file, row.title);
+    const std::string system = LocaleText(row.file, row.system);
+    const std::string light = LocaleText(row.file, row.light);
+    const std::string dark = LocaleText(row.file, row.dark);
+    ASSERT_FALSE(title.empty() || system.empty() || light.empty() || dark.empty()) << row.file;
+    const std::string mode = en ? " mode" : "模式";
+    const std::string lower_title = en ? "appearance" : title;
+    const auto low = [&](std::string v) {
+      if (en) {
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return std::tolower(c); });
+      }
+      return v;
+    };
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {low(dark) + mode, "dark"},
+        {low(light) + mode, "light"},
+        {low(system), "system"},
+        {(en ? "switch to " : "切换到") + low(dark) + mode, "dark"},
+        {en ? "set " + lower_title + " to " + low(dark) : "把" + title + "设为" + dark + mode, "dark"},
+        {en ? "set " + lower_title + " to " + low(light) : "把" + title + "设为" + light + mode, "light"},
+        {en ? "set " + lower_title + " to " + low(system) : "把" + title + "设为" + system, "system"},
+    };
+    for (const auto& [text, want] : cases) {
+      ExpectText(PlanFor(text), "set_appearance", "appearance", want, text);
+    }
+  }
 }

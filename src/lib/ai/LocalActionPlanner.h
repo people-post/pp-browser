@@ -44,6 +44,17 @@ struct LocalAsk {
    * "true" / "false" when missing == "capability".
    */
   std::string carry;
+  /** Placeholders of `question_key` ({list} of the locales offered, ...). */
+  std::vector<std::pair<std::string, std::string>> args;
+};
+
+/**
+ * A plain statement that ends the turn: nothing is asked and nothing is left open. Used where a question would
+ * only loop (the language the app does not have).
+ */
+struct LocalStatement {
+  std::string key; // a locale key
+  std::vector<std::pair<std::string, std::string>> args;
 };
 
 /** Several contacts fit (or none: `candidates` empty = not found). `identical_rows`: two rows read the same. */
@@ -66,7 +77,8 @@ struct LocalQuestion {};
 /** The user answered a question with "never mind". */
 struct LocalCancelled {};
 
-using LocalPlan = std::variant<TurnPlan, LocalAsk, LocalAmbiguous, LocalUnsupported, LocalQuestion, LocalCancelled>;
+using LocalPlan =
+    std::variant<TurnPlan, LocalAsk, LocalAmbiguous, LocalUnsupported, LocalQuestion, LocalCancelled, LocalStatement>;
 
 /**
  * `match` is the classifier's result for `text`. TurnPlan::synthesis_hints is kHintOnlyFirstAction when the
@@ -83,7 +95,7 @@ LocalPlan BuildLocalTurnPlan(const AppActionMatch& match, const std::string& tex
 LocalPlan ResolvePendingAnswer(const LocalAsk& ask, const std::string& answer, const LocalPlanContext& ctx);
 
 /** The Ask a tool starts with when nothing was taken from the sentence (or its plan, if it needs no parameter). */
-LocalPlan AskForTool(const std::string& tool, const std::string& text);
+LocalPlan AskForTool(const std::string& tool, const std::string& text, const LocalPlanContext& ctx = {});
 
 /** Is `text` a how/why question rather than a command? `settings_read`: "是什么" does not count. */
 bool IsLocalActionQuestion(const std::string& text, bool settings_read = false);
