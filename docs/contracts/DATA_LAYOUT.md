@@ -405,7 +405,7 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `show_notifications` | `preferences.json` | boolean; alerts ≠ sync |
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |
 | `compact_chrome_frost` | `preferences.json` | boolean, schema v8; default true; dogfood off in JSON |
-| `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
+| `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — the stored reachability ack (still written and cleared; no attention dot shows it any more) |
 | `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
 | `recent_emojis` | `preferences.json` | string array, schema v12 — MRU glyphs for the in-app emoji picker (cap 36) |
 | `sidebar_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 240; shell clamps to 200–480 dp. Expanded-layout secondary pane width |

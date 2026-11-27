@@ -158,7 +158,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque bars, no backdrop frost; Me → Appearance → **Transparency** shows it inverted, on by default; the AI assistant's `set_reduce_transparency` sets it too) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
-**Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.
+**Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable. The Me / Network attention dots are gone: the value is still written and cleared, but nothing in the UI reads it.
 
 **PIN state:** `preferences.json` → `pin_is_default` — see [DATA_LAYOUT](../contracts/DATA_LAYOUT.md) and [AT_REST_ENCRYPTION](../contracts/AT_REST_ENCRYPTION.md).
 
