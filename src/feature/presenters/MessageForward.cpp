@@ -406,10 +406,11 @@ void ForwardRun::Collect() {
     NextItem();
     return;
   }
-  if (IsAttachmentRateLimited(answer.error()) && !StagedSinceStart()) {
+  if (IsAttachmentRateLimited(answer.error()) && ports_.staged_attachments && !StagedSinceStart()) {
     // The device's own pace refused it before anything was stored: the same item goes again, as often as it takes. Not
     // a failure. (The server's 429 has the same code but comes after the encrypted copy was staged: a failed bubble with
-    // Retry is in the chat then, and sending it again would be a second copy.)
+    // Retry is in the chat then, and sending it again would be a second copy. Without the port the two cannot be told
+    // apart: it is counted failed, never retried.)
     if (!stopped_) {
       rate_limited_ = true;
       retry_at_ms_ = (ports_.now_ms ? ports_.now_ms() : 0) + kForwardRateLimitRetryMs;
