@@ -36,6 +36,7 @@
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
 #include "gui/chat/ForwardFlow.h"
+#include "gui/chat/ForwardProgressController.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
@@ -283,6 +284,7 @@ public:
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) {
     picture_send_.BindFlowCoordinator(ports);
+    forward_progress_.BindFlowCoordinator(ports);
     flow_coordinator_ = std::move(ports);
   }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
@@ -1103,6 +1105,14 @@ private:
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
   /** Forwarding text and contact cards, from the menu's Forward to the pill; made in the constructor (it needs `this`). */
   std::unique_ptr<ForwardFlow> forward_flow_;
+  /** The "Forwarding 2/7" page of a forward with attachments; the flow opens, draws and closes it. */
+  ForwardProgressController forward_progress_;
+  /** The phone really went to the background (PlatformLifecycleEvents; focus loss is not it): a forward stops. */
+  uint64_t forward_background_id_ = 0;
+  /** What "Forward to" shows of attachments: a bubble's picture, a poster, a thumbnail made in memory. */
+  ForwardPreviewPorts MakeForwardPreviewPorts();
+  /** The thumbnail files made for the "Forward to" page (null: none yet); removed with the page. */
+  std::unique_ptr<ForwardPreviewFiles> forward_preview_files_;
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;

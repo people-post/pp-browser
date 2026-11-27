@@ -292,8 +292,9 @@ TEST(TranscriptRmlTest, ARowSaysWhetherItsMessageCanBeForwarded) {
   EXPECT_FALSE(rows[2].forwardable);
 }
 
-// The desktop hover bar's Forward is the row's own answer: a forwardable plain message has it, a picture or a notice
-// does not, and no facts hook (no store) is involved.
+// The desktop hover bar's Forward is the row's own answer: a forwardable plain message has it, an attachment row with
+// no readable fields (and a notice) does not, and no facts hook (no store) is involved. A real picture, file or voice
+// row has it: WideAttachmentRowsHaveCheckboxesInSelectionMode.
 TEST(TranscriptRmlTest, TheHoverBarOffersForwardOnlyOnAForwardableRow) {
   using namespace phone_rows;
   TranscriptRow text = TextRow("1", "account:a", kNoon);

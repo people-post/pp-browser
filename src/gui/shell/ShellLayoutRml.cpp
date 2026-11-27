@@ -401,12 +401,15 @@ std::string ShellLayoutRml::Overlays() const {
     const bool modal = overlay.modal && state_.layout_mode == LayoutMode::Expanded;
     out << "<div class=\"shell-layer shell-layer-overlay" << (modal ? " shell-layer-modal" : "")
         << "\" data-model=\"window\">";
-    out << "<div class=\"shell-scrim\"" << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
+    out << "<div class=\"shell-scrim" << (modal ? " shell-scrim--" + overlay.key : "") << "\""
+        << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
         << " data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     if (modal) {
-      out << "<div class=\"shell-modal-stage\" id=\"shell-modal-stage-" << overlay.id << "\">";
+      out << "<div class=\"shell-modal-stage shell-modal-stage--" << overlay.key << "\" id=\"shell-modal-stage-"
+          << overlay.id << "\">";
     }
-    out << "<div class=\"shell-frame shell-frame--" << overlay.key << "\">";
+    out << "<div class=\"shell-frame shell-frame--" << overlay.key
+        << (modal && !ChromeFrostEnabled() ? " shell-frame--solid" : "") << "\">";
     out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";
     out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
     out << "</button>";

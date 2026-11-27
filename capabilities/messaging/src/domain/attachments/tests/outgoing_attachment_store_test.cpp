@@ -128,6 +128,48 @@ TEST_F(OutgoingStoreTest, ListsOnlyThisThreadsWhoseCiphertextIsStillThereOldestF
   EXPECT_TRUE(store_->ListForThread("t1", Dek(2)).empty()) << "locked / wrong key: none";
 }
 
+TEST_F(OutgoingStoreTest, AListSaysWhetherItCouldBeReadInFull) {
+  bool complete = false;
+  EXPECT_TRUE(store_->ListForThread("t1", Dek(1), &complete).empty());
+  EXPECT_TRUE(complete) << "no folder yet: nothing is staged, and that is known";
+  ASSERT_TRUE(store_->Begin(Record("a", "t1", 10), {1, 2, 3}, Dek(1)));
+  complete = false;
+  EXPECT_EQ(store_->ListForThread("t1", Dek(1), &complete).size(), 1u);
+  EXPECT_TRUE(complete);
+  EXPECT_TRUE(store_->ListForThread("t1", Dek(2), &complete).empty());
+  EXPECT_FALSE(complete) << "a record that cannot be read (wrong key, damaged) is not 'nothing staged'";
+}
+
+TEST_F(OutgoingStoreTest, OneDamagedRecordAmongGoodOnesMakesTheListIncompleteButKeepsTheGoodOnes) {
+  ASSERT_TRUE(store_->Begin(Record("a", "t1", 10), {1, 2, 3}, Dek(1)));
+  ASSERT_TRUE(store_->Begin(Record("b", "t1", 20), {1, 2, 3}, Dek(1)));
+  ASSERT_TRUE(store_->Begin(Record("c", "t1", 30), {1, 2, 3}, Dek(1)));
+  {
+    std::ofstream damaged(store_->CipherPath("b") + ".rec", std::ios::binary | std::ios::trunc);
+    damaged << "this is not a sealed record";
+  }
+  bool complete = true;
+  const auto listed = store_->ListForThread("t1", Dek(1), &complete);
+  EXPECT_FALSE(complete) << "the damaged one may be this chat's";
+  ASSERT_EQ(listed.size(), 2u);
+  EXPECT_EQ(listed[0].id, "a");
+  EXPECT_EQ(listed[1].id, "c");
+}
+
+TEST_F(OutgoingStoreTest, AFolderThatCannotBeInspectedIsNotKnownToBeEmpty) {
+  // `blob_cipher` is a link to itself: looking at `blob_cipher/outgoing` fails with "too many levels of links", which is
+  // not "no such folder". Everything stays inside this test's own temp folder.
+  std::error_code ec;
+  std::filesystem::create_symlink(dir_ / "blob_cipher", dir_ / "blob_cipher", ec);
+  if (ec) {
+    GTEST_SKIP() << "symbolic links are not available here: " << ec.message();
+  }
+  bool complete = true;
+  EXPECT_TRUE(store_->ListForThread("t1", Dek(1), &complete).empty());
+  EXPECT_FALSE(complete) << "an error other than 'not found' is never 'nothing staged'";
+  std::filesystem::remove(dir_ / "blob_cipher", ec);
+}
+
 // A resume deletes a record only when it is confirmed damaged: the load says which of the two it is.
 TEST_F(OutgoingStoreTest, ALoadTellsAGoneRecordFromADamagedOne) {
   auto gone = store_->Load("never-existed", Dek(1));

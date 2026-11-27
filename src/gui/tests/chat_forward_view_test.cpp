@@ -7,7 +7,9 @@
 #include "lib/ai/MarkdownToRml.h"
 #include "gui/shell/DataModelHost.h"
 
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/presenters/MessageForward.h"
+#include "lib/messaging/TranscriptAssembly.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 
@@ -85,6 +87,14 @@ protected:
                              [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++nexts; });
       ctor.BindEventCallback("open_message_link",
                              [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++link_opens; });
+      // What an attachment bubble does outside selection mode: none of it may happen while choosing.
+      for (const char* name :
+           {"open_attachment", "open_picture", "download_attachment", "retry_attachment", "play_voice",
+            "play_audio_file", "audio_seek_press", "open_sender", "open_reactors", "jump_to_quote"}) {
+        ctor.BindEventCallback(name, [this, name](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
+          attachment_events.push_back(name);
+        });
+      }
     }));
     state.use_messages_layout = true;
     state.forward_selecting = true;
@@ -179,6 +189,7 @@ protected:
   int cancels = 0;
   int nexts = 0;
   int link_opens = 0;
+  std::vector<std::string> attachment_events;
 };
 
 TEST_F(ChatForwardViewTest, SelectionModeShowsCheckboxesOnlyOnForwardableRows) {
@@ -271,6 +282,108 @@ TEST_F(ChatForwardViewTest, OutsideSelectionALinkStillOpens) {
   EXPECT_TRUE(taps.empty());
 }
 
+/** A picture, a file and a voice message drawn by the real transcript, the way a chat shows them. */
+std::vector<MessageDisplayRow> AttachmentTranscript() {
+  const auto row = [](const std::string& id, const std::string& name, const std::string& mime, const uint64_t bytes,
+                      const int64_t at) {
+    ChatAttachmentFields fields;
+    fields.mime = mime;
+    fields.filename = name;
+    fields.byte_length = bytes;
+    fields.url = "https://example.invalid/blob/" + id;
+    fields.content_hash.assign(32, static_cast<uint8_t>(at));
+    fields.content_key.assign(32, 2);
+    fields.blob_nonce.assign(24, 3);
+    TranscriptRow entry;
+    entry.message.id = id;
+    entry.message.thread_id = "t";
+    entry.message.sender_contact_id = "account:b";
+    entry.message.content_type = ChatContentType::Attachment;
+    entry.message.text = name;
+    entry.message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+    entry.message.timestamp = 1700049600000 + at * 60'000;
+    entry.message.delivery = MessageDelivery::Relayed;
+    return entry;
+  };
+  TranscriptFacts facts;
+  facts.sender_label = [](const std::string& id) { return id; };
+  facts.sender_stable_id = [](const std::string& id) { return id; };
+  facts.voice_supported = true;
+  facts.voice_max_seconds = 120;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/views/preview.jpg";
+    view.inline_image_ok = true;
+    view.image_width = 800;
+    view.image_height = 600;
+    return view;
+  };
+  return RenderTranscript(
+      {row("a1", "photo.jpg", "image/jpeg", 900'000, 1), row("a2", "report.pdf", "application/pdf", 120'000, 2),
+       row("a3", "voice-4200.ogg", "audio/ogg", 25'000, 3)},
+      facts);
+}
+
+TEST_F(ChatForwardViewTest, AttachmentRowsHaveCheckboxesInSelectionMode) {
+  state.messages = AttachmentTranscript();
+  ASSERT_EQ(state.messages.size(), 3u);
+  for (MessageDisplayRow& row : state.messages) {
+    EXPECT_TRUE(row.forwardable) << "a picture, a file and a voice message can be chosen (CanForwardMessage)";
+    row.forward_mode = true;
+    row.forward_ok = row.forwardable;
+    row.forward_ticked = false;
+  }
+  state.messages[1].forward_ticked = true;
+  Refresh();
+  EXPECT_EQ(Shown("message-forward-check").size(), 3u) << "every attachment row shows its tick box";
+  EXPECT_EQ(Shown("message-forward-check--on").size(), 1u);
+  EXPECT_EQ(Shown("message-forward-cover").size(), 3u);
+}
+
+TEST_F(ChatForwardViewTest, ATapOnAnAttachmentRowInSelectionModeOnlyTicksItsRow) {
+  // The bubbles as the transcript really draws them: a picture's clip, a file card and a voice bubble each carry their
+  // own click (open / download / play). While choosing, the row's cover is above all of them and takes the tap.
+  state.messages = AttachmentTranscript();
+  for (MessageDisplayRow& row : state.messages) {
+    row.forward_mode = true;
+    row.forward_ok = true;
+  }
+  Refresh();
+  const std::string markup = std::string(state.messages[0].content_rml.c_str()) +
+                             state.messages[1].content_rml.c_str() + state.messages[2].content_rml.c_str();
+  ASSERT_NE(markup.find("open_picture"), std::string::npos) << "the picture's clip has its own click";
+  ASSERT_NE(markup.find("play_voice"), std::string::npos) << "the voice bubble has its own click";
+  size_t tapped = 0;
+  for (const char* tag : {"div", "span", "button", "p", "img", "svg"}) {
+    ui::ElementList found;
+    document->GetElementsByTagName(found, tag);
+    for (ui::Element* element : found) {
+      if (!element->HasAttribute("data-event-click") || !element->IsVisible(true)) {
+        continue;
+      }
+      bool in_rows = false; // the bars and buttons around the transcript are not rows
+      for (ui::Element* up = element->GetParentNode(); up; up = up->GetParentNode()) {
+        in_rows = in_rows || up->GetId() == "chat-messages";
+      }
+      if (!in_rows) {
+        continue;
+      }
+      if (element->GetAttribute<ui::String>("data-event-click", "").find("forward_tap") != ui::String::npos) {
+        continue; // the cover itself
+      }
+      const size_t before = taps.size();
+      Tap(element);
+      ASSERT_EQ(taps.size(), before + 1) << "a tap on "
+                                         << element->GetAttribute<ui::String>("data-event-click", "").c_str()
+                                         << " must tick its row";
+      ++tapped;
+    }
+  }
+  EXPECT_GE(tapped, 2u) << "at least the picture and the voice bubble were tapped";
+  EXPECT_TRUE(attachment_events.empty()) << "nothing was opened, downloaded or played: " << attachment_events.size();
+}
+
 TEST_F(ChatForwardViewTest, ARowThatCannotBeForwardedStillTakesTheTap) {
   // The row has no tick box, and still takes the tap (its cover): the flow answers it with the pill (ForwardFlowTest).
   const std::vector<ui::Element*> covers = Shown("message-forward-cover");
@@ -288,6 +401,33 @@ TEST_F(ChatForwardViewTest, TheTitleBarCountsAndCancelsAndTheComposerGivesWayToT
   EXPECT_EQ(cancels, 1);
   Tap(Shown("chat-forward-next").at(0));
   EXPECT_EQ(nexts, 1);
+}
+
+// A click on the Forward button never ticks the row that lies under the bar (the transcript runs under the composer
+// bar): the rows' covers and ticks sit below the bar in the stacking order.
+TEST_F(ChatForwardViewTest, AClickOnTheForwardButtonDoesNotTickTheRowUnderIt) {
+  state.messages.clear();
+  for (int i = 0; i < 40; ++i) {
+    state.messages.push_back(
+        Row("r" + std::to_string(i), "<div class=\"bubble bubble-assistant\">a message</div>", true, false));
+  }
+  Refresh();
+  ui::Element* messages = document->GetElementById("chat-messages");
+  ASSERT_NE(messages, nullptr);
+  messages->SetScrollTop(messages->GetScrollHeight() / 2.f);
+  context->Update();
+  ui::Element* next = Shown("chat-forward-next").at(0);
+  const Edges e = BorderEdges(next);
+  const float cx = (e.left + e.right) / 2, cy = (e.top + e.bottom) / 2;
+  bool row_under = false;
+  for (ui::Element* cover : Shown("message-forward-cover")) {
+    const Edges c = BorderEdges(cover);
+    row_under = row_under || (c.left <= cx && cx <= c.right && c.top <= cy && cy <= c.bottom);
+  }
+  ASSERT_TRUE(row_under) << "precondition: a row lies under the button";
+  Tap(next);
+  EXPECT_EQ(nexts, 1);
+  EXPECT_TRUE(taps.empty()) << "the click also ticked the row under the bar";
 }
 
 TEST_F(ChatForwardViewTest, TheForwardBarIsDisabledWithNothingSelected) {
@@ -364,30 +504,125 @@ TEST(ChatForwardMenuTest, TheMessageMenuOffersForwardThenSelectAfterReply) {
   EXPECT_NE(source.find("host_.BeginSelect(message_id)", for_request), std::string::npos);
 }
 
-TEST(ChatForwardMenuTest, APictureHasNeitherForwardNorSelect) {
-  // The item is added only when the presenter says the message can go; a picture is an Attachment, which it refuses.
+/** The `{` nesting depth of `source` at `at`, counting from the start of the string. */
+int BraceDepthAt(const std::string& source, const size_t at) {
+  int depth = 0;
+  for (size_t i = 0; i < at && i < source.size(); ++i) {
+    depth += source[i] == '{' ? 1 : source[i] == '}' ? -1 : 0;
+  }
+  return depth;
+}
+
+ThreadMessage AttachmentMessage(const std::string& name, const std::string& mime, const uint64_t bytes) {
+  ChatAttachmentFields fields;
+  fields.mime = mime;
+  fields.filename = name;
+  fields.byte_length = bytes;
+  fields.url = "https://example.invalid/blob";
+  fields.content_hash.assign(32, 1);
+  fields.content_key.assign(32, 2);
+  fields.blob_nonce.assign(24, 3);
+  ThreadMessage row = TextMessage(name);
+  row.content_type = ChatContentType::Attachment;
+  row.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+  row.sender_contact_id = "contact-a";
+  row.delivery = MessageDelivery::Relayed;
+  return row;
+}
+
+TEST(ChatForwardMenuTest, TheMessageMenuOffersForwardForAPicture) {
+  // The two items hang on ChatPresenter::CanForward alone, not on the message having words (a picture's "text" is its
+  // file name, a voice message has none): they sit at the menu's top level, outside the `if (!text.empty())` of Reply.
   const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
   const size_t for_request = source.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   ASSERT_NE(for_request, std::string::npos);
+  const size_t reply = source.find("\"reply_message\"", for_request);
   const size_t forward = source.find("\"forward_message\"", for_request);
+  const size_t select = source.find("\"select_messages\"", for_request);
+  ASSERT_NE(reply, std::string::npos);
   ASSERT_NE(forward, std::string::npos);
-  // The item is under `if (slots.forward)`, and the slots are decided with the presenter's answer.
-  const std::string before = source.substr(source.rfind("if (", forward), forward - source.rfind("if (", forward));
-  EXPECT_NE(before.find("slots.forward"), std::string::npos);
+  ASSERT_NE(select, std::string::npos);
+  EXPECT_NE(source.substr(reply, forward - reply).find("}\n  // Forward"), std::string::npos)
+      << "Reply's block is closed before Forward starts";
+  EXPECT_EQ(BraceDepthAt(source, forward), BraceDepthAt(source, reply))
+      << "Forward is a sibling of Reply's block, not nested in it (it was one level deeper when it needed words)";
+  EXPECT_EQ(BraceDepthAt(source, select), BraceDepthAt(source, forward)) << "Select in the same block as Forward";
+  // The item is under `if (slots.forward)`, and the slots are decided with the presenter's answer, not with the words.
+  const size_t guard = source.rfind("if (", forward);
+  EXPECT_EQ(source.substr(guard, source.find(')', guard) - guard), "if (slots.forward")
+      << "one check covers both items";
   const size_t decide = source.find("DecideMessageMenuSlots(");
   ASSERT_NE(decide, std::string::npos);
   EXPECT_NE(source.find("presenter_.CanForward(message_id)", decide), std::string::npos);
-  const size_t select = source.find("\"select_messages\"", for_request);
-  ASSERT_NE(select, std::string::npos);
-  EXPECT_LT(select, source.find("\"copy_message\"", forward))
-      << "Select sits in the same slots.forward block as Forward";
-  const size_t block_end = source.find("\"copy_message\"", forward);
-  EXPECT_EQ(source.substr(forward, block_end - forward).find("if (slots.forward"), std::string::npos)
-      << "one check covers both items";
-  ThreadMessage picture = TextMessage("");
-  picture.content_type = ChatContentType::Attachment;
-  EXPECT_FALSE(CanForwardMessage(picture));
+  // What CanForward says yes to now.
+  for (const ThreadMessage& row : {AttachmentMessage("photo.jpg", "image/jpeg", 2'000'000),
+                                   AttachmentMessage("clip.mov", "video/quicktime", 9'000'000),
+                                   AttachmentMessage("report.pdf", "application/pdf", 90'000),
+                                   AttachmentMessage("voice-4200.ogg", "audio/ogg", 25'000)}) {
+    EXPECT_TRUE(CanForwardMessage(row)) << row.text;
+  }
   EXPECT_TRUE(CanForwardMessage(TextMessage("words")));
+}
+
+TEST(ChatForwardMenuTest, APictureOrVideoMessageHasNoCopyItem) {
+  // Copy gave only the file name: gone from every attachment message (pictures, videos, files, voice messages).
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = source.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  const size_t copy = source.find("\"copy_message\"", for_request);
+  ASSERT_NE(copy, std::string::npos);
+  const size_t guard = source.rfind("if (", copy);
+  EXPECT_EQ(source.substr(guard, source.find('{', guard) - guard), "if (!presenter_.IsAttachmentMessage(message_id)) ")
+      << "Copy is offered only for a message that is not an attachment";
+  EXPECT_EQ(source.find("\"copy_message\"", copy + 1), std::string::npos) << "the only place the item is made";
+
+  // The presenter's answer, for each kind and for text and a missing row.
+  ChatPresenter presenter;
+  std::map<std::string, ThreadMessage> rows;
+  for (const ThreadMessage& row : {AttachmentMessage("photo.jpg", "image/jpeg", 2'000'000),
+                                   AttachmentMessage("clip.mov", "video/quicktime", 9'000'000),
+                                   AttachmentMessage("report.pdf", "application/pdf", 90'000),
+                                   AttachmentMessage("voice-4200.ogg", "audio/ogg", 25'000)}) {
+    ThreadMessage stored = row;
+    stored.id = row.text;
+    rows[stored.id] = stored;
+  }
+  rows["words"] = TextMessage("words");
+  rows["words"].id = "words";
+  ForwardPorts ports;
+  ports.active_thread = []() { return std::string("t"); };
+  ports.get_message = [&rows](const std::string&, const std::string& id) -> std::optional<ThreadMessage> {
+    const auto it = rows.find(id);
+    return it == rows.end() ? std::nullopt : std::optional<ThreadMessage>(it->second);
+  };
+  presenter.SetForwardPortsForTest(ports);
+  for (const char* id : {"photo.jpg", "clip.mov", "report.pdf", "voice-4200.ogg"}) {
+    EXPECT_TRUE(presenter.IsAttachmentMessage(id)) << id;
+  }
+  EXPECT_FALSE(presenter.IsAttachmentMessage("words"));
+  EXPECT_FALSE(presenter.IsAttachmentMessage("gone"));
+}
+
+TEST(ChatForwardMenuTest, ATextMessageStillHasCopy) {
+  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = source.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  const size_t copy = source.find("\"copy_message\"", for_request);
+  ASSERT_NE(copy, std::string::npos);
+  // Still made for any message with words that is not an attachment, with the same action (the text, to the clipboard),
+  // and before Ask AI: unchanged for text and contact cards.
+  EXPECT_NE(source.find("CopyToClipboard(text)", copy), std::string::npos);
+  EXPECT_LT(copy, source.find("\"ask_ai_message\"", for_request));
+  const size_t text_check = source.rfind("if (slots.copy) {", copy); // the desktop's slot: a message with words
+  ASSERT_NE(text_check, std::string::npos);
+  EXPECT_EQ(source.find("\"reply_message\"", text_check), std::string::npos)
+      << "Copy's own `if (slots.copy)` is the one after Forward / Select";
+  ChatPresenter presenter;
+  ForwardPorts ports;
+  ports.active_thread = []() { return std::string("t"); };
+  ports.get_message = [](const std::string&, const std::string&) {
+    return std::optional<ThreadMessage>(TextMessage("hi"));
+  };
+  presenter.SetForwardPortsForTest(ports);
+  EXPECT_FALSE(presenter.IsAttachmentMessage("m")) << "text is not an attachment: Copy stays";
 }
 
 TEST(ChatForwardMenuTest, ChoosingMessagesOffersNoMenuOnAPress) {

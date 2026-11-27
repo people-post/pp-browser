@@ -469,6 +469,8 @@ public:
                              std::function<bool(uint64_t done, uint64_t total)> progress = {},
                              std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** The same list, or none when it cannot be told (locked, no profile, a folder or record unreadable). */
+  std::optional<std::vector<OutgoingAttachmentRecord>> PendingOutgoingAttachmentsChecked(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();
   /** The one source of every attachment size / pace / warning number (today the defaults). */
@@ -488,6 +490,16 @@ public:
   /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                            bool* made_view = nullptr);
+  /**
+   * The size on disk of this device's stored copy of an attachment's bytes (encrypted, as held here); 0 when it has none
+   * (never downloaded, cleaned away). A stat of the content store: nothing is read or decrypted.
+   */
+  uint64_t AttachmentStoredBytes(const std::vector<uint8_t>& content_hash);
+  /**
+   * The whole plaintext of a stored attachment, decrypted into memory (not written anywhere); fails when it is not
+   * stored, cannot be read, or the profile is locked. For sending the same bytes on (a forward).
+   */
+  Roe<ByteVector> StoredAttachmentPlaintext(const std::vector<uint8_t>& content_hash);
   /** The same file under the sender's name (AttachmentNamedOpenPath): what the system viewer is handed. */
   std::optional<std::string> AttachmentOpenPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                           bool* made_view = nullptr);

@@ -20,6 +20,8 @@ pp_browser_add_feature_library(pp_gui
     chat/AskAiPanel.cpp
     chat/ChatMenus.cpp
     chat/ForwardFlow.cpp
+    chat/ForwardPreview.cpp
+    chat/ForwardProgressController.cpp
     chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp
     chat/ChatController.cpp

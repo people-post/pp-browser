@@ -694,6 +694,77 @@ public:
    */
   bool TakeForwardInterrupted();
 
+  // --- Forwarding pictures, videos, files and voice messages (DEV/PLAN-message-forward-files-v3.md) -------------------
+
+  /**
+   * The ticked messages against the limits (kMaxForwardAttachments items, kMaxForwardUploadBytes in all, counted once
+   * whatever the number of chats):
+   * what the "Forward to" page says above the preview, and which items it greys out. Nothing is read or decrypted, only
+   * a stat of the content store. `refusal` also holds AttachmentBusy while another attachment of ours is being sent.
+   */
+  ForwardCheck CheckForward();
+  /**
+   * A forward's attachment is being sent now: the run in progress is uploading one, or waits the device's send pace out
+   * to try the same one again; or a run that was let go of (Close, a tap, the background) has an upload that has not
+   * answered yet. The composer, the picture and voice queues and a new forward with uploads wait while it is true, so two
+   * uploads do not run together. The guarantee for a let-go upload ends after kForwardOrphanBusyMs: one the messaging
+   * layer never answers stops counting then, and a new upload may start next to it.
+   */
+  bool ForwardUploadBusy() const;
+  /** The forward being sent has a page: at least one ticked attachment this device holds the bytes of is uploaded. */
+  bool ForwardHasProgressPage() const;
+  /** What the progress page shows now; all zero when nothing is being sent. */
+  ForwardProgress ForwardProgressNow() const;
+  /**
+   * Cancel (`Cancelled`) or a notification tap that closed the page (`Tapped`): nothing new is started, the item under
+   * way is waited for, then `done` runs with the result (`stop` says which). No-op when nothing is being sent.
+   */
+  void CancelForward(ForwardStop kind = ForwardStop::Cancelled);
+  /** "Close" after a Cancel that got no answer for kForwardCloseOfferMs: leaves at once; the item under way is not counted failed. */
+  void CloseForward();
+  /**
+   * The phone really went to the background (iOS DID_ENTER_BACKGROUND, Android onStop: PlatformLifecycleEvents): a forward
+   * with a progress page stops at once, the item under way is not interrupted. A forward without a page (text, cards)
+   * and a choosing in progress (the selection, the picker) are left alone. The user hears of a stop on the next chat
+   * entry (TakeForwardNotice). (`AbortForward`, for a lock, a sign-out, messaging gone, stops any run and ends the choosing.)
+   */
+  void NoteAppEnteredBackground();
+  /** The app only lost focus (iOS willResignActive: Control Center, a banner) or a desktop window lost focus / was minimised: nothing stops. */
+  void NoteAppLostFocus() {}
+  void NoteAppMinimized() {}
+  /** The chat the messages came from was deleted (from another device, or we were removed from it): stops, and says so at once through the notice sink. */
+  void NoteForwardSourceGone(const std::string& thread_id);
+  struct ForwardNotice {
+    ForwardStop kind = ForwardStop::None;
+    size_t done = 0;
+    size_t total = 0;
+  };
+  /**
+   * What to tell the user after a forward stopped without telling them itself (everything but Cancel / tap, whose `done`
+   * does, and a deleted source chat, whose notice went to the sink): "only part was forwarded, done of total". Read once,
+   * only by the account it happened under. None while the item that was under way has no answer yet
+   * (ForwardNoticePending), and none when nothing went out.
+   */
+  std::optional<ForwardNotice> TakeForwardNotice();
+  /** A stopped forward is still waiting for its item under way ("one is still being sent..."). */
+  bool ForwardNoticePending();
+  /** A forward stopped part-way and its notice has not been taken yet (it may still wait for the item under way). */
+  bool ForwardNoticeDue() const { return forward_interrupted_; }
+  /** Where a notice that is due at once (a deleted source chat) goes: the bottom pill. */
+  void SetForwardNoticeSink(std::function<void(const ForwardNotice&)> sink) { forward_notice_sink_ = std::move(sink); }
+  /** Another attachment of ours is being sent (ChatController::AttachmentBusy); a forward with an upload does not start while it is. */
+  void SetForwardAttachmentBusy(std::function<bool()> busy) { forward_attachment_busy_ = std::move(busy); }
+  /** A call is on: a forward with an upload does not start (its progress page would cover the call's controls). */
+  void SetForwardCallActive(std::function<bool()> active) { forward_call_active_ = std::move(active); }
+  /**
+   * The forward upload slot came free (ForwardUploadBusy turned false): the run with an upload ended, a let-go upload
+   * answered, or its kForwardOrphanBusyMs bound expired. The host refreshes the composer and goes on with its queues.
+   * Called on the UI thread; not for a run that uploaded nothing.
+   */
+  void SetForwardUploadFreed(std::function<void()> freed) { forward_upload_freed_ = std::move(freed); }
+  /** The open chat's message is an attachment (a picture, video, file or voice message, whatever its state). */
+  bool IsAttachmentMessage(const std::string& message_id);
+
   /** Tests: the posting of each batch, and the messaging calls a forward makes (default: the UI queue; the facade). */
   void SetForwardPostForTest(std::function<void(std::function<void()>)> post) { forward_post_ = std::move(post); }
   void SetForwardPortsForTest(ForwardPorts ports) { forward_ports_ = std::move(ports); }
@@ -733,6 +804,27 @@ private:
   ResentMessages resent_ids_;
   ForwardSelection forward_selection_;
   std::shared_ptr<ForwardRun> forward_run_;
+  /** The forward that was stopped part-way, kept while it may still hear from the item that was under way. */
+  std::shared_ptr<ForwardRun> forward_interrupted_run_;
+  int64_t forward_interrupted_at_ms_ = 0;
+  /** A batch of the running forward is queued: a wake does not queue another. */
+  bool forward_batch_queued_ = false;
+  std::function<void(const ForwardResult&)> forward_done_;
+  std::function<void(const ForwardNotice&)> forward_notice_sink_;
+  std::function<bool()> forward_attachment_busy_;
+  std::function<bool()> forward_call_active_;
+  std::function<void()> forward_upload_freed_;
+  /** Tells the host the slot is free when it is (see SetForwardUploadFreed). */
+  void NoteForwardUploadSlot();
+  /** Runs let go of with an upload that has not answered yet (kept so that their answer is collected and counted as busy). */
+  struct ForwardOrphan {
+    std::shared_ptr<ForwardRun> run;
+    int64_t since_ms = 0;
+  };
+  mutable std::vector<ForwardOrphan> forward_orphans_;
+  void KeepWhileUploading(const std::shared_ptr<ForwardRun>& run);
+  /** The run in `forward_run_` uploads something (so it has a progress page); decided once, when it starts. */
+  bool forward_has_page_ = false;
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
   uint64_t forward_epoch_ = 0;
   bool forward_interrupted_ = false;
@@ -744,8 +836,11 @@ private:
   /** The facade's ports, built once (every row and every redraw asks); a test's own ports win. */
   const ForwardPorts& ForwardPortsNow();
   std::optional<ForwardPorts> facade_ports_;
-  void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run,
-                        std::function<void(const ForwardResult&)> done);
+  void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run);
+  /** An attachment answered or a timer fired: the run goes on (or, once stopped, only counts the answer). */
+  void OnForwardWake(const std::shared_ptr<ForwardRun>& run);
+  void StopForwardRun(ForwardStop kind);
+  void PostForwardTask(std::function<void()> task);
 };
 
 } // namespace pbr
