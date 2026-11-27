@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -38,6 +39,12 @@ inline constexpr uint64_t kMaxForwardUploadBytes = 25'000'000;
 inline constexpr uint64_t kForwardStoredOverheadSlack = 1'000'000;
 /** The run waits this long for the item before an attachment to leave the queue; then the rest of that chat fails. */
 inline constexpr int64_t kForwardSettleGiveUpMs = 60000;
+/**
+ * A forward's upload that was let go of (Close, a tap, the background) still counts as "an attachment is being sent" until
+ * it answers, so two uploads never run together; if the messaging layer never answers, after this long it no longer does.
+ * Ten minutes: a 25 MB forward on a 1 Mbps uplink takes about 3.5 minutes, so this is far past any upload that is alive.
+ */
+inline constexpr int64_t kForwardOrphanBusyMs = 600000;
 /** An upload the send pace refused is tried again this often; a cancel that got no answer offers "close" after it. */
 inline constexpr int64_t kForwardRateLimitRetryMs = 15000;
 inline constexpr int64_t kForwardCloseOfferMs = 15000;
@@ -195,10 +202,12 @@ struct ForwardPorts {
       send_group;
   /**
    * The encrypted copies of attachments the messaging layer holds for a retry in `thread_id` (ids; each belongs to a
-   * failed bubble with Retry). A send that fails after leaving one there is a failed send, never to be sent again by
-   * the run; one that leaves none was refused before anything was stored. Unset: none.
+   * failed bubble with Retry), or none when that cannot be told (locked, no key, the folder unreadable). A send that
+   * fails after leaving one there is a failed send, never to be sent again by the run; one that leaves none was refused
+   * before anything was stored (the device's pace) and may be tried again. When the answer is "cannot tell", before or
+   * after the send, or the port is unset, a rate-limited attachment is counted failed and never retried.
    */
-  std::function<std::vector<std::string>(const std::string& thread_id)> staged_attachments;
+  std::function<std::optional<std::vector<std::string>>(const std::string& thread_id)> staged_attachments;
   /** The messaging layer can take a send now (not torn down, not locked). Unset: always. */
   std::function<bool()> messaging_ready;
   /** A saved contact we may still write to (not blocked meanwhile); asked before a chat is made for them. Unset: yes. */
@@ -225,8 +234,6 @@ struct ForwardPorts {
   /** Monotonic milliseconds, and "run this on the UI thread after so many milliseconds" (retries, polls, the 15 s offers). */
   std::function<int64_t()> now_ms;
   std::function<void(int64_t delay_ms, std::function<void()> task)> after;
-  /** Another attachment of ours is being sent (ChatController::AttachmentBusy). Unset: no. */
-  std::function<bool()> attachment_busy;
 };
 
 /** Why a forward stopped before the end. */
@@ -295,7 +302,7 @@ public:
    * them (after the re-check, right before the sends), never before.
    */
   ForwardRun(ForwardPorts ports, std::string source_thread, std::vector<std::string> message_ids,
-             std::vector<ForwardTarget> targets);
+             std::vector<ForwardTarget> targets, std::set<std::string> uploadable);
 
   /** Waiting: nothing more can be done until the messaging layer answers or a timer fires (the wake is then called). */
   enum class State { Running, Waiting, Done, Aborted };
@@ -331,15 +338,16 @@ private:
   bool Prepare();
   bool BeginTarget();
   /** The items after this one in the open chat are lost (the chat can no longer be written to). */
-  void FailRestOfTarget();
+  void FailRestOfTarget(bool count_as_skipped = true);
   void FailMessage(size_t message_at);
   void NextItem();
   bool Settled(const std::string& thread_id, const std::string& message_id);
   void WakeAfter(int64_t delay_ms);
   /** Starts the open item's upload; true when it is under way (the run now waits for its answer). */
   bool StartAttachment();
-  /** A copy was staged in the open chat since the upload under way began (so an error is a failed send, not a refusal). */
-  bool StagedSinceStart() const;
+  /** What a RateLimited answer was: the device's pace (nothing staged), a server refusal after staging, or not known. */
+  enum class RateLimitKind { Pace, Staged, Unknown };
+  RateLimitKind ClassifyRateLimit() const;
   void FinishRun();
 
   ForwardPorts ports_;
@@ -380,7 +388,9 @@ private:
   int64_t uploading_since_ms_ = 0;
   bool rate_limited_ = false;
   /** The copies staged in the open chat before the upload under way began (an answer with an error is told by what is new). */
-  std::vector<std::string> staged_before_;
+  std::optional<std::vector<std::string>> staged_before_;
+  /** The attachments (message ids) that had bytes on this device when the forward was checked: only these are uploaded. */
+  std::set<std::string> uploadable_;
   /** Since when the run has been waiting for `last_sent_id_` to leave the queue (0: not waiting). */
   std::optional<int64_t> settle_wait_since_ms_;
 };

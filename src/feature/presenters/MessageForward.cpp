@@ -222,8 +222,11 @@ struct ForwardRun::Completion {
 };
 
 ForwardRun::ForwardRun(ForwardPorts ports, std::string source_thread, std::vector<std::string> message_ids,
-                       std::vector<ForwardTarget> targets)
-    : ports_(std::move(ports)), source_thread_(std::move(source_thread)), message_ids_(std::move(message_ids)) {
+                       std::vector<ForwardTarget> targets, std::set<std::string> uploadable)
+    : ports_(std::move(ports)),
+      source_thread_(std::move(source_thread)),
+      message_ids_(std::move(message_ids)),
+      uploadable_(std::move(uploadable)) {
   message_count_ = message_ids_.size();
   for (ForwardTarget& target : targets) {
     const auto same = [&target](const ForwardTarget& kept) { return kept.Key() == target.Key(); };
@@ -301,11 +304,13 @@ void ForwardRun::FailMessage(const size_t message_at) {
   }
 }
 
-void ForwardRun::FailRestOfTarget() {
+void ForwardRun::FailRestOfTarget(const bool count_as_skipped) {
   for (size_t i = message_at_; i < messages_.size(); ++i) {
     FailMessage(i);
   }
-  ++result_.skipped_targets;
+  if (count_as_skipped) {
+    ++result_.skipped_targets;
+  }
   target_open_ = false;
   ++target_at_;
   last_sent_id_.clear();
@@ -406,7 +411,13 @@ void ForwardRun::Collect() {
     NextItem();
     return;
   }
-  if (IsAttachmentRateLimited(answer.error()) && ports_.staged_attachments && !StagedSinceStart()) {
+  const RateLimitKind kind = IsAttachmentRateLimited(answer.error()) ? ClassifyRateLimit() : RateLimitKind::Unknown;
+  if (IsAttachmentRateLimited(answer.error()) && kind == RateLimitKind::Staged) {
+    // The server is rate-limiting and a failed bubble with Retry is in the chat: no more uploads into it for this chat.
+    FailRestOfTarget(/*count_as_skipped=*/false);
+    return;
+  }
+  if (kind == RateLimitKind::Pace) {
     // The device's own pace refused it before anything was stored: the same item goes again, as often as it takes. Not
     // a failure. (The server's 429 has the same code but comes after the encrypted copy was staged: a failed bubble with
     // Retry is in the chat then, and sending it again would be a second copy. Without the port the two cannot be told
@@ -424,16 +435,23 @@ void ForwardRun::Collect() {
   NextItem();
 }
 
-bool ForwardRun::StagedSinceStart() const {
-  if (!ports_.staged_attachments) {
-    return false;
+ForwardRun::RateLimitKind ForwardRun::ClassifyRateLimit() const {
+  if (!ports_.staged_attachments || !staged_before_) {
+    return RateLimitKind::Unknown;
   }
-  for (const std::string& id : ports_.staged_attachments(target_thread_)) {
-    if (std::find(staged_before_.begin(), staged_before_.end(), id) == staged_before_.end()) {
-      return true;
+  if (ports_.messaging_ready && !ports_.messaging_ready()) {
+    return RateLimitKind::Unknown; // locked or torn down since: the list cannot be trusted
+  }
+  const std::optional<std::vector<std::string>> after = ports_.staged_attachments(target_thread_);
+  if (!after) {
+    return RateLimitKind::Unknown;
+  }
+  for (const std::string& id : *after) {
+    if (std::find(staged_before_->begin(), staged_before_->end(), id) == staged_before_->end()) {
+      return RateLimitKind::Staged;
     }
   }
-  return false;
+  return RateLimitKind::Pace;
 }
 
 bool ForwardRun::StartAttachment() {
@@ -445,6 +463,9 @@ bool ForwardRun::StartAttachment() {
     NextItem();
     return false;
   };
+  if (uploadable_.count(messages_[message_at_].id) == 0) {
+    return fail(); // it was not here when the forward was checked (and counted): what arrives later is not sent
+  }
   const uint64_t stored = ports_.local_bytes ? ports_.local_bytes(fields.content_hash) : 0;
   if (stored == 0 || !ports_.load_plaintext || !ports_.send_attachment) {
     return fail(); // this device does not hold it (never downloaded, or cleaned away): not fetched for a forward
@@ -469,7 +490,7 @@ bool ForwardRun::StartAttachment() {
   attachment.bytes = std::move(*plain);
   attachment.image_is_shrunk = false; // the bytes are final: no shrink, and the 50 MB file limit applies
   in_flight_bytes_ = attachment.bytes.size();
-  staged_before_ = ports_.staged_attachments ? ports_.staged_attachments(target_thread_) : std::vector<std::string>();
+  staged_before_ = ports_.staged_attachments ? ports_.staged_attachments(target_thread_) : std::nullopt;
   completion_ = std::make_shared<Completion>();
   completion_->wake = wake_;
   completion_->bytes_total = attachment.bytes.size();

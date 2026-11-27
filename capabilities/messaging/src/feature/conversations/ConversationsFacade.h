@@ -469,6 +469,8 @@ public:
                              std::function<bool(uint64_t done, uint64_t total)> progress = {},
                              std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** The same list, or none when it cannot be told (locked, no profile, a folder or record unreadable). */
+  std::optional<std::vector<OutgoingAttachmentRecord>> PendingOutgoingAttachmentsChecked(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();
   /** The one source of every attachment size / pace / warning number (today the defaults). */

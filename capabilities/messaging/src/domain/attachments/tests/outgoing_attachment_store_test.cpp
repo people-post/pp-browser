@@ -128,6 +128,18 @@ TEST_F(OutgoingStoreTest, ListsOnlyThisThreadsWhoseCiphertextIsStillThereOldestF
   EXPECT_TRUE(store_->ListForThread("t1", Dek(2)).empty()) << "locked / wrong key: none";
 }
 
+TEST_F(OutgoingStoreTest, AListSaysWhetherItCouldBeReadInFull) {
+  bool complete = false;
+  EXPECT_TRUE(store_->ListForThread("t1", Dek(1), &complete).empty());
+  EXPECT_TRUE(complete) << "no folder yet: nothing is staged, and that is known";
+  ASSERT_TRUE(store_->Begin(Record("a", "t1", 10), {1, 2, 3}, Dek(1)));
+  complete = false;
+  EXPECT_EQ(store_->ListForThread("t1", Dek(1), &complete).size(), 1u);
+  EXPECT_TRUE(complete);
+  EXPECT_TRUE(store_->ListForThread("t1", Dek(2), &complete).empty());
+  EXPECT_FALSE(complete) << "a record that cannot be read (wrong key, damaged) is not 'nothing staged'";
+}
+
 // A resume deletes a record only when it is confirmed damaged: the load says which of the two it is.
 TEST_F(OutgoingStoreTest, ALoadTellsAGoneRecordFromADamagedOne) {
   auto gone = store_->Load("never-existed", Dek(1));

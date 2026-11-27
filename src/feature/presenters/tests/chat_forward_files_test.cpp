@@ -116,6 +116,8 @@ struct Fake {
   size_t staged_ids = 0;
   /** The staged-copies port is not provided (an unset port must fail safe). */
   bool no_staged_port = false;
+  /** The staged list cannot be read (locked, key gone, the folder unreadable): the port answers "unknown". */
+  bool staged_unknown = false;
   size_t sent_ids = 0;
 
   struct Started {
@@ -190,7 +192,12 @@ struct Fake {
       in_flight.push_back({thread, std::move(on_done), std::move(progress), attachment.filename});
     };
     if (!no_staged_port) {
-      ports.staged_attachments = [this](const std::string& thread) { return staged[thread]; };
+      ports.staged_attachments = [this](const std::string& thread) -> std::optional<std::vector<std::string>> {
+        if (staged_unknown) {
+          return std::nullopt;
+        }
+        return staged[thread];
+      };
     }
     ports.now_ms = [this]() {
       ++clock_reads;
@@ -627,16 +634,155 @@ TEST_F(ChatForwardFilesTest, AServerRefusalAfterStagingIsNotRetriedAndCountsFail
   Drain();
   EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace) << "not 'one moment': it is failed";
   Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg"}))
+      << "p1 is never sent again (that would be a second copy next to its Retry bubble)";
+  ASSERT_EQ(done_calls, 1) << "the rest of that chat is failed, and there is no other chat";
+  EXPECT_EQ(result->forwarded, 0u);
+  EXPECT_EQ(result->send_errors, 2u);
+  EXPECT_EQ(result->attachments_failed, 2u);
+  EXPECT_EQ(chats.attachment_calls.size(), 1u);
+}
+
+TEST_F(ChatForwardFilesTest, AStagedServerRefusalFailsTheRestOfThatChat) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  chats.Add(TextRow("t3", "after", 3));
+  Start({"p1", "p2", "t3"}, {"bob", "carol"});
+  chats.AnswerServerRateLimit(); // the server is rate-limiting: no more pushing into it for bob
+  Drain();
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg"})) << "p2 and the text to bob are failed";
+  EXPECT_EQ(Attachments("carol"), (std::vector<std::string>{"photo-p1.jpg"})) << "the next chat goes on";
+  chats.AnswerOk();
+  Drain();
+  chats.AnswerOk();
+  Drain();
+  AnswerUntilDone();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->forwarded, 3u) << "carol's three";
+  EXPECT_EQ(result->attachments_failed, 2u) << "p1 and p2 to bob";
+  EXPECT_EQ(result->send_errors, 3u);
+  EXPECT_EQ(result->skipped_targets, 0u) << "the chat was reached: not a skipped chat";
+}
+
+TEST_F(ChatForwardFilesTest, AnUnreadableStagedListMeansNoRetry) {
+  // Unknown when the upload starts.
+  chats.staged_unknown = true;
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.rate_limited_next = 1;
+  Start({"p1"}, {"bob"});
+  Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "a RateLimited answer with an unknown list is a failure";
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->attachments_failed, 1u);
+}
+
+TEST_F(ChatForwardFilesTest, AStagedListThatBecomesUnreadableBeforeTheAnswerMeansNoRetry) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  Start({"p1", "p2"}, {"bob"});
+  chats.staged_unknown = true; // known at the start, the key is gone at the answer
+  chats.Answer(AppError::Blob(Err::Blob::RateLimited, "429 or pace: who knows"));
+  Drain();
+  chats.staged_unknown = false;
+  Advance(kForwardRateLimitRetryMs * 4);
   EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg", "photo-p2.jpg"}))
-      << "p1 is never sent again (that would be a second copy next to its Retry bubble); p2 goes on";
+      << "p1 is not sent again, whatever the list says later; p2 goes on";
+  EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace);
+}
+
+TEST_F(ChatForwardFilesTest, ALockBetweenTheRefusalAndCollectMeansNoRetry) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  Start({"p1", "p2"}, {"bob"});
+  chats.ready = false; // locked: the answer arrives into a messaging that cannot say what is staged
+  chats.Answer(AppError::Blob(Err::Blob::RateLimited, "pace"));
+  Drain();
+  chats.ready = true;
+  Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(Attachments("bob").size(), 1u) << "never a second send of p1 (the run was stopped by the lock)";
+  EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace);
+}
+
+TEST_F(ChatForwardFilesTest, AnAttachmentThatFinishesDownloadingDuringTheRunIsStillNotSent) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.Add(Picture("far", 2, 2)); // not here when the forward was checked
+  Start({"p1", "far"}, {"bob"});
+  chats.HoldFilled(Picture("far", 2, 2)); // its download finishes while p1 is uploading
   chats.AnswerOk();
   Drain();
   Advance(kForwardSettlePollMs);
+  chats.SettleAll();
+  Advance(kForwardSettlePollMs);
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg"})) << "only what the check counted";
   ASSERT_EQ(done_calls, 1);
-  EXPECT_EQ(result->forwarded, 1u);
-  EXPECT_EQ(result->send_errors, 1u);
   EXPECT_EQ(result->attachments_failed, 1u);
-  EXPECT_EQ(chats.attachment_calls.size(), 2u);
+}
+
+TEST_F(ChatForwardFilesTest, NothingIsUploadedInARunThatStartedWithoutAProgressPage) {
+  chats.Add(TextRow("t", "text", 1));
+  chats.Add(Picture("far", 2, 2));
+  Choose({"t", "far"});
+  presenter.ForwardSelected({"bob"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  });
+  EXPECT_FALSE(presenter.ForwardHasProgressPage());
+  chats.HoldFilled(Picture("far", 2, 2)); // downloaded before the run reached it
+  Drain();
+  Advance(kForwardSettlePollMs);
+  EXPECT_TRUE(chats.attachment_calls.empty())
+      << "an upload with no page would escape the screen hold and the call check";
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->attachments_failed, 1u);
+}
+
+TEST_F(ChatForwardFilesTest, AnOrphanedForwardUploadKeepsTheComposerAndANewForwardWaiting) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  chats.Add(TextRow("t", "text", 3));
+  Start({"p1"}, {"bob"});
+  EXPECT_TRUE(presenter.ForwardUploadBusy()) << "the run's own upload";
+  presenter.NoteAppEnteredBackground(); // let go of while the upload is under way
+  EXPECT_FALSE(presenter.Forwarding());
+  EXPECT_TRUE(presenter.ForwardUploadBusy()) << "still an attachment being sent: the composer stays locked";
+  Choose({"p2"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::AttachmentBusy) << "a new forward waits";
+  presenter.EndForwardSelection();
+  Choose({"t"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "text alone never waits";
+  presenter.EndForwardSelection();
+  chats.AnswerOk();
+  Drain();
+  EXPECT_FALSE(presenter.ForwardUploadBusy()) << "it answered";
+  Choose({"p2"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None);
+}
+
+TEST_F(ChatForwardFilesTest, AnOrphanedUploadThatNeverAnswersStopsCountingAfterTenMinutes) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  Start({"p1"}, {"bob"});
+  presenter.CancelForward(ForwardStop::Tapped);
+  Advance(kForwardNoticeWaitMs); // released by the 60 s rule
+  EXPECT_FALSE(presenter.Forwarding());
+  EXPECT_TRUE(presenter.ForwardUploadBusy());
+  Advance(kForwardOrphanBusyMs - 1); // counted from when it was let go of (at 60 s)
+  EXPECT_TRUE(presenter.ForwardUploadBusy());
+  Advance(1);
+  EXPECT_FALSE(presenter.ForwardUploadBusy()) << "the bound: the hub never answered";
+}
+
+TEST_F(ChatForwardFilesTest, MoreThanThreeTargetsRefuseWithoutClearingTheSelection) {
+  chats.Add(TextRow("t1", "one", 1));
+  chats.targets["erin"] = ForwardTargetKind::Direct;
+  Choose({"t1"});
+  presenter.ForwardSelected({"bob", "carol", "club", "dave"}, [this](const ForwardResult& r) {
+    result = r;
+    ++done_calls;
+  });
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_TRUE(result->nothing_sent);
+  EXPECT_TRUE(presenter.ForwardChoosing()) << "the person takes a chat off and sends again";
+  EXPECT_EQ(presenter.ForwardSelectedIds(), (std::vector<std::string>{"t1"}));
 }
 
 TEST_F(ChatForwardFilesTest, WithoutTheStagedPortARateLimitedAttachmentIsNotRetried) {

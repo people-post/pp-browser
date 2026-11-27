@@ -703,6 +703,12 @@ public:
    * a stat of the content store. `refusal` also holds AttachmentBusy while another attachment of ours is being sent.
    */
   ForwardCheck CheckForward();
+  /**
+   * A forward's attachment is being uploaded now: by the run in progress, or by one that was let go of (Close, a tap,
+   * the background) and has not answered yet (for at most kForwardOrphanBusyMs). The composer, the picture and voice
+   * queues and a new forward with uploads wait while it is true, so two uploads never run together.
+   */
+  bool ForwardUploadBusy() const;
   /** The forward being sent has a page: at least one ticked attachment this device holds the bytes of is uploaded. */
   bool ForwardHasProgressPage() const;
   /** What the progress page shows now; all zero when nothing is being sent. */
@@ -799,6 +805,13 @@ private:
   std::function<void(const ForwardNotice&)> forward_notice_sink_;
   std::function<bool()> forward_attachment_busy_;
   std::function<bool()> forward_call_active_;
+  /** Runs let go of with an upload that has not answered yet (kept so that their answer is collected and counted as busy). */
+  struct ForwardOrphan {
+    std::shared_ptr<ForwardRun> run;
+    int64_t since_ms = 0;
+  };
+  mutable std::vector<ForwardOrphan> forward_orphans_;
+  void KeepWhileUploading(const std::shared_ptr<ForwardRun>& run);
   /** The run in `forward_run_` uploads something (so it has a progress page); decided once, when it starts. */
   bool forward_has_page_ = false;
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */

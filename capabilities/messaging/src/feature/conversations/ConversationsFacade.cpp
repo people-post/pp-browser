@@ -1299,6 +1299,11 @@ std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttach
   return hub_.PendingOutgoingAttachments(thread_id);
 }
 
+std::optional<std::vector<OutgoingAttachmentRecord>> ConversationsFacade::PendingOutgoingAttachmentsChecked(
+    const std::string& thread_id) {
+  return hub_.PendingOutgoingAttachmentsChecked(thread_id);
+}
+
 void ConversationsFacade::DiscardOutgoingAttachment(const std::string& record_id) {
   hub_.DiscardOutgoingAttachment(record_id);
 }
