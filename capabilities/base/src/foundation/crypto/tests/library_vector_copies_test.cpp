@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <utility>
 #include <fstream>
 #include <iterator>
@@ -26,6 +27,17 @@ std::string Upstream(const std::string& path) {
   return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
+// The vectors are JSON, so line endings are not content: a Windows checkout of pp-specs (which sets no .gitattributes)
+// may turn LF into CRLF, while the libraries' own files are marked -text.
+std::string WithoutCr(std::string text) {
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
+}
+
+TEST(LibraryVectorCopiesTest, LineEndingsAreNotCompared) {
+  EXPECT_EQ(WithoutCr("a\r\nb\r\n"), WithoutCr("a\nb\n"));
+}
+
 TEST(LibraryVectorCopiesTest, WriteFreshCopiesWhenAsked) {
   bool wrote = false;
   for (const auto& [file, upstream] :
@@ -42,11 +54,12 @@ TEST(LibraryVectorCopiesTest, WriteFreshCopiesWhenAsked) {
 
 // RC020-VEC: the copies are the pinned tags' bytes.
 TEST(LibraryVectorCopiesTest, TheExtAreaCopyIsPpCppCommonsFile) {
-  EXPECT_EQ(kExtArea.ReadText(), Upstream(PP_EXT_AREA_VECTORS_UPSTREAM)) << kExtArea.RegenerateHint();
+  EXPECT_EQ(WithoutCr(kExtArea.ReadText()), WithoutCr(Upstream(PP_EXT_AREA_VECTORS_UPSTREAM)))
+      << kExtArea.RegenerateHint();
 }
 
 TEST(LibraryVectorCopiesTest, TheAlgIdCopyIsPpCppCryptosFile) {
-  EXPECT_EQ(kAlgId.ReadText(), Upstream(PP_ALG_ID_VECTORS_UPSTREAM)) << kAlgId.RegenerateHint();
+  EXPECT_EQ(WithoutCr(kAlgId.ReadText()), WithoutCr(Upstream(PP_ALG_ID_VECTORS_UPSTREAM))) << kAlgId.RegenerateHint();
 }
 
 } // namespace
