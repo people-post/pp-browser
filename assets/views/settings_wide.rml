@@ -57,7 +57,6 @@
               <span class="group-row-text">{{section.title}}</span>
               <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
             </span>
-            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
             <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
           </span>
         </button>
@@ -73,7 +72,6 @@
               <span class="group-row-text">{{section.title}}</span>
               <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
             </span>
-            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
             <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
           </span>
         </button>
@@ -89,7 +87,6 @@
               <span class="group-row-text">{{section.title}}</span>
               <span class="group-row-sub" data-if="section.subtitle != ''">{{section.subtitle}}</span>
             </span>
-            <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
             <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
           </span>
         </button>

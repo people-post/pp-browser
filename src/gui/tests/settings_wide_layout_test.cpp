@@ -48,7 +48,6 @@ struct SectionRow {
   ui::String title;
   ui::String subtitle;
   int group = 0;
-  bool attention = false;
 };
 
 constexpr const char* kContext = "settings-wide-layout-test";
@@ -79,7 +78,6 @@ protected:
         handle.RegisterMember("title", &SectionRow::title);
         handle.RegisterMember("subtitle", &SectionRow::subtitle);
         handle.RegisterMember("group", &SectionRow::group);
-        handle.RegisterMember("attention", &SectionRow::attention);
       }
       ctor.RegisterArray<std::vector<SectionRow>>();
       ctor.Bind("sections", &sections_);
