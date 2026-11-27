@@ -634,6 +634,12 @@ ChatController::ChatController()
   presenter_.SetForwardAttachmentBusy([this]() { return AttachmentBusy(); });
   // A call's controls sit under a full-screen layer: no forward with uploads starts during a call.
   presenter_.SetForwardCallActive([this]() { return ChromeSnapshot().call_in_progress; });
+  // The slot a forward's upload held came free (the run ended, a let-go upload answered, or its bound ran out): the
+  // composer unlocks and the voice queue goes on, as after any other attachment.
+  presenter_.SetForwardUploadFreed([this]() {
+    SyncComposerInputState();
+    RefreshPendingAttachmentChip(/*force=*/true);
+  });
   ForwardProgressController::Handlers progress_handlers;
   progress_handlers.cancel = [this]() { forward_flow_->OnProgressCancel(); };
   progress_handlers.close = [this]() { forward_flow_->OnProgressClose(); };

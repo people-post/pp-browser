@@ -4,6 +4,7 @@
 // port is declared and not assigned.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <fstream>
 #include <regex>
 #include <set>
@@ -20,10 +21,35 @@ std::string ReadAll(const std::string& path) {
   return out.str();
 }
 
-std::string StripComments(std::string text) {
-  text = std::regex_replace(text, std::regex(R"(/\*[\s\S]*?\*/)"), " ");
-  text = std::regex_replace(text, std::regex(R"(//[^\n]*)"), " ");
-  return text;
+// Comments out, string and character literals kept as they are (a "/*" or "//" inside one is not a comment). Raw string
+// literals are not understood: the files read here have none.
+std::string StripComments(const std::string& text) {
+  std::string out;
+  out.reserve(text.size());
+  for (size_t i = 0; i < text.size();) {
+    const char c = text[i];
+    if (c == '"' || c == '\'') {
+      const size_t start = i++;
+      while (i < text.size() && text[i] != c && text[i] != '\n') {
+        i += text[i] == '\\' ? 2 : 1;
+      }
+      i = std::min(i + 1, text.size());
+      out.append(text, start, i - start);
+    } else if (c == '/' && i + 1 < text.size() && text[i + 1] == '*') {
+      const size_t end = text.find("*/", i + 2);
+      i = end == std::string::npos ? text.size() : end + 2;
+      out += ' ';
+    } else if (c == '/' && i + 1 < text.size() && text[i + 1] == '/') {
+      while (i < text.size() && text[i] != '\n') {
+        ++i;
+      }
+      out += ' ';
+    } else {
+      out += c;
+      ++i;
+    }
+  }
+  return out;
 }
 
 /** The names of every member of `struct ForwardPorts { ... };`, whatever its type. */

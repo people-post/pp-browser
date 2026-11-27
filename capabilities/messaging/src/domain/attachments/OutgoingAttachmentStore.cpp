@@ -171,9 +171,14 @@ std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(con
                                                                              bool* complete) const {
   std::vector<OutgoingAttachmentRecord> found;
   bool all_read = true;
+  // Only a genuine "not there" counts as a folder known to be empty; any other failure (no access, a link loop, an I/O
+  // error) leaves it unknown.
+  std::error_code status_ec;
+  const std::filesystem::file_status folder = std::filesystem::status(Dir(), status_ec);
+  const bool not_found = folder.type() == std::filesystem::file_type::not_found ||
+                         status_ec == std::errc::no_such_file_or_directory || status_ec == std::errc::not_a_directory;
+  const bool status_failed = status_ec && !not_found;
   std::error_code ec;
-  const bool dir_exists = std::filesystem::exists(Dir(), ec);
-  ec.clear();
   for (std::filesystem::directory_iterator it(Dir(), ec), end; !ec && it != end; it.increment(ec)) {
     const std::string name = it->path().filename().string();
     if (name.size() < 5 || name.substr(name.size() - 4) != ".rec") {
@@ -192,8 +197,8 @@ std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(con
     }
   }
   if (complete) {
-    // A folder that is not there yet holds nothing; one that could not be listed (ec) is not known to be empty.
-    *complete = all_read && (!ec || !dir_exists);
+    // A folder that is not there yet holds nothing; one that could not be inspected or listed is not known to be empty.
+    *complete = all_read && !status_failed && (!ec || not_found);
   }
   std::sort(found.begin(), found.end(), [](const OutgoingAttachmentRecord& a, const OutgoingAttachmentRecord& b) {
     return a.created_ms < b.created_ms;

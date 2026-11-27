@@ -1972,10 +1972,11 @@ void ChatPresenter::OnForwardWake(const std::shared_ptr<ForwardRun>& run) {
   if (run == forward_interrupted_run_) {
     run->Collect(); // the item that was under way when it stopped: only the count changes
   }
-  for (const ForwardOrphan& orphan : forward_orphans_) {
-    if (orphan.run == run) {
-      run->Collect(); // a let-go upload answered: it no longer keeps the composer busy
-    }
+  const bool orphaned = std::any_of(forward_orphans_.begin(), forward_orphans_.end(),
+                                    [&run](const ForwardOrphan& orphan) { return orphan.run == run; });
+  if (orphaned) {
+    run->Collect(); // a let-go upload answered: it no longer keeps the composer busy
+    NoteForwardUploadSlot();
   }
 }
 
@@ -2015,6 +2016,7 @@ void ChatPresenter::PostForwardBatch(const uint64_t epoch, std::shared_ptr<Forwa
       return; // else AbortForward has already taken the run away
     }
     const ForwardResult result = run->Result();
+    const bool had_page = forward_has_page_;
     forward_run_.reset();
     MetricsLine("chat.forward")
         .Add("messages", run->MessageCount())
@@ -2028,6 +2030,9 @@ void ChatPresenter::PostForwardBatch(const uint64_t epoch, std::shared_ptr<Forwa
     forward_done_ = nullptr;
     if (done) {
       done(result);
+    }
+    if (had_page) {
+      NoteForwardUploadSlot(); // the run's upload (or its wait for the pace) is over
     }
   };
   PostForwardTask(std::move(batch));
@@ -2112,6 +2117,7 @@ void ChatPresenter::CloseForward() {
   // not counted failed (it may yet have gone); an answer that comes later changes nothing anyone sees.
   ++forward_epoch_;
   forward_batch_queued_ = false;
+  const bool had_page = forward_has_page_;
   std::shared_ptr<ForwardRun> run = std::move(forward_run_);
   forward_run_.reset();
   run->Stop(ForwardStop::Abandoned);
@@ -2120,6 +2126,9 @@ void ChatPresenter::CloseForward() {
   forward_done_ = nullptr;
   if (done) {
     done(run->Result());
+  }
+  if (had_page) {
+    NoteForwardUploadSlot();
   }
 }
 
@@ -2148,11 +2157,15 @@ void ChatPresenter::StopForwardRun(const ForwardStop kind) {
   }
   ++forward_epoch_;
   forward_batch_queued_ = false;
+  const bool had_page = forward_has_page_;
   std::shared_ptr<ForwardRun> run = std::move(forward_run_);
   forward_run_.reset();
   forward_done_ = nullptr;
   run->Stop(kind);
   KeepWhileUploading(run);
+  if (had_page) {
+    NoteForwardUploadSlot();
+  }
   const ForwardResult& result = run->Result();
   if (kind == ForwardStop::SourceGone) {
     // Told now, where the user is looking: the chat it belonged to is gone.
@@ -2172,15 +2185,44 @@ void ChatPresenter::StopForwardRun(const ForwardStop kind) {
 }
 
 void ChatPresenter::KeepWhileUploading(const std::shared_ptr<ForwardRun>& run) {
-  if (run && run->InFlight()) {
-    const ForwardPorts& ports = ForwardPortsNow();
-    forward_orphans_.push_back({run, ports.now_ms ? ports.now_ms() : SteadyNowMs()});
+  if (!run) {
+    return;
+  }
+  // An answer that is already in is counted first (a stop may have beaten the batch that would have collected it): a run
+  // that stopped has only its books to settle here, nothing is retried or started.
+  run->Collect();
+  if (!run->InFlight()) {
+    return;
+  }
+  const ForwardPorts& ports = ForwardPortsNow();
+  const int64_t since = ports.now_ms ? ports.now_ms() : SteadyNowMs();
+  forward_orphans_.push_back({run, since});
+  if (ports.after) {
+    // The bound: nobody may ask ForwardUploadBusy when it runs out, so the host is told from here.
+    ports.after(
+        kForwardOrphanBusyMs, [this, alive = std::weak_ptr<int>(alive_), weak = std::weak_ptr<ForwardRun>(run)]() {
+          const auto run = weak.lock();
+          if (!run || !alive.lock()) {
+            return;
+          }
+          const bool still_kept = std::any_of(forward_orphans_.begin(), forward_orphans_.end(),
+                                              [&run](const ForwardOrphan& orphan) { return orphan.run == run; });
+          if (still_kept) {
+            NoteForwardUploadSlot();
+          }
+        });
+  }
+}
+
+void ChatPresenter::NoteForwardUploadSlot() {
+  if (forward_upload_freed_ && !ForwardUploadBusy()) {
+    forward_upload_freed_();
   }
 }
 
 bool ChatPresenter::ForwardUploadBusy() const {
-  if (forward_run_ && forward_run_->InFlight()) {
-    return true;
+  if (forward_run_ && (forward_run_->InFlight() || forward_run_->Progress().waiting_for_pace)) {
+    return true; // under way, or waiting out the device's send pace to go again: nothing else may upload meanwhile
   }
   if (forward_orphans_.empty()) {
     return false;

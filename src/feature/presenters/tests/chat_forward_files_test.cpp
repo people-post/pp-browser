@@ -118,6 +118,8 @@ struct Fake {
   bool no_staged_port = false;
   /** The staged list cannot be read (locked, key gone, the folder unreadable): the port answers "unknown". */
   bool staged_unknown = false;
+  /** The next this many questions about the staged list are answered "unknown" (the snapshot before an upload), then it reads. */
+  int staged_unknown_first = 0;
   size_t sent_ids = 0;
 
   struct Started {
@@ -194,6 +196,10 @@ struct Fake {
     if (!no_staged_port) {
       ports.staged_attachments = [this](const std::string& thread) -> std::optional<std::vector<std::string>> {
         if (staged_unknown) {
+          return std::nullopt;
+        }
+        if (staged_unknown_first > 0) {
+          --staged_unknown_first;
           return std::nullopt;
         }
         return staged[thread];
@@ -665,13 +671,14 @@ TEST_F(ChatForwardFilesTest, AStagedServerRefusalFailsTheRestOfThatChat) {
 }
 
 TEST_F(ChatForwardFilesTest, AnUnreadableStagedListMeansNoRetry) {
-  // Unknown when the upload starts.
-  chats.staged_unknown = true;
+  // Unknown ONLY when the upload starts (the snapshot); readable (and empty) again when the answer comes. A run that
+  // took "unknown before" as "nothing before" would call the refusal a pace refusal and retry it.
+  chats.staged_unknown_first = 1;
   chats.HoldFilled(Picture("p1", 1, 1));
   chats.rate_limited_next = 1;
   Start({"p1"}, {"bob"});
   Advance(kForwardRateLimitRetryMs * 4);
-  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "a RateLimited answer with an unknown list is a failure";
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "a RateLimited answer with an unknown list before is a failure";
   ASSERT_EQ(done_calls, 1);
   EXPECT_EQ(result->attachments_failed, 1u);
 }
@@ -701,6 +708,35 @@ TEST_F(ChatForwardFilesTest, ALockBetweenTheRefusalAndCollectMeansNoRetry) {
   Advance(kForwardRateLimitRetryMs * 4);
   EXPECT_EQ(Attachments("bob").size(), 1u) << "never a second send of p1 (the run was stopped by the lock)";
   EXPECT_FALSE(presenter.ForwardProgressNow().waiting_for_pace);
+  EXPECT_FALSE(presenter.ForwardUploadBusy()) << "the answer was in: the slot is free now, not after ten minutes";
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "nothing retried, nothing new started";
+}
+
+TEST_F(ChatForwardFilesTest, AnAnswerThatArrivedBeforeAStopIsCollectedByTheStopAndFreesTheSlot) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.HoldFilled(Picture("p2", 2, 2));
+  Start({"p1", "p2"}, {"bob"});
+  chats.AnswerOk();                     // the answer is in; the batch it woke has not run yet
+  presenter.NoteAppEnteredBackground(); // the epoch moves: that batch will find itself stale and return
+  EXPECT_FALSE(presenter.ForwardUploadBusy()) << "collected when the run was let go of";
+  Drain();
+  Advance(kForwardSettlePollMs * 4);
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "after a stop: bookkeeping only, no new upload";
+  EXPECT_EQ(Attachments("bob"), (std::vector<std::string>{"photo-p1.jpg"}));
+  Choose({"p2"});
+  EXPECT_EQ(presenter.CheckForward().refusal, ForwardRefusal::None) << "a new forward with an upload may start";
+}
+
+TEST_F(ChatForwardFilesTest, ARefusalThatArrivedBeforeAStopIsNotRetriedAndFreesTheSlot) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  Start({"p1"}, {"bob"});
+  chats.Answer(AppError::Blob(Err::Blob::RateLimited, "pace")); // answered, not collected
+  presenter.NoteAppEnteredBackground();
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+  Drain();
+  Advance(kForwardRateLimitRetryMs * 4);
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "stopped: a pace refusal is not tried again";
 }
 
 TEST_F(ChatForwardFilesTest, AnAttachmentThatFinishesDownloadingDuringTheRunIsStillNotSent) {
@@ -769,6 +805,100 @@ TEST_F(ChatForwardFilesTest, AnOrphanedUploadThatNeverAnswersStopsCountingAfterT
   EXPECT_TRUE(presenter.ForwardUploadBusy());
   Advance(1);
   EXPECT_FALSE(presenter.ForwardUploadBusy()) << "the bound: the hub never answered";
+}
+
+TEST_F(ChatForwardFilesTest, TheSlotFreedCallbackFiresWhenALetGoUploadAnswers) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.HoldFilled(Picture("p1", 1, 1));
+  Start({"p1"}, {"bob"});
+  presenter.NoteAppEnteredBackground(); // let go of while the upload is under way
+  EXPECT_EQ(freed, 0) << "still busy";
+  chats.AnswerOk();
+  Drain();
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+  EXPECT_EQ(freed, 1) << "the composer and the voice queue are told once";
+  Advance(kForwardOrphanBusyMs);
+  EXPECT_EQ(freed, 1) << "the bound's timer finds nothing left to free";
+}
+
+TEST_F(ChatForwardFilesTest, TheSlotFreedCallbackFiresWhenTheTenMinuteBoundExpires) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.HoldFilled(Picture("p1", 1, 1));
+  Start({"p1"}, {"bob"});
+  presenter.CancelForward(ForwardStop::Tapped);
+  Advance(kForwardNoticeWaitMs); // released by the 60 s rule, counted from here
+  ASSERT_FALSE(presenter.Forwarding());
+  EXPECT_EQ(freed, 0);
+  Advance(kForwardOrphanBusyMs - 1);
+  EXPECT_EQ(freed, 0);
+  Advance(1);
+  EXPECT_EQ(freed, 1) << "nobody asked ForwardUploadBusy: the timer did";
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+}
+
+TEST_F(ChatForwardFilesTest, TheSlotFreedCallbackFiresWhenAnActiveRunEnds) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.HoldFilled(Picture("p1", 1, 1));
+  Start({"p1"}, {"bob"});
+  EXPECT_EQ(freed, 0);
+  chats.AnswerOk();
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(freed, 1) << "the run is over: the composer is unlocked and the queues go on";
+}
+
+TEST_F(ChatForwardFilesTest, ATextOnlyRunDoesNotFireTheSlotFreedCallback) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.Add(TextRow("t", "text", 1));
+  Start({"t"}, {"bob"});
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(freed, 0);
+}
+
+TEST_F(ChatForwardFilesTest, ARunWaitingForTheSendPaceStillKeepsTheSlotBusy) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.HoldFilled(Picture("p", 1, 1));
+  chats.rate_limited_next = 1;
+  Start({"p"}, {"bob"});
+  ASSERT_TRUE(presenter.ForwardProgressNow().waiting_for_pace);
+  EXPECT_TRUE(presenter.ForwardUploadBusy()) << "no other upload may start next to the retry";
+  presenter.CancelForward(); // the person gives up while it waits
+  Drain();
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+  EXPECT_EQ(freed, 1);
+}
+
+TEST_F(ChatForwardFilesTest, ARunThatEndsWhileWaitingForThePaceBeforeBeingLetGoFreesTheSlot) {
+  int freed = 0;
+  presenter.SetForwardUploadFreed([&freed]() { ++freed; });
+  chats.HoldFilled(Picture("p", 1, 1));
+  chats.rate_limited_next = 5;
+  Start({"p"}, {"bob"});
+  ASSERT_TRUE(presenter.ForwardUploadBusy());
+  presenter.NoteAppEnteredBackground(); // stopped during the wait: nothing is under way any more
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
+  EXPECT_EQ(freed, 1);
+}
+
+TEST_F(ChatForwardFilesTest, APaceRetryOfTheFirstItemChecksTheChatAgain) {
+  chats.HoldFilled(Picture("p1", 1, 1));
+  chats.rate_limited_next = 1;
+  Start({"p1"}, {"bob"});
+  ASSERT_TRUE(presenter.ForwardProgressNow().waiting_for_pace);
+  chats.targets["bob"] = ForwardTargetKind::Unavailable; // blocked / removed from the group during the wait
+  Advance(kForwardRateLimitRetryMs);
+  EXPECT_EQ(chats.attachment_calls.size(), 1u) << "no second try into a chat that can no longer be written to";
+  ASSERT_EQ(done_calls, 1);
+  EXPECT_EQ(result->skipped_targets, 1u);
+  EXPECT_EQ(result->attachments_failed, 1u);
+  EXPECT_EQ(result->forwarded, 0u);
+  EXPECT_FALSE(presenter.ForwardUploadBusy());
 }
 
 TEST_F(ChatForwardFilesTest, MoreThanThreeTargetsRefuseWithoutClearingTheSelection) {
