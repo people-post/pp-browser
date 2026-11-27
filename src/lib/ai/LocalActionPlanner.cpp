@@ -658,9 +658,21 @@ Tri ParseBool(const std::string& tool, const std::string& region, const bool ans
 
 std::string ParseAppearance(const std::string& region, const bool answer_mode) {
   const Haystack h(region);
-  const bool dark = h.HasAny(kAppearanceDarkWords);
-  const bool light = h.HasAny(kAppearanceLightWords);
-  const bool system = h.HasAny(kAppearanceSystemWords);
+  bool dark = h.HasAny(kAppearanceDarkWords);
+  bool light = h.HasAny(kAppearanceLightWords);
+  // A bare "黑" / "白" is a value only as the whole answer ("明白" and "白话" are not).
+  if (!dark && !light) {
+    std::string bare = StripEdges(region);
+    for (const std::string_view particle : {"的", "吧", "了", "。", "！"}) {
+      if (bare.size() > particle.size() &&
+          bare.compare(bare.size() - particle.size(), particle.size(), particle) == 0) {
+        bare.erase(bare.size() - particle.size());
+      }
+    }
+    dark = bare == "黑";
+    light = bare == "白";
+  }
+  const bool system = h.HasAny(kAppearanceSystemWords) && ((!dark && !light) || h.HasAny(kAppearanceSystemValueWords));
   if (static_cast<int>(dark) + static_cast<int>(light) + static_cast<int>(system) != 1) {
     return {};
   }

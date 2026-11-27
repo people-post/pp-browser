@@ -105,11 +105,14 @@ inline constexpr auto kReduceWords = std::to_array<std::string_view>({"减少", 
 // --- Enumerations -------------------------------------------------------------------------------------------
 
 inline constexpr auto kAppearanceDarkWords =
-    std::to_array<std::string_view>({"深色", "暗色", "夜间", "夜晚", "dark", "night"});
+    std::to_array<std::string_view>({"深色", "暗色", "夜间", "夜晚", "黑色", "dark", "night"});
 inline constexpr auto kAppearanceLightWords =
-    std::to_array<std::string_view>({"浅色", "亮色", "白天", "light", "bright"});
+    std::to_array<std::string_view>({"浅色", "亮色", "白天", "日间", "白色", "light", "bright"});
 inline constexpr auto kAppearanceSystemWords =
     std::to_array<std::string_view>({"跟随系统", "系统", "自动", "system", "auto"});
+/** "系统" / "system" beside a colour is the thing being set ("把系统设为黑色"); these name the value itself. */
+inline constexpr auto kAppearanceSystemValueWords =
+    std::to_array<std::string_view>({"跟随系统", "自动", "follow", "match", "auto"});
 
 /** Values of set_group_invite_policy / set_call_invite_policy: everyone, contacts_only, nobody. */
 inline constexpr auto kPolicyAnyoneWords =
