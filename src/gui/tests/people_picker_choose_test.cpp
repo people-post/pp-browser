@@ -145,7 +145,7 @@ protected:
     options.title = "Forward to";
     options.send_label = "Send";
     options.preview = "hello there";
-    options.limit_message = "Up to 9 chats";
+    options.limit_message = "Up to 3 chats";
     options.max_targets = kMaxForwardTargets;
     options.list = [this]() { return presenter.ForwardTargets(); };
     return options;
@@ -283,28 +283,28 @@ TEST_F(PeoplePickerChooseTest, TheSourceChatIsListedAndCanBeChosen) {
   EXPECT_EQ(ChosenKeys(), (std::vector<std::string>{"t-src"}));
 }
 
-TEST_F(PeoplePickerChooseTest, TheTenthTargetCannotBeChosenAndThePillSaysWhy) {
-  for (int i = 0; i < 10; ++i) {
+TEST_F(PeoplePickerChooseTest, TheFourthTargetCannotBeChosenAndThePillSaysWhy) {
+  for (int i = 0; i < 4; ++i) {
     candidates.push_back(Person("t" + std::to_string(i), "c" + std::to_string(i), "P" + std::to_string(i),
                                 "acct-" + std::to_string(i), 100 - i));
   }
   Open();
-  for (int i = 0; i < 9; ++i) {
+  for (int i = 0; i < 3; ++i) {
     Access::Tap(picker, "t" + std::to_string(i));
   }
   EXPECT_TRUE(pills.empty());
   const auto rows = Access::Rows(picker);
-  ASSERT_EQ(rows.size(), 10u);
-  EXPECT_TRUE(rows[9].disabled) << "the tenth is greyed";
+  ASSERT_EQ(rows.size(), 4u);
+  EXPECT_TRUE(rows[3].disabled) << "the fourth is greyed";
   EXPECT_FALSE(rows[0].disabled);
-  Access::Tap(picker, "t9");
-  EXPECT_EQ(pills, (std::vector<std::string>{"Up to 9 chats"}));
-  EXPECT_FALSE(Access::Rows(picker)[9].selected);
-  Access::Tap(picker, "t0"); // one taken off, the tenth can be chosen
-  EXPECT_FALSE(Access::Rows(picker)[9].disabled);
-  Access::Tap(picker, "t9");
+  Access::Tap(picker, "t3");
+  EXPECT_EQ(pills, (std::vector<std::string>{"Up to 3 chats"}));
+  EXPECT_FALSE(Access::Rows(picker)[3].selected);
+  Access::Tap(picker, "t0"); // one taken off, the fourth can be chosen
+  EXPECT_FALSE(Access::Rows(picker)[3].disabled);
+  Access::Tap(picker, "t3");
   Access::Confirm(picker);
-  EXPECT_EQ(returned.size(), 9u);
+  EXPECT_EQ(returned.size(), 3u);
 }
 
 TEST_F(PeoplePickerChooseTest, SearchNarrowsTheListAndKeepsWhatIsTicked) {

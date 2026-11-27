@@ -1533,7 +1533,7 @@
     "chat.forward.failed": "转发失败",
     "chat.forward.cannot": "这条消息暂时不能转发",
     "chat.forward.limit_messages": "一次最多转发 30 条",
-    "chat.forward.limit_targets": "一次最多转发给 9 个聊天",
+    "chat.forward.limit_targets": "一次最多转发给 3 个聊天",
     "chat.forward.interrupted": "只转发了一部分",
     "chat.menu.edit": "编辑",
     "chat.menu.save_as": "存储为…",

@@ -151,7 +151,7 @@ TEST_F(ForwardFlowTest, ForwardRunsFromSelectionThroughPickerToSendAndClosesEver
   ASSERT_TRUE(picker_open);
   EXPECT_EQ(picker_options.title, Tr("chat.forward.pick_title"));
   EXPECT_EQ(picker_options.preview, Tr("chat.forward.preview_count", {{"n", "2"}}));
-  EXPECT_EQ(picker_options.max_targets, 9u);
+  EXPECT_EQ(picker_options.max_targets, 3u);
   EXPECT_FALSE(flow->CanNext()) << "the button waits while the picker is up";
 
   PickerSends({"t-bob", "t-cy"});
