@@ -1,9 +1,12 @@
+#include "common/ValueJson.h"
 #include "lib/ai/AppActionClassifier.h"
 #include "lib/ai/AppActionWords.h"
 #include "lib/ai/LocalActionPlanner.h"
 #include "lib/ai/LocalActionWords.h"
 
 #include <gtest/gtest.h>
+#include <sstream>
+#include <fstream>
 
 #include <optional>
 #include <algorithm>
@@ -711,4 +714,60 @@ TEST(LocalActionPlannerTest, TheLanguageQuestionListsOnlyTheLocalesOffered) {
   const auto* ask = std::get_if<LocalAsk>(&plain);
   ASSERT_NE(ask, nullptr);
   EXPECT_EQ(ArgOf(ask->args, "list"), "简体中文, English");
+}
+
+namespace {
+
+std::string LocaleText(const char* file, const char* key) {
+  std::ifstream in(std::string(PP_BROWSER_SOURCE_ROOT) + "/assets/locales/" + file, std::ios::binary);
+  std::ostringstream text;
+  text << in.rdbuf();
+  const auto doc = TryParseObject(text.str());
+  const Object* strings = doc ? doc->getObject("strings") : nullptr;
+  return strings ? strings->getString(key).value_or("") : "";
+}
+
+} // namespace
+
+// Owner decision 2026-11-27: the wordlist is a small fast path for the terms the app itself shows (Me > Appearance);
+// anything else goes to the model. Do not add words to make a new phrasing pass.
+TEST(LocalActionPlannerTest, TheAppearanceFastPathKnowsOnlyStandardTerms) {
+  struct Row {
+    const char* file;
+    const char* title; // settings.appearance.title
+    const char* system;
+    const char* light;
+    const char* dark;
+  };
+  for (const Row& row : {Row{"en.json", "settings.appearance.title", "ai.option.appearance.system",
+                             "settings.theme.light", "settings.theme.dark"},
+                         Row{"zh-Hans.json", "settings.appearance.title", "ai.option.appearance.system",
+                             "settings.theme.light", "settings.theme.dark"}}) {
+    const bool en = std::string(row.file) == "en.json";
+    const std::string title = LocaleText(row.file, row.title);
+    const std::string system = LocaleText(row.file, row.system);
+    const std::string light = LocaleText(row.file, row.light);
+    const std::string dark = LocaleText(row.file, row.dark);
+    ASSERT_FALSE(title.empty() || system.empty() || light.empty() || dark.empty()) << row.file;
+    const std::string mode = en ? " mode" : "模式";
+    const std::string lower_title = en ? "appearance" : title;
+    const auto low = [&](std::string v) {
+      if (en) {
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return std::tolower(c); });
+      }
+      return v;
+    };
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {low(dark) + mode, "dark"},
+        {low(light) + mode, "light"},
+        {low(system), "system"},
+        {(en ? "switch to " : "切换到") + low(dark) + mode, "dark"},
+        {en ? "set " + lower_title + " to " + low(dark) : "把" + title + "设为" + dark + mode, "dark"},
+        {en ? "set " + lower_title + " to " + low(light) : "把" + title + "设为" + light + mode, "light"},
+        {en ? "set " + lower_title + " to " + low(system) : "把" + title + "设为" + system, "system"},
+    };
+    for (const auto& [text, want] : cases) {
+      ExpectText(PlanFor(text), "set_appearance", "appearance", want, text);
+    }
+  }
 }

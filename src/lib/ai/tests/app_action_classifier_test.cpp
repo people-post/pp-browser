@@ -531,3 +531,15 @@ TEST(AppActionClassifierTest, OpenSupportOnlyForAnAskForCustomerService) {
     EXPECT_NE(ClassifyAppAction(message, AllTools()), std::optional<std::string>("open_support")) << Describe(message);
   }
 }
+
+// Sentences that only mention a colour or "dark" / "light" are not appearance commands. The wordlist stays a fast
+// path for the terms the app shows; natural phrasings go to the model (owner decision 2026-11-27).
+TEST(AppActionClassifierTest, SentencesThatOnlyMentionDarkOrLightAreNotCommands) {
+  for (const std::string& message :
+       {"为什么天空是黑色的", "黑色星期五是什么", "白色的车好还是黑色的好", "把这段话改成白话", "what is dark matter",
+        "is the dark web dangerous", "how do I make my room dark", "set an alarm for dark o'clock",
+        "把我的头像设为黑色", "把墙刷成白色好不好", "帮我把这张图调成深色", "请把我的系统设为黑色",
+        "please set theme dark"}) {
+    EXPECT_EQ(ClassifyAppAction(message, AllTools()), std::nullopt) << Describe(message);
+  }
+}

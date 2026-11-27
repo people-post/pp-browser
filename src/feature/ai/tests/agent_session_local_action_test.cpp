@@ -364,7 +364,7 @@ TEST_F(AgentSessionLocalActionTest, ANewCommandWhileAQuestionIsOpenIsHandledAsAN
   session_->SubmitToThread("t1", "换个语言");
   EXPECT_EQ(Ready(WaitForTurn()).text, Tr("settings.ask.language", {{"list", "简体中文, English"}}));
 
-  session_->SubmitToThread("t1", "请把我的系统设为黑色");
+  session_->SubmitToThread("t1", "把外观设为深色模式");
   const auto events = WaitForTurn();
   EXPECT_EQ(Calls(), std::vector<std::string>{R"(set_appearance {"appearance":"dark"})"});
   EXPECT_NE(Ready(events).text, RenderLocalGaveUp());
