@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <utility>
 
 namespace pbr {
@@ -59,9 +60,16 @@ bool AttachmentSendOnce::Fired() const {
   return state_ && state_->fired.load();
 }
 
+const char* PictureSendItemsTitleKey(const size_t items) {
+  return items == 1 ? "picture_send.title_one_file" : "picture_send.title_items";
+}
+
 bool PictureOverLimit(const PictureSendItem& item, const bool original, const AttachmentLimits& limits) {
   if (item.kind == PictureSendKind::Video) {
     return !VideoWithinLimit(item.bytes, limits);
+  }
+  if (item.kind == PictureSendKind::File) {
+    return item.bytes > limits.max_file_bytes;
   }
   if (original) {
     return item.bytes > MaxAttachmentSendBytes(limits, AttachmentMimeFromFilename(item.path),
@@ -73,16 +81,32 @@ bool PictureOverLimit(const PictureSendItem& item, const bool original, const At
 PictureSendQueue::PictureSendQueue(std::string thread_id, AttachmentLimits limits, PictureSendPorts ports)
     : thread_id_(std::move(thread_id)), limits_(limits), ports_(std::move(ports)) {}
 
+PictureSendQueue::~PictureSendQueue() {
+  for (const PictureSendItem& item : items_) {
+    if (item.owned && item.state == PictureItemState::Waiting && !item.path.empty() && ports_.release_owned) {
+      ports_.release_owned(item.path);
+    }
+  }
+}
+
+void PictureSendQueue::ReleaseFile(const std::string& path, const bool owned) {
+  if (owned && ports_.release_owned) {
+    ports_.release_owned(path);
+  } else {
+    ports_.release(path);
+  }
+}
+
 PictureSendItem* PictureSendQueue::Find(const uint64_t id) {
   auto it = std::find_if(items_.begin(), items_.end(), [id](const PictureSendItem& item) { return item.id == id; });
   return it == items_.end() ? nullptr : &*it;
 }
 
 std::optional<uint64_t> PictureSendQueue::Add(std::string path, const PictureSendKind kind, const uint64_t bytes,
-                                              const uint64_t pixels) {
+                                              const uint64_t pixels, std::string display_name, const bool owned) {
   if (ended_ || items_.size() >= kMaxItems) {
     if (!path.empty()) {
-      ports_.release(path);
+      ReleaseFile(path, owned);
     }
     return std::nullopt;
   }
@@ -92,6 +116,9 @@ std::optional<uint64_t> PictureSendQueue::Add(std::string path, const PictureSen
   item.kind = kind;
   item.bytes = bytes;
   item.pixels = pixels;
+  item.display_name =
+      display_name.empty() ? std::filesystem::path(item.path).filename().string() : std::move(display_name);
+  item.owned = owned;
   item.too_large = PictureOverLimit(item, original_, limits_);
   const uint64_t id = item.id;
   items_.push_back(std::move(item));
@@ -125,7 +152,7 @@ void PictureSendQueue::ReleaseItem(PictureSendItem& item, const PictureItemState
   item.state = final_state;
   RemovePreviewFiles(item);
   if (!item.path.empty()) {
-    ports_.release(item.path);
+    ReleaseFile(item.path, item.owned);
   }
 }
 

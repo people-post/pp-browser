@@ -17473,6 +17473,200 @@ textarea:composing ~ .ps-placeholder {
   cursor: pointer;
 }
 
+/* Send-preview page on a computer (DEV/PLAN-desktop-drop-paste.md): .picture-send--desktop is on the page's root only
+   when ps_desktop is true (a computer window, the wide tray and the narrow window alike); a phone never has it, so
+   nothing below changes a phone. The soft look (a chip for the recipient, a soft tile for a file, a pill field with the
+   round Send inside it, coloured type badges) is shared by the wide tray (wide.rcss adds the tray itself) and the
+   narrow window. Colours: colors.rcss.tmpl. */
+
+/* Who it goes to: a small chip, the recipient's initial in a round avatar and the sentence with the name in bold. */
+.picture-send--desktop .ps-recipient {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  max-width: 100%;
+  height: 30dp;
+  margin: 0 0 8dp 0;
+  padding: 0 12dp 0 4dp;
+  border-radius: 15dp;
+  box-sizing: border-box;
+  font-size: 13dp;
+  line-height: 18dp;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.picture-send--desktop .ps-chip-avatar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  margin-right: 8dp;
+  border-radius: 11dp;
+  font-size: 13dp;
+  font-weight: bold;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.picture-send--desktop .ps-chip-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picture-send--desktop .ps-chip-name {
+  font-weight: bold;
+}
+
+/* The card of a file in the middle of the stage: a soft tile (no grey stage behind it): a coloured type badge, the
+   name (two lines at most) and the size. */
+.picture-send--desktop .ps-file {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 360dp;
+  max-width: 90%;
+  padding: 16dp;
+  border-radius: 16dp;
+  box-sizing: border-box;
+}
+
+.picture-send--desktop .ps-file-tile {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 12dp;
+}
+
+.picture-send--desktop .ps-file-ext {
+  width: 100%;
+  font-size: 15dp;
+  font-weight: bold;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.picture-send--desktop .ps-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16dp;
+}
+
+.picture-send--desktop .ps-file-name {
+  margin: 0;
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+  max-height: 44dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.picture-send--desktop .ps-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* A file's cell in the strip: its type badge (or the generic icon) in the cell's box, where a picture has its thumbnail. */
+.picture-send--desktop .ps-cell-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.picture-send--desktop .ps-cell-ext {
+  width: 100%;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* The pill text field with the round Send inside its right end, the "original" chip, in the tray and the narrow window. */
+.picture-send--desktop .ps-field,
+.picture-send--wide .ps-field {
+  min-height: 44dp;
+  padding: 0 6dp 0 16dp;
+  border: 0;
+  border-radius: 20dp;
+}
+
+.picture-send--desktop .ps-input,
+.picture-send--wide .ps-input {
+  padding: 12dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.picture-send--desktop .ps-placeholder,
+.picture-send--wide .ps-placeholder {
+  font-size: 15dp;
+}
+
+.ps-send-round {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  margin: 0 0 6dp 8dp;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  cursor: pointer;
+}
+
+.picture-send--desktop .ps-original,
+.picture-send--wide .ps-original {
+  width: auto;
+  min-height: 36dp;
+  height: 36dp;
+  padding: 0 12dp;
+  border-radius: 18dp;
+}
+
+.picture-send--desktop .ps-original {
+  align-self: flex-start;
+}
+
+.picture-send--desktop .ps-original-label,
+.picture-send--wide .ps-original-label {
+  font-size: 13dp;
+}
+
+.picture-send--desktop .ps-original-size,
+.picture-send--wide .ps-original-size {
+  margin-left: 6dp;
+  font-size: 13dp;
+}
+
+.picture-send--desktop .ps-original-check,
+.picture-send--wide .ps-original-check {
+  width: 16dp;
+  height: 16dp;
+  margin-right: 6dp;
+  border-radius: 8dp;
+}
+
+.picture-send--desktop .ps-original-hole,
+.picture-send--wide .ps-original-hole {
+  width: 12dp;
+  height: 12dp;
+  border-radius: 6dp;
+}
+
 /* The send time of an attachment bubble (phones; the desktop has the meta line). A file, music or unready card carries
    it at the bottom right inside the card like a text bubble's; a picture or video has a slim footer row under its
    media, inside the bubble (nothing is drawn over the media), "size · route icon time" at the right. Both in the text
@@ -17669,4 +17863,73 @@ textarea:composing ~ .ps-placeholder {
 .forward-progress-btn {
   min-width: 120dp;
   min-height: 50dp;
+}
+
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml; colours in colors.rcss.tmpl): a very light tint over the
+   whole chat, a soft rounded ring inset 10dp from its edges, and in the middle a round badge with the words under it
+   ("Drop to send to <name>", the name in bold) and the limit. A refusal (.drop-hint--no) has the same shape in grey. It
+   never takes a click: the drag is the OS's, and a hint that stays for a moment after it must not block the chat. No
+   backdrop blur: the layer has a z-index and children, where the engine draws none. */
+.drop-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-hint-ring {
+  position: absolute;
+  top: 10dp;
+  left: 10dp;
+  right: 10dp;
+  bottom: 10dp;
+  border-radius: 16dp;
+  pointer-events: none;
+}
+
+.drop-hint-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 80%;
+}
+
+.drop-hint-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  margin-bottom: 14dp;
+  border-radius: 28dp;
+}
+
+.drop-hint-icon {
+  flex-shrink: 0;
+  width: 26dp;
+  height: 26dp;
+}
+
+.drop-hint-label {
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.drop-hint-name {
+  font-weight: bold;
+}
+
+.drop-hint-limit {
+  margin-top: 6dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
 }

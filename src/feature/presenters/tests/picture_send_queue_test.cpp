@@ -25,6 +25,7 @@ struct Fake {
   uint64_t in_flight = 0;
   int offered_while_busy = 0;
   std::vector<std::pair<std::string, bool>> sent_items; // path, original
+  std::vector<PictureSendKind> sent_kinds;
   std::map<std::string, int> released;
   std::vector<std::string> removed;
   std::vector<int64_t> ticks_asked;
@@ -46,6 +47,7 @@ PictureSendPorts PortsOf(Fake& fake) {
     }
     fake.in_flight = item.id;
     fake.sent_items.emplace_back(item.path, original);
+    fake.sent_kinds.push_back(item.kind);
     fake.events.push_back("send " + item.path);
     if (fake.answer_at_once && fake.queue) {
       const uint64_t id = fake.in_flight;
@@ -250,6 +252,70 @@ TEST_F(PictureSendQueueTest, StartingDeletesThePreviewFiles) {
   ASSERT_TRUE(queue.Start());
   EXPECT_EQ(fake_.removed, (std::vector<std::string>{"pv1", "th1"}));
   EXPECT_FALSE(queue.SetPreview(queue.Items()[1].id, "pv2", "th2"));
+}
+
+// --- Files beside the pictures (DEV/PLAN-desktop-drop-paste.md, step B) ---
+
+TEST_F(PictureSendQueueTest, AFileKeepsItsNameAndTheOwnedFlagItWasGiven) {
+  PictureSendQueue& queue = Make();
+  ASSERT_TRUE(queue.Add("/some/dir/report.pdf", PictureSendKind::File, 10).has_value());
+  ASSERT_TRUE(queue.Add("/tmp/pasted/x.png", PictureSendKind::Picture, 10, 0, "Pasted image 1.png", true).has_value());
+  EXPECT_EQ(queue.Items()[0].display_name, "report.pdf") << "the path's file name";
+  EXPECT_FALSE(queue.Items()[0].owned);
+  EXPECT_EQ(queue.Items()[1].display_name, "Pasted image 1.png") << "a name the caller gave";
+  EXPECT_TRUE(queue.Items()[1].owned);
+}
+
+TEST_F(PictureSendQueueTest, FilesGoInOrderAmongPicturesWhateverTheOriginalChoiceAndTheTextLast) {
+  PictureSendQueue& queue = Make();
+  (void)queue.Add("a.jpg", PictureSendKind::Picture, 10);
+  (void)queue.Add("b.pdf", PictureSendKind::File, 10);
+  (void)queue.Add("c.mp4", PictureSendKind::Video, 10);
+  (void)queue.Add("d.zip", PictureSendKind::File, 10);
+  queue.SetOriginal(true);
+  queue.SetText("see");
+  ASSERT_TRUE(queue.Start());
+  for (int i = 0; i < 4; ++i) {
+    Finish(AttachmentSendOutcome::Sent);
+  }
+  EXPECT_EQ(fake_.events,
+            (std::vector<std::string>{"send a.jpg", "release a.jpg", "send b.pdf", "release b.pdf", "send c.mp4",
+                                      "release c.mp4", "send d.zip", "release d.zip", "text chat-a see", "done"}));
+  EXPECT_EQ(fake_.sent_kinds, (std::vector<PictureSendKind>{PictureSendKind::Picture, PictureSendKind::File,
+                                                            PictureSendKind::Video, PictureSendKind::File}));
+  EXPECT_EQ(fake_.offered_while_busy, 0);
+  EXPECT_EQ(fake_.report->sent, 4);
+}
+
+TEST_F(PictureSendQueueTest, AFileIsOverTheLimitByItsOwnByteLimitNotByThePictureOnes) {
+  AttachmentLimits limits = DefaultAttachmentLimits();
+  limits.max_file_bytes = 100;
+  limits.max_original_image_bytes = 1000;
+  limits.max_image_pixels = 10;
+  PictureSendQueue& queue = Make(limits);
+  (void)queue.Add("small.pdf", PictureSendKind::File, 100, 5000); // pixels mean nothing to a file
+  (void)queue.Add("big.pdf", PictureSendKind::File, 101);
+  for (const bool original : {false, true, false}) {
+    queue.SetOriginal(original);
+    EXPECT_FALSE(queue.Items()[0].too_large) << "original: " << original;
+    EXPECT_TRUE(queue.Items()[1].too_large) << "original: " << original;
+  }
+  EXPECT_EQ(queue.SendableCount(), 1u);
+}
+
+TEST_F(PictureSendQueueTest, AFileOver50MbIsMarkedTooLargeSkippedAndTheRestStillGo) {
+  PictureSendQueue& queue = Make();
+  (void)queue.Add("ok.pdf", PictureSendKind::File, kDefaultAttachmentSendMaxBytes);
+  (void)queue.Add("huge.zip", PictureSendKind::File, kDefaultAttachmentSendMaxBytes + 1);
+  EXPECT_FALSE(queue.Items()[0].too_large);
+  EXPECT_TRUE(queue.Items()[1].too_large);
+  queue.SetText("x");
+  ASSERT_TRUE(queue.Start());
+  ExpectEachReleasedOnce({"huge.zip"});
+  Finish(AttachmentSendOutcome::Sent);
+  EXPECT_EQ(fake_.sent_items.size(), 1u);
+  EXPECT_EQ(fake_.report->too_large, 1);
+  EXPECT_EQ(fake_.report->text, PictureTextFate::Sent);
 }
 
 // --- Sending one at a time, the text last ---
@@ -603,6 +669,12 @@ TEST_F(PictureSendQueueTest, OnlyOneEndIsReportedWhateverComesAfter) {
   EXPECT_EQ(fake_.done_calls, 1);
   EXPECT_EQ(fake_.report->exit, PictureSendExit::Back);
   EXPECT_EQ(Count("put back"), 1u);
+}
+
+TEST(PictureSendTitleKeyTest, OneItemIsTitledAsAFileAndSeveralAreCounted) {
+  EXPECT_STREQ(PictureSendItemsTitleKey(1), "picture_send.title_one_file");
+  EXPECT_STREQ(PictureSendItemsTitleKey(2), "picture_send.title_items");
+  EXPECT_STREQ(PictureSendItemsTitleKey(9), "picture_send.title_items");
 }
 
 } // namespace

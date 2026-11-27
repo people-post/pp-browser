@@ -380,6 +380,57 @@ TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   EXPECT_TRUE(snap.settings_detail_primary);
 }
 
+TEST(ShellHostTest, TheChromeSnapshotSaysWhetherALayerIsOverTheChat) {
+  using namespace pbr;
+
+  ShellState wide{};
+  EXPECT_FALSE(ProjectShellChromeSnapshot(wide).layer_over_chat) << "the wide chat with nothing over it";
+
+  ShellState dialog = wide;
+  dialog.dialog.active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(dialog).layer_over_chat);
+
+  ShellState overlay = wide;
+  overlay.overlay_stack.push_back({1, OverlayKind::Generic, "dialog", "views/dialog.rml", {}});
+  EXPECT_TRUE(ProjectShellChromeSnapshot(overlay).layer_over_chat);
+
+  ShellState transient = wide;
+  PaneState pane;
+  pane.spec.key = "settings";
+  pane.id = 1;
+  transient.transient_stack.push_back(pane);
+  transient.transient_active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(transient).layer_over_chat);
+
+  ShellState pin = wide;
+  pin.pin_gate.active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(pin).layer_over_chat);
+
+  ShellState ring = wide;
+  ring.call_ring.active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(ring).layer_over_chat);
+
+  ShellState call = wide;
+  call.call_in_progress.active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(call).layer_over_chat) << "a call's page";
+  call.call_in_progress.mode = CallChromeMode::Minimized;
+  EXPECT_FALSE(ProjectShellChromeSnapshot(call).layer_over_chat) << "a minimised call is a chip, the chat stays usable";
+  call.dialog.active = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(call).layer_over_chat) << "a dialog over the chip is still over the chat";
+
+  // The narrow window: the chat page itself is the top, and not "a layer over it".
+  ShellState chat_page{};
+  chat_page.layout_mode = LayoutMode::Compact;
+  chat_page.compact_chat_open = true;
+  EXPECT_FALSE(ProjectShellChromeSnapshot(chat_page).layer_over_chat);
+  ShellState sheet = chat_page;
+  sheet.auxiliary_open = true;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(sheet).layer_over_chat);
+  ShellState under_me = chat_page;
+  under_me.nav_tab = NavTab::Me;
+  EXPECT_TRUE(ProjectShellChromeSnapshot(under_me).layer_over_chat) << "the chat waits under a tab's page";
+}
+
 TEST(ShellHostTest, AuxiliaryWidthClamp) {
   using namespace pbr;
 

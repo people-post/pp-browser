@@ -147,3 +147,17 @@ x-ring-disc	#00000080	#00000080	extra: the small upload ring's disc (the chat up
 x-ring-track	#ffffff4d	#ffffff4d	extra: the unfilled part of that ring (white 30%)
 x-ring-core	#262626	#262626	extra: the opaque centre disc of that ring
 x-ring-ink	#ffffff	#ffffff	extra: the spinner arc of that ring (white)
+x-tray-solid	#ffffff	#2c2c2e	extra: the wide send-preview tray with Transparency off
+x-tray-glass	#ffffffb8	#2c2c2eb8	extra: the wide send-preview tray frosted (72%, over a 20dp blur): the chat shows through
+x-tray-hair	#3c3c432e	#ffffff24	extra: the tray's hairline (top and sides) and the soft file tile's outline
+x-tray-dim	#00000024	#00000052	extra: the light dim over the conversation column behind the tray (14% / 32%), not the heavy modal scrim
+x-tray-tile	#ffffff9e	#ffffff12	extra: the soft file tile on the tray (white 62% / 7%)
+x-tray-x	#3c3c43d1	#636366e6	extra: the remove badge on a tray thumbnail
+x-kind-txt	#8793ab	#8793ab	extra: file type badge: text (grey-blue)
+x-kind-pdf	#e5484d	#e5484d	extra: file type badge: PDF (red)
+x-kind-zip	#d98a00	#d98a00	extra: file type badge: archives (amber, dark enough for a white label)
+x-kind-xls	#30a46c	#30a46c	extra: file type badge: spreadsheets (green)
+x-drop-tint	#007aff0f	#0a84ff1f	extra: the drop hint's tint over the chat (accent at ~6% / 12%)
+x-drop-ring	#007aff59	#0a84ff59	extra: the drop hint's ring (accent at 35%)
+x-drop-no-tint	#78788012	#7878801f	extra: the drop hint when dropping is refused: a grey tint
+x-drop-no-ring	#78788059	#78788066	extra: the refused drop hint's ring

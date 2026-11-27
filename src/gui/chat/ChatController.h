@@ -14,6 +14,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PlatformShareFile.h"
+#include "foundation/platform/ui/DropCollector.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
@@ -22,6 +23,7 @@
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/PictureSendController.h"
+#include "feature/presenters/AttachIntake.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "feature/presenters/PictureSendQueue.h"
 #include "feature/presenters/VoiceSendQueue.h"
@@ -84,6 +86,7 @@
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -187,6 +190,19 @@ public:
   SessionStore& Store() override;
   const SessionStore& Store() const;
   void Update();
+
+  /**
+   * Files dragged onto the window (a computer's native window; DropCollector via the app event hooks, DEV/PLAN-desktop-drop-paste.md C).
+   * `OnDropHover`: the pointer's place in UI coordinates, or empty = the drag is over (hide the hint). `OnFilesDropped`:
+   * the files and where the pointer last was (empty = it never had a place: nothing is taken). Only the open chat's own
+   * pane counts; the hint and the drop use the same RefusalFor as the "+" menu. UI thread.
+   */
+  void OnDropHover(std::optional<DropUiPoint> point);
+  void OnFilesDropped(std::vector<std::string> paths, std::optional<DropUiPoint> position);
+  /** Shows the hint over the chat with `text`; empty hides it (ShellHost::SetDropHint). */
+  void BindDropHint(std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_hint) {
+    set_drop_hint_ = std::move(set_hint);
+  }
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
   /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
@@ -479,11 +495,36 @@ private:
   /** The library has handed over every picture of the pick (or none: it was cancelled). */
   void OnPhotoBatchDone(uint64_t pick_serial);
   /**
-   * Pictures and videos that are already files (the computer's picker, and later files dropped on the window): opens
-   * the send-preview page with them, up to PictureSendQueue::kMaxItems, the same way the phone's library pick does.
-   * UI thread; `paths` are the user's own files (never deleted).
+   * The one way files reach the send-preview page on a computer (the "+" menu's pickers now; a drop and a paste later):
+   * AttachIntake checks the state (RefusalFor), reads the files' facts off the UI thread, checks again, and opens the
+   * page with the first PictureSendQueue::kMaxItems that can go. UI thread. `candidates` are the user's own files
+   * unless `owned`.
    */
-  void OpenPictureSendWithPaths(std::vector<std::string> paths);
+  void OpenAttachPreview(std::vector<AttachCandidate> candidates, AttachSource source);
+  /**
+   * Ctrl/Cmd+V or the menu's Paste in the chat's message box (a computer only): a picture on the clipboard, with no
+   * file and no text beside it, goes to the send preview. True = handled (the text paste must not run). UI thread.
+   */
+  bool TryPasteAttachment();
+  /** Installs both paste triggers (key binding, context-menu interceptor); nothing on a phone. */
+  void InstallPasteTriggers();
+  /** `<cache>/pasted`: where pasted pictures are written (outside the profile). */
+  /** `<cache>/pasted`: shared by every running instance, never emptied or deleted from. */
+  std::filesystem::path PastedRoot() const;
+  /** This run's own folder under PastedRoot() (a random id per process): the only place this process writes and deletes. */
+  std::filesystem::path PastedDir() const;
+  /** The chat title the header shows for `thread_id` (not the open chat's live title); empty when unknown. */
+  std::string ThreadTitleFor(const std::string& thread_id);
+  /** Once per run, after the first unlock: removes other runs' stale folders under PastedRoot() (a crash or a kill leaves files there). */
+  void SweepPastedFilesOnce();
+  /** What AttachIntake decides on, read from the controller now. */
+  AttachState CurrentAttachState() const;
+  AttachIntakePorts MakeAttachIntakePorts();
+  /** The open chat's pane (the conversation column; the narrow layout's chat page) holds the point (UI coordinates). */
+  bool ChatPaneContains(DropUiPoint point) const;
+  void HideDropHint();
+  /** AttachIntake's last step: the queue and the page for `items` in `thread_id`; false when the page could not open. */
+  bool OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
   void ShowPictureProgress();
   /** How the queue ended: the pill's last word, and the metrics line. */
@@ -716,6 +757,11 @@ private:
   uint64_t picture_queue_serial_ = 0;
   /** The preview page of the pictures picked together (hosted here like OpenHomeEdit's layer). */
   PictureSendController picture_send_;
+  /** Made on first use (OpenAttachPreview). */
+  std::unique_ptr<AttachIntake> attach_intake_;
+  /** Made on first use (TryPasteAttachment). */
+  std::unique_ptr<PasteAttach> paste_attach_;
+  bool pasted_swept_ = false;
   /** The several-photo pick being copied out of the library (iPhone / iPad); none otherwise. */
   struct PhotoBatch {
     uint64_t pick_serial = 0;
@@ -1117,6 +1163,10 @@ private:
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
+  std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_drop_hint_;
+  /** The hint is showing; the preview page was open when it last was set (a page opening under it hides it). */
+  bool drop_hint_shown_ = false;
+  bool drop_hint_preview_open_ = false;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this,           presenter_,       chat_,

@@ -4,6 +4,7 @@
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
     AccountSyncState.cpp
+    AttachIntake.cpp
     AttachmentExit.cpp
     AttachmentPicks.cpp
     AvatarCropFrame.cpp

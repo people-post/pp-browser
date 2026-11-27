@@ -750,6 +750,49 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml): a light tint, a soft ring, an accent badge (grey when the
+   drop is refused) and the words. */
+.drop-hint {
+  background-color: #0a84ff1f;
+}
+
+.drop-hint--no {
+  background-color: #7878801f;
+}
+
+.drop-hint-ring {
+  border: 2dp #0a84ff59;
+}
+
+.drop-hint--no .drop-hint-ring {
+  border: 2dp #78788066;
+}
+
+.drop-hint-badge {
+  background-color: #0a84ff;
+}
+
+.drop-hint--no .drop-hint-badge {
+  background-color: #7878805c;
+}
+
+.drop-hint-icon {
+  image-color: #ffffff;
+}
+
+.drop-hint--no .drop-hint-icon {
+  image-color: #ebebf599;
+}
+
+.drop-hint-label {
+  color: #ffffff;
+}
+
+.drop-hint-label--no,
+.drop-hint-limit {
+  color: #ebebf599;
+}
+
 /* No shadow (DESIGN-pp-ui §6; a shadow here also drew a grey block on the simulator): a hairline keeps the white
    pill apart from a white page. */
 .shell-body--compact .shell-toast {
@@ -4355,6 +4398,130 @@ input.checkbox:checked {
   color: #ebebf54c;
 }
 
+/* The soft look on a computer (the wide tray and the narrow window): the recipient chip, the file's tile and its coloured
+   type badge, the pill field with the round Send, the "original" chip. */
+.picture-send--desktop .ps-stage {
+  background-color: transparent;
+}
+
+.picture-send--desktop .ps-recipient {
+  background-color: #7878803d;
+  color: #ebebf599;
+}
+
+.picture-send--desktop .ps-chip-avatar {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.picture-send--desktop .ps-chip-name {
+  color: #ffffff;
+}
+
+.picture-send--desktop .ps-file {
+  background-color: #ffffff12;
+  border: 1dp #ffffff24;
+}
+
+.picture-send--desktop .ps-file-tile,
+.picture-send--desktop .ps-cell-file {
+  background-color: #8e8e93;
+}
+
+.picture-send--desktop .ps-kind--txt {
+  background-color: #8793ab;
+}
+
+.picture-send--desktop .ps-kind--pdf {
+  background-color: #e5484d;
+}
+
+.picture-send--desktop .ps-kind--zip {
+  background-color: #d98a00;
+}
+
+.picture-send--desktop .ps-kind--doc {
+  background-color: #0a84ff;
+}
+
+.picture-send--desktop .ps-kind--xls {
+  background-color: #30a46c;
+}
+
+.picture-send--desktop .ps-kind--other {
+  background-color: #8e8e93;
+}
+
+.picture-send--desktop .ps-file-ext,
+.picture-send--desktop .ps-cell-ext {
+  color: #ffffff;
+}
+
+.picture-send--desktop .ps-file-icon,
+.picture-send--desktop .ps-cell-icon {
+  image-color: #ffffff;
+}
+
+.picture-send--desktop .ps-file-name {
+  color: #ffffff;
+}
+
+.picture-send--desktop .ps-file-size {
+  color: #ebebf599;
+}
+
+.picture-send--desktop .ps-field,
+.picture-send--wide .ps-field {
+  background-color: #7878803d;
+}
+
+.ps-send-round {
+  background-color: #0a84ff;
+}
+
+.ps-send-round svg {
+  image-color: #ffffff;
+}
+
+.ps-send-round--off,
+.ps-send-round--off:hover,
+.ps-send-round--off:focus {
+  background-color: #7878805c;
+}
+
+.ps-send-round--off svg {
+  image-color: #ebebf54c;
+}
+
+.picture-send--desktop .ps-original,
+.picture-send--wide .ps-original {
+  background-color: #7878803d;
+}
+
+.picture-send--desktop .ps-original-label,
+.picture-send--wide .ps-original-label,
+.picture-send--desktop .ps-original-size,
+.picture-send--wide .ps-original-size {
+  color: #ebebf599;
+}
+
+.picture-send--desktop .ps-original--on,
+.picture-send--wide .ps-original--on {
+  background-color: #0a84ff2e;
+}
+
+.picture-send--desktop .ps-original--on .ps-original-label,
+.picture-send--wide .ps-original--on .ps-original-label,
+.picture-send--desktop .ps-original--on .ps-original-size,
+.picture-send--wide .ps-original--on .ps-original-size {
+  color: #0a84ff;
+}
+
+.picture-send--desktop .ps-original-hole,
+.picture-send--wide .ps-original-hole {
+  background-color: #2c2c2e;
+}
+
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
 .recovery-card {
   background-color: #2c2c2e;
@@ -4599,11 +4766,57 @@ input.checkbox:checked {
   background-color: #2c2c2e;
 }
 
+/* The send-preview tray: the light dim on the frame (the conversation column), the tray the overlay body: solid, or
+   frosted with the glass colour and a blur while Transparency is on (shell-frame--frost). An upward stacked shadow. */
 .shell-body--wide .shell-frame--picture_send {
-  box-shadow: 0 3.9dp 0 0.85dp #00000012, 0 4.8dp 0 1.7dp #00000012, 0 5.7dp 0 2.55dp #00000012, 0 6.6dp 0 3.4dp #00000012, 0 7.5dp 0 4.25dp #00000012, 0 8.4dp 0 5.1dp #00000012, 0 9.3dp 0 5.95dp #00000012, 0 10.2dp 0 6.8dp #00000012, 0 11.1dp 0 7.65dp #00000012, 0 12dp 0 8.5dp #00000012, 0 12.9dp 0 9.35dp #00000012, 0 13.8dp 0 10.2dp #00000012, 0 14.7dp 0 11.05dp #00000012, 0 15.6dp 0 11.9dp #00000012, 0 16.5dp 0 12.75dp #00000012, 0 17.4dp 0 13.6dp #00000012;
+  background-color: #00000052;
+}
+
+.shell-body--wide .shell-scrim--picture_send {
+  background-color: transparent;
+}
+
+.shell-body--wide .shell-frame--picture_send .shell-overlay-body {
+  background-color: #2c2c2e;
+  border-color: #ffffff24;
+  box-shadow: 0 -3.9dp 0 -0.85dp #00000012, 0 -4.8dp 0 -1.7dp #00000012, 0 -5.7dp 0 -2.55dp #00000012, 0 -6.6dp 0 -3.4dp #00000012, 0 -7.5dp 0 -4.25dp #00000012, 0 -8.4dp 0 -5.1dp #00000012, 0 -9.3dp 0 -5.95dp #00000012, 0 -10.2dp 0 -6.8dp #00000012, 0 -11.1dp 0 -7.65dp #00000012, 0 -12dp 0 -8.5dp #00000012, 0 -12.9dp 0 -9.35dp #00000012, 0 -13.8dp 0 -10.2dp #00000012, 0 -14.7dp 0 -11.05dp #00000012, 0 -15.6dp 0 -11.9dp #00000012, 0 -16.5dp 0 -12.75dp #00000012, 0 -17.4dp 0 -13.6dp #00000012;
+}
+
+.shell-body--wide .shell-frame--picture_send.shell-frame--frost .shell-overlay-body {
+  background-color: #2c2c2eb8;
+  backdrop-filter: blur(20px);
+}
+
+.shell-body--wide .picture-send--wide {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-title {
+  color: #ebebf599;
+}
+
+.shell-body--wide .picture-send--wide .ps-x {
+  background-color: transparent;
+}
+
+.shell-body--wide .picture-send--wide .ps-x:hover {
+  background-color: #7878803d;
+}
+
+.shell-body--wide .picture-send--wide .ps-x svg {
+  image-color: #ebebf599;
+}
+
+.shell-body--wide .picture-send--wide .ps-badge-dot {
+  background-color: #636366e6;
 }
 
 .shell-body--wide .picture-send--wide .ps-cancel {
+  background-color: transparent;
+  color: #ebebf599;
+}
+
+.shell-body--wide .picture-send--wide .ps-cancel:hover {
   background-color: #7878803d;
   color: #ffffff;
 }

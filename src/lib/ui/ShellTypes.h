@@ -665,6 +665,15 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** Files are being dragged over the chat: the overlay on the chat pane says what dropping would do (ShellHost::SetDropHint). */
+  bool drop_hint_visible = false;
+  ui::String drop_hint_text;
+  /** True: dropping would send (the hint says "drop to send to <name>"); false: a refusal's line, `drop_hint_text` alone. */
+  bool drop_hint_can = false;
+  /** The sentence of the "can drop" state cut at the name, so the name is set in its own weight in any language. */
+  ui::String drop_hint_prefix;
+  ui::String drop_hint_name;
+  ui::String drop_hint_suffix;
   /** The desktop title strip's text (WindowTitleFor): the product name, and the account's nickname once it has one. */
   ui::String window_title;
   /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */

@@ -1,7 +1,9 @@
 #include "gui/chat/PictureSendController.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "gui/chat/TranscriptRml.h"
 #include "gui/shell/DataModelHost.h"
+#include "lib/messaging/AttachmentCache.h"
 #include "lib/ui/DataEvent.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -11,6 +13,7 @@
 #include <ui/dom/Event.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -25,6 +28,24 @@ std::string FormatPickedSize(const uint64_t bytes) {
 }
 
 namespace {
+
+/** The first letter of a name for the chip's round avatar: its first character (a whole UTF-8 sequence), capitalised if ASCII. */
+std::string FirstLetterOf(const std::string& name) {
+  size_t at = 0;
+  while (at < name.size() && (name[at] == ' ' || name[at] == '\t')) {
+    ++at;
+  }
+  if (at >= name.size()) {
+    return {};
+  }
+  const unsigned char lead = static_cast<unsigned char>(name[at]);
+  const size_t length = lead < 0x80 ? 1 : lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+  std::string letter = name.substr(at, length);
+  if (letter.size() == 1) {
+    letter[0] = static_cast<char>(std::toupper(lead));
+  }
+  return letter;
+}
 
 /** A sideways move of a finger / pointer this long (dp) turns the page. */
 constexpr int kSwipeDp = 48;
@@ -70,6 +91,11 @@ bool PictureSendController::RegisterModel(ui::Context* context) {
       cell.RegisterMember("ready", &PictureSendCell::ready);
       cell.RegisterMember("current", &PictureSendCell::current);
       cell.RegisterMember("too_large", &PictureSendCell::too_large);
+      cell.RegisterMember("is_file", &PictureSendCell::is_file);
+      cell.RegisterMember("name", &PictureSendCell::name);
+      cell.RegisterMember("size_label", &PictureSendCell::size_label);
+      cell.RegisterMember("ext", &PictureSendCell::ext);
+      cell.RegisterMember("kind", &PictureSendCell::kind);
       cell.RegisterMember("iw", &PictureSendCell::iw);
       cell.RegisterMember("ih", &PictureSendCell::ih);
       cell.RegisterMember("ml", &PictureSendCell::ml);
@@ -86,6 +112,18 @@ bool PictureSendController::RegisterModel(ui::Context* context) {
     ctor.Bind("ps_current_preparing", &current_preparing_);
     ctor.Bind("ps_current_video", &current_video_);
     ctor.Bind("ps_current_too_large", &current_too_large_);
+    ctor.Bind("ps_current_is_file", &current_is_file_);
+    ctor.Bind("ps_current_name", &current_name_);
+    ctor.Bind("ps_current_size", &current_size_);
+    ctor.Bind("ps_current_ext", &current_ext_);
+    ctor.Bind("ps_current_kind", &current_kind_);
+    ctor.Bind("ps_show_original", &show_original_);
+    ctor.Bind("ps_desktop", &desktop_);
+    ctor.Bind("ps_recipient", &recipient_);
+    ctor.Bind("ps_recipient_prefix", &recipient_prefix_);
+    ctor.Bind("ps_recipient_name", &recipient_name_);
+    ctor.Bind("ps_recipient_suffix", &recipient_suffix_);
+    ctor.Bind("ps_recipient_initial", &recipient_initial_);
     ctor.Bind("ps_has_items", &has_items_);
     ctor.Bind("ps_text", &text_);
     ctor.Bind("ps_original", &original_);
@@ -254,8 +292,8 @@ void PictureSendController::PumpJobs() {
     if (it == items.end()) {
       continue; // removed before its turn
     }
-    if (it->too_large) {
-      continue; // over the limit for how it would go: no preview is made (the cell shows its label)
+    if (it->too_large || it->kind == PictureSendKind::File) {
+      continue; // over the limit for how it would go (the cell shows its label), or a file: nothing to make a preview of
     }
     worker_running_ = true;
     running_id_ = id;
@@ -346,6 +384,13 @@ void PictureSendController::Refresh() {
     cell.thumb_src = item.thumb_path.c_str();
     cell.current = i == current_;
     cell.too_large = item.too_large;
+    if (item.kind == PictureSendKind::File) {
+      cell.is_file = true;
+      cell.name = item.display_name.c_str();
+      cell.size_label = FormatAttachmentByteSize(item.bytes).c_str();
+      cell.ext = FileTypeTileLabel(item.display_name).c_str();
+      cell.kind = FileTypeTileKind(FileTypeTileLabel(item.display_name)).c_str();
+    }
     for (const auto& entry : dims_) {
       if (entry.first == item.id && entry.second.first > 0 && entry.second.second > 0) {
         // Covers the square cell, centred: the longer side is cut, nothing is stretched.
@@ -366,19 +411,50 @@ void PictureSendController::Refresh() {
   has_items_ = count > 0;
   show_strip_ = count > 1;
   title_ = count == 0 ? "" : (std::to_string(current_ + 1) + " / " + std::to_string(count)).c_str();
+  const bool any_file = std::any_of(items.begin(), items.end(),
+                                    [](const PictureSendItem& item) { return item.kind == PictureSendKind::File; });
+  if (any_file && host_.items_title) {
+    title_ = host_.items_title(static_cast<size_t>(count)).c_str();
+  }
+  show_original_ = std::any_of(items.begin(), items.end(),
+                               [](const PictureSendItem& item) { return item.kind == PictureSendKind::Picture; });
+  desktop_ = host_.is_desktop && host_.is_desktop();
+  recipient_ = host_.recipient ? host_.recipient().c_str() : "";
+  NameWords words;
+  if (host_.recipient_words) {
+    words = host_.recipient_words();
+  } else {
+    words.prefix = std::string(recipient_.c_str());
+  }
+  recipient_prefix_ = words.prefix.c_str();
+  recipient_name_ = words.name.c_str();
+  recipient_suffix_ = words.suffix.c_str();
+  recipient_initial_ = FirstLetterOf(words.name).c_str();
 
   std::string src;
   current_video_ = false;
   current_too_large_ = false;
   current_preparing_ = false;
+  current_is_file_ = false;
+  current_name_ = "";
+  current_size_ = "";
+  current_ext_ = "";
+  current_kind_ = "other";
   if (count > 0) {
     const PictureSendItem& item = items[static_cast<size_t>(current_)];
     src = item.preview_path;
     current_id_ = item.id;
     current_video_ = item.kind == PictureSendKind::Video;
     current_too_large_ = item.too_large;
+    if (item.kind == PictureSendKind::File) {
+      current_is_file_ = true;
+      current_name_ = item.display_name.c_str();
+      current_size_ = FormatAttachmentByteSize(item.bytes).c_str();
+      current_ext_ = FileTypeTileLabel(item.display_name).c_str();
+      current_kind_ = FileTypeTileKind(FileTypeTileLabel(item.display_name)).c_str();
+    }
     const bool failed = std::find(failed_.begin(), failed_.end(), item.id) != failed_.end();
-    current_preparing_ = src.empty() && !failed && !item.too_large;
+    current_preparing_ = src.empty() && !failed && !item.too_large && !current_is_file_;
   } else {
     current_preparing_ = arriving_;
   }
@@ -502,7 +578,8 @@ void PictureSendController::OnToggleOriginal() {
   for (const PictureSendItem& item : queue->Items()) {
     const bool queued = std::find(jobs_.begin(), jobs_.end(), item.id) != jobs_.end();
     const bool failed = std::find(failed_.begin(), failed_.end(), item.id) != failed_.end();
-    if (!item.too_large && item.preview_path.empty() && !queued && !failed && item.id != running_id_ && !dir_.empty()) {
+    if (!item.too_large && item.kind != PictureSendKind::File && item.preview_path.empty() && !queued && !failed &&
+        item.id != running_id_ && !dir_.empty()) {
       jobs_.push_back(item.id);
     }
   }
@@ -664,6 +741,8 @@ void PictureSendController::Stop() {
   current_src_ = "";
   can_send_ = false;
   title_ = "";
+  current_is_file_ = false;
+  show_original_ = true;
   Dirty();
 }
 

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "feature/presenters/QuickReactions.h"
+#include "feature/presenters/StrangerChat.h"
 #include "gui/chat/ChatController.h"
 #include "gui/RecoveryReminder.h"
 #include "gui/UpdateCard.h"
@@ -73,6 +74,11 @@
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/ClipboardAttachments.h"
+#include "foundation/platform/PastedFiles.h"
+#include "foundation/data/AppPaths.h"
+#include "gui/chat/DropPane.h"
+#include "gui/chat/PasteTrigger.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/MentionAlert.h"
@@ -3205,6 +3211,34 @@ void ChatController::OnAttachFile(ui::Event* ev) {
       });
     };
   };
+  // A computer's pickers (several at once) hand their files to the one intake. Each opening is a pick with its own
+  // serial: a result of a pick cancelled or replaced meanwhile, or of another chat, is dropped.
+  const auto picked_for_preview = [this](const uint64_t serial) {
+    return [this, serial](std::vector<std::string> paths) {
+      AppRuntime::PostUI([this, serial, paths = std::move(paths)]() mutable {
+        const std::optional<std::string> thread = TakePickResult(serial, paths);
+        if (!thread) {
+          return;
+        }
+        EndPick(serial); // the intake takes over from the pick's wait
+        if (paths.empty()) {
+          return; // cancelled
+        }
+        std::vector<AttachCandidate> candidates;
+        candidates.reserve(paths.size());
+        for (std::string& path : paths) {
+          candidates.push_back({std::move(path), /*owned=*/false});
+        }
+        OpenAttachPreview(std::move(candidates), AttachSource::Picker);
+      });
+    };
+  };
+  const auto pick_computer_photos = [this, picked_for_preview]() {
+    return [this, picked_for_preview]() {
+      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_for_preview(ArmPick()), nullptr,
+                                 static_cast<int>(PictureSendQueue::kMaxItems));
+    };
+  };
   // A picture is asked about before it goes: sent smaller (the default) or as it is. A video from the phone's
   // library has no such choice and goes straight on.
   const auto picked_picture = [this](const uint64_t serial) {
@@ -3230,8 +3264,8 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     };
   };
   // "Photo" on a phone: the library with pictures and videos.
-  const auto pick_photo_or_video = [this, picked_picture, thread_id]() {
-    return [this, picked_picture, thread_id]() {
+  const auto pick_photo_or_video = [this, picked_picture, pick_computer_photos, thread_id]() {
+    return [this, picked_picture, pick_computer_photos, thread_id]() {
       const uint64_t serial = ArmPick();
       if (Platform::Detect() == PlatformKind::IOS) {
         // iPhone / iPad: up to nine, in the order tapped, one at a time into the preview page (the picture and the
@@ -3262,19 +3296,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
       }
       if (!Platform::IsMobile()) {
         // The computer: the system dialog, several at once, into the same send-preview page the phone uses.
-        picks_.EndCurrent(); // the page takes over from the pick's wait
-        RefreshPickOverlay();
-        ShowOpenPhotoLibraryDialog(
-            Backend::GetWindow(),
-            [this, thread_id](std::vector<std::string> paths) {
-              AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
-                if (paths.empty() || thread_id != ActiveThreadId()) {
-                  return; // cancelled, or its chat is no longer the open one
-                }
-                OpenPictureSendWithPaths(std::move(paths));
-              });
-            },
-            nullptr, static_cast<int>(PictureSendQueue::kMaxItems));
+        pick_computer_photos()(); // arms its own pick (a newer pick ends the one armed above)
         return;
       }
       ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial), [this, serial](const std::string& name) {
@@ -3288,12 +3310,16 @@ void ChatController::OnAttachFile(ui::Event* ev) {
       });
     };
   };
-  // "Picture" on the desktop: the image-file dialog.
-  const auto pick_image = [this, picked_picture]() {
-    return [this, picked_picture]() { ShowOpenImageFileDialog(Backend::GetWindow(), picked_picture(ArmPick())); };
-  };
-  const auto pick_file = [this, picked]() {
-    return [this, picked]() { ShowOpenFileDialog(Backend::GetWindow(), picked(OutgoingPickSource::File, ArmPick())); };
+  // "File": a computer picks up to nine at once into the send-preview page; a phone sends the one it picks.
+  const auto pick_file = [this, picked, picked_for_preview]() {
+    return [this, picked, picked_for_preview]() {
+      if (!Platform::IsMobile()) {
+        ShowOpenFileDialog(Backend::GetWindow(), picked_for_preview(ArmPick()),
+                           static_cast<int>(PictureSendQueue::kMaxItems));
+        return;
+      }
+      ShowOpenFileDialog(Backend::GetWindow(), picked(OutgoingPickSource::File, ArmPick()));
+    };
   };
 
   // A phone's chat (Kenneth 2026-11-07): the bold plus opens the Home composer's floating card over it, Camera / Photos /
@@ -3328,7 +3354,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     actions.push_back(
         {"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
   } else {
-    actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_image()});
+    actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_computer_photos()});
   }
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
   actions.push_back(AttachCancelAction());
@@ -3925,25 +3951,37 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
   ports.send_item = [this, current](const PictureSendItem& item, const bool original) {
     const uint64_t id = item.id;
     const std::string path = item.path;
-    auto on_finished = [this, id, path, current,
+    const bool owned = item.owned;
+    auto on_finished = [this, id, path, owned, current,
                         alive = std::weak_ptr<int>(send_mark_alive_)](const AttachmentSendOutcome outcome) {
       // Always a later UI task: never inside StartAttachmentUpload's own callback, which goes on after it.
-      AppRuntime::PostUI([this, id, path, current, alive, outcome]() {
+      AppRuntime::PostUI([this, id, path, owned, current, alive, outcome]() {
         if (!alive.lock()) {
           return;
         }
         if (!current()) {
-          release_pick_(path); // its queue is gone (sign-out, teardown): the copy it held is released here, once
+          // its queue is gone (sign-out, teardown): the copy it held is released here, once
+          if (owned) {
+            ReleasePastedFile(path, PastedDir());
+          } else {
+            release_pick_(path);
+          }
           return;
         }
         picture_queue_->OnItemFinished(id, outcome);
         SettlePictureQueue();
       });
     };
+    // A file goes the way a file picked with "attach file" goes (source File, a file bubble); a picture as it is or
+    // shrunk; a video as it is. One send path for all three.
+    const bool file = item.kind == PictureSendKind::File;
     const bool video = item.kind == PictureSendKind::Video;
-    StartAttachmentUpload(path, original && !video ? OutgoingPickSource::Original : OutgoingPickSource::Photo,
-                          /*voice_file=*/false, picture_queue_->ThreadId(),
-                          video ? PendingUploadKind::Video : PendingUploadKind::Picture, /*pick_serial=*/0,
+    const OutgoingPickSource source =
+        file ? OutgoingPickSource::File
+             : (original && !video ? OutgoingPickSource::Original : OutgoingPickSource::Photo);
+    const PendingUploadKind bubble =
+        file ? PendingUploadKind::File : (video ? PendingUploadKind::Video : PendingUploadKind::Picture);
+    StartAttachmentUpload(path, source, /*voice_file=*/false, picture_queue_->ThreadId(), bubble, /*pick_serial=*/0,
                           std::move(on_finished), /*from_picture_queue=*/true);
   };
   ports.send_text = [this](const std::string& thread_id, const std::string& text) {
@@ -3972,6 +4010,7 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
     PutTextBack(thread_id, text, DraftPutBack::Append);
   };
   ports.release = [this](const std::string& path) { release_pick_(path); };
+  ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
   ports.remove_file = [](const std::string& path) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
@@ -4047,6 +4086,20 @@ PictureSendHost ChatController::MakePictureSendHost() {
     return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
   };
   host.make_preview = &MakePicturePreviewFiles;
+  // The computer page names who it goes to (the chat header's own title) and says how many items a batch with a file has.
+  host.is_desktop = []() { return !Platform::IsMobile(); };
+  host.recipient = [this]() {
+    // The queue's own chat, not whichever chat is open now (the title there can have changed or the chat can be another).
+    return Tr("picture_send.recipient",
+              {{"name", ThreadTitleFor(picture_queue_ ? picture_queue_->ThreadId() : std::string())}});
+  };
+  host.recipient_words = [this]() {
+    const std::string name = ThreadTitleFor(picture_queue_ ? picture_queue_->ThreadId() : std::string());
+    return SplitAtNameMarker(Tr("picture_send.recipient", {{"name", std::string(1, kNameMarker)}}), name);
+  };
+  host.items_title = [](const size_t items) {
+    return Tr(PictureSendItemsTitleKey(items), {{"n", std::to_string(items)}});
+  };
   host.play_video = [](const std::string& path) {
     // The system player a chat video opens in (OpenAttachment): QuickLook on the iPhone, over the page.
     if (!PlatformOpenFile(path)) {
@@ -4157,26 +4210,230 @@ void ChatController::OnPhotoBatchItem(const uint64_t pick_serial, const size_t /
   SettlePictureQueue();
 }
 
-void ChatController::OpenPictureSendWithPaths(std::vector<std::string> paths) {
-  if (!messaging_ready_ || !facade_ || paths.empty() || chat_.composer_input_disabled || AttachmentBusy() ||
-      chat_.editing_message) {
+AttachState ChatController::CurrentAttachState() const {
+  AttachState state;
+  state.ready = messaging_ready_ && facade_ && MessagingReady();
+  if (!state.ready) {
+    return state;
+  }
+  const std::string& thread_id = ActiveThreadId();
+  state.chat_open = !thread_id.empty();
+  // The "+" button's own gate (a dissolved group, G016; the mesh not ready).
+  state.attach_unavailable = state.chat_open && !chat_.show_attach_button;
+  state.ai_composer = InAiComposerContext();
+  state.editing_message = chat_.editing_message;
+  state.input_disabled = chat_.composer_input_disabled;
+  state.send_held = state.chat_open && presenter_.SendHeld(thread_id);
+  state.preview_open = picture_send_.IsOpen();
+  state.layer_above = ChromeSnapshot().layer_over_chat;
+  state.paste_in_flight = paste_attach_ && paste_attach_->InFlight();
+  state.attachment_busy = AttachmentBusy();
+  return state;
+}
+
+AttachIntakePorts ChatController::MakeAttachIntakePorts() {
+  AttachIntakePorts ports;
+  ports.state = [this]() { return CurrentAttachState(); };
+  ports.chat_id = [this]() { return ActiveThreadId(); };
+  ports.session = [this]() { return messaging_session_; };
+  ports.post_worker = [](std::function<void()> work) { AppRuntime::PostWorkerNormal(std::move(work)); };
+  ports.post_ui = [](std::function<void()> work) { AppRuntime::PostUI(std::move(work)); };
+  ports.say = [this](const char* key, const int n) { ShowToast(Tr(key, {{"n", std::to_string(n)}})); };
+  // A pasted picture is the one file we write for an attachment: it is deleted when it is not used.
+  ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
+  ports.open_page = [this](const std::string& thread_id, std::vector<AttachPlannedItem> items) {
+    return OpenAttachItems(thread_id, std::move(items));
+  };
+  return ports;
+}
+
+bool ChatController::ChatPaneContains(const DropUiPoint point) const {
+  return DropPaneContains(context_ ? context_->GetDocument(0) : nullptr, ChromeSnapshot().layout_mode, point);
+}
+
+void ChatController::HideDropHint() {
+  drop_hint_shown_ = false;
+  if (set_drop_hint_) {
+    set_drop_hint_({}, std::nullopt);
+  }
+}
+
+void ChatController::OnDropHover(const std::optional<DropUiPoint> point) {
+  if (!point) {
+    HideDropHint();
     return;
   }
-  const std::string thread_id = ActiveThreadId();
-  if (thread_id.empty() || InAiComposerContext()) {
+  const AttachState attach = CurrentAttachState();
+  const char* key = DropHintKey(ChatPaneContains(*point), RefusalFor(attach));
+  if (!key) {
+    HideDropHint();
     return;
   }
-  if (paths.size() > PictureSendQueue::kMaxItems) {
-    paths.resize(PictureSendQueue::kMaxItems);
+  const std::string name(chat_.thread_title.c_str());
+  const std::string text = Tr(key, {{"name", name}});
+  // Dropping would send: the same sentence cut at the name, so the hint sets the name in bold wherever it falls.
+  std::optional<NameWords> words;
+  if (RefusalFor(attach) == AttachRefusal::None) {
+    words = SplitAtNameMarker(Tr(key, {{"name", std::string(1, kNameMarker)}}), name);
   }
-  const uint64_t serial = ArmPick();
-  photo_batch_ = PhotoBatch{.pick_serial = serial, .thread_id = thread_id, .session = messaging_session_};
+  drop_hint_shown_ = !text.empty();
+  drop_hint_preview_open_ = attach.preview_open;
+  if (set_drop_hint_) {
+    set_drop_hint_(text, words);
+  }
+}
+
+void ChatController::OnFilesDropped(std::vector<std::string> paths, const std::optional<DropUiPoint> position) {
+  HideDropHint();
+  const AttachState attach = CurrentAttachState();
+  const AttachRefusal refusal = RefusalFor(attach);
+  if (refusal == AttachRefusal::NotReady) {
+    return; // locked: the files are not taken and nothing is said
+  }
+  const bool inside = position && ChatPaneContains(*position);
+  switch (DecideDrop(position.has_value(), inside, refusal)) {
+    case DropVerdict::NoPosition:
+      ShowToast(Tr("chat.drop.no_position"));
+      return;
+    case DropVerdict::Outside:
+      ShowToast(Tr("chat.drop.outside"));
+      return;
+    case DropVerdict::Take:
+    case DropVerdict::Refuse: // OpenAttachPreview refuses with the same pill the hint showed
+      break;
+  }
+  std::vector<AttachCandidate> candidates;
+  candidates.reserve(paths.size());
+  for (std::string& path : paths) {
+    candidates.push_back(AttachCandidate{std::move(path), false});
+  }
+  OpenAttachPreview(std::move(candidates), AttachSource::Drop);
+}
+
+void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, const AttachSource source) {
+  if (!attach_intake_) {
+    attach_intake_ = std::make_unique<AttachIntake>(MakeAttachIntakePorts());
+  }
+  attach_intake_->Open(std::move(candidates), source);
+}
+
+std::filesystem::path ChatController::PastedRoot() const {
+  return std::filesystem::path(AppPaths::CacheDir()) / "pasted";
+}
+
+std::filesystem::path ChatController::PastedDir() const {
+  // The cache folder is shared by every running instance and profile on this machine: each process writes (and deletes)
+  // only inside its own random folder under the shared root.
+  static const std::string run_id = NewPastedRunId();
+  return PastedRoot() / run_id;
+}
+
+void ChatController::SweepPastedFilesOnce() {
+  if (pasted_swept_) {
+    return;
+  }
+  pasted_swept_ = true;
+  // Only other runs' stale folders under <cache>/pasted: a second instance's live files are not ours to delete.
+  SweepStalePastedRuns(PastedRoot(), PastedDir());
+}
+
+bool ChatController::TryPasteAttachment() {
+  if (Platform::IsMobile() || !facade_) {
+    return false;
+  }
+  if (!paste_attach_) {
+    PastePorts ports;
+    ports.state = [this]() { return CurrentAttachState(); };
+    ports.peek = []() { return PeekClipboard(); };
+    ports.read_files = []() { return ReadClipboardFileList(); };
+    ports.has_text = []() { return ClipboardHasText(); };
+    ports.read_image = [this]() {
+      return ReadClipboardImage(static_cast<size_t>(facade_->CurrentAttachmentLimits().max_file_bytes));
+    };
+    ports.chat_id = [this]() { return ActiveThreadId(); };
+    ports.session = [this]() { return messaging_session_; };
+    ports.post_worker = [](std::function<void()> work) { AppRuntime::PostWorkerNormal(std::move(work)); };
+    ports.post_ui = [](std::function<void()> work) { AppRuntime::PostUI(std::move(work)); };
+    ports.write = [dir = PastedDir()](const std::string& bytes, const std::string& extension) {
+      return WritePastedFile(dir, bytes, extension);
+    };
+    ports.say = [this](const char* key, const int n) { ShowToast(Tr(key, {{"n", std::to_string(n)}})); };
+    ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
+    ports.open_preview = [this](std::vector<AttachCandidate> candidates) {
+      OpenAttachPreview(std::move(candidates), AttachSource::Paste);
+    };
+    paste_attach_ = std::make_unique<PasteAttach>(std::move(ports));
+  }
+  return paste_attach_->TryPaste();
+}
+
+void ChatController::InstallPasteTriggers() {
+  if (Platform::IsMobile()) {
+    return; // no keyboard paste, no desktop menu
+  }
+  PasteTriggerPorts ports;
+  ports.in_chat_composer_context = [this]() {
+    return !InAiComposerContext() && !chat_.editing_message && !ActiveThreadId().empty();
+  };
+  ports.paste = [this]() { return TryPasteAttachment(); };
+  if (input_) {
+    input_->Register(PasteKeyBinding(ports, PasteKeyModifier()));
+  }
+  ContextMenuHost::Instance().SetPasteInterceptor(PasteMenuInterceptor(ports));
+}
+
+std::string ChatController::ThreadTitleFor(const std::string& thread_id) {
+  if (facade_ && !thread_id.empty()) {
+    const auto thread = facade_->GetThread(thread_id);
+    if (thread && *thread) {
+      const PeerDisplayLabel label = facade_->ResolveThreadLabel(**thread);
+      if ((*thread)->kind == ThreadKind::Ai && label.title == "New chat") {
+        return Tr("chat.new_chat"); // the stored default AI title is English (as the header shows it)
+      }
+      return IsStrangerDirectChat((*thread)->kind, label) ? StrangerChatTitle(label) : label.title;
+    }
+  }
+  return thread_id == ActiveThreadId() ? std::string(chat_.thread_title.c_str()) : std::string();
+}
+
+bool ChatController::OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items) {
+  // Every item has exactly one owner from here: the queue once it took it (Add / Back release what it holds), this
+  // function for the ones it never handed over. AttachIntake releases nothing after this call (N1).
+  const auto release_from = [this, &items](const size_t from) {
+    for (size_t i = from; i < items.size(); ++i) {
+      if (items[i].owned) {
+        ReleasePastedFile(items[i].path, PastedDir());
+      }
+    }
+  };
+  PictureSendQueue* queue = BeginPictureQueue(thread_id);
+  if (!queue) {
+    ShowToast(Tr("chat.attach.previous_still_sending"));
+    release_from(0);
+    return false;
+  }
   picture_picker_done_ms_ = 0;
-  const size_t total = paths.size();
-  for (size_t index = 0; index < total; ++index) {
-    OnPhotoBatchItem(serial, index, total, std::move(paths[index]));
+  bool shown = false;
+  for (size_t index = 0; index < items.size(); ++index) {
+    AttachPlannedItem& item = items[index];
+    const std::optional<uint64_t> id = queue->Add(std::move(item.path), item.kind, item.bytes, item.pixels,
+                                                  std::move(item.display_name), item.owned); // a full queue releases it
+    if (!id) {
+      continue;
+    }
+    if (!picture_send_.OnItemAdded(*id)) {
+      queue->Back(); // no page to show them on: nothing is sent, the copies are released
+      SettlePictureQueue();
+      release_from(index + 1); // the ones after it never reached the queue
+      return false;
+    }
+    shown = true;
   }
-  OnPhotoBatchDone(serial);
+  if (!shown) {
+    queue->Back();
+  }
+  SettlePictureQueue();
+  return shown;
 }
 
 void ChatController::OnPhotoBatchDone(const uint64_t pick_serial) {
@@ -6987,6 +7244,7 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  SweepPastedFilesOnce();
   recovery_phrase_present_.reset();
   device_removed_.Check(); // still on the account's device list? (also listens for the next change)
   // A new session: results of tasks the last one sent off are dropped when they come back. A run still out keeps its
@@ -7258,6 +7516,7 @@ bool ChatController::Setup(ui::Context* context) {
   };
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
+  InstallPasteTriggers();
   // The send-preview page on the wide layout: Enter in its text sends the pictures, Shift+Enter is a new line (a phone's
   // Enter key stays a new line there).
   for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
@@ -7782,6 +8041,13 @@ void ChatController::OnApplicationPause() {
 
 void ChatController::Update() {
   picture_send_.Update();
+  if (drop_hint_shown_) {
+    // Locked, or the preview page opened under it: the hint goes.
+    const AttachState attach = CurrentAttachState();
+    if (!attach.ready || (attach.preview_open && !drop_hint_preview_open_)) {
+      HideDropHint();
+    }
+  }
   // The "Forwarding" page: its numbers; and its leaving when a call starts (the call's controls sit under it).
   if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {
     forward_flow_->OnCallStarted();
@@ -8250,6 +8516,7 @@ void ChatController::KeepClearOfComposer(ui::Element* overlay, const char* mount
 }
 
 void ChatController::Shutdown() {
+  ContextMenuHost::Instance().SetPasteInterceptor({}); // it holds this controller
   voice_->Shutdown();
   voice_playback_->Shutdown();
   AppLifecycle::RemoveListener(lifecycle_background_id_);

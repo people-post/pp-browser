@@ -95,6 +95,14 @@ public:
       std::function<std::optional<std::vector<ContextMenuAction>>(const ContextMenuRequest&)> override_menu) {
     text_menu_override_ = std::move(override_menu);
   }
+  /// A surface that wants to handle "Paste" itself (the chat composer taking a picture from the clipboard) asks to be
+  /// consulted first: `interceptor(editor)` true = handled, the text paste does not run. This layer knows nothing of
+  /// who answers. An empty function clears it.
+  void SetPasteInterceptor(std::function<bool(ui::Element* editor)> interceptor) {
+    paste_interceptor_ = std::move(interceptor);
+  }
+  /// What the menu's Paste does for `editor`: the interceptor first, else the clipboard's text goes in.
+  void PasteInto(ui::Element* editor) const;
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions). `on_dismissed` runs once if the menu goes
   /// away without any of its actions running (tap outside, Escape, another menu replacing it). On a phone it is the
@@ -232,6 +240,7 @@ private:
   Presentation presentation_ = Presentation::Float;
   std::string copy_snapshot_;
   std::function<std::optional<std::vector<ContextMenuAction>>(const ContextMenuRequest&)> text_menu_override_;
+  std::function<bool(ui::Element* editor)> paste_interceptor_;
   std::vector<ContextMenuAction> active_actions_;
   std::vector<std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)>> providers_;
 };

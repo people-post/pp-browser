@@ -1272,6 +1272,20 @@ std::string FileTypeTileLabel(const std::string& name) {
   return ext;
 }
 
+std::string FileTypeTileKind(const std::string& label) {
+  static const std::pair<const char*, const char*> kKinds[] = {
+      {"TXT", "txt"},  {"MD", "txt"},  {"LOG", "txt"}, {"RTF", "txt"},  {"PDF", "pdf"}, {"ZIP", "zip"}, {"RAR", "zip"},
+      {"7Z", "zip"},   {"TAR", "zip"}, {"GZ", "zip"},  {"TGZ", "zip"},  {"BZ2", "zip"}, {"XZ", "zip"},  {"DOC", "doc"},
+      {"DOCX", "doc"}, {"ODT", "doc"}, {"XLS", "xls"}, {"XLSX", "xls"}, {"CSV", "xls"}, {"ODS", "xls"},
+  };
+  for (const auto& entry : kKinds) {
+    if (label == entry.first) {
+      return entry.second;
+    }
+  }
+  return "other";
+}
+
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
                                                 const TranscriptFacts& facts_in,
                                                 const std::optional<MentionRoster>& mentions) {

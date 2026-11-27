@@ -42,6 +42,28 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 } // namespace
 
+std::string ShellLayoutRml::DropHintRml() {
+  // Dropping would send: a soft ring inset in the pane, a round badge and "Drop to send to <name>" with the name in bold,
+  // and the limit under it. Otherwise (a refusal): the same shape in grey, the refusal's own line, no limit.
+  std::ostringstream out;
+  out << "<div class=\"drop-hint\" id=\"drop-hint\" data-if=\"drop_hint_visible\" "
+         "data-class-drop-hint--no=\"!drop_hint_can\">";
+  out << "<div class=\"drop-hint-ring\" id=\"drop-hint-ring\"></div>";
+  out << "<div class=\"drop-hint-stack\">";
+  out << "<div class=\"drop-hint-badge\">"
+         "<svg class=\"drop-hint-icon\" data-if=\"drop_hint_can\" src=\"../icons/v2/drop-tray.svg\" width=\"26\" "
+         "height=\"26\"></svg>"
+         "<svg class=\"drop-hint-icon\" data-if=\"!drop_hint_can\" src=\"../icons/v2/block.svg\" width=\"26\" "
+         "height=\"26\"></svg></div>";
+  out << "<div class=\"drop-hint-label\" data-if=\"drop_hint_can\"><span class=\"drop-hint-prefix\">"
+         "{{drop_hint_prefix}}</span><span class=\"drop-hint-name\">{{drop_hint_name}}</span>"
+         "<span class=\"drop-hint-suffix\">{{drop_hint_suffix}}</span></div>";
+  out << "<div class=\"drop-hint-label drop-hint-label--no\" data-if=\"!drop_hint_can\">{{drop_hint_text}}</div>";
+  out << "<div class=\"drop-hint-limit\" data-if=\"drop_hint_can\">" << Tr("chat.drop.hint_limit") << "</div>";
+  out << "</div></div>";
+  return out.str();
+}
+
 /** The hold-to-talk bubble (components.rcss `.voice-bubble`): shown while a phone hold records; its box and the level
  *  bars are the chat model's (VoiceComposer). It is a child of the overlay, so its dp position is the window's. */
 std::string ShellLayoutRml::VoiceBubbleRml() {
@@ -104,6 +126,9 @@ std::string ShellLayoutRml::PaneSlot(const std::string& key, const char* extra_c
   }
   out << ">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
+  if (key == "chat") {
+    out << DropHintRml();
+  }
   if (with_composer_slot) {
     // The wide composer strip floats over the transcript's end like the phone's bars: its first child is the bar's
     // material (the phone's x-bar / x-bar-blur colours and blur), the mount paints above it (wide.rcss).
@@ -256,6 +281,7 @@ std::string ShellLayoutRml::CompactBase() const {
         << "\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
     out << VoiceBubbleRml();
+    out << DropHintRml();
     out << "</div>";
   }
 
@@ -408,8 +434,11 @@ std::string ShellLayoutRml::Overlays() const {
       out << "<div class=\"shell-modal-stage shell-modal-stage--" << overlay.key << "\" id=\"shell-modal-stage-"
           << overlay.id << "\">";
     }
+    // The send-preview tray (picture_send) is frosted while Transparency is on (wide.rcss: the tray's own material).
     out << "<div class=\"shell-frame shell-frame--" << overlay.key
-        << (modal && !ChromeFrostEnabled() ? " shell-frame--solid" : "") << "\">";
+        << (overlay.key == "picture_send" && ChromeFrostEnabled() ? " shell-frame--frost" : "")
+        << (modal && !ChromeFrostEnabled() ? " shell-frame--solid" : "") << "\" id=\"shell-frame-" << overlay.id
+        << "\">";
     out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";
     out << "<svg src=\"../icons/close.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
     out << "</button>";

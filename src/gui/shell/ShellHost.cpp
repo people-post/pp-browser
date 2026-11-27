@@ -157,6 +157,12 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
+    ctor.Bind("drop_hint_visible", &host.state_.drop_hint_visible);
+    ctor.Bind("drop_hint_text", &host.state_.drop_hint_text);
+    ctor.Bind("drop_hint_can", &host.state_.drop_hint_can);
+    ctor.Bind("drop_hint_prefix", &host.state_.drop_hint_prefix);
+    ctor.Bind("drop_hint_name", &host.state_.drop_hint_name);
+    ctor.Bind("drop_hint_suffix", &host.state_.drop_hint_suffix);
     ctor.Bind("window_title", &host.state_.window_title);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
@@ -1101,6 +1107,27 @@ void ShellHost::SetWindowTitle(const std::string& title) {
   }
   state_.window_title = title.c_str();
   DataModelHost::Instance().Dirty("window", "window_title");
+}
+
+void ShellHost::SetDropHint(const std::string& text, const std::optional<NameWords>& words) {
+  const bool visible = !text.empty();
+  const bool can = visible && words.has_value();
+  const NameWords parts = can ? *words : NameWords{};
+  if (state_.drop_hint_visible == visible && state_.drop_hint_text == text.c_str() && state_.drop_hint_can == can &&
+      state_.drop_hint_prefix == parts.prefix.c_str() && state_.drop_hint_name == parts.name.c_str() &&
+      state_.drop_hint_suffix == parts.suffix.c_str()) {
+    return;
+  }
+  state_.drop_hint_visible = visible;
+  state_.drop_hint_text = text.c_str();
+  state_.drop_hint_can = can;
+  state_.drop_hint_prefix = parts.prefix.c_str();
+  state_.drop_hint_name = parts.name.c_str();
+  state_.drop_hint_suffix = parts.suffix.c_str();
+  for (const char* field : {"drop_hint_visible", "drop_hint_text", "drop_hint_can", "drop_hint_prefix",
+                            "drop_hint_name", "drop_hint_suffix"}) {
+    DataModelHost::Instance().Dirty("window", field);
+  }
 }
 
 void ShellHost::CloseAllLayers() {
@@ -2395,6 +2422,29 @@ void ShellHost::ApplySafeAreaLayout() {
            bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
   }
 
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    // The send-preview tray rises from the conversation's own bottom edge, so its layer (the dim and the tray) spans the
+    // conversation column only: the frame takes the column's left and right edges. The scrim under it still covers the
+    // window, so the rail and the lists stay out of reach while the page is open.
+    for (const OverlayEntry& overlay : state_.overlay_stack) {
+      if (overlay.key != "picture_send") {
+        continue;
+      }
+      ui::Element* frame = doc->GetElementById(("shell-frame-" + std::to_string(overlay.id)).c_str());
+      ui::Element* pane = doc->GetElementById("pane-chat");
+      ui::Element* layer = frame ? frame->GetParentNode() : nullptr;
+      if (!frame || !pane || !layer) {
+        continue;
+      }
+      const float ratio = std::max(context_->GetDensityIndependentPixelRatio(), 0.5f);
+      const float layer_left = layer->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float layer_right = layer_left + layer->GetBox().GetSize(ui::BoxArea::Border).x;
+      const float pane_left = pane->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float pane_right = pane_left + pane->GetBox().GetSize(ui::BoxArea::Border).x;
+      set_dp(frame, "left", std::max(0.f, (pane_left - layer_left) / ratio));
+      set_dp(frame, "right", std::max(0.f, (layer_right - pane_right) / ratio));
+    }
+  }
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
@@ -3753,6 +3803,13 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   // Home's favourites row: one frame when its scroll has been still long enough to count as at rest.
   if (const std::optional<double> snap_sec = favorites_snap_.SecondsUntilRest(ShellFavoritesSnap::NowSeconds())) {
     delay_sec = std::min(delay_sec, *snap_sec);
+  }
+
+  // The drop hint hides itself a second after the last drag position (SdlAppEvents::TickDrop), with no event to wake on.
+  if (drop_hint_wake_) {
+    if (const std::optional<int64_t> hide_ms = drop_hint_wake_()) {
+      delay_sec = std::min(delay_sec, static_cast<double>(*hide_ms) / 1000.0);
+    }
   }
 
   if (std::isfinite(delay_sec)) {
