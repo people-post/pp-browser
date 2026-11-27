@@ -697,12 +697,13 @@ public:
   // --- Forwarding pictures, videos, files and voice messages (DEV/PLAN-message-forward-files-v3.md) -------------------
 
   /**
-   * The ticked messages going to `target_count` chats, against the limits (kMaxForwardUploads uploads, kMaxForwardUploadBytes):
+   * The ticked messages against the limits (kMaxForwardAttachments items, kMaxForwardUploadBytes in all, counted once
+   * whatever the number of chats):
    * what the "Forward to" page says above the preview, and which items it greys out. Nothing is read or decrypted, only
    * a stat of the content store. `refusal` also holds AttachmentBusy while another attachment of ours is being sent.
    */
-  ForwardCheck CheckForward(size_t target_count);
-  /** The forward being sent has a page: it holds at least one attachment (a run of text and cards has none). */
+  ForwardCheck CheckForward();
+  /** The forward being sent has a page: at least one ticked attachment this device holds the bytes of is uploaded. */
   bool ForwardHasProgressPage() const;
   /** What the progress page shows now; all zero when nothing is being sent. */
   ForwardProgress ForwardProgressNow() const;
@@ -714,9 +715,10 @@ public:
   /** "Close" after a Cancel that got no answer for kForwardCloseOfferMs: leaves at once; the item under way is not counted failed. */
   void CloseForward();
   /**
-   * The phone really went to the background (iOS DID_ENTER_BACKGROUND, Android onStop: PlatformLifecycleEvents), the
-   * vault locked, an account signed out, messaging stopped: stops at once, the item under way is not interrupted
-   * (`AbortForward` is the same). The user hears of it on the next chat entry (TakeForwardNotice).
+   * The phone really went to the background (iOS DID_ENTER_BACKGROUND, Android onStop: PlatformLifecycleEvents): a forward
+   * with a progress page stops at once, the item under way is not interrupted. A forward without a page (text, cards)
+   * and a choosing in progress (the selection, the picker) are left alone. The user hears of a stop on the next chat
+   * entry (TakeForwardNotice). (`AbortForward`, for a lock, a sign-out, messaging gone, stops any run and ends the choosing.)
    */
   void NoteAppEnteredBackground();
   /** The app only lost focus (iOS willResignActive: Control Center, a banner) or a desktop window lost focus / was minimised: nothing stops. */
@@ -797,6 +799,8 @@ private:
   std::function<void(const ForwardNotice&)> forward_notice_sink_;
   std::function<bool()> forward_attachment_busy_;
   std::function<bool()> forward_call_active_;
+  /** The run in `forward_run_` uploads something (so it has a progress page); decided once, when it starts. */
+  bool forward_has_page_ = false;
   /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
   uint64_t forward_epoch_ = 0;
   bool forward_interrupted_ = false;

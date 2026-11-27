@@ -28,11 +28,16 @@ namespace pbr {
 inline constexpr size_t kMaxForwardMessages = 30;
 inline constexpr size_t kMaxForwardTargets = 3;
 /**
- * What the uploads of one forward may add up to (DEV/PLAN-message-forward-files-v3.md): at most this many uploads
- * (attachments x chats) and this many bytes (each attachment's size x chats). Text and cards never count.
+ * What the attachments of one forward may add up to (DEV/PLAN-message-forward-files-v3.md, the owner's final limits):
+ * at most this many ticked pictures / videos / files / voice messages and this many bytes, counted over the ticked items
+ * once, not once per chat. Text and cards never count, nor does an item this device holds no bytes of.
  */
-inline constexpr size_t kMaxForwardUploads = 5;
+inline constexpr size_t kMaxForwardAttachments = 3;
 inline constexpr uint64_t kMaxForwardUploadBytes = 25'000'000;
+/** What the encrypted stored copy may weigh over its plaintext (the check on the stored size, before decrypting). */
+inline constexpr uint64_t kForwardStoredOverheadSlack = 1'000'000;
+/** The run waits this long for the item before an attachment to leave the queue; then the rest of that chat fails. */
+inline constexpr int64_t kForwardSettleGiveUpMs = 60000;
 /** An upload the send pace refused is tried again this often; a cancel that got no answer offers "close" after it. */
 inline constexpr int64_t kForwardRateLimitRetryMs = 15000;
 inline constexpr int64_t kForwardCloseOfferMs = 15000;
@@ -136,7 +141,7 @@ enum class ForwardRefusal {
   None,
   /** Another attachment of ours is still being sent. */
   AttachmentBusy,
-  /** More than kMaxForwardUploads attachments x chats. */
+  /** More than kMaxForwardAttachments ticked attachments. */
   TooManyUploads,
   /** More than kMaxForwardUploadBytes in all (split it over several forwards). */
   TooLarge,
@@ -152,7 +157,7 @@ struct ForwardCheck {
   /** Chosen attachments, of which this device does not hold the bytes (they will not be forwarded, nor counted). */
   size_t attachments = 0;
   size_t without_local_bytes = 0;
-  /** Attachments with bytes x chats, and their declared sizes x chats. */
+  /** Ticked attachments this device holds the bytes of (each once, whatever the number of chats), and their declared sizes. */
   size_t uploads = 0;
   uint64_t upload_bytes = 0;
   /** The largest declared size among the attachments that would go (for the "this file is too large" line). */
@@ -162,10 +167,10 @@ struct ForwardCheck {
 };
 
 /**
- * The limits for `items` going to `targets` chats. Pure: the caller read `has_local_bytes` without decrypting. An
+ * The limits for `items`, however many chats they go to. Pure: the caller read `has_local_bytes` without decrypting. An
  * attachment without local bytes is in no count; text and cards are never counted. `attachment_busy` is checked first.
  */
-ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, size_t targets, bool attachment_busy);
+ForwardCheck CheckForwardLimits(std::vector<ForwardItemFacts> items, bool attachment_busy);
 
 /**
  * What a forward needs from the messaging layer. The presenter fills it from the conversations facade; the send ports
@@ -188,6 +193,12 @@ struct ForwardPorts {
       send_user;
   std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text, SendRelayOptions options)>
       send_group;
+  /**
+   * The encrypted copies of attachments the messaging layer holds for a retry in `thread_id` (ids; each belongs to a
+   * failed bubble with Retry). A send that fails after leaving one there is a failed send, never to be sent again by
+   * the run; one that leaves none was refused before anything was stored. Unset: none.
+   */
+  std::function<std::vector<std::string>(const std::string& thread_id)> staged_attachments;
   /** The messaging layer can take a send now (not torn down, not locked). Unset: always. */
   std::function<bool()> messaging_ready;
   /** A saved contact we may still write to (not blocked meanwhile); asked before a chat is made for them. Unset: yes. */
@@ -327,6 +338,8 @@ private:
   void WakeAfter(int64_t delay_ms);
   /** Starts the open item's upload; true when it is under way (the run now waits for its answer). */
   bool StartAttachment();
+  /** A copy was staged in the open chat since the upload under way began (so an error is a failed send, not a refusal). */
+  bool StagedSinceStart() const;
   void FinishRun();
 
   ForwardPorts ports_;
@@ -366,6 +379,10 @@ private:
   int64_t finishing_since_ms_ = 0;
   int64_t uploading_since_ms_ = 0;
   bool rate_limited_ = false;
+  /** The copies staged in the open chat before the upload under way began (an answer with an error is told by what is new). */
+  std::vector<std::string> staged_before_;
+  /** Since when the run has been waiting for `last_sent_id_` to leave the queue (0: not waiting). */
+  std::optional<int64_t> settle_wait_since_ms_;
 };
 
 /** The messages chosen to forward: in the order of choosing, at most kMaxForwardMessages, from one chat. */

@@ -1887,12 +1887,15 @@ void ChatPresenter::ForwardSelectedTo(std::vector<ForwardTarget> targets,
       done(none);
     }
   };
+  bool page = false;
   if (!forward_run_ && !forward_selection_.Ids().empty() && !targets.empty() && targets.size() <= kMaxForwardTargets) {
     // The limits first, with the choosing left as it is: the person takes some away and sends again.
-    if (const ForwardCheck check = CheckForward(targets.size()); check.refusal != ForwardRefusal::None) {
+    const ForwardCheck check = CheckForward();
+    if (check.refusal != ForwardRefusal::None) {
       refuse(check.refusal);
       return;
     }
+    page = check.uploads > 0; // the one test for "this forward uploads something": the call refusal and the page
   }
   std::vector<std::string> ids = forward_selection_.Ids();
   const std::string source = forward_selection_.Thread();
@@ -1908,10 +1911,15 @@ void ChatPresenter::ForwardSelectedTo(std::vector<ForwardTarget> targets,
     return;
   }
   forward_run_account_ = ports.account_id ? ports.account_id() : std::string();
+  forward_has_page_ = page;
   forward_done_ = std::move(done);
   forward_run_ = std::make_shared<ForwardRun>(std::move(ports), source, std::move(ids), std::move(targets));
   forward_run_->SetWake([this, alive = std::weak_ptr<int>(alive_), weak = std::weak_ptr<ForwardRun>(forward_run_)]() {
-    // An attachment's answer or a timer: always on a later UI task, never inside the run's own Step.
+    // An attachment's answer or a timer: always on a later UI task, never inside the run's own Step. It may come after
+    // this presenter is gone (the run's cell outlives it): then nothing of the presenter is touched, not even to post.
+    if (!alive.lock()) {
+      return;
+    }
     PostForwardTask([this, alive, weak]() {
       if (auto run = weak.lock(); run && alive.lock()) {
         OnForwardWake(run);
@@ -1995,7 +2003,7 @@ void ChatPresenter::PostForwardBatch(const uint64_t epoch, std::shared_ptr<Forwa
   PostForwardTask(std::move(batch));
 }
 
-ForwardCheck ChatPresenter::CheckForward(const size_t target_count) {
+ForwardCheck ChatPresenter::CheckForward() {
   const ForwardPorts& ports = ForwardPortsNow();
   std::vector<ForwardItemFacts> items;
   for (const std::string& id : forward_selection_.Ids()) {
@@ -2021,7 +2029,7 @@ ForwardCheck ChatPresenter::CheckForward(const size_t target_count) {
   }
   const bool busy =
       (forward_attachment_busy_ && forward_attachment_busy_()) || (ports.attachment_busy && ports.attachment_busy());
-  ForwardCheck check = CheckForwardLimits(std::move(items), target_count, busy);
+  ForwardCheck check = CheckForwardLimits(std::move(items), busy);
   if (check.refusal == ForwardRefusal::None && check.uploads > 0 && forward_call_active_ && forward_call_active_()) {
     check.refusal = ForwardRefusal::CallActive;
   }
@@ -2039,7 +2047,7 @@ bool ChatPresenter::IsAttachmentMessage(const std::string& message_id) {
 }
 
 bool ChatPresenter::ForwardHasProgressPage() const {
-  return forward_run_ && forward_run_->Result().attachments > 0;
+  return forward_run_ && forward_has_page_;
 }
 
 ForwardProgress ChatPresenter::ForwardProgressNow() const {
@@ -2051,6 +2059,19 @@ void ChatPresenter::CancelForward(const ForwardStop kind) {
     return;
   }
   forward_run_->Stop(kind);
+  if (kind == ForwardStop::Tapped && forward_run_->InFlight()) {
+    // The page is gone, so nobody can press "Close": if the upload never answers, the run must not block new forwards
+    // for ever. After a minute it is let go like a Close (a late answer then finds nobody to tell).
+    const ForwardPorts& ports = ForwardPortsNow();
+    if (ports.after) {
+      ports.after(kForwardNoticeWaitMs,
+                  [this, alive = std::weak_ptr<int>(alive_), weak = std::weak_ptr<ForwardRun>(forward_run_)]() {
+                    if (auto run = weak.lock(); run && alive.lock() && run == forward_run_) {
+                      CloseForward();
+                    }
+                  });
+    }
+  }
   OnForwardWake(forward_run_); // Done at once when nothing is under way, else when its answer comes
 }
 
@@ -2073,21 +2094,25 @@ void ChatPresenter::CloseForward() {
 }
 
 void ChatPresenter::NoteAppEnteredBackground() {
-  StopForwardRun(ForwardStop::Interrupted);
+  // Only a forward with a progress page is stopped: the page keeps the screen on, so the app going to the background
+  // means the person left. A text-only forward is queued in a moment, and a choosing in progress is theirs to finish.
+  if (ForwardHasProgressPage()) {
+    StopForwardRun(ForwardStop::Interrupted);
+  }
 }
 
 void ChatPresenter::NoteForwardSourceGone(const std::string& thread_id) {
-  if (forward_run_ && forward_run_->Result().attachments > 0 && forward_run_->SourceThread() == thread_id) {
+  if (ForwardHasProgressPage() && forward_run_->SourceThread() == thread_id) {
     StopForwardRun(ForwardStop::SourceGone);
   }
 }
 
 void ChatPresenter::AbortForward() {
+  forward_selection_.Clear(); // a lock, a sign-out, messaging gone: the choosing goes too
   StopForwardRun(ForwardStop::Interrupted);
 }
 
 void ChatPresenter::StopForwardRun(const ForwardStop kind) {
-  forward_selection_.Clear();
   if (!forward_run_) {
     return;
   }

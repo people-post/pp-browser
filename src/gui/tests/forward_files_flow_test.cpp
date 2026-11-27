@@ -280,8 +280,8 @@ class ForwardFilesFlowTest : public ::testing::Test, public World {};
 
 // ---- The picker: why Send is off ------------------------------------------------------------------------------------
 
-TEST_F(ForwardFilesFlowTest, OverFiveUploadsOrOverTheSizeLimitDisablesSendAndSaysWhy) {
-  for (uint8_t i = 1; i <= 3; ++i) {
+TEST_F(ForwardFilesFlowTest, OverThreeAttachmentsOrOverTheSizeLimitDisablesSendAndSaysWhy) {
+  for (uint8_t i = 1; i <= 4; ++i) {
     Hold(Picture("p" + std::to_string(i), i, i, 9 * kMb));
   }
   flow->BeginSelecting("p1");
@@ -290,17 +290,28 @@ TEST_F(ForwardFilesFlowTest, OverFiveUploadsOrOverTheSizeLimitDisablesSendAndSay
   flow->Next();
   ASSERT_TRUE(picker_open);
   ASSERT_TRUE(static_cast<bool>(picker_options.refusal));
-  EXPECT_EQ(picker_options.refusal(0), "") << "no chat chosen yet: nothing is broken";
-  EXPECT_EQ(picker_options.refusal(1), Tr("chat.forward.limit_size", {{"n", "27"}})) << "3 x 9 MB is over 25 MB";
-  EXPECT_EQ(picker_options.refusal(2), Tr("chat.forward.limit_uploads", {{"n", "6"}})) << "3 pictures x 2 chats is 6";
+  for (const size_t chats : {0, 1, 3}) {
+    EXPECT_EQ(picker_options.refusal(chats), Tr("chat.forward.limit_size", {{"n", "27"}}))
+        << "3 x 9 MB is over 25 MB, whatever the number of chats";
+  }
 
-  // Taking one away leaves two pictures: 18 MB to one chat is fine, 4 uploads to two chats too.
+  // A fourth item is over the count (the size line waits: the count is checked first).
+  flow->Leave();
+  flow->BeginSelecting("p1");
+  flow->Tap("p2");
+  flow->Tap("p3");
+  flow->Tap("p4");
+  flow->Next();
+  EXPECT_EQ(picker_options.refusal(1), Tr("chat.forward.limit_uploads", {{"n", "4"}}));
+
+  // Two pictures: 18 MB to one chat is fine, and so to three (the size is not multiplied by the chats).
   flow->Leave();
   flow->BeginSelecting("p1");
   flow->Tap("p2");
   flow->Next();
-  EXPECT_EQ(picker_options.refusal(1), "");
-  EXPECT_EQ(picker_options.refusal(2), Tr("chat.forward.limit_size", {{"n", "36"}}));
+  for (const size_t chats : {0, 1, 3}) {
+    EXPECT_EQ(picker_options.refusal(chats), "");
+  }
 }
 
 TEST_F(ForwardFilesFlowTest, ASingleFileOverTheLimitSaysItsOwnLine) {
@@ -355,6 +366,15 @@ TEST_F(ForwardFilesFlowTest, ASelectionWithoutAttachmentsShowsNoProgressPage) {
   EXPECT_TRUE(awake.empty()) << "the screen is not held for text";
   EXPECT_EQ(log, (std::vector<std::string>{"text:t-bob:one", "text:t-bob:two"}));
   EXPECT_EQ(pills, (std::vector<std::string>{Tr("chat.forward.done")}));
+}
+
+TEST_F(ForwardFilesFlowTest, APictureThisDeviceHoldsNothingOfShowsNoProgressPage) {
+  Add(Picture("far", 1, 1)); // not downloaded here: it is only counted as not forwarded
+  Add(Text("t1", "one", 2));
+  Forward({"far", "t1"}, {"t-bob"});
+  EXPECT_EQ(progress_opened, 0) << "nothing is uploaded: no page, the same test as the call refusal";
+  EXPECT_TRUE(awake.empty());
+  EXPECT_EQ(log, (std::vector<std::string>{"text:t-bob:one"}));
 }
 
 TEST_F(ForwardFilesFlowTest, ASinglePictureForwardGoesStraightToThePickerThenTheProgressPage) {
@@ -763,7 +783,7 @@ struct PreviewFakes {
 };
 
 ForwardCheck CheckOf(std::vector<ForwardItemFacts> items) {
-  return CheckForwardLimits(std::move(items), 0, false);
+  return CheckForwardLimits(std::move(items), false);
 }
 
 const auto kCount = [](const size_t n) { return Tr("chat.forward.preview_count", {{"n", std::to_string(n)}}); };
