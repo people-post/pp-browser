@@ -101,7 +101,7 @@ Not scheduled. Before it (CR012):
 
 - [ ] Create the capabilities repo (people-post, public) with the target sets that app needs, the gate, and
       their contracts and tests; release; pin in every app; pp-browser drops its copy.
-- [ ] Expected first: pp-node as its own app, with both its builds (`pp-node` and [node-relay](../node-relay/README.md)'s `pp-node-relay`; people, net, node, relay; with `packaging/pp-node`, the N-* smokes,
+- [ ] Expected first: pp-node as its own app, with both its builds (`pp-node` and [node-relay](../node-relay/README.md)'s `pp-node-plus`; people, net, node and the add-ons, `relay` first; with `packaging/pp-node`, the N-* smokes,
       the hard lab and `pp_node_closure.sh`).
 - [ ] Waiting first (2026-11-22): pp-ledger-apps' operator app needs the relay certificate code (net, with RelayId
       from base) after release 1 ([CURRENT_STATE § A second app is waiting](CURRENT_STATE.md#a-second-app-is-waiting-2026-11-22)).

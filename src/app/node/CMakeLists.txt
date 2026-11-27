@@ -5,8 +5,8 @@ endif()
 include(PpBrowserWarnings)
 include(PpBrowserNoUiDeps)
 
-add_executable(pp-node
-  main.cpp
+# The node app's sources but main: both editions link them (projects/node-relay NR001).
+add_library(pp_app_node STATIC
   NodeBootstrap.cpp
   NodeCompatFloor.cpp
   NodeEnvOverlay.cpp
@@ -17,12 +17,10 @@ add_executable(pp-node
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
 )
-
-target_include_directories(pp-node PRIVATE
+target_include_directories(pp_app_node PUBLIC
   ${CMAKE_SOURCE_DIR}/src
 )
-
-target_link_libraries(pp-node PRIVATE
+target_link_libraries(pp_app_node PUBLIC
   pp_domain_registration
   pp_domain_node
   pp_mesh
@@ -39,15 +37,19 @@ target_link_libraries(pp-node PRIVATE
   sodium
   CURL::libcurl
 )
-if(TARGET pp_domain_node_ledger)
-  target_link_libraries(pp-node PRIVATE pp_domain_node_ledger)
+pp_browser_apply_warnings(pp_app_node)
+
+# The two node binaries, each with its set of services (cmake/PpNodeServices.cmake; projects/node-relay NR001):
+# pp-node, what everyone who helps the mesh runs (the ledger role), and pp-node-plus, with the add-ons (the relay).
+# -DPP_NODE_SERVICES=… / -DPP_NODE_PLUS_SERVICES=… build either with another set. A desktop tree builds pp-node-plus only
+# when asked (--target pp-node-plus); the headless build (the package script, CI's node-editions job) builds both.
+include(PpNodeServices)
+pp_add_node_binary(pp-node "${PP_NODE_SERVICES}")
+if(PP_BROWSER_HEADLESS)
+  pp_add_node_binary(pp-node-plus "${PP_NODE_PLUS_SERVICES}")
+else()
+  pp_add_node_binary(pp-node-plus "${PP_NODE_PLUS_SERVICES}" EXCLUDE_FROM_ALL)
 endif()
-pp_browser_apply_warnings(pp-node)
-# Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.
-pp_browser_assert_no_ui_dependencies(pp-node)
-# First-party closure stays foundation / common / lib {people,net} / headless feature.
-pp_browser_assert_node_link_allowlist(pp-node)
-pp_browser_add_no_ui_link_check(pp-node)
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
