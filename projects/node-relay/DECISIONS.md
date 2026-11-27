@@ -88,14 +88,33 @@ enough for a Raspberry Pi and cheap enough to volunteer; an operator with room, 
 **Alternatives:** Fixed limits (one size for a Pi and a server); the HTTPS relay's 90 days as the default (a volunteer's
 disk for little gain while both copies exist).
 
-## NR008 — The operator decides whom the relay registers
+## NR008 — Admission by invite
 
 **Date:** 2026-11-27  
-**Status:** Proposed  
-**Decision:** A registration policy: `self` (the operator's own account and its devices), `allowlist` (named accounts)
-or `open` (anyone, within the budget). Default: `self`.  
-**Rationale:** The first node relays serve their owner and family; opening one to strangers is a deliberate step.  
-**Alternatives:** `open` by default (every node relay becomes everyone's relay at once).
+**Status:** Accepted (Hongwei, 2026-11-27, over several rounds)  
+**Decision:** A node relay registers an account only with an **invite**: a record signed with the owner's authority
+(NR011) — `relay_id`, owner, invitee account, `issued_at`, `expires_at`, extension area — checked by the relay against
+its owner's key.
+- **The owner's own account** (and its devices) needs none.
+- **Friends** get one from the owner's app: "Invite to my relay" on their contact page, sent in the chat.
+- **Lifetime and renewal:** 90 days, renewed when 30 are left, by the same sweep as relay grants (on messaging ready, on
+  a contacts change, every six hours). Only the owner's app renews: the node does not hold the owner's key.
+- **Revocation is immediate:** removing or blocking the friend, or revoking the invite, sends the owner's node a signed
+  revoke, and renewal stops.
+- **After an invite ends** (revoked or run out): the relay takes no new mail for the account (senders get
+  `recipient_not_registered` and go on by the list, as today); mail already waiting stays fetchable until it expires
+  (NR007), collect-only; the invitee's app drops the relay from its card once told. **"Remove and delete their mail
+  now"** is a separate, deliberate action for abuse.
+- **Later, the same invite** is how a paying user gets in (the owner's side issues it once the pricing project's
+  payment promise for the offer is settled) and how an org's member or delegate admits someone (NR011's rules).  
+**Rationale:** One admission check at the relay whatever the route in: friends now; payment and orgs later only add
+ways to receive an invite. Revocation can be immediate because the relay is the owner's, so the expiry is a safety net
+and can be long enough that the owner's devices being off for weeks does not cut friends off. Keeping waiting mail is
+safe: it is sealed, capped per account, and gone within days; the delete action covers abuse.  
+**Alternatives:** Policies on the relay (`self` / `allowlist` / `open`, the earlier proposal): an allowlist the owner's
+devices would have to keep in step with the node, and a separate path for payment. Grant-length invites (30 days): the
+owner's devices off for three weeks would lock friends out. Deleting waiting mail on revocation by default: punishes
+the friend for the owner's choice.
 
 ## NR009 — The recipient chooses delivery: `first` or `all`
 
@@ -132,3 +151,31 @@ It is already how the HTTPS relay works (its file store keeps files 7 days, 10 d
 cannot reach that relay fetches the file directly from the sender's devices when they are online, and otherwise waits;
 node relays' `files` service, and later content-addressed references that name several places to fetch from, close it.  
 **Alternatives:** Files inside messages (a mailbox as large as a file store, and every copy under `all` multiplied).
+
+## NR011 — Ownership and offers, ready for org accounts
+
+**Date:** 2026-11-27  
+**Status:** Accepted (Hongwei, 2026-11-27)  
+**Decision:**
+- **Ownership, proven both ways.** The owner's account card lists its relays (a non-critical entry), and the relay's
+  certificate names its owner (a signed extension entry). Each side signs its half. The relay's operator key stays apart
+  from the owner's account key (one key per job, as pp-ledger-apps' OP004).
+- **The offer.** Under the owner's account, signed with its authority: the relay, who may ask (friends only for now;
+  anyone later), the limits (NR007), and the price in `pp_credit` minor units (always 0 now; the field exists from the
+  start, as the pricing project's currency). A paid subscription later is a payment promise whose `service_ref` names
+  the offer; settling it gets the payer an invite (NR008). Friends see offers on the owner's contact page.
+- **Three rules that keep org accounts possible:**
+  1. every record names its provider by an id (an Account ID now; an org's id later), never as "a person";
+  2. a record is checked as **signed with the provider's authority**: the account's key now; later an org's key set
+     with a threshold (as relay operator sets) and **delegation**, the org certifying a member or a hot key to sign day
+     to day (as a relay certificate certifies a hot signing key). Each record reserves a signed extension entry for that
+     chain of authority, so orgs need no format change;
+  3. ownership, offers and invites never assume a single owner: an org owning several relays, or a relay owned by an
+     org, uses the same records.
+
+Not built now: org accounts, delegation, payment, offers to anyone.  
+**Rationale:** Friends come first (Hongwei), payment is designed with the pricing project, and org accounts are on the
+horizon: the records should not have to change when they arrive. Proving ownership both ways stops anyone claiming
+another's relay, and a relay claiming an account.  
+**Alternatives:** The relay's operator set as the owner (an operator key doubling as an account; no place for an
+account's other services); org support designed now (no user yet; the three rules keep the door open at no cost).

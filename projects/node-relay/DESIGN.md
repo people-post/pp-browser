@@ -1,6 +1,6 @@
 # Node relay — design
 
-**Status:** Accepted (Hongwei, 2026-11-25 and 2026-11-27): NR001–NR007, NR009, NR010; NR008 proposed. No code.  
+**Status:** Accepted (Hongwei, 2026-11-25 and 2026-11-27): NR001–NR011. No code.  
 **Date:** 2026-11-27  
 **Related:** [p2p-mesh N017](../p2p-mesh/DECISIONS.md#n017--split-n4-media-sfu-first-message-relay-separate-pricing-later),
 [N032](../p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes),
@@ -70,7 +70,7 @@ serves both bindings.
 It has its own operator set (1 of 1 for a person's node), relay id and certificate, made with the operator tools
 ([pp-ledger-apps operator app](https://github.com/people-post/pp-ledger-apps/blob/main/projects/operator-app/DESIGN.md)
 or the relay's tool). Registration, grants, the stranger rules, polling with a cursor and `clear` are the relay
-protocol's, unchanged. Its operator decides whom it registers (NR008).
+protocol's, unchanged. Who may register is by invite (below, NR008).
 
 ### 4. Listing and reaching a relay that has no `https://` address (NR004, NR005)
 
@@ -113,7 +113,21 @@ limits count messages only, and `all` multiplies messages, not files. On node re
 its own, comes after the mailbox. Until then an attachment's link names the sender's relay: a recipient who cannot reach
 it fetches from the sender's devices when they are online.
 
-### 8. Phones: the push gateway (later)
+### 8. Who may register: invites, owners and offers (NR008, NR011)
+
+A node relay admits an account with an **invite** signed with its owner's authority; the owner's own account needs
+none. Friends get one from the owner's app ("Invite to my relay", on their contact page). Invites last 90 days and are
+renewed with 30 left by the sweep that renews relay grants; only the owner's app can renew them. Removing or blocking
+the friend revokes at once (a signed revoke to the owner's node). Then the relay takes no new mail for them, and mail
+already waiting stays fetchable until it expires; "Remove and delete their mail now" is there for abuse.
+
+Ownership is proven both ways: the owner's card lists the relay, the relay's certificate names the owner. The owner's
+**offer** says who may ask, the limits and a price in `pp_credit` (0 for now). Later, paying (a payment promise naming
+the offer) and an org's delegates are just other ways to get the same invite. Every record names its provider by id and
+is checked as signed with the provider's authority, with room for an org's key set and delegation, so org accounts need
+no format change.
+
+### 9. Phones: the push gateway (later)
 
 The app registers its APNs or FCM token with the org's **push gateway** and gets an opaque, revocable **wake token** per
 relay, which it gives the relay at registration. The relay calls the gateway with a signed `wake(token)`; the gateway
