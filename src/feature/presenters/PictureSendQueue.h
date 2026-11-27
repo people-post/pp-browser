@@ -65,6 +65,9 @@ private:
 /** A File is anything that is neither a picture nor a video: sent as it is, with no preview and no "original" choice. */
 enum class PictureSendKind { Picture, Video, File };
 
+/** The locale key of the preview page's title for a batch that has a file in it: one item reads "Send file", more are counted. */
+const char* PictureSendItemsTitleKey(size_t items);
+
 /** Where an item is. Every state after Sending is final; RateLimited sends it back to Waiting. */
 enum class PictureItemState {
   Waiting,

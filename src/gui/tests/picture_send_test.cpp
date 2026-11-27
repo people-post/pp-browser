@@ -152,7 +152,12 @@ protected:
     };
     host.is_desktop = [this]() { return fakes_.desktop; };
     host.recipient = []() { return std::string("To Ann Lee"); };
-    host.items_title = [](const size_t n) { return "Send " + std::to_string(n) + " items"; };
+    host.items_title = [](const size_t n) {
+      // The real wording is looked up by the key the app uses, so the page's one-file / many-files split is what is tested.
+      return std::string(PictureSendItemsTitleKey(n) == std::string("picture_send.title_one_file")
+                             ? "Send file"
+                             : "Send " + std::to_string(n) + " items");
+    };
     host.remove_path = [this](const std::string& path) { fakes_.removed_paths.push_back(path); };
     host.play_video = [this](const std::string& path) {
       fakes_.played.push_back(path);
@@ -232,6 +237,11 @@ TEST_F(PictureSendControllerTest, TheTitleIsTheCountOfItemsOnlyWhenThereIsAFile)
   EXPECT_EQ(controller_.Title(), "1 / 2");
   Arrive("c.zip", kMb, PictureSendKind::File);
   EXPECT_EQ(controller_.Title(), "Send 3 items");
+}
+
+TEST_F(PictureSendControllerTest, ABatchOfExactlyOneFileIsTitledSendFile) {
+  Arrive("a.zip", kMb, PictureSendKind::File);
+  EXPECT_EQ(controller_.Title(), "Send file");
 }
 
 TEST_F(PictureSendControllerTest, ADesktopFlagAndTheRecipientComeFromTheHost) {
@@ -1328,7 +1338,7 @@ TEST_P(PictureSendDesktopPageTest, AFilesOnlyQueueShowsTheFileCardTheRecipientAn
   ExpectShownInside(".ps-file", ".ps-stage");
   EXPECT_EQ(Count(".ps-image"), 0U) << "no picture to show";
   EXPECT_EQ(Count(".ps-original"), 0U) << "\"original\" is for pictures";
-  EXPECT_EQ(Text(".ps-title"), "Send 1 items");
+  EXPECT_EQ(Text(".ps-title"), "Send file");
   ExpectEverythingInsideTheWindow();
 }
 

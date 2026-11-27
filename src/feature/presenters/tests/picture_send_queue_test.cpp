@@ -671,5 +671,11 @@ TEST_F(PictureSendQueueTest, OnlyOneEndIsReportedWhateverComesAfter) {
   EXPECT_EQ(Count("put back"), 1u);
 }
 
+TEST(PictureSendTitleKeyTest, OneItemIsTitledAsAFileAndSeveralAreCounted) {
+  EXPECT_STREQ(PictureSendItemsTitleKey(1), "picture_send.title_one_file");
+  EXPECT_STREQ(PictureSendItemsTitleKey(2), "picture_send.title_items");
+  EXPECT_STREQ(PictureSendItemsTitleKey(9), "picture_send.title_items");
+}
+
 } // namespace
 } // namespace pbr

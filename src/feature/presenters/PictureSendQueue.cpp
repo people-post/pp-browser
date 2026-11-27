@@ -60,6 +60,10 @@ bool AttachmentSendOnce::Fired() const {
   return state_ && state_->fired.load();
 }
 
+const char* PictureSendItemsTitleKey(const size_t items) {
+  return items == 1 ? "picture_send.title_one_file" : "picture_send.title_items";
+}
+
 bool PictureOverLimit(const PictureSendItem& item, const bool original, const AttachmentLimits& limits) {
   if (item.kind == PictureSendKind::Video) {
     return !VideoWithinLimit(item.bytes, limits);

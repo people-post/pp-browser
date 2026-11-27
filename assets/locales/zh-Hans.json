@@ -1210,6 +1210,7 @@
     "picture_send.send_n": "发送（{n}）",
     "picture_send.too_large": "太大，发不出去",
     "picture_send.title_items": "发送 {n} 项",
+    "picture_send.title_one_file": "发送文件",
     "picture_send.recipient": "发给 {name}",
     "picture_send.progress": "正在发送 {i}/{n}",
     "picture_send.paced": "发得有点快，稍等一下会接着发",

@@ -4055,7 +4055,9 @@ PictureSendHost ChatController::MakePictureSendHost() {
   host.recipient = [this]() {
     return Tr("picture_send.recipient", {{"name", std::string(chat_.thread_title.c_str())}});
   };
-  host.items_title = [](const size_t items) { return Tr("picture_send.title_items", {{"n", std::to_string(items)}}); };
+  host.items_title = [](const size_t items) {
+    return Tr(PictureSendItemsTitleKey(items), {{"n", std::to_string(items)}});
+  };
   host.play_video = [](const std::string& path) {
     // The system player a chat video opens in (OpenAttachment): QuickLook on the iPhone, over the page.
     if (!PlatformOpenFile(path)) {
