@@ -658,8 +658,8 @@ so `#a0xx-…` anchors still resolve; a moved AMP-CHANNEL section does the same 
 ## CR027 — Layered repos, each born on demand, instead of one capabilities repo
 
 **Date:** 2026-11-27  
-**Status:** accepted (Hongwei, 2026-11-27: one capabilities repo would grow too big; the names pp-cpp-core and
-pp-cpp-node); supersedes CR006
+**Status:** accepted (Hongwei, 2026-11-27: one capabilities repo would grow too big; the names pp-cpp-core and,
+for the node, pp-node); supersedes CR006
 
 **Context:** CR006 put every capability that leaves pp-browser into one repo, to avoid a pin per capability and two
 capabilities pinning two versions of a third. Over time that repo would hold everything below the GUI: pp-browser
@@ -680,14 +680,14 @@ Cut where changes rarely cross: what changes rarely sits low, what changes often
 
 | Repo | Holds | Used by |
 |------|-------|---------|
-| **pp-cpp-core** | base, the apps' shared product base (CR028), people, net, node | pp-browser, pp-cpp-node, pp-ledger-apps' operator app (base, people, net) |
-| **pp-cpp-node** | pp-node (the app, its packaging and release) and the add-on services only pp-node-plus links (relay; files later) | its own two builds |
+| **pp-cpp-core** | base, the apps' shared product base (CR028), people, net, node | pp-browser, pp-node (the repo), pp-ledger-apps' operator app (base, people, net) |
+| **pp-node** (the repo) | the pp-node app (both builds, its packaging and release) and the add-on services only pp-node-plus links (relay; files later) | its own two builds |
 
 `node` goes low because the desktop app runs node services too (its mesh as a node); the add-ons go with their only
 user. Everything else (social, delivery, pricing, media, messaging, calls, broadcast, the GUI) stays in pp-browser
 until a second app needs some of it; realtime (calls and broadcast) then leaves as one repo (CR003).
 
-**Consequences:** pp-browser and pp-cpp-node each pin pp-cpp-core, one pin more than one repo would cost; a change
+**Consequences:** pp-browser and the pp-node repo each pin pp-cpp-core, one pin more than one repo would cost; a change
 spanning pp-cpp-core and an app is a release and a pin. The gate, the standalone build (`capabilities/CMakeLists.txt`,
 CR023) and the capability order hold inside each repo as they do here. Each repo pins what it builds on only for its
 own CI (DESIGN rule 4).
@@ -721,7 +721,7 @@ All of pp-node's ties to pp-browser are in `src/app/node/`, measured 2026-11-27:
 3. **A standalone build of pp-node**: one configure builds pp-node, pp-node-plus and their tests from `capabilities/`
    and the node folder alone, without `src/`, with a CI job keeping it so (as the `capabilities` job does for calls).
 
-Then P4, in this order: pp-cpp-core (its first new user the operator app), then pp-cpp-node, which takes the app, the
+Then P4, in this order: pp-cpp-core (its first new user the operator app), then the pp-node repo, which takes the app, the
 add-ons, `packaging/pp-node`, `release-pp-node.yml` (already its own release train), the `node-editions` job, the
 N-* smokes and the hard lab, `pp_node_closure.sh`, and their docs (BUILD and CONFIGURATION's node sections,
 NODE_METRICS, projects p2p-mesh and node-relay). The move waits for node-relay's mailbox (NR3); steps 1–3 move

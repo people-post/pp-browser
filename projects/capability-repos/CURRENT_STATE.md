@@ -7,7 +7,7 @@
 
 - Measured sizes, capability edges and base usage ([DESIGN § Where we are](DESIGN.md#where-we-are-measured-2026-10-30-develop-at-0d77a6a35)).
 - Direction revised (CR005–CR012): move only for a second app, into one capabilities repo (since CR027, 2026-11-27:
-  layered repos, each born on demand; pp-cpp-core and pp-cpp-node first); AI stays in the
+  layered repos, each born on demand; pp-cpp-core and pp-node first); AI stays in the
   app; identity is people, net its own, pricing inside messaging; posts + content are "social"; contracts and
   vectors in their own repo.
 - **P0:** `scripts/check/check_capability_edges.py` in CI's lint job, starting from 11 edges / 67 include
@@ -164,7 +164,7 @@
 ## Defaults taken (owners may revisit)
 
 - **The shared product base goes into pp-cpp-core** (CR028, 2026-11-27), not left with pp-browser: both apps need it
-  identical (one data layout, one profile model, the same backends), and pp-cpp-node could not otherwise build without
+  identical (one data layout, one profile model, the same backends), and the pp-node repo could not otherwise build without
   pp-browser. The desktop's `AppConfig`, i18n and GUI platform stay with pp-browser (Hongwei).
 
 - **pp-cpp-ui's implicit `../pp-cpp-ui` is gone** (CR012): a developer who built a checkout beside the repo without
@@ -186,7 +186,7 @@
 4. **pp-node repo-ready in place (CR028), now:** its own config type over the same keys; `capabilities/product`, the
    headless product base both apps use; a standalone pp-node build with its CI job. It moves nothing.
 5. P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
-   node; the operator app's relay certificate code is its first new use), then **pp-cpp-node** (pp-node, both editions,
+   node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
    the add-ons, its packaging and release) rather than moving code still being built.
 
 ## A second app is waiting (2026-11-22)

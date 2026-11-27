@@ -84,7 +84,7 @@ apps:  pp-browser (UI, AI, composition)   pp-node (headless roles)   VPN client 
 | app | anything | pp-browser's shell, GUI, AI (CR007), composition |
 
 **When a second app needs capabilities** (CR005), they move to layered repos (CR027) holding the same target sets
-and the same gate: first **pp-cpp-core** (base, the apps' shared product base, people, net, node) and **pp-cpp-node**
+and the same gate: first **pp-cpp-core** (base, the apps' shared product base, people, net, node) and the **pp-node** repo
 (pp-node and its add-ons). pp-node becomes repo-ready in place first (CR028).
 
 ## Rules
