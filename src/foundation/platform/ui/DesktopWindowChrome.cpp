@@ -43,6 +43,8 @@ HitTestLayout g_layout{};
 bool g_event_watch_installed = false;
 /** The system rounds the window's corners (Windows 11, RequestSystemRoundedCorners): our outline follows them. */
 bool g_system_rounds_corners = false;
+/** Whether the dark theme is active: picks the colour of the macOS window's outline (see SetFrameDark). */
+bool g_frame_dark = false;
 
 float DpToWindow(SDL_Window* window, float dp) {
   if (!window || dp <= 0.f) {
@@ -73,7 +75,55 @@ bool PointInTitlebarDrag(SDL_Window* window, int x, int y) {
   return x < win_w - g_layout.controls_width_win;
 }
 
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+/** Quiet time after the last resize / scale / expose event before the macOS frame is settled (shadow, outline width). */
+constexpr Uint32 kFrameSettleDelayMs = 200;
+SDL_TimerID g_frame_settle_timer = 0;
+
+void ApplyMacFrame(SDL_Window* window) {
+  const bool square = DesktopWindowChrome::IsMaximized() || ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
+  desktop::ApplyMacWindowRoundedCorners(window, square, g_frame_dark);
+}
+
+void SDLCALL FrameSettleOnMainThread(void* /*userdata*/) {
+  g_frame_settle_timer = 0;
+  if (SDL_Window* window = Backend::GetWindow()) {
+    ApplyMacFrame(window);
+  }
+}
+
+Uint32 SDLCALL FrameSettleTimer(void* /*userdata*/, SDL_TimerID /*id*/, Uint32 /*interval*/) {
+  SDL_RunOnMainThread(FrameSettleOnMainThread, nullptr, false); // the timer runs on its own thread; AppKit needs main
+  return 0;
+}
+
+/** (Re)start the debounce: the shadow and the outline are re-applied once, after the window has stopped changing. */
+void ScheduleFrameSettle() {
+  if (g_frame_settle_timer != 0) {
+    SDL_RemoveTimer(g_frame_settle_timer);
+  }
+  g_frame_settle_timer = SDL_AddTimer(kFrameSettleDelayMs, FrameSettleTimer, nullptr);
+}
+#endif
+
 bool SDLCALL TitlebarEventWatch(void* /*userdata*/, SDL_Event* event) {
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  if (event) {
+    switch (event->type) {
+      case SDL_EVENT_WINDOW_RESIZED:
+      case SDL_EVENT_WINDOW_EXPOSED: // the first frame is on screen
+      case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+      case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        if (SDL_Window* window = Backend::GetWindow(); window && event->window.windowID == SDL_GetWindowID(window)) {
+          ScheduleFrameSettle();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+#endif
   if (!event || event->type != SDL_EVENT_MOUSE_BUTTON_DOWN) {
     return true;
   }
@@ -174,6 +224,24 @@ void DesktopWindowChrome::Install() {
     g_event_watch_installed = true;
   }
   RefreshAppearance();
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  ScheduleFrameSettle(); // once more after the first frame has been presented
+#endif
+#endif
+}
+
+void DesktopWindowChrome::SetFrameDark(bool dark) {
+#if UI_SDL_VERSION_MAJOR >= 3
+  g_frame_dark = dark;
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  if (Enabled()) {
+    if (SDL_Window* window = Backend::GetWindow()) {
+      ApplyMacFrame(window);
+    }
+  }
+#endif
+#else
+  (void)dark;
 #endif
 }
 
@@ -189,8 +257,7 @@ void DesktopWindowChrome::RefreshAppearance() {
   // Windows 11 rounds the corners itself (square again while maximized); elsewhere this asks nothing.
   g_system_rounds_corners = desktop::RequestSystemRoundedCorners(window);
 #if defined(__APPLE__) && !TARGET_OS_IPHONE
-  const bool square = IsMaximized() || ((SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0);
-  desktop::ApplyMacWindowRoundedCorners(window, square);
+  ApplyMacFrame(window);
 #endif
 #endif
 }
@@ -205,6 +272,12 @@ bool DesktopWindowChrome::SystemRoundsCorners() {
 
 void DesktopWindowChrome::Uninstall() {
 #if UI_SDL_VERSION_MAJOR >= 3
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  if (g_frame_settle_timer != 0) {
+    SDL_RemoveTimer(g_frame_settle_timer);
+    g_frame_settle_timer = 0;
+  }
+#endif
   SDL_Window* window = Backend::GetWindow();
   if (window) {
     SDL_SetWindowHitTest(window, nullptr, nullptr);

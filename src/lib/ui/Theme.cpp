@@ -2,6 +2,7 @@
 
 #include "foundation/platform/AndroidSystemChrome.h"
 #include "foundation/platform/AssetIO.h"
+#include "foundation/platform/ui/DesktopWindowChrome.h"
 
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
@@ -32,6 +33,7 @@ void ActivateResolvedTheme(ui::Context* context, bool dark) {
   }
   context->ActivateTheme("light", !dark);
   context->ActivateTheme("dark", dark);
+  DesktopWindowChrome::SetFrameDark(dark); // the macOS window outline follows the theme
   for (int i = 0; i < context->GetNumDocuments(); ++i) {
     if (auto* document = context->GetDocument(i)) {
       document->UpdateDocument();

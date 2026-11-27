@@ -30,6 +30,13 @@ public:
   static void RefreshAppearance();
 
   /**
+   * Tell the window which theme is active. On macOS the window's outline is drawn by the system layer that clips the
+   * corners and takes its colour from this (light / dark, equal to the shell's `.shell-body--framed` border); nowhere
+   * else does it do anything. Safe before Install.
+   */
+  static void SetFrameDark(bool dark);
+
+  /**
    * True once the system took the request to round the window's corners (Windows 11's small radius, about 8px; set by
    * Install / RefreshAppearance). The shell's 1dp outline follows it (`.shell-body--round-small`).
    */
