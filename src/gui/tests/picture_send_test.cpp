@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -631,6 +632,45 @@ protected:
     }
     Frames();
   }
+  /**
+   * The boxes of what the phone page is made of, by name: the title, the stage and the big picture, every cell of the
+   * strip, the text field, the "original" control and Send. What is hidden is left out.
+   */
+  std::vector<std::pair<std::string, Edges>> PageBoxes() {
+    std::vector<std::pair<std::string, Edges>> rows;
+    for (const char* selector : {".ps-title", ".ps-stage", ".ps-image"}) {
+      if (ui::Element* element = One(selector); element && IsShown(element)) {
+        rows.emplace_back(selector, BorderEdges(element));
+      }
+    }
+    ui::ElementList cells;
+    document_->QuerySelectorAll(cells, ".ps-cell");
+    int shown = 0;
+    for (ui::Element* cell : cells) {
+      if (IsShown(cell)) {
+        rows.emplace_back(".ps-cell#" + std::to_string(shown++), BorderEdges(cell));
+      }
+    }
+    for (const char* selector : {".ps-field", "#ps-text", ".ps-original", ".ps-send"}) {
+      if (ui::Element* element = One(selector); element && IsShown(element)) {
+        rows.emplace_back(selector, BorderEdges(element));
+      }
+    }
+    return rows;
+  }
+  /** Any element that is shown and whose own text starts with `prefix`. */
+  bool ShownTextStartsWith(const std::string& prefix) {
+    ui::ElementList all;
+    document_->QuerySelectorAll(all, "*");
+    for (ui::Element* element : all) {
+      std::string text(element->GetInnerRML().c_str());
+      text.erase(0, text.find_first_not_of(" \t\r\n"));
+      if (text.rfind(prefix, 0) == 0 && IsShown(element)) {
+        return true;
+      }
+    }
+    return false;
+  }
   /** Inside the screen, both ways. */
   void ExpectInside(const char* selector) {
     ui::Element* element = One(selector);
@@ -697,6 +737,95 @@ TEST_P(PictureSendPageTest, OneAndNinePicturesFitTheScreenWithTheFieldAndSendIns
     EXPECT_FALSE(controller_.IsOpen());
     fakes_ = Fakes{};
     queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+  }
+}
+
+// The phone page's boxes, measured on the page as it was before the desktop work (2026-11-27): a pictures-only queue
+// at two phone widths. The desktop work adds nodes to this same page file but they are hidden on a phone, so none of
+// these numbers may change; a change here is a visible change on the phone.
+struct BaselineBox {
+  const char* name;
+  float left, top, right, bottom;
+};
+
+const std::vector<BaselineBox>& PhoneBaseline(const int width, const int count) {
+  static const std::map<std::pair<int, int>, std::vector<BaselineBox>> kBaseline = {
+      {{375, 1},
+       {
+           {".ps-title", 52.0f, 62.8f, 323.0f, 83.2f},
+           {".ps-stage", 16.0f, 99.0f, 359.0f, 610.0f},
+           {".ps-image", 16.0f, 226.0f, 359.0f, 483.0f},
+           {".ps-field", 16.0f, 614.0f, 359.0f, 658.0f},
+           {"#ps-text", 32.0f, 614.0f, 343.0f, 658.0f},
+           {".ps-original", 16.0f, 662.0f, 359.0f, 712.0f},
+           {".ps-send", 16.0f, 716.0f, 359.0f, 766.0f},
+       }},
+      {{375, 3},
+       {
+           {".ps-title", 52.0f, 62.8f, 323.0f, 83.2f},
+           {".ps-stage", 16.0f, 99.0f, 359.0f, 514.0f},
+           {".ps-image", 16.0f, 178.0f, 359.0f, 435.0f},
+           {".ps-cell#0", 16.0f, 534.0f, 80.0f, 598.0f},
+           {".ps-cell#1", 88.0f, 534.0f, 152.0f, 598.0f},
+           {".ps-cell#2", 160.0f, 534.0f, 224.0f, 598.0f},
+           {".ps-field", 16.0f, 614.0f, 359.0f, 658.0f},
+           {"#ps-text", 32.0f, 614.0f, 343.0f, 658.0f},
+           {".ps-original", 16.0f, 662.0f, 359.0f, 712.0f},
+           {".ps-send", 16.0f, 716.0f, 359.0f, 766.0f},
+       }},
+      {{393, 1},
+       {
+           {".ps-title", 52.0f, 62.8f, 341.0f, 83.2f},
+           {".ps-stage", 16.0f, 99.0f, 377.0f, 610.0f},
+           {".ps-image", 16.0f, 219.5f, 377.0f, 489.5f},
+           {".ps-field", 16.0f, 614.0f, 377.0f, 658.0f},
+           {"#ps-text", 32.0f, 614.0f, 361.0f, 658.0f},
+           {".ps-original", 16.0f, 662.0f, 377.0f, 712.0f},
+           {".ps-send", 16.0f, 716.0f, 377.0f, 766.0f},
+       }},
+      {{393, 3},
+       {
+           {".ps-title", 52.0f, 62.8f, 341.0f, 83.2f},
+           {".ps-stage", 16.0f, 99.0f, 377.0f, 514.0f},
+           {".ps-image", 16.0f, 171.5f, 377.0f, 441.5f},
+           {".ps-cell#0", 16.0f, 534.0f, 80.0f, 598.0f},
+           {".ps-cell#1", 88.0f, 534.0f, 152.0f, 598.0f},
+           {".ps-cell#2", 160.0f, 534.0f, 224.0f, 598.0f},
+           {".ps-field", 16.0f, 614.0f, 377.0f, 658.0f},
+           {"#ps-text", 32.0f, 614.0f, 361.0f, 658.0f},
+           {".ps-original", 16.0f, 662.0f, 377.0f, 712.0f},
+           {".ps-send", 16.0f, 716.0f, 377.0f, 766.0f},
+       }},
+  };
+  return kBaseline.at({width, count});
+}
+
+TEST_P(PictureSendPageTest, ThePhonePageKeepsItsBoxesForAPicturesOnlyQueue) {
+  for (const int count : {1, 3}) {
+    SCOPED_TRACE("pictures: " + std::to_string(count));
+    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+    Fill(count);
+    const std::vector<BaselineBox>& golden = PhoneBaseline(width(), count);
+    const auto live = PageBoxes();
+    ASSERT_EQ(live.size(), golden.size());
+    for (size_t i = 0; i < golden.size(); ++i) {
+      SCOPED_TRACE(golden[i].name);
+      EXPECT_EQ(live[i].first, golden[i].name);
+      EXPECT_NEAR(live[i].second.left, golden[i].left, 1.f);
+      EXPECT_NEAR(live[i].second.top, golden[i].top, 1.f);
+      EXPECT_NEAR(live[i].second.right, golden[i].right, 1.f);
+      EXPECT_NEAR(live[i].second.bottom, golden[i].bottom, 1.f);
+    }
+    EXPECT_EQ(Text(".ps-title"), "1 / " + std::to_string(count));
+    // Nothing of the desktop work shows on a phone: no recipient line, no file card, no file cell.
+    EXPECT_FALSE(ShownTextStartsWith("To ")) << "no recipient line";
+    EXPECT_FALSE(ShownTextStartsWith("\xE5\x8F\x91\xE7\xBB\x99")) << "no recipient line (发给)";
+    for (const char* selector : {".ps-recipient", ".ps-file", ".ps-cell-file"}) {
+      EXPECT_EQ(Count(selector), 0U) << selector;
+    }
+    controller_.OnBack();
+    Frames();
+    fakes_ = Fakes{};
   }
 }
 
