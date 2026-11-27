@@ -3937,10 +3937,16 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
         SettlePictureQueue();
       });
     };
+    // A file goes the way a file picked with "attach file" goes (source File, a file bubble); a picture as it is or
+    // shrunk; a video as it is. One send path for all three.
+    const bool file = item.kind == PictureSendKind::File;
     const bool video = item.kind == PictureSendKind::Video;
-    StartAttachmentUpload(path, original && !video ? OutgoingPickSource::Original : OutgoingPickSource::Photo,
-                          /*voice_file=*/false, picture_queue_->ThreadId(),
-                          video ? PendingUploadKind::Video : PendingUploadKind::Picture, /*pick_serial=*/0,
+    const OutgoingPickSource source =
+        file ? OutgoingPickSource::File
+             : (original && !video ? OutgoingPickSource::Original : OutgoingPickSource::Photo);
+    const PendingUploadKind bubble =
+        file ? PendingUploadKind::File : (video ? PendingUploadKind::Video : PendingUploadKind::Picture);
+    StartAttachmentUpload(path, source, /*voice_file=*/false, picture_queue_->ThreadId(), bubble, /*pick_serial=*/0,
                           std::move(on_finished), /*from_picture_queue=*/true);
   };
   ports.send_text = [this](const std::string& thread_id, const std::string& text) {
@@ -4044,6 +4050,12 @@ PictureSendHost ChatController::MakePictureSendHost() {
     return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
   };
   host.make_preview = &MakePicturePreviewFiles;
+  // The computer page names who it goes to (the chat header's own title) and says how many items a batch with a file has.
+  host.is_desktop = []() { return !Platform::IsMobile(); };
+  host.recipient = [this]() {
+    return Tr("picture_send.recipient", {{"name", std::string(chat_.thread_title.c_str())}});
+  };
+  host.items_title = [](const size_t items) { return Tr("picture_send.title_items", {{"n", std::to_string(items)}}); };
   host.play_video = [](const std::string& path) {
     // The system player a chat video opens in (OpenAttachment): QuickLook on the iPhone, over the page.
     if (!PlatformOpenFile(path)) {

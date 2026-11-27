@@ -1230,6 +1230,8 @@
     "picture_send.send_one": "Send",
     "picture_send.send_n": "Send ({n})",
     "picture_send.too_large": "Too large to send",
+    "picture_send.title_items": "Send {n} items",
+    "picture_send.recipient": "To {name}",
     "picture_send.progress": "Sending {i} of {n}",
     "picture_send.paced": "Sending a bit fast — continuing in a moment",
     "picture_send.not_sent": "{n} not sent",

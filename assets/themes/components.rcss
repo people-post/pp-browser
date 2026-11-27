@@ -17441,6 +17441,84 @@ textarea:composing ~ .ps-placeholder {
   cursor: pointer;
 }
 
+/* Send-preview page on a computer (DEV/PLAN-desktop-drop-paste.md): .picture-send--desktop is on the page's root only
+   when ps_desktop is true (a computer window, the wide card and the narrow window alike); a phone never has it, so
+   nothing below changes a phone. Colours: colors.rcss.tmpl. */
+.picture-send--desktop .ps-recipient {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 20dp 8dp 20dp;
+  font-size: 14dp;
+  line-height: 18dp;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The card of a file in the middle of the stage: a type tile, the name (two lines at most) and the size. */
+.picture-send--desktop .ps-file {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 360dp;
+  max-width: 90%;
+  padding: 12dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.picture-send--desktop .ps-file-tile {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  border-radius: 14dp;
+}
+
+.picture-send--desktop .ps-file-ext {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+}
+
+.picture-send--desktop .ps-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 12dp;
+}
+
+.picture-send--desktop .ps-file-name {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  max-height: 40dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.picture-send--desktop .ps-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* A file's cell in the strip: its type label (or the generic icon) in the 64dp box, where a picture has its thumbnail. */
+.picture-send--desktop .ps-cell-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60dp;
+  height: 60dp;
+}
+
+.picture-send--desktop .ps-cell-ext {
+  font-size: 13dp;
+  font-weight: bold;
+}
+
 /* The send time of an attachment bubble (phones; the desktop has the meta line). A file, music or unready card carries
    it at the bottom right inside the card like a text bubble's; a picture or video has a slim footer row under its
    media, inside the bubble (nothing is drawn over the media), "size · route icon time" at the right. Both in the text

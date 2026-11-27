@@ -6,6 +6,7 @@
 //    out what is too large, the size shows only with "original" on, removing updates the count.
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/chat/PictureSendController.h"
+#include "lib/messaging/AttachmentCache.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "lib/ui/ViewCatalog.h"
@@ -58,6 +59,8 @@ struct Fakes {
   /** B236: whether the host lets Send go (a held chat: no), and how often it was asked. */
   bool may_send = true;
   int send_asks = 0;
+  /** A computer window (ps_desktop): the recipient line and the file card show only there. */
+  bool desktop = false;
   int next_layer = 7;
   std::function<void()> on_cancel;
   std::vector<PictureSendReport> reports;
@@ -147,6 +150,9 @@ protected:
         fakes_.ui.push_back(std::move(work));
       }
     };
+    host.is_desktop = [this]() { return fakes_.desktop; };
+    host.recipient = []() { return std::string("To Ann Lee"); };
+    host.items_title = [](const size_t n) { return "Send " + std::to_string(n) + " items"; };
     host.remove_path = [this](const std::string& path) { fakes_.removed_paths.push_back(path); };
     host.play_video = [this](const std::string& path) {
       fakes_.played.push_back(path);
@@ -192,6 +198,49 @@ TEST_F(PictureSendControllerTest, ThePageOpensOnTheFirstPictureAndHoldsOneLayer)
   EXPECT_EQ(fakes_.pushed, 1) << "one page for the whole pick; later pictures only join it";
   ASSERT_EQ(controller_.Cells().size(), 2U);
   EXPECT_EQ(fakes_.first_preview, 1) << "the first picture shown is timed once";
+}
+
+TEST_F(PictureSendControllerTest, AFileGetsNoPreviewJobAndItsCellCarriesNameSizeAndTypeLabel) {
+  Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
+  ASSERT_TRUE(controller_.IsOpen());
+  EXPECT_TRUE(fakes_.made.empty()) << "nothing to decode in a file";
+  ASSERT_EQ(controller_.Cells().size(), 1U);
+  const PictureSendCell& cell = controller_.Cells()[0];
+  EXPECT_TRUE(cell.is_file);
+  EXPECT_FALSE(cell.ready);
+  EXPECT_EQ(std::string(cell.name.c_str()), "report.pdf");
+  EXPECT_EQ(std::string(cell.size_label.c_str()), FormatAttachmentByteSize(3 * kMb));
+  EXPECT_EQ(std::string(cell.ext.c_str()), "PDF") << "the chat file card's own type label";
+  EXPECT_TRUE(controller_.CurrentIsFile());
+  EXPECT_TRUE(controller_.CanSend());
+  controller_.OnToggleOriginal();
+  EXPECT_TRUE(fakes_.made.empty()) << "\"original\" does not give a file a preview either";
+}
+
+TEST_F(PictureSendControllerTest, ThePageShowsTheOriginalChoiceOnlyWhenThereIsAPicture) {
+  Arrive("a.pdf", kMb, PictureSendKind::File);
+  EXPECT_FALSE(controller_.ShowOriginal()) << "files only";
+  Arrive("b.mp4", kMb, PictureSendKind::Video);
+  EXPECT_FALSE(controller_.ShowOriginal()) << "a video has no original either";
+  Arrive("c.jpg", kMb);
+  EXPECT_TRUE(controller_.ShowOriginal());
+}
+
+TEST_F(PictureSendControllerTest, TheTitleIsTheCountOfItemsOnlyWhenThereIsAFile) {
+  Arrive("a.jpg");
+  Arrive("b.mp4", kMb, PictureSendKind::Video);
+  EXPECT_EQ(controller_.Title(), "1 / 2");
+  Arrive("c.zip", kMb, PictureSendKind::File);
+  EXPECT_EQ(controller_.Title(), "Send 3 items");
+}
+
+TEST_F(PictureSendControllerTest, ADesktopFlagAndTheRecipientComeFromTheHost) {
+  Arrive("a.jpg");
+  EXPECT_FALSE(controller_.Desktop());
+  EXPECT_EQ(controller_.Recipient(), "To Ann Lee");
+  fakes_.desktop = true;
+  Arrive("b.jpg");
+  EXPECT_TRUE(controller_.Desktop());
 }
 
 TEST_F(PictureSendControllerTest, BackSendsNothingReleasesTheFilesAndPutsTheTextInTheOriginChat) {
@@ -1146,6 +1195,195 @@ TEST_P(PictureSendWidePageTest, CancelClosesThePageAndSendSendsWithTheTextAndThe
   Frames();
   EXPECT_FALSE(controller_.IsOpen()) << "Send closes the page";
   EXPECT_TRUE(queue_->Started());
+}
+
+// The send-preview page on a computer: the wide card (windows of 768 dp and more) and the phone file that a narrower
+// computer window loads, both with ps_desktop on (DEV/PLAN-desktop-drop-paste.md, step B).
+struct DesktopWindow {
+  int width;
+  int height;
+  bool wide;
+};
+
+class PictureSendDesktopPageTest : public PictureSendControllerTest,
+                                   public ::testing::WithParamInterface<DesktopWindow> {
+protected:
+  void SetUp() override {
+    PictureSendControllerTest::SetUp();
+    fakes_.desktop = true;
+    ViewCatalog::ClearCache();
+    IAssetLocator::SetInstance(nullptr);
+    IAssetLocator::SetInstance(&locator_);
+    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    LocalizationService::Instance().SetPreferredLanguage("en");
+    ui::SetRenderInterface(&render_);
+    ASSERT_TRUE(ui::Initialise());
+    ASSERT_TRUE(ui::LoadFontFace(AssetPath("fonts/Inter-Regular.ttf"), /*fallback_face=*/true));
+    context_ = ui::CreateContext("picture-send-desktop-test", {width(), height()});
+    ASSERT_NE(context_, nullptr);
+    ASSERT_TRUE(controller_.RegisterModel(context_));
+    const std::string key = GetParam().wide ? ViewCatalog::KeyForLayout("picture_send", true) : "picture_send";
+    const std::string body = LocalizationService::Instance().LocalizeText(ViewCatalog::LoadBody(key));
+    ASSERT_FALSE(body.empty());
+    ASSERT_EQ(body.find("{{include:"), std::string::npos);
+    const std::string sheets = ReadAll(AssetPath("themes/components.rcss")) + ReadAll(AssetPath("themes/wide.rcss")) +
+                               ReadAll(AssetPath("themes/colors-light.rcss"));
+    const std::string size = "width: " + std::to_string(width()) + "dp; height: " + std::to_string(height()) + "dp;";
+    const std::string page =
+        GetParam().wide
+            ? "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; " + size +
+                  "\"><div class=\"shell-layer shell-layer-overlay\"><div class=\"shell-frame "
+                  "shell-frame--picture_send\">"
+                  "<div class=\"shell-overlay-body\">" +
+                  body + "</div></div></div></div>"
+            : "<div style=\"position: absolute; top: 0; left: 0; " + size + " box-sizing: border-box;\">" + body +
+                  "</div>";
+    document_ = context_->LoadDocumentFromMemory(
+        "<rml><head><style>" + sheets +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" + page + "</body></rml>");
+    ASSERT_NE(document_, nullptr);
+    document_->Show();
+    Frames();
+  }
+  void TearDown() override {
+    DataModelHost::Instance().Clear();
+    if (context_) {
+      ui::RemoveContext("picture-send-desktop-test");
+    }
+    ui::Shutdown();
+    ui::SetRenderInterface(nullptr);
+    IAssetLocator::SetInstance(nullptr);
+    ViewCatalog::ClearCache();
+  }
+  int width() const { return GetParam().width; }
+  int height() const { return GetParam().height; }
+  void Frames() {
+    for (int i = 0; i < 3; ++i) {
+      controller_.Update();
+      context_->Update();
+    }
+  }
+  ui::Element* One(const char* selector) {
+    ui::ElementList found;
+    document_->QuerySelectorAll(found, selector);
+    return found.empty() ? nullptr : found.front();
+  }
+  size_t Count(const char* selector) {
+    ui::ElementList found;
+    document_->QuerySelectorAll(found, selector);
+    return static_cast<size_t>(std::count_if(found.begin(), found.end(), IsShown));
+  }
+  std::string Text(const char* selector) {
+    ui::Element* element = One(selector);
+    return element ? std::string(element->GetInnerRML().c_str()) : "<none>";
+  }
+  /** Shown, and inside the window (and inside `outer` when given). */
+  void ExpectShownInside(const char* selector, const char* outer = nullptr) {
+    ui::Element* element = One(selector);
+    ASSERT_NE(element, nullptr) << selector;
+    ASSERT_TRUE(IsShown(element)) << selector;
+    const float dp = context_->GetDensityIndependentPixelRatio();
+    const Edges edges = BorderEdges(element);
+    EXPECT_GE(edges.left, 0.f) << selector;
+    EXPECT_LE(edges.right, static_cast<float>(width()) * dp + 0.5f) << selector;
+    EXPECT_GE(edges.top, 0.f) << selector;
+    EXPECT_LE(edges.bottom, static_cast<float>(height()) * dp + 0.5f) << selector;
+    if (outer) {
+      const Edges box = BorderEdges(One(outer));
+      EXPECT_GE(edges.left, box.left - 0.5f) << selector << " in " << outer;
+      EXPECT_LE(edges.right, box.right + 0.5f) << selector << " in " << outer;
+      EXPECT_GE(edges.top, box.top - 0.5f) << selector << " in " << outer;
+      EXPECT_LE(edges.bottom, box.bottom + 0.5f) << selector << " in " << outer;
+    }
+  }
+  void ExpectEverythingInsideTheWindow() {
+    if (GetParam().wide) {
+      ExpectShownInside(".shell-frame--picture_send");
+    }
+    for (const char* selector :
+         {".picture-send", ".ps-top", ".ps-recipient", ".ps-stage", ".ps-field", "#ps-text", ".ps-send"}) {
+      ExpectShownInside(selector);
+    }
+  }
+  AssetsLocator locator_;
+  NullRender render_;
+  ui::Context* context_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+};
+
+INSTANTIATE_TEST_SUITE_P(ComputerWindows, PictureSendDesktopPageTest,
+                         ::testing::Values(DesktopWindow{1280, 800, true}, DesktopWindow{1000, 700, true},
+                                           DesktopWindow{700, 800, false}));
+
+TEST_P(PictureSendDesktopPageTest, AFilesOnlyQueueShowsTheFileCardTheRecipientAndNoOriginalChoice) {
+  Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
+  Frames();
+  ASSERT_TRUE(controller_.IsOpen());
+  EXPECT_EQ(Text(".ps-recipient"), "To Ann Lee");
+  ExpectShownInside(".ps-recipient");
+  EXPECT_EQ(Count(".ps-file"), 1U);
+  EXPECT_EQ(Text(".ps-file-name"), "report.pdf");
+  EXPECT_EQ(Text(".ps-file-size"), FormatAttachmentByteSize(3 * kMb));
+  EXPECT_EQ(Text(".ps-file-ext"), "PDF");
+  ExpectShownInside(".ps-file", ".ps-stage");
+  EXPECT_EQ(Count(".ps-image"), 0U) << "no picture to show";
+  EXPECT_EQ(Count(".ps-original"), 0U) << "\"original\" is for pictures";
+  EXPECT_EQ(Text(".ps-title"), "Send 1 items");
+  ExpectEverythingInsideTheWindow();
+}
+
+TEST_P(PictureSendDesktopPageTest, AMixedQueueShowsTheStripWithAFileCellAndTheOriginalChoice) {
+  Arrive("a.jpg", kMb);
+  Arrive("/some/dir/archive.zip", 20 * kMb, PictureSendKind::File);
+  Arrive("c.jpg", kMb);
+  Frames();
+  EXPECT_EQ(Text(".ps-title"), "Send 3 items");
+  EXPECT_EQ(Count(".ps-original"), 1U) << "there is a picture";
+  EXPECT_EQ(Count(".ps-cell"), 3U);
+  EXPECT_EQ(Count(".ps-cell-file"), 1U) << "the file's cell shows its type, not a thumbnail";
+  EXPECT_EQ(Count(".ps-file"), 0U) << "the current one is a picture";
+  controller_.OnSelect(1);
+  Frames();
+  EXPECT_EQ(Count(".ps-file"), 1U);
+  EXPECT_EQ(Count(".ps-image"), 0U);
+  ExpectShownInside(".ps-file", ".ps-stage");
+  ExpectShownInside(".ps-strip");
+  ExpectEverythingInsideTheWindow();
+  controller_.OnSelect(0);
+  Frames();
+  EXPECT_EQ(Count(".ps-file"), 0U);
+  EXPECT_EQ(Count(".ps-image"), 1U);
+}
+
+TEST_P(PictureSendDesktopPageTest, ALongFileNameAndNineItemsStayInsideTheWindow) {
+  Arrive("/some/dir/" + std::string(120, 'n') + ".pdf", 3 * kMb, PictureSendKind::File);
+  for (int i = 1; i < 9; ++i) {
+    Arrive(i % 2 ? "p" + std::to_string(i) + ".jpg" : "/d/f" + std::to_string(i) + ".docx", kMb,
+           i % 2 ? PictureSendKind::Picture : PictureSendKind::File);
+  }
+  Frames();
+  ExpectShownInside(".ps-file", ".ps-stage");
+  ExpectShownInside(".ps-strip");
+  ExpectEverythingInsideTheWindow();
+}
+
+TEST_P(PictureSendDesktopPageTest, AFileOverTheLimitSaysSoOnItsCardAndInItsCell) {
+  Arrive("/d/huge.zip", kDefaultAttachmentSendMaxBytes + 1, PictureSendKind::File);
+  Arrive("p.jpg", kMb);
+  Frames();
+  ASSERT_TRUE(queue_->Items()[0].too_large);
+  EXPECT_EQ(Count(".ps-flag--stage"), 1U);
+  EXPECT_EQ(Count(".ps-flag--cell"), 1U);
+}
+
+TEST_P(PictureSendDesktopPageTest, NotOnDesktopThereIsNoRecipientLineAndNoFileCardEvenWithAFileInTheQueue) {
+  fakes_.desktop = false;
+  Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
+  Arrive("p.jpg", kMb);
+  Frames();
+  EXPECT_EQ(Count(".ps-recipient"), 0U);
+  EXPECT_EQ(Count(".ps-file"), 0U);
+  EXPECT_EQ(Count(".ps-cell-file"), 0U);
 }
 
 TEST(PictureSendWiringPinTest, EveryExitClosesThePageBeforeTheQueueLeaves) {

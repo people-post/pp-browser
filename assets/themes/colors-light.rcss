@@ -4276,6 +4276,39 @@ input.checkbox:checked {
   color: #3c3c434c;
 }
 
+.picture-send--desktop .ps-recipient {
+  color: #3c3c4399;
+}
+
+.picture-send--desktop .ps-file {
+  background-color: #ffffff;
+}
+
+.picture-send--desktop .ps-file-tile {
+  background-color: #78788033;
+}
+
+.picture-send--desktop .ps-file-ext {
+  color: #000000;
+}
+
+.picture-send--desktop .ps-file-icon,
+.picture-send--desktop .ps-cell-icon {
+  image-color: #3c3c4399;
+}
+
+.picture-send--desktop .ps-file-name {
+  color: #000000;
+}
+
+.picture-send--desktop .ps-file-size {
+  color: #3c3c4399;
+}
+
+.picture-send--desktop .ps-cell-ext {
+  color: #3c3c4399;
+}
+
 /* Recovery phrase cards: a quiet fill on the desktop page, the white card on a phone's grey page. */
 .recovery-card {
   background-color: #f2f2f7;

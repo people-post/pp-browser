@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <filesystem>
 #include <utility>
 
 namespace pbr {
@@ -63,6 +64,9 @@ bool PictureOverLimit(const PictureSendItem& item, const bool original, const At
   if (item.kind == PictureSendKind::Video) {
     return !VideoWithinLimit(item.bytes, limits);
   }
+  if (item.kind == PictureSendKind::File) {
+    return item.bytes > limits.max_file_bytes;
+  }
   if (original) {
     return item.bytes > MaxAttachmentSendBytes(limits, AttachmentMimeFromFilename(item.path),
                                                /*image_is_shrunk=*/false);
@@ -79,7 +83,7 @@ PictureSendItem* PictureSendQueue::Find(const uint64_t id) {
 }
 
 std::optional<uint64_t> PictureSendQueue::Add(std::string path, const PictureSendKind kind, const uint64_t bytes,
-                                              const uint64_t pixels) {
+                                              const uint64_t pixels, std::string display_name, const bool owned) {
   if (ended_ || items_.size() >= kMaxItems) {
     if (!path.empty()) {
       ports_.release(path);
@@ -92,6 +96,9 @@ std::optional<uint64_t> PictureSendQueue::Add(std::string path, const PictureSen
   item.kind = kind;
   item.bytes = bytes;
   item.pixels = pixels;
+  item.display_name =
+      display_name.empty() ? std::filesystem::path(item.path).filename().string() : std::move(display_name);
+  item.owned = owned;
   item.too_large = PictureOverLimit(item, original_, limits_);
   const uint64_t id = item.id;
   items_.push_back(std::move(item));

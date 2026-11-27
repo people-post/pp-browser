@@ -30,6 +30,12 @@ struct PictureSendCell {
   bool ready = false;
   bool current = false;
   bool too_large = false;
+  /** A file (not a picture or a video): no thumbnail; the cell shows its type label and the page a file card. */
+  bool is_file = false;
+  ui::String name;
+  ui::String size_label;
+  /** The chat file card's type label ("PDF"); empty: the generic file icon. */
+  ui::String ext;
   /** The thumbnail covering the square cell without stretching: its size and offset in dp, with the unit. */
   ui::String iw = "0dp";
   ui::String ih = "0dp";
@@ -78,6 +84,14 @@ struct PictureSendHost {
   std::function<void(std::function<void()>)> post_ui;
   /** Plays the picked video `path` in the system's player over the page (what a chat video opens in); false: it could not. */
   std::function<bool(const std::string& path)> play_video;
+  /**
+   * The words and the form factor of the computer page: the open chat's name as "To {name}", the title of a batch with a
+   * file ("Send {n} items"), and whether this is a computer (the recipient line and the file card show only there).
+   * None: no recipient, the pictures' own title, not a computer.
+   */
+  std::function<std::string()> recipient;
+  std::function<std::string(size_t items)> items_title;
+  std::function<bool()> is_desktop;
   /** Deletes a file / a folder (default: std::filesystem). */
   std::function<void(const std::string& path)> remove_path;
 };
@@ -139,6 +153,11 @@ public:
   void SetTextForTest(const std::string& text) { text_ = text.c_str(); }
   int CurrentIndex() const { return current_; }
   const std::vector<PictureSendCell>& Cells() const { return cells_; }
+  bool CurrentIsFile() const { return current_is_file_; }
+  bool ShowOriginal() const { return show_original_; }
+  bool Desktop() const { return desktop_; }
+  std::string Title() const { return std::string(title_.c_str()); }
+  std::string Recipient() const { return std::string(recipient_.c_str()); }
   std::string CurrentSrc() const { return std::string(current_src_.c_str()); }
   bool CanSend() const { return can_send_; }
   /** The "original" check: off every time the page opens, set only by a tap, never stored anywhere. */
@@ -209,6 +228,13 @@ private:
   bool current_ready_ = false;
   bool current_video_ = false;
   bool current_too_large_ = false;
+  bool current_is_file_ = false;
+  ui::String current_name_;
+  ui::String current_size_;
+  ui::String current_ext_;
+  bool show_original_ = true;
+  bool desktop_ = false;
+  ui::String recipient_;
   bool has_items_ = false;
   ui::String text_;
   bool original_ = false;

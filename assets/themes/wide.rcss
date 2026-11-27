@@ -2885,6 +2885,15 @@
   border-radius: 22dp;
 }
 
+/* The card is wide: the recipient line lines up with the title, the file card is a little roomier. */
+.shell-body--wide .picture-send--wide .ps-recipient {
+  padding: 0 56dp 8dp 56dp;
+}
+
+.shell-body--wide .picture-send--wide .ps-file {
+  width: 420dp;
+}
+
 /* ---- Modal panels on the desktop (PaneSpec::modal; ShellLayoutRml::Overlays): the scrim is fixed to the whole window,
    over the rail, the lists, the transcript and the status bar (which drops under it, .shell-body--modal), and swallows
    clicks, the wheel and hover; the stage centres the frame in the window, 48dp clear of every edge (the frame takes the
