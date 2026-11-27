@@ -33,6 +33,7 @@ namespace pbr {
 namespace {
 
 constexpr char kNodeDataDirName[] = "pp-node";
+constexpr char kDataLockFileName[] = "pp-node.lock";
 
 } // namespace
 
@@ -59,6 +60,20 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   AppPaths::DataDir(config->data_dir.empty()
                         ? (std::filesystem::path(AppPaths::DataDir()).parent_path() / kNodeDataDirName).string()
                         : config->data_dir);
+
+  // One node per data folder at a time (projects/node-relay NR001): a second process would run the same identity twice
+  // and write the same sealed files. The OS drops the lock when the process ends, a crash included.
+  std::error_code mkdir_error;
+  std::filesystem::create_directories(AppPaths::DataDir(), mkdir_error);
+  const std::string lock_file = (std::filesystem::path(AppPaths::DataDir()) / kDataLockFileName).string();
+  auto data_lock = os::OsDirLock::Acquire(lock_file);
+  if (!data_lock) {
+    if (data_lock.error().message.find(os::OsDirLock::kHeldElsewhere) != std::string::npos) {
+      return Error("another pp-node is running on " + AppPaths::DataDir() + " (" + lock_file +
+                   "); stop it first, or ask it with curl …/status instead of --status");
+    }
+    return data_lock.error();
+  }
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());
   if (!registry) {
@@ -163,6 +178,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   }
 
   NodeBootstrapResult result;
+  result.data_lock = std::move(*data_lock);
   result.config = std::move(*config);
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;

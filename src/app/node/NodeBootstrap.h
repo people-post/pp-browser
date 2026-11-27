@@ -4,6 +4,7 @@
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/data/Config.h"
+#include "foundation/platform/os/OsDirLock.h"
 #include "lib/people/IdentityStore.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Error.h"
@@ -24,6 +25,11 @@ struct NodeBootstrapOptions {
 };
 
 struct NodeBootstrapResult {
+  /**
+   * The data root's lock (`<data dir>/pp-node.lock`), held for the process's life: one node per data folder at a time.
+   * First, so it is released last.
+   */
+  std::unique_ptr<os::OsDirLock> data_lock;
   AppConfig config;
   std::string data_dir;
   std::string profile_data_dir;
