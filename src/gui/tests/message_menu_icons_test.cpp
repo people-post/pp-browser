@@ -16,7 +16,9 @@ std::string Icon(const char* name) {
   std::ifstream in(std::string(PP_BROWSER_ASSETS_DIR) + "/icons/v2/" + name + ".svg", std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r'); // a Windows checkout has CRLF line ends
+  return text;
 }
 
 // The value of an attribute of the <svg> root, e.g. viewBox="0 0 24 24" gives "0 0 24 24"; empty when absent.

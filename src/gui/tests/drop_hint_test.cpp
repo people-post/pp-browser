@@ -45,7 +45,9 @@ std::string Asset(const std::string& relative) {
   std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r'); // a Windows checkout has CRLF line ends
+  return text;
 }
 
 bool Has(const std::string& text, const std::string& part) {

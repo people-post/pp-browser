@@ -265,7 +265,9 @@ std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r'); // a Windows checkout has CRLF line ends
+  return text;
 }
 
 std::string Body(const std::string& source, const std::string& signature) {

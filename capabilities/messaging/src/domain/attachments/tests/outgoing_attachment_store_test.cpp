@@ -164,6 +164,13 @@ TEST_F(OutgoingStoreTest, AFolderThatCannotBeInspectedIsNotKnownToBeEmpty) {
   if (ec) {
     GTEST_SKIP() << "symbolic links are not available here: " << ec.message();
   }
+  // Windows reports a self-referential link as "not found", so there is no inspection error to provoke there.
+  std::error_code probe_ec;
+  const auto probe = std::filesystem::status(dir_ / "blob_cipher" / "outgoing", probe_ec);
+  if (!probe_ec || probe.type() == std::filesystem::file_type::not_found) {
+    std::filesystem::remove(dir_ / "blob_cipher", ec);
+    GTEST_SKIP() << "this platform reports the self-linked folder as not found, not as an error";
+  }
   bool complete = true;
   EXPECT_TRUE(store_->ListForThread("t1", Dek(1), &complete).empty());
   EXPECT_FALSE(complete) << "an error other than 'not found' is never 'nothing staged'";

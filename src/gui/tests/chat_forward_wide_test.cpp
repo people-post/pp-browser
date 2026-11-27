@@ -535,7 +535,9 @@ std::string ReadSource(const std::string& relative) {
   std::ifstream in(std::string(PP_SOURCE_DIR) + "/" + relative, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r'); // a Windows checkout has CRLF line ends
+  return text;
 }
 
 ThreadMessage AttachmentRow(const std::string& id, const std::string& name, const std::string& mime,

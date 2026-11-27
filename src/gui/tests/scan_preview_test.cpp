@@ -105,7 +105,9 @@ std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r'); // a Windows checkout has CRLF line ends
+  return text;
 }
 
 // Phones (Kenneth 2026-11-04, WeChat style): inside the shell's full-screen layer the camera and the finder fill the
