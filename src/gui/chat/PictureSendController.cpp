@@ -1,6 +1,7 @@
 #include "gui/chat/PictureSendController.h"
 
 #include "common/runtime/AppRuntime.h"
+#include "common/PathUtf8.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -54,7 +55,7 @@ constexpr int kCellDp = 64;
 
 void RemoveWhole(const std::string& path) {
   std::error_code ec;
-  std::filesystem::remove_all(path, ec);
+  std::filesystem::remove_all(PathFromUtf8(path), ec);
 }
 
 } // namespace
@@ -169,7 +170,7 @@ void PictureSendController::RemoveDir(const std::string& dir) {
   RemovePath(dir);
   // The folder that held the page folders goes too once nothing is in it (a plain remove: never a folder with files).
   std::error_code ec;
-  std::filesystem::remove(std::filesystem::path(dir).parent_path(), ec);
+  std::filesystem::remove(PathFromUtf8(dir).parent_path(), ec);
 }
 
 void PictureSendController::NoteTexture(const std::string& path) {
@@ -214,7 +215,7 @@ void PictureSendController::Open() {
   ++session_;
   stop_ = std::make_shared<std::atomic<bool>>(false);
   const std::string root = host_.preview_root ? host_.preview_root() : std::string();
-  dir_ = root.empty() ? std::string() : (std::filesystem::path(root) / std::to_string(session_)).string();
+  dir_ = root.empty() ? std::string() : PathToUtf8(PathFromUtf8(root) / std::to_string(session_));
   jobs_.clear();
   item_cancel_.clear();
   failed_.clear();

@@ -1,4 +1,5 @@
 #include "foundation/platform/PastedFiles.h"
+#include "common/PathUtf8.h"
 
 #include <atomic>
 #include <chrono>
@@ -56,7 +57,7 @@ std::optional<std::string> WritePastedFile(const fs::path& dir, const std::strin
     fs::remove(target, ec); // a partial file (disk full, ...) never stays
     return std::nullopt;
   }
-  return target.string();
+  return PathToUtf8(target);
 }
 
 bool ReleasePastedFile(const std::string& path, const fs::path& dir) {
@@ -64,7 +65,7 @@ bool ReleasePastedFile(const std::string& path, const fs::path& dir) {
     return false;
   }
   std::error_code ec;
-  const fs::file_status link_status = fs::symlink_status(path, ec);
+  const fs::file_status link_status = fs::symlink_status(PathFromUtf8(path), ec);
   if (ec || link_status.type() != fs::file_type::regular) {
     return false; // missing, a link (even one inside the folder), a folder, anything but a plain file
   }
@@ -72,7 +73,7 @@ bool ReleasePastedFile(const std::string& path, const fs::path& dir) {
   if (ec) {
     return false;
   }
-  const fs::path file = fs::weakly_canonical(path, ec);
+  const fs::path file = fs::weakly_canonical(PathFromUtf8(path), ec);
   if (ec) {
     return false;
   }

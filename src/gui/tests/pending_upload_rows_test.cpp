@@ -737,6 +737,35 @@ TEST(AttachIntakeSourcePinTest, OnAComputerPlusOpensTheOneMultiSelectDialogAndNe
             Controller().rfind("ShowPictureSendChoice(std::move(path), *thread);"));
 }
 
+// The attach paths (system dialog, drop, clipboard) arrive as UTF-8 std::string. `std::filesystem::path(std::string)`
+// and the narrow file calls read them as the ANSI code page on Windows, so a Chinese name was "unreadable" there. These
+// files must turn a string into a path only through PathFromUtf8 (and back through PathToUtf8). A source pin: the
+// behavioural tests (attach_intake_test, pasted_files_test) are the real check on Windows CI.
+TEST(AttachPathsUtf8PinTest, NoNarrowStringBecomesAPathInTheAttachCodeOutsideTheHelper) {
+  const std::vector<std::string> files = {
+      "src/feature/presenters/AttachIntake.cpp",        "src/feature/presenters/PictureSendQueue.cpp",
+      "src/foundation/platform/PastedFiles.cpp",        "src/gui/chat/OutgoingAttachmentPrep.cpp",
+      "capabilities/base/src/common/ImageMetadata.cpp", "src/gui/chat/PictureSendController.cpp"};
+  const std::regex direct(R"((?:filesystem|fs)::path\(\s*[A-Za-z_])");
+  const std::regex narrow_call(
+      R"((?:filesystem|fs)::(?:status|symlink_status|file_size|weakly_canonical|create_directories)\((?:path|scratch_dir|root)\b|ifstream\s+\w+\((?:path|file)\b)");
+  for (const std::string& file : files) {
+    const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/" + file);
+    ASSERT_FALSE(source.empty()) << file;
+    EXPECT_NE(source.find("common/PathUtf8.h"), std::string::npos) << file << " uses the UTF-8 helper";
+    std::smatch hit;
+    EXPECT_FALSE(std::regex_search(source, hit, direct)) << file << ": " << hit.str();
+    EXPECT_FALSE(std::regex_search(source, hit, narrow_call)) << file << ": " << hit.str();
+  }
+  // The same on the call sites of ChatController the attach flow added.
+  const std::string controller = Controller();
+  EXPECT_NE(controller.find("std::filesystem::remove(PathFromUtf8(file), ec);"), std::string::npos);
+  EXPECT_NE(controller.find("PathToUtf8(PathFromUtf8(facade_->ProfileDataDir()) / \"picked\" / \"preview\")"),
+            std::string::npos);
+  EXPECT_NE(controller.find("return PathFromUtf8(AppPaths::CacheDir()) / \"pasted\";"), std::string::npos);
+  EXPECT_EQ(controller.find("std::filesystem::path(AppPaths::CacheDir())"), std::string::npos);
+}
+
 TEST(AttachIntakeSourcePinTest, TheIntakeIsWiredToTheRealStateThePresenterTheWorkerAndTheQueue) {
   const std::string source = Controller();
   const std::string open = Body(source, "void ChatController::OpenAttachPreview(");

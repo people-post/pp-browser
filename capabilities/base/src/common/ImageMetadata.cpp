@@ -1,4 +1,5 @@
 #include "common/ImageMetadata.h"
+#include "common/PathUtf8.h"
 
 #include <cstring>
 #include <fstream>
@@ -187,7 +188,7 @@ std::optional<ImageHeaderInfo> ReadImageHeaderBytes(const std::vector<uint8_t>& 
 }
 
 std::optional<ImageHeaderInfo> ReadImageHeader(const std::string& path) {
-  std::ifstream input(path, std::ios::binary);
+  std::ifstream input(PathFromUtf8(path), std::ios::binary);
   if (!input) {
     return std::nullopt;
   }
@@ -220,7 +221,7 @@ ImageKind ImageKindOfBytes(const std::vector<uint8_t>& head) {
 }
 
 ImageKind ImageKindOfFile(const std::string& path) {
-  std::ifstream input(path, std::ios::binary);
+  std::ifstream input(PathFromUtf8(path), std::ios::binary);
   if (!input) {
     return ImageKind::Unknown;
   }

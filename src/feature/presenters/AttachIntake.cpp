@@ -1,6 +1,7 @@
 #include "feature/presenters/AttachIntake.h"
 
 #include "common/ImageMetadata.h"
+#include "common/PathUtf8.h"
 #include "common/Logger.h"
 #include "lib/messaging/AttachmentCache.h"
 
@@ -129,7 +130,7 @@ const char* DropHintKey(const bool inside_chat, const AttachRefusal refusal) {
 FileFacts GatherFileFacts(const std::string& path) {
   FileFacts facts;
   std::error_code ec;
-  const std::filesystem::file_status status = std::filesystem::status(path, ec);
+  const std::filesystem::file_status status = std::filesystem::status(PathFromUtf8(path), ec);
   if (status.type() == std::filesystem::file_type::not_found) {
     facts.status = FileStatus::Missing;
     return facts;
@@ -147,7 +148,7 @@ FileFacts GatherFileFacts(const std::string& path) {
     return facts;
   }
   facts.status = FileStatus::Regular;
-  const auto size = std::filesystem::file_size(path, ec);
+  const auto size = std::filesystem::file_size(PathFromUtf8(path), ec);
   if (ec) {
     facts.status = FileStatus::Error;
     return facts;

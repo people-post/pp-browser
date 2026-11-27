@@ -3998,7 +3998,7 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
   ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
   ports.remove_file = [](const std::string& path) {
     std::error_code ec;
-    std::filesystem::remove(path, ec);
+    std::filesystem::remove(PathFromUtf8(path), ec);
   };
   ports.now_ms = []() { return SteadyNowMs(); };
   ports.schedule_tick = [this, current](const int64_t delay_ms) {
@@ -4039,7 +4039,7 @@ PictureSendPreviewFiles MakePicturePreviewFiles(const std::string& path, const P
   const auto drop = [](const std::string& file) {
     if (!file.empty()) {
       std::error_code ec;
-      std::filesystem::remove(file, ec);
+      std::filesystem::remove(PathFromUtf8(file), ec);
     }
   };
   if (large.path.empty()) {
@@ -4068,7 +4068,7 @@ PictureSendHost ChatController::MakePictureSendHost() {
   PictureSendHost host;
   host.queue = [this]() { return picture_queue_.get(); };
   host.preview_root = [this]() {
-    return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
+    return facade_ ? PathToUtf8(PathFromUtf8(facade_->ProfileDataDir()) / "picked" / "preview") : std::string();
   };
   host.make_preview = &MakePicturePreviewFiles;
   // The computer page names who it goes to (the chat header's own title) and says how many items a batch with a file has.
@@ -4303,7 +4303,7 @@ void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, 
 }
 
 std::filesystem::path ChatController::PastedRoot() const {
-  return std::filesystem::path(AppPaths::CacheDir()) / "pasted";
+  return PathFromUtf8(AppPaths::CacheDir()) / "pasted";
 }
 
 std::filesystem::path ChatController::PastedDir() const {
@@ -4596,7 +4596,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   send_cancel_ = std::make_shared<std::atomic<bool>>(false);
   const auto cancel = send_cancel_;
   const std::string shown_name = DisplayNameFromPickedPath(path); // a content:// URI is not a name
-  chat_.attachment_draft_name = (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
+  chat_.attachment_draft_name = (shown_name.empty() ? PathToUtf8(PathFromUtf8(path).filename()) : shown_name).c_str();
   ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
