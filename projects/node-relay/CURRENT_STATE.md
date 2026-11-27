@@ -9,8 +9,9 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
 - **NR1:** the protocol is drafted in pp-specs `contracts/relay/` ([pp-specs #4](https://github.com/people-post/pp-specs/pull/4), draft, under review).
   Its vectors come with NR3 and NR4.
 - **NR2:** the edition is in review. It adds `pp-node-plus`, built beside `pp-node` from the same sources, and its first
-  add-on, the empty `relay` capability (`capabilities/relay/`, `pp_domain_relay`: `relay::RelayService`). Which build
-  links a service is one list each in `src/app/node/CMakeLists.txt` (NR001: a tier is a build decision only). `/status`
+  add-on, the empty `relay` capability (`capabilities/relay/`, `pp_domain_relay`: `relay::RelayService`). Services are
+  chosen at compile time (`cmake/PpNodeServices.cmake`; the two presets `node` and `plus`, any other set `custom`), and
+  `/status` reports `services` and `dormant` (NR001). `/status`
   carries `edition`. CI's `node-editions` job runs on every PR that touches what the node is built from. It builds
   both editions headless, and the link allowlist and symbol checks keep every add-on out of `pp-node`. It also
   holds the default binary (14 MiB) and its image over `ubuntu:24.04` (18 MiB) to their budgets. The budgets were
@@ -32,6 +33,12 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
 **Order with capability-repos:** pp-specs (its CR025 step 2) first, because the protocol and vectors live there; the
 edition is built in this repository, where pp-node is; capability-repos' P4 moves pp-node, with the edition, once the
 mailbox works.
+
+**NR3 must also:** follow NR001's data-folder rules 2 and 4 for the relay (expiry on start, a schema version on its
+store; an explicit `node.relay` ask in a build without it fails the start).
+
+**Separately (core):** a single-instance lock on the data folder, so a second process on the same folder exits with a
+clear error; nothing prevents two today (NR001's "never at once").
 
 **Next:** NR3, the mailbox on `pp-node-plus`, once pp-specs #4 is accepted. NR3 must combine the relay protocol with
 the ledger role's protocols in `MeshHost::SetAppProtocols`, which replaces the whole list.

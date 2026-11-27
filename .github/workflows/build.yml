@@ -798,7 +798,7 @@ jobs:
 
       - name: Build and package pp-node-plus
         env:
-          PP_NODE_EDITION: plus
+          PP_NODE_BINARY: pp-node-plus
           PP_NODE_OUT_DIR: dist/pp-node-plus
         run: |
           bash scripts/platform/pp_node_package_linux.sh build
@@ -816,8 +816,8 @@ jobs:
         run: |
           set -euo pipefail
           for edition in node plus; do
-            image="pp-node:ci"
-            [ "$edition" = plus ] && image="pp-node-plus:ci"
+            image="pp-node:ci" services=ledger
+            [ "$edition" = plus ] && image="pp-node-plus:ci" services=ledger,relay
             docker rm -f pp-node-ci-smoke >/dev/null 2>&1 || true
             docker run -d --name pp-node-ci-smoke \
               -e PP_BROWSER_PIN=ci-smoke-pin \
@@ -826,13 +826,27 @@ jobs:
               -p 18518:18518 \
               "$image"
             if ! PP_NODE_STATUS_URL=http://127.0.0.1:18518 \
-                bash scripts/test/pp_node_image_smoke.sh --timeout 60 --expect-edition "$edition"; then
+                bash scripts/test/pp_node_image_smoke.sh --timeout 60 --expect-edition "$edition" \
+                  --expect-services "$services"; then
               docker logs pp-node-ci-smoke || true
               exit 1
             fi
-            docker logs pp-node-ci-smoke 2>&1 | grep -E 'pp-node.build|add-ons' || true
+            docker logs pp-node-ci-smoke 2>&1 | grep -E 'pp-node.build|node services' || true
             docker rm -f pp-node-ci-smoke
           done
+
+      # Any set an operator builds (cmake/PpNodeServices.cmake): no service, and each alone with what it needs. The
+      # symbol checks hold each binary to exactly its set. Same tree: only main.cpp and the link rebuild.
+      - name: Each service alone, and none
+        run: |
+          set -euo pipefail
+          for set in "" ledger relay; do
+            echo "::group::PP_NODE_SERVICES='$set'"
+            cmake -B "$PP_NODE_BUILD_DIR" -DPP_NODE_SERVICES="$set" >/dev/null
+            cmake --build "$PP_NODE_BUILD_DIR" --target pp-node -j "$(nproc)"
+            echo "::endgroup::"
+          done
+          cmake -B "$PP_NODE_BUILD_DIR" -DPP_NODE_SERVICES=ledger >/dev/null
 
       - name: ccache stats
         if: always()

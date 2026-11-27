@@ -135,14 +135,15 @@ endfunction()
 # (people / net), pp-cpp-mesh (not its test harness), headless domain modules, the node app's own
 # sources, the Amp / common / crypto siblings and pp-ledger (the ledger role). Any other pp_* target
 # reachable from root_target fails configure — widening the node is a deliberate edit here.
-# pp-node-plus passes its add-on services as EXTRA; the default pp-node passes none, so it cannot link them.
+# Each node binary passes its services' libraries as EXTRA (cmake/PpNodeServices.cmake): a binary cannot link a
+# service outside its set.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_app_node$"
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|product|runtime_core|tls)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
   "^pp_people_common$"
-  "^pp_domain_(registration|node|node_ledger)$"
+  "^pp_domain_(registration|node)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"
   "^pp_amp_"
@@ -183,8 +184,8 @@ function(pp_browser_assert_node_link_allowlist root_target)
       "${root_target} links first-party targets outside the node allowlist.\n"
       "Link edges:\n  ${_hit_text}\n"
       "The node may link foundation *_core, common, pp_lib_{people,net}, "
-      "pp_domain_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger (pp-node-plus also its add-on "
-      "services). See PP_BROWSER_NODE_LINK_ALLOWLIST in "
+      "pp_domain_{registration,node}, Amp, pp-cpp-mesh and pp-ledger, and its services' libraries "
+      "(PP_NODE_SERVICES). See PP_BROWSER_NODE_LINK_ALLOWLIST in "
       "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()
 endfunction()

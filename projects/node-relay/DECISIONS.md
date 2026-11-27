@@ -7,11 +7,14 @@ doc then.
 
 **Date:** 2026-11-25; widened 2026-11-27  
 **Status:** Accepted (Hongwei, 2026-11-25 as `pp-node-relay`; 2026-11-27: "I like plus", one generic build for every
-add-on, and the ledger stays in core)  
-**Decision:** Two builds of pp-node, no third.
+add-on, the ledger stays in core; services chosen at compile time, the two tiers as the sets we provide, and the
+rules for one data folder)  
+**Decision:** A node's services are chosen at compile time. We build and release two sets, no third; an operator may
+build either binary with another (`-DPP_NODE_SERVICES=…`, `-DPP_NODE_PLUS_SERVICES=…`; `cmake/PpNodeServices.cmake`).
 - **`pp-node`, the core:** what every node needs. It helps the mesh (circuit and media relay, DHT, directory) and holds
   nothing for anyone. The ledger role is core, essential for the greater good; it runs only when asked
-  (`--ledger-role`), so an operator can leave it off, and `PP_BROWSER_WITH_LEDGER=OFF` builds without it.
+  (`--ledger-role`), so an operator can leave it off, and a set without `ledger` (or `PP_BROWSER_WITH_LEDGER=OFF`)
+  builds without it.
 - **`pp-node-plus`, the add-ons:** pp-node plus every **add-on service**, a service that keeps data or acts for
   accounts and that an owner offers (admission, offers, limits, a privacy statement: NR007, NR008, NR011). The message
   relay is the first (the `relay` capability: the mailbox, then the relay protocol's lockers, cards and directory, and
@@ -26,11 +29,24 @@ add-on, and the ledger stays in core)
   it: clients find a service by what a node advertises (its protocols, its directory row), never by its build, and
   `/status`'s `edition` is for operators. A service's code is in its own namespace (`pbr::<service>`), and its library
   defines `PP_NODE_HAS_<SERVICE>`, which starts it in whichever build links it. Moving a service between the tiers is
-  moving its name between two lists in `src/app/node/CMakeLists.txt`. What a move still costs is operational: core →
+  moving its name between the two presets in `cmake/PpNodeServices.cmake`. What a move still costs is operational: core →
   plus takes the service away from default nodes at the next node release (release notes, and one release in which the
   default node warns when the service is on); plus → core grows the default node (its size budget) and the service
   must stay off by default there, since a core node never keeps data for accounts unasked.
-- Both builds come from the same commit, on the same version line (RC016), each with its own image. The default
+- **Any set builds.** A service names the services it needs, and a set without them fails configure. Each binary
+  links exactly its set: its link allowlist and a symbol check hold it to that. `/status` says which set answers
+  (`edition`: `node`, `plus` or `custom`; `services`). CI builds both presets, and the default node with no service and
+  with each alone; the size budget is the `node` preset's. We release only the two presets.
+- **One data folder, one build at a time.** Different builds may run on the same data folder in turn, never at once
+  (two processes would run one identity twice and write the same sealed files):
+  1. A build never touches the folder of a service it lacks: no read, no migration, no deletion.
+  2. A service that returns catches up on start: its own expiry first (NR007's retention), so nothing is served past
+     its time. Each service's store carries its own schema version and refuses a newer one, as profiles do.
+  3. What a build lacks is visible: at start it logs that data for services it lacks is kept, not served, and
+     `/status` lists them as `dormant`. Clients see a dormant relay as a relay that is down (NR006 sends elsewhere).
+  4. Asking for a service the build lacks fails the start, as `--ledger-role` does in a build without the ledger. A
+     config section with no explicit ask is ignored with one log line, so one config works across builds.
+- Both presets come from the same commit, on the same version line (RC016), each with its own image. The default
   `pp-node` links no add-on; CI checks that, and the default image's size.
 - A third build only if an add-on's dependencies, size or security surface are of a different order from the others',
   so that operators who want the light add-ons would otherwise carry it (LLM inference, a full chain node). None is
@@ -39,6 +55,8 @@ add-on, and the ledger stays in core)
 **Rationale:** The default node stays small for everyone who only wants to help the mesh. One commit and one version
 mean the two builds never disagree on a format, and one release flow covers both. A name for no one service
 (`pp-node-relay` was the first) lets files and the gateway join without another rename.  
+Choosing at compile time keeps every combination honest without a plugin interface, and the four rules let an
+operator switch builds without losing data.  
 **Alternatives:** A runtime plugin (no stable C++ binary interface; version skew; loading code to sign and secure). A
 relay repo building pp-node through compile-time hooks (Hongwei's first idea): pin skew, a hook API nothing in pp-node
 exercises, relay releases lagging pp-node's; with tests and rules it works, and the same-repo build needs none of them.

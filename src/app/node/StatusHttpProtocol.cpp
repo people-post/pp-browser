@@ -336,6 +336,16 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, con
     reach.set("host_running", snap.host_running);
     if (!snap.edition.empty()) {
       reach.set("edition", snap.edition);
+      std::vector<Value> services;
+      for (const std::string& name : snap.services) {
+        services.push_back(Value(name));
+      }
+      reach.set("services", ArrayValue(std::move(services)));
+      std::vector<Value> dormant;
+      for (const std::string& name : snap.dormant) {
+        dormant.push_back(Value(name));
+      }
+      reach.set("dormant", ArrayValue(std::move(dormant)));
     }
     if (!snap.listen_multiaddr.empty()) {
       reach.set("listen", snap.listen_multiaddr);

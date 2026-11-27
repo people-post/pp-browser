@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Build a stripped Linux pp-node binary, tarball, and Docker build context — or pp-node-plus's
-# (PP_NODE_EDITION=plus: pp-node with the add-on services, projects/node-relay NR001; same tree, same version).
+# (PP_NODE_BINARY=pp-node-plus: pp-node with the add-on services, projects/node-relay NR001; same tree, same version).
+# Either binary can be built with another set of services (PP_NODE_SERVICES, PP_NODE_PLUS_SERVICES).
 # Intended for Ubuntu 24.04 (same family as packaging/pp-node/Dockerfile and
 # release CI runners). See docs/ops/RELEASE.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-case "${PP_NODE_EDITION:-node}" in
-  node) NAME=pp-node ;;
-  plus) NAME=pp-node-plus ;;
-  *) echo "error: PP_NODE_EDITION must be node or plus" >&2; exit 2 ;;
+case "${PP_NODE_BINARY:-pp-node}" in
+  pp-node) NAME=pp-node ;;
+  pp-node-plus) NAME=pp-node-plus ;;
+  *) echo "error: PP_NODE_BINARY must be pp-node or pp-node-plus" >&2; exit 2 ;;
 esac
 BUILD_DIR="${PP_NODE_BUILD_DIR:-${ROOT}/build-pp-node}"
 OUT_DIR="${PP_NODE_OUT_DIR:-${ROOT}/dist/${NAME}}"
@@ -34,8 +35,11 @@ Usage: $(basename "$0") [configure|build|package|all]
   all        configure + build + package (default)
 
 Environment:
-  PP_NODE_EDITION     node (default: pp-node) or plus (pp-node-plus). Both build from one configured tree, so
-                      configure once and run build / package per edition; each packages into its own OUT_DIR
+  PP_NODE_BINARY      pp-node (default) or pp-node-plus. Both build from one configured tree, so configure once
+                      and run build / package per binary; each packages into its own OUT_DIR
+  PP_NODE_SERVICES / PP_NODE_PLUS_SERVICES
+                      the services built into each (;-list, e.g. "ledger;relay"; default: the node and plus
+                      presets, cmake/PpNodeServices.cmake). A set that is neither preset reports edition custom
   PP_BROWSER_VERSION / PP_BROWSER_RELEASE_VERSION  version strings (default:
                       the values in CMakeLists.txt)
   PP_NODE_BUILD_DIR   build tree (default: ./build-pp-node)
@@ -79,7 +83,9 @@ do_configure() {
     -DPP_API_URL_DEV="${PP_API_URL_DEV:-}" \
     -DPP_RELAY_ID_PROD="${PP_RELAY_ID_PROD:-pending}" \
     -DPP_RELAY_ID_STAGING="${PP_RELAY_ID_STAGING:-pending}" \
-    -DPP_RELAY_ID_DEV="${PP_RELAY_ID_DEV:-pending}"
+    -DPP_RELAY_ID_DEV="${PP_RELAY_ID_DEV:-pending}" \
+    ${PP_NODE_SERVICES+-DPP_NODE_SERVICES="${PP_NODE_SERVICES}"} \
+    ${PP_NODE_PLUS_SERVICES+-DPP_NODE_PLUS_SERVICES="${PP_NODE_PLUS_SERVICES}"}
 }
 
 do_build() {

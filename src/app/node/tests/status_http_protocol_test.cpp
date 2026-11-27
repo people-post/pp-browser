@@ -78,7 +78,8 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   EXPECT_EQ(sj->getObject("dht_stats")->getIf<int64_t>("cached_records").value_or(0), 2);
 }
 
-// projects/node-relay NR2: /status says which build answers; a snapshot that does not say leaves it out.
+// projects/node-relay NR001, NR2: /status says which build answers, its services and the dormant ones; a snapshot that
+// does not say leaves them out.
 TEST(StatusHttpProtocolTest, StatusNamesTheEdition) {
   pbr::StatusHttpSnapshot snap;
   pbr::StatusHttpRequest status{.method = "GET", .path = "/status", .authorization = {}};
@@ -86,10 +87,20 @@ TEST(StatusHttpProtocolTest, StatusNamesTheEdition) {
   ASSERT_TRUE(unnamed);
   EXPECT_FALSE(unnamed->getString("edition").has_value());
 
-  snap.edition = "relay";
+  snap.edition = "custom";
+  snap.services = {"ledger", "relay"};
+  snap.dormant = {"files"};
   auto named = pbr::TryParseObject(pbr::HandleStatusHttpRequest(status, {}, snap).body);
   ASSERT_TRUE(named);
-  EXPECT_EQ(named->getString("edition").value_or(""), "relay");
+  EXPECT_EQ(named->getString("edition").value_or(""), "custom");
+  const auto* services = named->getArray("services");
+  ASSERT_NE(services, nullptr);
+  ASSERT_EQ(services->elements.size(), 2u);
+  EXPECT_EQ(pbr::asString(services->elements[1]).value_or(""), "relay");
+  const auto* dormant = named->getArray("dormant");
+  ASSERT_NE(dormant, nullptr);
+  ASSERT_EQ(dormant->elements.size(), 1u);
+  EXPECT_EQ(pbr::asString(dormant->elements[0]).value_or(""), "files");
 }
 
 TEST(StatusHttpProtocolTest, BearerAuth) {

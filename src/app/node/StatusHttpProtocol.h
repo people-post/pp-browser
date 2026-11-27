@@ -34,8 +34,15 @@ struct StatusHttpAuthConfig {
 };
 
 struct StatusHttpSnapshot {
-  /** Which build answers: "node" (pp-node) or "plus" (pp-node-plus, projects/node-relay). Empty: not said. */
+  /**
+   * Which build answers (projects/node-relay NR001): "node", "plus" or "custom". Empty: not said. For operators only:
+   * clients find a service by what the node advertises, never by its build.
+   */
   std::string edition;
+  /** The services built in (with edition). */
+  std::vector<std::string> services;
+  /** Services this build lacks whose data is in the profile: kept, not served. */
+  std::vector<std::string> dormant;
   bool host_running = false;
   std::string listen_multiaddr;
   /** Ranked advertised listen MAs (global /ip6 first when present). */
