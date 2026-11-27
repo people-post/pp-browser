@@ -58,6 +58,31 @@ TEST(ForwardPreviewFilesTest, ForwardPreviewFilesAreRemovedWhenThePickerCloses) 
   EXPECT_FALSE(files.Put(JpegOfSize(160, 120), 1).empty()) << "a new page can make new files after the old ones went";
 }
 
+TEST(ForwardPreviewFilesTest, ASecondForwardNeverShowsTheFirstForwardsPicture) {
+  voice_test::TempDir profile;
+  std::vector<std::string> released;
+  const auto release = [&released](const std::string& path) { released.push_back(path); };
+  std::string first_path;
+  {
+    ForwardPreviewFiles first(profile.path.string(), release);
+    first_path = first.Put(JpegOfSize(160, 120), 0);
+    ASSERT_FALSE(first_path.empty());
+    first.RemoveAll(); // the picker closes (ChatController: preview_done)
+  }
+  EXPECT_EQ(released, (std::vector<std::string>{first_path})) << "the page's texture of it is let go";
+  // The UI library keeps an <img> by its path until it is released: the next forward must not reuse the name.
+  ForwardPreviewFiles second(profile.path.string(), release);
+  const std::string second_path = second.Put(JpegOfSize(160, 120), 0);
+  ASSERT_FALSE(second_path.empty());
+  EXPECT_NE(second_path, first_path) << "the same tile of the next forward is another file name";
+  const std::string other_tile = second.Put(JpegOfSize(160, 120), 1);
+  EXPECT_NE(other_tile, second_path);
+  second.RemoveAll();
+  EXPECT_EQ(released, (std::vector<std::string>{first_path, second_path, other_tile}));
+  second.RemoveAll();
+  EXPECT_EQ(released.size(), 3u) << "nothing is released twice";
+}
+
 TEST(ForwardPreviewFilesTest, ForwardPreviewFilesAreRemovedOnLockAndSignOut) {
   voice_test::TempDir profile;
   ForwardPreviewFiles files(profile.path.string());
@@ -103,7 +128,9 @@ TEST(ForwardPreviewFilesTest, AForwardPreviewFileIsOnlyAThumbnail) {
   // The name is a counter: no content hash, no message id.
   for (auto it = fs::recursive_directory_iterator(profile.path); it != fs::end(it); ++it) {
     if (it->is_regular_file()) {
-      EXPECT_EQ(it->path().filename().string(), "0.jpg");
+      const std::string name = it->path().filename().string();
+      EXPECT_EQ(name.substr(name.size() - 6), "-0.jpg") << "open counter, then the tile's index: " << name;
+      EXPECT_EQ(name.find_first_not_of("0123456789-.jpg"), std::string::npos) << "digits only: " << name;
     }
   }
   // The size the page asks the thumbnailer for is within the limit too.
