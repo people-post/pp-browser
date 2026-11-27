@@ -249,6 +249,36 @@ protected:
   ShellHost host;
 };
 
+// No text node of the hint keeps template text (prefix, name and suffix spans, the refusal line), in either state.
+TEST_P(DropHintRenderTest, NoTextOfTheHintStaysATemplate) {
+  Load();
+  const auto expect_no_template = [this]() {
+    ui::ElementList all;
+    Hint()->QuerySelectorAll(all, "*");
+    all.push_back(Hint());
+    size_t texts = 0;
+    for (ui::Element* element : all) {
+      for (int i = 0; i < element->GetNumChildren(true); ++i) {
+        ui::Element* child = element->GetChild(i);
+        if (child->GetTagName() != "#text") {
+          continue;
+        }
+        ++texts;
+        const std::string text = child->GetInnerRML().c_str();
+        EXPECT_EQ(text.find("{{"), std::string::npos) << text;
+        EXPECT_EQ(text.find("}}"), std::string::npos) << text;
+      }
+    }
+    EXPECT_GE(texts, 2U);
+  };
+  host.SetDropHint("Drop to send to Ada", NameWords{"Drop to send to ", "Ada", ""});
+  context->Update();
+  expect_no_template();
+  host.SetDropHint("Files can't be sent here");
+  context->Update();
+  expect_no_template();
+}
+
 TEST_P(DropHintRenderTest, TheWordsShowWhileTheHintIsOnAndNotWhenItIsOff) {
   Load();
   ASSERT_NE(Hint(), nullptr);
