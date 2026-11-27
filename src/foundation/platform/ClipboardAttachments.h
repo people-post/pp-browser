@@ -13,8 +13,10 @@ namespace pbr {
  * code. Main thread only (SDL's rule).
  */
 struct ClipboardSummary {
-  /** A file address type is advertised (public.file-url, text/uri-list). D1 never reads them: it only must not take the paste over. */
+  /** Copied files are on the clipboard (ClipboardHasFiles; a fake source: a file address type in the type list). */
   bool has_files = false;
+  /** ClipboardFilePasteEnabled: when false, `has_files` only keeps the paste from being taken over (D1's behaviour). */
+  bool files_enabled = false;
   /** A text type is advertised and, when a picture is there too, the text is not blank. */
   bool has_text = false;
   /** The picture type that can be read: "image/png" or empty. */
@@ -40,6 +42,10 @@ struct ClipboardSource {
   std::function<std::string()> text;
   /** SDL_GetClipboardData(mime): nullopt when there is none. */
   std::function<std::optional<std::string>(const std::string& mime)> data;
+  /** D2: ClipboardHasFiles / ReadClipboardFiles / ClipboardFilePasteEnabled. Unset (a test's fake) = files are judged by the type list, not enabled, not readable. */
+  std::function<bool()> has_files;
+  std::function<std::vector<std::string>()> read_files;
+  std::function<bool()> files_enabled;
 };
 
 /** The real clipboard through SDL. */
@@ -55,6 +61,10 @@ ClipboardSummary PeekClipboard();
  */
 std::optional<ClipboardImage> ReadClipboardImage(const ClipboardSource& source, size_t max_bytes);
 std::optional<ClipboardImage> ReadClipboardImage(size_t max_bytes);
+
+/** The copied files' paths (D2); empty when the source has none. Main thread. */
+std::vector<std::string> ReadClipboardFileList(const ClipboardSource& source);
+std::vector<std::string> ReadClipboardFileList();
 
 /** Tests: replaces the clipboard the no-argument calls use (an empty source = back to SDL). */
 void SetClipboardSourceForTest(std::optional<ClipboardSource> source);

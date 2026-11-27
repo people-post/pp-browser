@@ -78,8 +78,18 @@ DropVerdict DecideDrop(const bool has_position, const bool inside_chat, const At
 
 PasteAction DecidePaste(const ClipboardSummary& clipboard, const AttachRefusal refusal) {
   PasteAction action;
+  if (clipboard.has_files && clipboard.files_enabled) {
+    // Copied files win over text (Finder also puts the file's name there) and over a picture (its icon).
+    action.take_over = true;
+    if (refusal != AttachRefusal::None) {
+      action.pill_key = AttachRefusalKey(refusal);
+    } else {
+      action.read_files = true;
+    }
+    return action;
+  }
   if (clipboard.has_files || clipboard.has_text) {
-    return action; // D1: copied files are not read; text always goes to the field, a picture beside it or not
+    return action; // files with the switch off: left to the text field (D1); text always goes to the field, a picture beside it or not
   }
   const bool readable = !clipboard.image_type.empty();
   if (!readable && !clipboard.has_unusable_image) {
@@ -307,6 +317,20 @@ bool PasteAttach::TryPaste() {
   }
   if (action.pill_key && ports_.say) {
     ports_.say(action.pill_key, 0);
+  }
+  if (action.read_files) {
+    std::vector<AttachCandidate> candidates;
+    for (std::string& path : ports_.read_files ? ports_.read_files() : std::vector<std::string>()) {
+      candidates.push_back(AttachCandidate{std::move(path), false, {}}); // the user's own files: never deleted by us
+    }
+    if (candidates.empty()) {
+      if (ports_.say) {
+        ports_.say("chat.paste.failed", 0); // gone since the peek, or could not be read
+      }
+      return true;
+    }
+    ports_.open_preview(std::move(candidates));
+    return true;
   }
   if (!action.read_image) {
     return true;

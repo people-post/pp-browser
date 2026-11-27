@@ -41,6 +41,45 @@ TEST(DecidePasteTest, FilesAreNotTakenOverInD1) {
   }
 }
 
+ClipboardSummary FilesSummary(const bool text, const std::string& image, const bool enabled = true) {
+  ClipboardSummary summary = Summary(true, text, image, false);
+  summary.files_enabled = enabled;
+  return summary;
+}
+
+TEST(DecidePasteTest, CopiedFilesAreTakenOverAndReadWhateverElseIsThere) {
+  for (const bool text : {false, true}) {
+    for (const char* image : {"", "image/png"}) {
+      const PasteAction action = DecidePaste(FilesSummary(text, image), AttachRefusal::None);
+      EXPECT_TRUE(action.take_over) << text << image;
+      EXPECT_TRUE(action.read_files) << text << image;
+      EXPECT_FALSE(action.read_image) << text << image;
+      EXPECT_EQ(action.pill_key, nullptr);
+    }
+  }
+}
+
+TEST(DecidePasteTest, CopiedFilesWithTheKillSwitchOffAreLeftToTheTextField) {
+  for (const bool text : {false, true}) {
+    const PasteAction action = DecidePaste(FilesSummary(text, "image/png", false), AttachRefusal::None);
+    EXPECT_FALSE(action.take_over);
+    EXPECT_FALSE(action.read_files);
+    EXPECT_FALSE(action.read_image);
+  }
+}
+
+TEST(DecidePasteTest, RefusedCopiedFilesAreSwallowedWithTheRefusalsPillAndNotRead) {
+  for (const AttachRefusal refusal :
+       {AttachRefusal::NotReady, AttachRefusal::NoChat, AttachRefusal::AiComposer, AttachRefusal::Editing,
+        AttachRefusal::InputDisabled, AttachRefusal::SendHeld, AttachRefusal::PreviewOpen, AttachRefusal::LayerAbove,
+        AttachRefusal::PasteInFlight, AttachRefusal::Busy}) {
+    const PasteAction action = DecidePaste(FilesSummary(true, "image/png"), refusal);
+    EXPECT_TRUE(action.take_over) << static_cast<int>(refusal);
+    EXPECT_FALSE(action.read_files) << static_cast<int>(refusal);
+    EXPECT_EQ(action.pill_key, AttachRefusalKey(refusal));
+  }
+}
+
 TEST(DecidePasteTest, TextIsNeverTakenEvenWithAPictureBesideIt) {
   const PasteAction with_picture = DecidePaste(Summary(false, true, "image/png", false), AttachRefusal::None);
   EXPECT_FALSE(with_picture.take_over);
@@ -124,6 +163,10 @@ protected:
       ++peeks_;
       return clipboard_;
     };
+    ports.read_files = [this]() {
+      ++file_reads_;
+      return files_;
+    };
     ports.read_image = [this]() {
       ++reads_;
       return image_result_;
@@ -187,6 +230,8 @@ protected:
   bool fail_write_ = false;
   int peeks_ = 0;
   int reads_ = 0;
+  int file_reads_ = 0;
+  std::vector<std::string> files_;
   int writes_ = 0;
   std::vector<std::string> pills_;
   std::vector<AttachCandidate> opened_;
@@ -225,11 +270,59 @@ TEST_F(PasteAttachTest, TextOnTheClipboardIsLeftToTheTextFieldAndNothingIsRead) 
   EXPECT_FALSE(paste.InFlight());
 }
 
-TEST_F(PasteAttachTest, CopiedFilesAreLeftToTheTextFieldInD1) {
-  clipboard_ = Summary(true, false, "", false);
+TEST_F(PasteAttachTest, CopiedFilesWithTheKillSwitchOffAreLeftToTheTextField) {
+  clipboard_ = FilesSummary(false, "", false);
   PasteAttach paste(Ports());
   EXPECT_FALSE(paste.TryPaste());
   EXPECT_EQ(reads_, 0);
+  EXPECT_EQ(file_reads_, 0);
+}
+
+TEST_F(PasteAttachTest, TwoCopiedFilesGoToThePreviewAsTwoNotOwnedCandidatesAtOnce) {
+  clipboard_ = FilesSummary(true, "image/png"); // Finder: the name as text and an icon as a picture
+  files_ = {"/a/one.txt", "/b/two.png"};
+  PasteAttach paste(Ports());
+  EXPECT_TRUE(paste.TryPaste());
+  EXPECT_EQ(file_reads_, 1);
+  EXPECT_EQ(reads_, 0) << "the picture is not read";
+  ASSERT_EQ(opened_.size(), 2u);
+  EXPECT_EQ(opened_[0].path, "/a/one.txt");
+  EXPECT_EQ(opened_[1].path, "/b/two.png");
+  EXPECT_FALSE(opened_[0].owned);
+  EXPECT_FALSE(opened_[1].owned);
+  EXPECT_TRUE(opened_[0].display_name.empty());
+  EXPECT_TRUE(worker_.empty()) << "nothing is written";
+  EXPECT_FALSE(paste.InFlight());
+  EXPECT_TRUE(pills_.empty());
+}
+
+TEST_F(PasteAttachTest, CopiedFilesThatReadBackEmptyAreSwallowedWithTheCouldNotPastePill) {
+  clipboard_ = FilesSummary(true, "");
+  PasteAttach paste(Ports());
+  EXPECT_TRUE(paste.TryPaste());
+  EXPECT_EQ(pills_, std::vector<std::string>{"chat.paste.failed"});
+  EXPECT_TRUE(opened_.empty());
+}
+
+TEST_F(PasteAttachTest, RefusedCopiedFilesAreSwallowedWithThePillAndNotRead) {
+  clipboard_ = FilesSummary(false, "");
+  files_ = {"/a/one.txt"};
+  state_.attachment_busy = true;
+  PasteAttach paste(Ports());
+  EXPECT_TRUE(paste.TryPaste());
+  EXPECT_EQ(pills_, std::vector<std::string>{"chat.attach.previous_still_sending"});
+  EXPECT_EQ(file_reads_, 0);
+  EXPECT_TRUE(opened_.empty());
+}
+
+TEST_F(PasteAttachTest, APasteWhileAPictureIsBeingWrittenSwallowsCopiedFilesToo) {
+  PasteAttach paste(Ports());
+  ASSERT_TRUE(paste.TryPaste()); // a picture, in flight
+  clipboard_ = FilesSummary(false, "");
+  files_ = {"/a/one.txt"};
+  EXPECT_TRUE(paste.TryPaste());
+  EXPECT_EQ(file_reads_, 0);
+  EXPECT_TRUE(opened_.empty());
 }
 
 TEST_F(PasteAttachTest, AnUnusablePictureIsSwallowedWithItsPillAndNothingIsRead) {
@@ -458,6 +551,27 @@ TEST_F(OwnedFileExitTest, SendFinishedReleasesItAfterTheItemEndsSuccessOrFailure
     EXPECT_TRUE(fs::exists(mine_path_));
     TearDown();
   }
+}
+
+TEST_F(OwnedFileExitTest, ACopiedFileOfTheUserSurvivesBackAndEverySendOutcome) {
+  // What a pasted copy (D2) queues: the user's own file, not owned. Whatever ends it, the source file is still there.
+  for (const AttachmentSendOutcome outcome : {AttachmentSendOutcome::Sent, AttachmentSendOutcome::FailedNotStaged}) {
+    Build();
+    const std::string copied = Mine("copied.pdf");
+    ASSERT_TRUE(queue_->Add(copied, PictureSendKind::File, 10, 0, "", false).has_value());
+    ASSERT_TRUE(queue_->Start());
+    ASSERT_NE(in_flight_, 0u);
+    const uint64_t id = in_flight_;
+    in_flight_ = 0;
+    queue_->OnItemFinished(id, outcome);
+    EXPECT_TRUE(fs::exists(copied)) << "after the send ended";
+    queue_.reset();
+  }
+  Build();
+  const std::string copied = Mine("copied-back.pdf");
+  ASSERT_TRUE(queue_->Add(copied, PictureSendKind::File, 10, 0, "", false).has_value());
+  queue_->Back();
+  EXPECT_TRUE(fs::exists(copied)) << "after Back";
 }
 
 TEST_F(OwnedFileExitTest, ATooLargeItemIsReleasedWhenSendingStarts) {

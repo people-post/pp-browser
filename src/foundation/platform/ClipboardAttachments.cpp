@@ -1,5 +1,7 @@
 #include "foundation/platform/ClipboardAttachments.h"
 
+#include "foundation/platform/ClipboardFiles.h"
+
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -79,6 +81,9 @@ ClipboardSource SdlClipboardSource() {
     SDL_free(raw);
     return bytes;
   };
+  source.has_files = []() { return ClipboardHasFiles(); };
+  source.read_files = []() { return ReadClipboardFiles(); };
+  source.files_enabled = []() { return ClipboardFilePasteEnabled(); };
   return source;
 }
 
@@ -103,6 +108,10 @@ ClipboardSummary PeekClipboard(const ClipboardSource& source) {
     }
   }
   summary.has_unusable_image = any_image && summary.image_type.empty();
+  if (source.has_files) {
+    summary.has_files = source.has_files(); // the platform's own answer, not the type list's
+  }
+  summary.files_enabled = source.files_enabled && source.files_enabled();
   if (!text_type) {
     return summary;
   }
@@ -141,6 +150,14 @@ std::optional<ClipboardImage> ReadClipboardImage(const ClipboardSource& source, 
 
 std::optional<ClipboardImage> ReadClipboardImage(const size_t max_bytes) {
   return ReadClipboardImage(ActiveSource(), max_bytes);
+}
+
+std::vector<std::string> ReadClipboardFileList(const ClipboardSource& source) {
+  return source.read_files ? source.read_files() : std::vector<std::string>();
+}
+
+std::vector<std::string> ReadClipboardFileList() {
+  return ReadClipboardFileList(ActiveSource());
 }
 
 void SetClipboardSourceForTest(std::optional<ClipboardSource> source) {

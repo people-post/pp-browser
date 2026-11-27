@@ -89,6 +89,8 @@ DropVerdict DecideDrop(bool has_position, bool inside_chat, AttachRefusal refusa
 struct PasteAction {
   /** The paste is ours: the key is swallowed and the text paste does not run. */
   bool take_over = false;
+  /** Copied files are to be read and handed to the preview (only with `take_over`, and only when files are accepted now). */
+  bool read_files = false;
   /** A picture is to be read and written (only with `take_over`, and only when files are accepted now). */
   bool read_image = false;
   /** A pill to show when taken over without reading (nullptr = silent). */
@@ -96,7 +98,8 @@ struct PasteAction {
 };
 
 /**
- * The clipboard decides: files (D1: never taken), then text (even with a picture), then a readable picture, then a
+ * The clipboard decides: copied files (taken over when ClipboardFilePasteEnabled; else, D1-style, only left to the text
+ * field), then text (even with a picture), then a readable picture, then a
  * picture type we cannot read ("can't paste this image"). Taken over but refused now: swallowed with the refusal's pill.
  */
 PasteAction DecidePaste(const ClipboardSummary& clipboard, AttachRefusal refusal);
@@ -191,6 +194,8 @@ struct PastePorts {
   std::function<AttachState()> state;
   /** Types only. UI thread. */
   std::function<ClipboardSummary()> peek;
+  /** The copied files' paths (UI thread). */
+  std::function<std::vector<std::string>()> read_files;
   /** The picture's bytes (UI thread; SDL's rule). */
   std::function<std::optional<ClipboardImage>()> read_image;
   std::function<std::string()> chat_id;
@@ -201,7 +206,7 @@ struct PastePorts {
   std::function<std::optional<std::string>(const std::string& bytes, const std::string& extension)> write;
   std::function<void(const char* key, int n)> say;
   std::function<void(const std::string& path)> release_owned;
-  /** The written file on to the preview (an owned candidate). UI thread. */
+  /** The written file (an owned candidate) or the copied files (not owned: they are the user's) on to the preview. UI thread. */
   std::function<void(std::vector<AttachCandidate> candidates)> open_preview;
 };
 

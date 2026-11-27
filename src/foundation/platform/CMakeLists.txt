@@ -43,6 +43,7 @@ set(_pp_platform_gui_sources
   ScreenAwake.cpp
   AiImagePrep.cpp
   ClipboardAttachments.cpp
+  ClipboardFiles.cpp
   PastedFiles.cpp
   ImageEncode.cpp
   ImageSampleAffine.cpp
@@ -134,6 +135,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     PlatformShareImage_Default.cpp
     PlatformShareFile_Default.cpp
     NativeFileDialog_Default.cpp
+    ClipboardFiles_Win32.cpp
     CameraCapture_Default.cpp
     PlatformOpenFile.cpp
     PlatformNotificationSettings_Default.cpp
@@ -167,14 +169,14 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
          PlatformShareImage_Darwin.mm PlatformShareFile_Default.cpp
-         NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
+         NativeFileDialog_Default.cpp ClipboardFiles_Darwin.mm CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Darwin.mm DeviceScreenState_Default.cpp
          DeviceRinger_Default.cpp ProximityScreenOff_Default.cpp PlatformScreenBrightness_Default.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
          PlatformShareImage_Ios.mm PlatformShareFile_Ios.mm
-         NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
+         NativeFileDialog_Ios.mm ClipboardFiles_Ios.cpp CameraCapture_Ios.mm PlatformOpenFile_Ios.mm PlatformNotificationSettings_Ios.mm
          PlatformAppBadge_Ios.mm DeviceScreenState_Default.cpp DeviceRinger_Default.cpp
          ProximityScreenOff_Ios.mm PlatformScreenBrightness_Ios.mm)
   endif()
@@ -204,13 +206,13 @@ else()
     list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp os/OsDeviceName_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
+    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp ClipboardFiles_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp
          PlatformShareFile_Default.cpp
          PlatformNotificationSettings_Default.cpp PlatformAppBadge_Default.cpp DeviceScreenState_Default.cpp
          DeviceRinger_Default.cpp)
   else()
     # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
-    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp PlatformShareFile_Android.cpp
+    list(APPEND _pp_platform_gui_sources ClipboardFiles_Android.cpp CameraCapture_Android.cpp PlatformOpenFile_Android.cpp PlatformShareFile_Android.cpp
          PlatformNotificationSettings_Android.cpp PlatformAppBadge_Android.cpp DeviceScreenState_Android.cpp
          DeviceRinger_Android.cpp)
   endif()

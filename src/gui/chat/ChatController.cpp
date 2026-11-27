@@ -4333,6 +4333,7 @@ bool ChatController::TryPasteAttachment() {
     PastePorts ports;
     ports.state = [this]() { return CurrentAttachState(); };
     ports.peek = []() { return PeekClipboard(); };
+    ports.read_files = []() { return ReadClipboardFileList(); };
     ports.read_image = [this]() {
       return ReadClipboardImage(static_cast<size_t>(facade_->CurrentAttachmentLimits().max_file_bytes));
     };
