@@ -14,7 +14,6 @@ BadgeUnreadInputs ComputeBadgeInputs(const BadgeSourceFacts& facts) {
   const int deduction = facts.sessions_tab_active ? facts.open_chat_unread : 0;
   inputs.sessions_unread = std::max(0, total - deduction);
   inputs.contacts_unread = std::max(0, facts.contacts_unread);
-  inputs.me_attention = facts.me_attention;
   inputs.app_icon_count = AppIconBadgeCount(true, facts.unread_total, facts.muted_unread, facts.count_muted_in_icon);
   return inputs;
 }
@@ -44,7 +43,6 @@ void BadgeAggregator::Refresh() {
     const BadgeUnreadInputs inputs = source_();
     next.sessions_unread = inputs.sessions_unread;
     next.contacts_unread = inputs.contacts_unread;
-    next.me_attention = inputs.me_attention;
     next.sessions_unread_display = FormatBadgeCount(next.sessions_unread).c_str();
     next.contacts_unread_display = FormatBadgeCount(next.contacts_unread).c_str();
     if (inputs.app_icon_count && last_sent_ != inputs.app_icon_count) {

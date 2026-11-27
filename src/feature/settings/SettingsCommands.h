@@ -94,8 +94,6 @@ struct SettingsCommands {
   /** Runtime Amp listen multiaddr (empty when mesh is down). */
   std::function<std::string()> amp_listen_multiaddr;
   std::function<SettingsReachabilityView()> load_reachability;
-  /** Refresh Me / Network attention dots after reachability nudge ack. */
-  std::function<void()> refresh_nav_badges;
 
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */

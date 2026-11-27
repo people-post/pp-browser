@@ -351,7 +351,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
       badge_handle.RegisterMember("contacts_unread", &NavBadgeState::contacts_unread);
-      badge_handle.RegisterMember("me_attention", &NavBadgeState::me_attention);
       badge_handle.RegisterMember("sessions_unread_display", &NavBadgeState::sessions_unread_display);
       badge_handle.RegisterMember("contacts_unread_display", &NavBadgeState::contacts_unread_display);
     }
@@ -360,7 +359,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     // on nested struct members (Android needed remount/tab switches). Mirror the fields as scalars.
     ctor.Bind("nav_sessions_unread", &host.state_.nav_badges.sessions_unread);
     ctor.Bind("nav_contacts_unread", &host.state_.nav_badges.contacts_unread);
-    ctor.Bind("nav_me_attention", &host.state_.nav_badges.me_attention);
     ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
     ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
@@ -1401,7 +1399,6 @@ void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "nav_badges");
   DataModelHost::Instance().Dirty("window", "nav_sessions_unread");
   DataModelHost::Instance().Dirty("window", "nav_contacts_unread");
-  DataModelHost::Instance().Dirty("window", "nav_me_attention");
   DataModelHost::Instance().Dirty("window", "nav_sessions_unread_display");
   DataModelHost::Instance().Dirty("window", "nav_contacts_unread_display");
   DataModelHost::Instance().Dirty("window", "compact_chat_open");

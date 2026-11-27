@@ -618,7 +618,6 @@ struct NavBadgeState {
   int sessions_unread = 0;
   /** Reserved for contacts-tab queues (intro requests, pending invites). Not chat unread; always 0 until those exist. */
   int contacts_unread = 0;
-  bool me_attention = false;
   ui::String sessions_unread_display;
   ui::String contacts_unread_display;
 };

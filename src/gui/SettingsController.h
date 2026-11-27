@@ -86,7 +86,6 @@ public:
     ui::String subtitle;
     /** The Home list group (SettingsPage::home_group). */
     int group = 0;
-    bool attention = false;
   };
 
   struct McpServerRow {
@@ -407,8 +406,6 @@ private:
   void SyncBindingsFromSession();
   void ApplyReachability();
   void ApplySupportDiscovery();
-  void ApplySectionAttention();
-  bool ComputeNetworkAttention() const;
   // SettingsHost
   SessionStore& Store() override;
   void ShowStatus(const std::string& status) override;

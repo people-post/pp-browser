@@ -596,6 +596,7 @@
     "settings.storage.reset_confirm_title": "Reset my data?",
     "settings.storage.reset_confirm_message":
         "Deletes chats, contacts and the account's encryption data on this device. This cannot be undone. Afterwards you can create a new account or link this device to one on another device.",
+    "settings.storage.reset_confirm_linked_note": "After the reset, remove this device from the device list on your main device.",
     "settings.storage.reset_confirm_check": "I understand this cannot be undone",
     "settings.storage.profile_reset": "Reset done",
     "settings.storage.attachment_policy.label": "Auto-download",

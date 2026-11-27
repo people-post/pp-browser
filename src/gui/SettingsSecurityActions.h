@@ -126,6 +126,8 @@ private:
   void ClearUndeliveredOlderThan();
   void ResetToolPermissions();
   void PerformResetProfile();
+  /** On the account's device list, not its main device, not signed out: the reset confirm adds a note. */
+  bool ThisDeviceIsLinkedNotMain() const;
   void ResetChats();
   void PerformResetChats();
   /** Runs `then` once the vault is open (asks for the PIN when it is not); reports why not otherwise. */

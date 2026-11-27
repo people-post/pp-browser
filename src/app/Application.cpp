@@ -95,7 +95,6 @@
 #include "feature/settings/MyRelays.h"
 #include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
-#include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/UiFrameStats.h"
@@ -1241,11 +1240,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.help_kind = mesh::ReachabilityHelpKey(snap.status);
     return view;
   };
-  settings_commands.refresh_nav_badges = [this]() {
-    if (badges_) {
-      badges_->Refresh();
-    }
-  };
   settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
     ProfileSecretsEngine& secrets = *secrets_;
@@ -1748,12 +1742,6 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
     if (contacts_shell_bridge_) {
       facts.contacts_unread = contacts_shell_bridge_->LastSurface().contacts_unread;
-    }
-    if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
-      const mesh::ReachabilitySnapshot snap = facade.Reachability();
-      const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
-      facts.me_attention =
-          ReachabilityNudgeActive(true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
     return ComputeBadgeInputs(facts);
   });

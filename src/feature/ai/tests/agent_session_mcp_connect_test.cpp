@@ -53,6 +53,7 @@ constexpr const char* kFeedPayload = R"({"tool":"blog_articles","brf_domain":"en
 class McpConnectOnFirstUseTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    SetCurlIgnoreEnvProxyForTest(true); // the planner's unreachable server refuses at once, whatever proxy is set
     AppRuntime::Initialize(AppRuntimeConfig{});
     McpClient::SetHttpPost(FakeMcpPost(server_)); // before any configure: the sessions keep it (SetHttpPostIfUnset)
     LlmClient::SetRequestObserverForTests([this](const std::string& body) {
@@ -71,6 +72,7 @@ protected:
     AppRuntime::Shutdown();
     McpClient::SetHttpPost(nullptr);
     LlmClient::SetRequestObserverForTests(nullptr);
+    SetCurlIgnoreEnvProxyForTest(false);
   }
 
   static void WaitForWaiters(const size_t n) { WaitForConnectWaiters(n); }

@@ -186,8 +186,6 @@ struct SettingsSectionListItem {
   std::string subtitle;
   /** Listed only while Me → About → "Show advanced settings" is on. */
   bool advanced_only = false;
-  /** Non-count attention on the section row (e.g. Network reachability nudge). */
-  bool attention = false;
 };
 
 } // namespace pbr

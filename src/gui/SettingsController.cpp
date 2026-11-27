@@ -346,13 +346,9 @@ void SettingsController::InitSections() {
   // while the tester switch is on (five taps on the version).
   for (const SettingsPage* page :
        ListedSettingsPages(ui_state_.show_advanced_settings == "on", ui_state_.show_tester_options == "on")) {
-    sections_.push_back({.id = page->id,
-                         .title = Tr(page->title_key).c_str(),
-                         .subtitle = "",
-                         .group = page->home_group,
-                         .attention = false});
+    sections_.push_back(
+        {.id = page->id, .title = Tr(page->title_key).c_str(), .subtitle = "", .group = page->home_group});
   }
-  ApplySectionAttention();
 }
 
 void SettingsController::PullBindingsToUiState() {
@@ -676,7 +672,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
       section_handle.RegisterMember("group", &SectionListRow::group);
-      section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
       mcp_handle.RegisterMember("id", &McpServerRow::id);
@@ -2386,34 +2381,6 @@ void SettingsController::ApplyReachability() {
     ui_state_.reachable_without_relay = cfg.reachable_without_relay ? "on" : "off";
   }
   PushUiStateToBindings();
-  ApplySectionAttention();
-}
-
-bool SettingsController::ComputeNetworkAttention() const {
-  if (!ui_state_.show_node_toggle || ui_state_.node_enabled != "on") {
-    return false;
-  }
-  if (!commands_.session_store || !commands_.load_reachability) {
-    return false;
-  }
-  if (!commands_.mesh_ready) {
-    if (!commands_.messaging_ready || !commands_.messaging_ready()) {
-      return false;
-    }
-  } else if (!commands_.mesh_ready()) {
-    return false;
-  }
-  const SettingsReachabilityView view = commands_.load_reachability();
-  const std::string status_key = ReachabilityNudgeStatusKey(view.status);
-  const std::string& acked = commands_.session_store().Snapshot().profile_prefs.reachability_nudge_acked_status;
-  return ReachabilityNudgeActive(true, status_key, acked);
-}
-
-void SettingsController::ApplySectionAttention() {
-  const bool network_attention = ComputeNetworkAttention();
-  for (SectionListRow& section : sections_) {
-    section.attention = section.id == "advanced" && network_attention;
-  }
 }
 
 void SettingsController::SyncReachability() {
@@ -2439,10 +2406,6 @@ void SettingsController::AckReachabilityNudge(const std::string& status_key) {
     ReportFailure(saved.error());
     return;
   }
-  ApplySectionAttention();
-  if (commands_.refresh_nav_badges) {
-    commands_.refresh_nav_badges();
-  }
 }
 
 void SettingsController::ToggleNodeEnabled() {
@@ -2453,9 +2416,6 @@ void SettingsController::ToggleNodeEnabled() {
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   ApplyReachability();
-  if (commands_.refresh_nav_badges) {
-    commands_.refresh_nav_badges();
-  }
   DirtyAll();
 }
 

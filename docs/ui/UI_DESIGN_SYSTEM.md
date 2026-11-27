@@ -178,7 +178,7 @@ Three tiers reuse the same badge components; do not confuse them with semantic l
 | Class | Use |
 |-------|-----|
 | `.badge-count` | Numeric pill (`1`, `12`, `99+`) for message unread |
-| `.badge-dot` | Non-count attention (Me-tab reachability nudge; future security prompts) |
+| `.badge-dot` | Non-count attention (future security prompts; unused today — the reachability dot was removed 2026-11-27) |
 | `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
 | `.contacts-trust-badge` | **Not** a notification badge — trust label only |
 

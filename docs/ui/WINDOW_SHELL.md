@@ -217,7 +217,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_brief_*`, `statusbar_direct_*`, `statusbar_help_visible`, `statusbar_inbound_*`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). The Me attention dot is on the Me nav tab. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). There is no attention dot on the Me tab or on Settings rows: the network reachability state shows only as text (status bar, Network page), never as a dot (owner decision 2026-11-27). Refreshed by `BadgeAggregator` on messaging events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 

@@ -162,15 +162,13 @@ TEST(ComputeBadgeInputsTest, AnUnreadableTotalIsZeroForTheNavBadgeAndEmptyForThe
   EXPECT_FALSE(inputs.app_icon_count.has_value());
 }
 
-TEST(ComputeBadgeInputsTest, ContactsAndMeAttentionPassThrough) {
+TEST(ComputeBadgeInputsTest, ContactsUnreadPassesThrough) {
   BadgeSourceFacts facts;
   facts.messaging_initialized = true;
   facts.unread_total = 0;
   facts.contacts_unread = 4;
-  facts.me_attention = true;
   const BadgeUnreadInputs inputs = ComputeBadgeInputs(facts);
   EXPECT_EQ(inputs.contacts_unread, 4);
-  EXPECT_TRUE(inputs.me_attention);
 }
 
 } // namespace
