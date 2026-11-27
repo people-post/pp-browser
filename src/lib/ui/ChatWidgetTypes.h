@@ -81,9 +81,16 @@ struct MessageDisplayRow {
   /** The message menu would offer a reaction row (with its "+") / Reply: the wide layout's hover bar shows them. */
   bool bar_react = false;
   bool bar_reply = false;
+  bool bar_forward = false; // Forward (text and contact cards), between Edit and Reply
   /** Search inside the chat: the row contains the query, and the row the search is on (its matches are marked). */
   bool search_hit = false;
   bool search_current = false;
+  /** Choosing messages to forward: every row is in the mode (a tap ticks), `forward_ok` rows can go and show a tick box. */
+  bool forward_mode = false;
+  bool forward_ok = false;
+  /** The message this row was built from can be forwarded (CanForwardMessage): a row decides it with no store read. */
+  bool forwardable = false;
+  bool forward_ticked = false;
   /** content_rml as built, while search marks are wrapped into it — not bound to RML. */
   std::optional<std::string> search_source_rml;
   /** Local send / receive time, e.g. "18:32"; empty when unknown. */

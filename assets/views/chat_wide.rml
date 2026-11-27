@@ -29,7 +29,12 @@
       </button>
       <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
     </div>
-    <div class="chat-header-main" data-if="!search_open">
+    <!-- Choosing messages to forward: how many, and Cancel (the phone's bar, in the column's header). -->
+    <div class="chat-forward-top" data-if="forward_selecting && !search_open">
+      <p class="chat-forward-title">{{forward_count_label}}</p>
+      <button class="chat-forward-cancel" type="button" data-event-click="forward_cancel()">{{i18n:common.cancel}}</button>
+    </div>
+    <div class="chat-header-main" data-if="!search_open && !forward_selecting">
       <!-- Phones only (hidden on desktop): the avatar of the chat list row, in the nav bar. -->
       <!-- An AI conversation shows its list row's letter and colour, not a fixed star (Kenneth 2026-11-07). -->
       <!-- A tap on the avatar does what a tap on the title does (open_peer_sheet ignores the tap when show_peer_sheet is false); the hit box is 44dp, the avatar 40dp. -->
@@ -91,7 +96,7 @@
       </div>
       </div>
     </div>
-    <div class="chat-header-actions row" data-if="!search_open">
+    <div class="chat-header-actions row" data-if="!search_open && !forward_selecting">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-class-chat-header-call-btn--join="call_joinable && call_bar_text == ''"
               data-event-click="start_call()">
@@ -176,7 +181,14 @@
            data-class-message-row-run-start="row.run_start"
            data-class-message-row-search-hit="row.search_hit"
            data-class-message-row-search-current="row.search_current"
+           data-class-message-row-forward-mode="row.forward_mode"
            data-attr-message-id="row.message_id">
+        <!-- Choosing messages to forward: a tick on the rows that can go, and a cover over the whole row so that a click
+             anywhere (a link, a card, a selection) only ticks or unticks it. -->
+        <div class="message-forward-check" data-if="row.forward_mode && row.forward_ok"
+             data-class-message-forward-check--on="row.forward_ticked"></div>
+        <div class="message-forward-cover" data-if="row.forward_mode"
+             data-event-click="forward_tap(row.message_id)"></div>
         <div class="chat-date-strip" data-if="row.date_label != ''"><span class="chat-date-pill">{{row.date_label}}</span></div>
         <div class="chat-row-body" data-class-chat-row-body--group="row.group_column">
         <div class="chat-row-avatar-col" data-if="row.group_column">
@@ -213,8 +225,8 @@
         <div class="msg-hover">
           <div selectable="text" data-model="chat" data-rml="row.content_rml"></div>
           <!-- Mouse over a message BUBBLE (not the row's empty space, the avatar or the name; wide.rcss .msg-hover): five used reactions (the message menu's own row, bar_emojis), "+" (the full emoji
-               picker), Edit (where the menu offers it), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
-          <div class="msg-bar" data-if="row.has_actions">
+               picker), Edit (where the menu offers it), Forward (text and cards), Reply, and "..." (the whole message menu). Same items and handlers as ChatMenus. -->
+          <div class="msg-bar" data-if="row.has_actions && !row.forward_mode">
             <button class="msg-bar-emoji" type="button" data-for="e : bar_emojis" data-if="row.bar_react"
                     data-event-click="msg_bar_emoji(row.message_id, e.emoji)"><span class="msg-bar-emoji-glyph">{{e.emoji}}</span></button>
             <button class="msg-bar-btn" type="button" data-if="row.bar_react" data-event-click="msg_bar_react()">
@@ -225,7 +237,10 @@
             <button class="msg-bar-btn msg-bar-edit" type="button" data-if="row.can_edit" data-event-click="msg_bar_edit(row.message_id)">
               <svg src="../icons/v2/pencil.svg" width="18" height="18"></svg>
             </button>
-            <!-- TODO(forward): Forward goes here, between Edit and Reply, once forwarding exists (no platform has it). -->
+            <!-- Forward: text and contact cards (the menu's forward_message), between Edit and Reply. -->
+            <button class="msg-bar-btn msg-bar-forward" type="button" data-if="row.bar_forward" data-event-click="msg_bar_forward()">
+              <svg src="../icons/v2/forward.svg" width="18" height="18"></svg>
+            </button>
             <button class="msg-bar-btn" type="button" data-if="row.bar_reply" data-event-click="msg_bar_reply()">
               <svg src="../icons/v2/reply.svg" width="18" height="18"></svg>
             </button>

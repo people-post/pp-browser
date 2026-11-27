@@ -1,4 +1,4 @@
-<div class="people-picker stack" data-model="people_picker">
+<div class="people-picker stack" data-model="people_picker" data-class-people-picker--choose="choose_mode">
   <div data-if="step == 'select'" class="people-picker-select stack">
     <div class="people-picker-header sheet-header row">
       <p class="people-picker-title sheet-title">{{title}}</p>
@@ -35,6 +35,10 @@
     </div>
 
     <div class="people-picker-footer stack">
+      <!-- Choose and return (Forward to): what is about to be sent, two lines at most. -->
+      <div class="people-picker-preview" data-if="show_preview">
+        <p class="people-picker-preview-text">{{preview_text}}</p>
+      </div>
       <label class="people-picker-video-option row" data-if="show_call_video_option">
         <input type="checkbox" data-value="call_video_allowed"/>
         <span>{{i18n:people_picker.allow_video}}</span>

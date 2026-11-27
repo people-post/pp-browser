@@ -510,11 +510,9 @@ TEST_F(WideFrostLayoutTest, ThePhoneAndWideChatHeadersHaveTheSameMaterialOnBothS
 TEST_F(WideFrostLayoutTest, TheTransparencyRowIsOnTheWideAppearancePageInThePhonesOrder) {
   const std::string section = Asset("views/settings_section_appearance.rml");
   const size_t theme = section.find("on_choose_theme()");
-  const size_t language = section.find("on_choose_language()");
   const size_t transparency = section.find("toggle_transparency()");
   ASSERT_NE(transparency, std::string::npos);
-  EXPECT_LT(theme, language);
-  EXPECT_LT(language, transparency);
+  EXPECT_LT(theme, transparency); // release 1 hides the Language row between them
   EXPECT_EQ(Count(section, "toggle_transparency()"), 1U);
 
   Load(Wide(NavTab::Me, "settings_detail"));

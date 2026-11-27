@@ -66,6 +66,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"group_list", "views/group_list.rml"},
       {"group_list_wide", "views/group_list_wide.rml"},
       {"people_picker", "views/people_picker.rml"},
+      {"people_picker_wide", "views/people_picker_wide.rml"},
       {"qr_scan", "views/qr_scan.rml"},
       {"avatar_crop", "views/avatar_crop.rml"},
       {"avatar_view", "views/avatar_view.rml"},

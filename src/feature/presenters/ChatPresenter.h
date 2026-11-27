@@ -6,6 +6,7 @@
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
 #include "feature/presenters/MessageEdit.h"
+#include "feature/presenters/MessageForward.h"
 #include "feature/presenters/MessageResend.h"
 #include "feature/presenters/SendMark.h"
 #include "feature/presenters/SessionMenu.h"
@@ -646,6 +647,57 @@ public:
    */
   std::optional<std::string> MentionedContact(const std::string& message_id, size_t run_index);
 
+  // --- Forwarding text and contact cards (DEV/PLAN-message-forward-text.md) -----------------------------------------
+
+  /**
+   * The chats and people the "Forward to" list offers (ClassifyForwardTarget on each, then OrderForwardTargets): no AI
+   * conversation, no PP support chat, not ourselves, no blocked contact, no group we cannot post in.
+   */
+  std::vector<ForwardTarget> ForwardTargets();
+  /** The open chat's message can be forwarded (CanForwardMessage on the row as stored now). */
+  bool CanForward(const std::string& message_id);
+  /** Starts choosing messages in the open chat with `message_id` ticked; false (nothing started) when it cannot be forwarded. */
+  bool BeginForwardSelection(const std::string& message_id);
+  enum class ForwardTick { Selected, Deselected, NotForwardable, LimitReached, NotChoosing };
+  /** Ticks or unticks a message of the chat being chosen from; at most kMaxForwardMessages. */
+  ForwardTick ToggleForwardSelection(const std::string& message_id);
+  bool ForwardChoosing() const { return forward_selection_.Active(); }
+  /** The strip of "Forward to" for the ticked messages (ForwardPreviewText); empty when none is ticked or readable. */
+  std::string ForwardPreview(const std::function<std::string(size_t count)>& count_text);
+  /** The ticked messages, in the order they were ticked. */
+  const std::vector<std::string>& ForwardSelectedIds() const { return forward_selection_.Ids(); }
+  const std::string& ForwardSourceThread() const { return forward_selection_.Thread(); }
+  /** Leaves choosing (Cancel). Does not stop a forward being sent (AbortForward does, and leaves choosing too). */
+  void EndForwardSelection() { forward_selection_.Clear(); }
+  /**
+   * Sends the ticked messages to `targets` (chat ids; at most kMaxForwardTargets): each chat gets all of them, in the
+   * chat's order, before the next chat starts. Re-checks every message and chat first and skips what no longer
+   * qualifies. Leaves choosing at once. `done` runs once on the UI thread with what happened, unless the forward is
+   * stopped (AbortForward, sign-out, messaging torn down): then it never runs and nothing more is sent.
+   */
+  void ForwardSelected(std::vector<std::string> targets, std::function<void(const ForwardResult&)> done);
+  /**
+   * The same for the picker's answer: a person with no chat yet gets one only when the send reaches them, after the
+   * send-time re-check (a refused forward makes no chat).
+   */
+  void ForwardSelectedTo(std::vector<ForwardTarget> targets, std::function<void(const ForwardResult&)> done);
+  /** A forward is being sent now. */
+  bool Forwarding() const { return forward_run_ != nullptr; }
+  /**
+   * Leaves choosing and stops the forward being sent (lock, sign-out, messaging stopped): no send is made after this
+   * returns. A lock stops it too: it clears the keys the messaging layer sends with (IdentityStore::ClearDek).
+   */
+  void AbortForward();
+  /**
+   * A forward was stopped part-way; the next chat entry tells the user ("only part was forwarded"). Read once, and only
+   * by the account it happened under: another account on this device never hears of it.
+   */
+  bool TakeForwardInterrupted();
+
+  /** Tests: the posting of each batch, and the messaging calls a forward makes (default: the UI queue; the facade). */
+  void SetForwardPostForTest(std::function<void(std::function<void()>)> post) { forward_post_ = std::move(post); }
+  void SetForwardPortsForTest(ForwardPorts ports) { forward_ports_ = std::move(ports); }
+
 private:
   /** A group's list preview: its latest membership line in the transcript's words, else the stored preview. */
   std::string GroupEventPreviewOr(const Thread& thread, const std::string& local_account, std::string& icon);
@@ -679,6 +731,21 @@ private:
   std::optional<std::string> opened_at_mention_;
   /** Messages sent again by a tap not yet told as red again, until told or delivered (in memory). */
   ResentMessages resent_ids_;
+  ForwardSelection forward_selection_;
+  std::shared_ptr<ForwardRun> forward_run_;
+  /** Counts forwards stopped from outside; a posted batch of an older one does nothing. */
+  uint64_t forward_epoch_ = 0;
+  bool forward_interrupted_ = false;
+  /** The account the running forward was started under, and the one a stopped forward is told to. */
+  std::string forward_run_account_;
+  std::string forward_interrupted_account_;
+  std::optional<ForwardPorts> forward_ports_;
+  std::function<void(std::function<void()>)> forward_post_;
+  /** The facade's ports, built once (every row and every redraw asks); a test's own ports win. */
+  const ForwardPorts& ForwardPortsNow();
+  std::optional<ForwardPorts> facade_ports_;
+  void PostForwardBatch(uint64_t epoch, std::shared_ptr<ForwardRun> run,
+                        std::function<void(const ForwardResult&)> done);
 };
 
 } // namespace pbr

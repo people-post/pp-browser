@@ -238,7 +238,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsOnlyUnderThePointerOnAMessageThatHasA
     EXPECT_EQ(bar->GetComputedValues().display(), ui::Style::Display::None) << "hidden until hovered: " << i;
     ui::ElementList buttons;
     bar->GetElementsByClassName(buttons, "msg-bar-btn");
-    EXPECT_EQ(buttons.size(), 4u) << "+ (the emoji picker), edit, reply, more";
+    EXPECT_EQ(buttons.size(), 5u) << "+ (the emoji picker), edit, forward, reply, more";
     ui::ElementList edit;
     bar->GetElementsByClassName(edit, "msg-bar-edit");
     ASSERT_EQ(edit.size(), 1u) << i;
@@ -384,6 +384,7 @@ TEST_F(ChatWideLayoutTest, TheMenuAndTheBarShareTheOneDecision) {
   ASSERT_NE(decide, std::string::npos);
   EXPECT_NE(menus.find("if (slots.react)", decide), std::string::npos);
   EXPECT_NE(menus.find("if (slots.reply)", decide), std::string::npos);
+  EXPECT_NE(menus.find("if (slots.forward)", decide), std::string::npos);
   EXPECT_NE(menus.find("if (slots.copy)", decide), std::string::npos);
   EXPECT_NE(menus.find("} else if (slots.edit)", decide), std::string::npos);
   const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
@@ -446,6 +447,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShrinksToWhatTheMenuOffersInAnAiConversati
     row.emoji = emoji;
     state.bar_emojis.push_back(row);
   }
+  state.messages[0].bar_forward = true; // a text of ours: the menu offers Forward
   Load(ConversationWidth(900));
   document->GetElementsByClassName(wraps, "msg-hover");
   ui::ElementList direct_wraps;
@@ -454,13 +456,13 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShrinksToWhatTheMenuOffersInAnAiConversati
   direct_wraps[0]->SetPseudoClass("hover", true);
   context->Update();
   EXPECT_EQ(shown_in(direct_wraps[0], "msg-bar-emoji"), 3u);
-  EXPECT_EQ(shown_in(direct_wraps[0], "msg-bar-btn"), 4u) << "+, Edit, Reply, More";
+  EXPECT_EQ(shown_in(direct_wraps[0], "msg-bar-btn"), 5u) << "+, Edit, Forward, Reply, More";
   EXPECT_GE(BoxOf(First("msg-bar")).W(), full_less.W()) << "the AI bar is the shorter one";
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
-  // The used reactions (one button repeated over bar_emojis), "+" (the full picker), Reply and More: the reactions and
-  // Reply run the message menu's own items, More opens that whole menu.
+  // The used reactions (one button repeated over bar_emojis), "+" (the full picker), Edit, Forward, Reply and More: the
+  // reactions, Forward and Reply run the message menu's own items, More opens that whole menu.
   const std::string page = Asset("views/chat_wide.rml");
   const size_t bar = page.find("class=\"msg-bar\"");
   ASSERT_NE(bar, std::string::npos);
@@ -468,21 +470,24 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   EXPECT_NE(bar_markup.find("msg_bar_emoji(row.message_id, e.emoji)"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_react()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_edit(row.message_id)"), std::string::npos);
+  EXPECT_NE(bar_markup.find("msg_bar_forward()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_reply()"), std::string::npos);
   EXPECT_NE(bar_markup.find("msg_bar_more()"), std::string::npos);
-  // The order is reactions, +, Edit, (Forward later), Reply, More.
+  // The order is reactions, +, Edit, Forward, Reply, More ("Select" is in More, not a button).
   EXPECT_LT(bar_markup.find("msg_bar_emoji"), bar_markup.find("msg_bar_react"));
   EXPECT_LT(bar_markup.find("msg_bar_react"), bar_markup.find("msg_bar_edit"));
-  EXPECT_LT(bar_markup.find("msg_bar_edit"), bar_markup.find("TODO(forward)"));
-  EXPECT_LT(bar_markup.find("TODO(forward)"), bar_markup.find("msg_bar_reply"));
+  EXPECT_LT(bar_markup.find("msg_bar_edit"), bar_markup.find("msg_bar_forward"));
+  EXPECT_LT(bar_markup.find("msg_bar_forward"), bar_markup.find("msg_bar_reply"));
+  EXPECT_EQ(bar_markup.find("TODO(forward)"), std::string::npos) << "the placeholder is filled";
   EXPECT_LT(bar_markup.find("msg_bar_reply"), bar_markup.find("msg_bar_more"));
-  // No other action in the bar (no forward, no save...): five buttons, the first repeated per reaction.
+  // No other action in the bar (no save...): six buttons, the first repeated per reaction.
   size_t buttons = 0;
   for (size_t at = bar_markup.find("<button"); at != std::string::npos; at = bar_markup.find("<button", at + 1)) {
     ++buttons;
   }
-  EXPECT_EQ(buttons, 5u);
+  EXPECT_EQ(buttons, 6u);
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::Reply), "reply_message");
+  EXPECT_STREQ(MessageBarActionId(MessageBarAction::Forward), "forward_message");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::React), "react_more");
   EXPECT_STREQ(MessageBarActionId(MessageBarAction::More), "");
   // The ids are items ChatMenus::ForRequest builds for a message, and the bar's reactions are its quick row.
@@ -490,6 +495,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
   ASSERT_NE(for_request, std::string::npos);
   EXPECT_NE(menus.find("\"reply_message\"", for_request), std::string::npos);
+  EXPECT_NE(menus.find("\"forward_message\"", for_request), std::string::npos);
   EXPECT_NE(menus.find("\"react_more\"", for_request), std::string::npos);
   EXPECT_NE(menus.find("QuickReactions(host_.RecentEmojis())", for_request), std::string::npos);
   // Edit: the menu offers it on host_.CanEditMessage (and not while editing); the bar's pencil asks the same of the controller.
@@ -501,7 +507,106 @@ TEST_F(ChatWideLayoutTest, TheHoverBarOffersExactlyTheMessageMenusItems) {
   EXPECT_NE(can_edit_body.find("!chat_.editing_message"), std::string::npos);
   EXPECT_NE(can_edit_body.find("CanEditMessage(message_id)"), std::string::npos);
   EXPECT_NE(controller.find("kBarEmojiCount = 5"), std::string::npos) << "five reactions";
-  EXPECT_EQ(menus.find("forward", for_request), std::string::npos) << "no forwarding";
+}
+
+// "Forward" in the bar forwards that one message ("Forward to" opens at once); "Select" (the multi-select) is
+// not a bar button: it is in the right-click menu and in the bar's "..." menu, which are the same list, right after Forward.
+TEST_F(ChatWideLayoutTest, TheHoverBarForwardButtonForwardsOneMessageAndSelectIsInTheMenus) {
+  const std::string page = Asset("views/chat_wide.rml");
+  const size_t bar = page.find("class=\"msg-bar\"");
+  ASSERT_NE(bar, std::string::npos);
+  const std::string bar_markup = page.substr(bar, page.find("class=\"message-group\"", bar) - bar);
+  EXPECT_EQ(bar_markup.find("select"), std::string::npos) << "no extra hover-bar button";
+  EXPECT_EQ(bar_markup.find("msg_bar_select"), std::string::npos);
+  // The bar's button runs the menu item "forward_message", which is the one-message forward.
+  EXPECT_STREQ(MessageBarActionId(MessageBarAction::Forward), "forward_message");
+  const std::string menus = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(for_request, std::string::npos);
+  const size_t forward = menus.find("\"forward_message\"", for_request);
+  const size_t many = menus.find("\"select_messages\"", for_request);
+  ASSERT_NE(forward, std::string::npos);
+  ASSERT_NE(many, std::string::npos);
+  EXPECT_LT(forward, many) << "right after Forward, in the list both the right-click and the bar's More show";
+  EXPECT_NE(menus.find("host_.BeginForward(message_id)", forward), std::string::npos);
+  EXPECT_NE(menus.find("host_.BeginSelect(message_id)", many), std::string::npos);
+  const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const size_t begin = controller.find("void ChatController::BeginForward(");
+  ASSERT_NE(begin, std::string::npos);
+  EXPECT_NE(controller.substr(begin, 400).find("forward_flow_->BeginSingle("), std::string::npos);
+}
+
+// Forward is in the bar for the messages the presenter says can go (text, contact cards) and not for the rest (a
+// picture, a file, a voice message): the row says so (bar_forward) and the button is not drawn.
+TEST_F(ChatWideLayoutTest, TheHoverBarHasNoForwardForAPicture) {
+  ShowChat();
+  state.messages[0].bar_forward = true;  // our text
+  state.messages[1].bar_forward = false; // their picture: reactions and More only
+  state.messages[1].bar_reply = false;
+  Load(ConversationWidth(900));
+  ui::ElementList wraps;
+  document->GetElementsByClassName(wraps, "msg-hover");
+  ASSERT_GE(wraps.size(), 2u);
+  auto forward_shown = [&](ui::Element* wrap) {
+    ui::ElementList found;
+    wrap->GetElementsByClassName(found, "msg-bar-forward");
+    EXPECT_EQ(found.size(), 1u);
+    return !found.empty() && found[0]->GetComputedValues().display() != ui::Style::Display::None &&
+           BoxOf(found[0]).W() > 0.f;
+  };
+  for (size_t i = 0; i < 2; ++i) {
+    wraps[i]->SetPseudoClass("hover", true);
+  }
+  context->Update();
+  EXPECT_TRUE(forward_shown(wraps[0])) << "a text has Forward";
+  EXPECT_FALSE(forward_shown(wraps[1])) << "a picture has none";
+  // Between Edit and Reply, left to right.
+  ui::ElementList buttons;
+  wraps[0]->GetElementsByClassName(buttons, "msg-bar-btn");
+  std::vector<float> lefts;
+  for (ui::Element* b : buttons) {
+    if (b->GetComputedValues().display() != ui::Style::Display::None) {
+      lefts.push_back(BoxOf(b).left);
+    }
+  }
+  EXPECT_TRUE(std::is_sorted(lefts.begin(), lefts.end()));
+  EXPECT_EQ(lefts.size(), 5u) << "+, Edit, Forward, Reply, More";
+  // The decision: Forward is its own slot, set from the presenter's answer and from nothing else.
+  EXPECT_FALSE(DecideMessageMenuSlots(true, true, true, false, /*can_forward=*/false).forward);
+  EXPECT_TRUE(DecideMessageMenuSlots(true, true, true, false, /*can_forward=*/true).forward);
+  EXPECT_FALSE(DecideMessageMenuSlots(true, false, false, false).forward) << "a picture: not forwardable";
+  const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  const size_t offer = controller.find("facts.bar_offer =");
+  ASSERT_NE(offer, std::string::npos);
+  // The bar's Forward comes from the row (built from its message), never from a store read per row per render.
+  const std::string bar_offer = controller.substr(offer, controller.find("facts.voice_max_seconds", offer) - offer);
+  EXPECT_EQ(bar_offer.find("CanForward("), std::string::npos) << bar_offer;
+  const std::string rows = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/TranscriptRml.cpp");
+  EXPECT_NE(rows.find("row.bar_forward = row.has_actions && row.forwardable;"), std::string::npos);
+}
+
+// The right-click menu (ChatMenus::ForRequest, the same items as the long press and the bar) has Forward between Reply and
+// Copy; the bar's button runs that very item; and while messages are being chosen a click opens no menu at all.
+TEST_F(ChatWideLayoutTest, TheRightClickMenuOffersForward) {
+  const std::string menus = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatMenus.cpp");
+  const size_t for_request = menus.find("std::vector<ContextMenuAction> ChatMenus::ForRequest(");
+  ASSERT_NE(for_request, std::string::npos);
+  const size_t reply = menus.find("\"reply_message\"", for_request);
+  const size_t forward = menus.find("\"forward_message\"", for_request);
+  const size_t copy = menus.find("\"copy_message\"", for_request);
+  ASSERT_NE(forward, std::string::npos);
+  EXPECT_LT(reply, forward);
+  EXPECT_LT(forward, copy);
+  EXPECT_NE(menus.find("if (slots.forward)", for_request), std::string::npos);
+  EXPECT_NE(menus.find("host_.BeginForward(message_id)", for_request), std::string::npos);
+  EXPECT_NE(menus.find("presenter_.CanForward(message_id)", for_request), std::string::npos);
+  const size_t choosing = menus.find("if (presenter_.ForwardChoosing()) {", for_request);
+  EXPECT_NE(choosing, std::string::npos) << "no menu while choosing";
+  EXPECT_LT(choosing, forward);
+  const std::string controller = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
+  EXPECT_NE(controller.find("BindEventCallback(\"msg_bar_forward\""), std::string::npos);
+  EXPECT_NE(controller.find("MessageBarAction::Forward"), std::string::npos);
+  EXPECT_STREQ(MessageBarActionId(MessageBarAction::Forward), "forward_message");
 }
 
 TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
@@ -512,6 +617,7 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
     row.emoji = emoji;
     state.bar_emojis.push_back(row);
   }
+  state.messages[0].bar_forward = true;
   Load(ConversationWidth(900));
   ui::ElementList all_rows;
   document->GetElementsByClassName(all_rows, "message-row");
@@ -540,11 +646,12 @@ TEST_F(ChatWideLayoutTest, TheHoverBarShowsTheUsedReactionsBeforeThePlus) {
   ASSERT_EQ(emoji.size(), 5u) << "five reactions";
   ui::ElementList others;
   mine->GetElementsByClassName(others, "msg-bar-btn");
-  ASSERT_EQ(others.size(), 4u) << "+, Edit (our own text row), Reply, More";
+  ASSERT_EQ(others.size(), 5u) << "+, Edit (our own text row), Forward, Reply, More";
   EXPECT_LT(BoxOf(emoji.back()).right, BoxOf(others[0]).left + 0.5f) << "the + comes after the reactions";
   EXPECT_LT(BoxOf(others[0]).right, BoxOf(others[1]).left + 0.5f) << "then Edit";
-  EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then Reply";
-  EXPECT_LT(BoxOf(others[2]).right, BoxOf(others[3]).left + 0.5f) << "then More";
+  EXPECT_LT(BoxOf(others[1]).right, BoxOf(others[2]).left + 0.5f) << "then Forward";
+  EXPECT_LT(BoxOf(others[2]).right, BoxOf(others[3]).left + 0.5f) << "then Reply";
+  EXPECT_LT(BoxOf(others[3]).right, BoxOf(others[4]).left + 0.5f) << "then More";
   EXPECT_LE(BoxOf(First("msg-bar")).H(), 40.f) << "one row";
   // Every slot draws its emoji: a glyph span with the emoji as its text, a box of its own, an opaque text colour, and the
   // same font family as the phone's quick-reaction row (the menu label), so the emoji font fallback applies alike.

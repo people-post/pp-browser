@@ -136,6 +136,8 @@ const char* MessageBarActionId(const MessageBarAction action) {
   switch (action) {
     case MessageBarAction::Reply:
       return "reply_message";
+    case MessageBarAction::Forward:
+      return "forward_message";
     case MessageBarAction::React:
       return "react_more";
     case MessageBarAction::More:
@@ -218,6 +220,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     return actions;
   }
 
+  if (presenter_.ForwardChoosing()) {
+    return actions; // choosing messages to forward: a press on a row is a tick, not a menu
+  }
   const std::string message_id = FindAttributeUp(request.target, "message-id");
   if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
@@ -238,9 +243,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   // What this menu offers is decided once (MessageMenuSlots.h): the wide layout's hover bar draws the same slots. A
   // conversation takes reactions only when there is someone to send them to; an AI conversation offers none.
   auto open_thread = facade->GetActiveThread();
-  const MessageMenuSlots slots =
-      DecideMessageMenuSlots(open_thread && ThreadTakesReactions(open_thread->kind), !text.empty(),
-                             host_.CanEditMessage(message_id), chat_.editing_message);
+  const MessageMenuSlots slots = DecideMessageMenuSlots(open_thread && ThreadTakesReactions(open_thread->kind),
+                                                        !text.empty(), host_.CanEditMessage(message_id),
+                                                        chat_.editing_message, presenter_.CanForward(message_id));
 
   // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
   if (slots.react) {
@@ -270,6 +275,14 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     if (slots.reply) {
       actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text); }, "../icons/v2/reply.svg"});
+    }
+    // Forward (this message) and Select: text and contact cards (ChatPresenter::CanForward); right after Reply,
+    // before Copy.
+    if (slots.forward) {
+      actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
+                         [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/forward.svg"});
+      actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
+                         [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/select.svg"});
     }
     actions.push_back(
         {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});

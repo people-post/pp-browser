@@ -596,6 +596,24 @@ ChatController::ChatController()
   playback_ports.call_live = [this]() { return facade_ && facade_->AnyCallLive(); };
   voice_playback_ = std::make_unique<VoicePlayback>(std::move(playback_ports));
 
+  ForwardFlowPorts forward_ports;
+  forward_ports.open_picker = [this](PeoplePickerChooseOptions options, PeoplePickerChooseDone done,
+                                     std::function<void()> cancel) {
+    if (people_picker_notify_.open_choose_targets) {
+      people_picker_notify_.open_choose_targets(std::move(options), std::move(done), std::move(cancel));
+    } else if (cancel) {
+      cancel(); // no picker to open: the flow is told, and its Forward button works again
+    }
+  };
+  forward_ports.close_picker = [this]() {
+    if (people_picker_notify_.close_choose_targets) {
+      people_picker_notify_.close_choose_targets();
+    }
+  };
+  forward_ports.pill = [this](const std::string& message) { ShowToast(message); };
+  forward_ports.changed = [this]() { OnForwardChanged(); };
+  forward_flow_ = std::make_unique<ForwardFlow>(presenter_, std::move(forward_ports));
+
   // Desktop "Save as" of a received attachment (DEV/PLAN-received-file-save-as.md): AttachmentSaveFlow decides, these
   // are its ports. Only "saved / cancelled / failed" and the size go to the log, never a name or a path.
   AttachmentSavePorts save_ports;
@@ -823,6 +841,7 @@ void ChatController::RunWhenRegistrationIdle(std::function<void(std::function<vo
 }
 
 void ChatController::OnMessagingTornDownForRegistration() {
+  forward_flow_->Stop(); // a forward still sending must not call into the messaging that was just torn down
   if (ready_tasks_) {
     ready_tasks_->OnMessagingTornDown();
   }
@@ -1467,10 +1486,16 @@ void ChatController::OnSelectThread(std::string thread_id) { // by value: ShellS
   if (!selecting_ai && ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
     ShellSelectNavTab(NavTab::Sessions);
   }
+  if (forward_flow_->Selecting() && presenter_.ForwardSourceThread() != thread_id) {
+    // Another chat opens: the choosing, and a picker over it, end with the chat they belonged to.
+    forward_flow_->Leave();
+  }
+  OnForwardChanged(); // the bars follow what the flow is now, whatever the presenter dropped on the way
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
-    mentions_.SyncThread(); // a group chat: its @ lines are read now, before anyone types `@`
+    forward_flow_->OnChatEntered(); // a forward that stopped part-way says so, once
+    mentions_.SyncThread();         // a group chat: its @ lines are read now, before anyone types `@`
     // Opened at its oldest unread mention (G015), read before the open dropped the marker.
     if (const std::optional<std::string>& mention = presenter_.OpenedAtMention()) {
       (void)scroller_.JumpToMessage(*mention);
@@ -1851,6 +1876,7 @@ void ChatController::OnProfileDataReset() {
   ResetRecovery();
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
+  forward_flow_->Stop(); // a forward stops, its picker closes, before the presenter forgets the profile
   presenter_.ResetForNewProfile();
   drafts_ = ThreadDrafts{}; // unsent text of the old profile must not reach the new one
   quotes_.clear();
@@ -6675,6 +6701,7 @@ void ChatController::RestoreComposerExtras(const std::string& key) {
 }
 
 void ChatController::ForgetComposerExtras(const std::string& key) {
+  forward_flow_->OnThreadGone(key);
   drafts_.Forget(key);
   quotes_.erase(key);
   presenter_.ForgetEdit(key);
@@ -7394,6 +7421,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("forget_memory", DataEvent([this] { OnForgetMemory(); }));
         ctor.BindEventCallback("open_search", DataEvent([this] { OnOpenSearch(); }));
         ctor.BindEventCallback("close_search", DataEvent([this] { CloseSearch(/*refocus_composer=*/true); }));
+        ctor.BindEventCallback("forward_tap", DataEvent<std::string>([this](const std::string& message_id) {
+                                 if (!IsPendingUploadRowId(message_id)) {
+                                   forward_flow_->Tap(message_id);
+                                 }
+                               }));
+        ctor.BindEventCallback("forward_cancel", DataEvent([this] { forward_flow_->Cancel(); }));
+        ctor.BindEventCallback("forward_next", DataEvent([this] { forward_flow_->Next(); }));
         ctor.BindEventCallback("search_query_changed", DataEvent([this] { OnSearchQueryChanged(); }));
         ctor.BindEventCallback("search_older", DataEvent([this] { OnSearchOlder(); }));
         ctor.BindEventCallback("search_newer", DataEvent([this] { OnSearchNewer(); }));
@@ -7402,6 +7436,9 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
         ctor.BindEventCallback("msg_bar_reply", DataEventAt([this](ui::Event& ev) {
                                  menus_.RunMessageBarAction(ev, MessageBarAction::Reply);
+                               }));
+        ctor.BindEventCallback("msg_bar_forward", DataEventAt([this](ui::Event& ev) {
+                                 menus_.RunMessageBarAction(ev, MessageBarAction::Forward);
                                }));
         ctor.BindEventCallback("msg_bar_react", DataEventAt([this](ui::Event& ev) {
                                  menus_.RunMessageBarAction(ev, MessageBarAction::React);
@@ -7657,6 +7694,7 @@ void ChatController::Update() {
   if (messaging_ready_ && !MessagingReady()) {
     if (!vault_locked_seen_) {
       vault_locked_seen_ = true;
+      forward_flow_->Stop(); // locking clears the keys a send needs: no send after it, and the picker goes
       ChatPictureTextures::Locked locked = picture_textures_.DropAllForLock(chat_.messages);
       if (locked.rows_changed) {
         DirtyChatTurns();
@@ -8283,17 +8321,54 @@ void ChatController::ApplySearchView() {
   }
   search_current_id_ = search_.CurrentMessageId();
   search_folded_query_ = view.open ? FoldForSearch(view.query) : std::string();
-  if (view.open) {
-    scroller_.SetRowDecorator([this](std::vector<MessageDisplayRow>& rows) {
-      MarkSearchRows(rows, search_hit_ids_, search_current_id_, search_folded_query_);
-    });
-  } else {
-    scroller_.SetRowDecorator({});
-  }
+  InstallRowDecorator();
   scroller_.Redecorate(); // the rows shown now: a new query or a step changes the tint, not the rows
 
   for (const char* field : {"search_open", "search_indexing", "search_count_label", "search_has_hits",
                             "search_can_older", "search_can_newer"}) {
+    DataModelHost::Instance().Dirty("chat", field);
+  }
+}
+
+void ChatController::InstallRowDecorator() {
+  if (!search_.view().open && !forward_flow_->Selecting()) {
+    scroller_.SetRowDecorator({});
+    return;
+  }
+  scroller_.SetRowDecorator([this](std::vector<MessageDisplayRow>& rows) {
+    if (search_.view().open) {
+      MarkSearchRows(rows, search_hit_ids_, search_current_id_, search_folded_query_);
+    }
+    // Choosing messages to forward: every row takes a tap as a tick; the ones that can go show a tick box.
+    const bool choosing = forward_flow_->Selecting();
+    for (MessageDisplayRow& row : rows) {
+      const std::string id = row.message_id.c_str();
+      row.forward_mode = choosing;
+      row.forward_ok = choosing && !IsPendingUploadRowId(id) && row.forwardable;
+      row.forward_ticked = choosing && forward_flow_->Ticked(id);
+    }
+  });
+}
+
+void ChatController::BeginForward(const std::string& message_id) {
+  voice_playback_->Stop(); // the picker takes the screen: a voice message that was playing stops
+  forward_flow_->BeginSingle(message_id);
+}
+
+void ChatController::BeginSelect(const std::string& message_id) {
+  forward_flow_->BeginSelecting(message_id);
+  if (forward_flow_->Selecting()) {
+    voice_playback_->Stop(); // choosing messages: a voice message that was playing stops
+  }
+}
+
+void ChatController::OnForwardChanged() {
+  chat_.forward_selecting = forward_flow_->Selecting();
+  chat_.forward_count_label = forward_flow_->CountLabel().c_str();
+  chat_.forward_can_next = forward_flow_->CanNext();
+  InstallRowDecorator();
+  scroller_.Redecorate();
+  for (const char* field : {"forward_selecting", "forward_count_label", "forward_can_next"}) {
     DataModelHost::Instance().Dirty("chat", field);
   }
 }

@@ -3015,3 +3015,96 @@
 .shell-body--wide .group-list-row {
   cursor: pointer;
 }
+
+/* ---- Choosing messages to forward (chat_wide.rml, composer_wide.rml): the phone's bars, in the conversation column.
+   The top bar takes the header's place (the strip's material stays under it); the Forward button takes the composer's
+   place, one pill at most 360dp wide on the strip's centre line; a row makes room for its tick, and its cover (above the
+   hover bar and the content, whose own clicks it takes) turns every click on the row into a tick. ---- */
+.shell-body--wide .chat-header > .chat-forward-top {
+  position: relative;
+  padding: 0 8dp 0 8dp;
+}
+
+.shell-body--wide .shell-pane-composer .chat-forward-bar {
+  margin: 0;
+  padding: 0 0 0 0;
+}
+
+.shell-body--wide .shell-pane-composer .chat-forward-next {
+  width: 100%;
+  max-width: 360dp;
+  margin: 0 auto;
+}
+
+.shell-body--wide .message-row-forward-mode {
+  padding-left: 40dp;
+}
+
+.shell-body--wide .message-forward-check {
+  z-index: 8;
+  pointer-events: none;
+}
+
+.shell-body--wide .message-forward-cover {
+  z-index: 7;
+}
+
+/* ---- Forward to (people_picker_wide.rml): a centred card in the modal frame, 480dp wide and 640dp high at most, the
+   window less 96dp when that is less. The title (clear of the frame's close button) and the search stay on top, the
+   chats scroll, Cancel and Send stay at the bottom. ---- */
+.shell-body--wide .shell-modal-stage .shell-frame--people_picker {
+  flex: 0 1 480dp;
+  max-width: 480dp;
+  max-height: 640dp;
+}
+
+.shell-body--wide .people-picker--wide {
+  gap: 0;
+  padding: 0;
+}
+
+.shell-body--wide .people-picker-wide-head {
+  flex-shrink: 0;
+  padding: 20dp 64dp 8dp 24dp;
+}
+
+.shell-body--wide .people-picker-wide-search {
+  flex-shrink: 0;
+  padding: 4dp 24dp 8dp 24dp;
+}
+
+.shell-body--wide .people-picker-wide-preview {
+  flex-shrink: 0;
+  margin: 0 24dp 8dp 24dp;
+}
+
+.shell-body--wide .people-picker-wide-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 16dp 0 16dp;
+}
+
+.shell-body--wide .people-picker--wide .people-picker-row {
+  min-height: 48dp;
+  box-sizing: border-box;
+}
+
+.shell-body--wide .people-picker-wide-foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 12dp;
+  padding: 12dp 24dp 20dp 24dp;
+}
+
+.shell-body--wide .people-picker-wide-foot .btn {
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0 24dp;
+  border-radius: 22dp;
+  line-height: 44dp;
+  white-space: nowrap;
+}

@@ -130,6 +130,9 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_sync_with_peer", &state.show_sync_with_peer);
   ctor.Bind("show_thread_menu", &state.show_thread_menu);
   ctor.Bind("show_search", &state.show_search);
+  ctor.Bind("forward_selecting", &state.forward_selecting);
+  ctor.Bind("forward_count_label", &state.forward_count_label);
+  ctor.Bind("forward_can_next", &state.forward_can_next);
   ctor.Bind("search_open", &state.search_open);
   ctor.Bind("search_indexing", &state.search_indexing);
   ctor.Bind("search_query", &state.search_query);

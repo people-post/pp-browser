@@ -7,6 +7,7 @@
 
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/Platform.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
@@ -231,6 +232,9 @@ bool PeoplePickerController::RegisterModel(ui::Context* context) {
     ctor.Bind("show_checks", &controller.show_checks_);
     ctor.Bind("show_cta", &controller.show_cta_);
     ctor.Bind("show_add_members", &controller.show_add_members_);
+    ctor.Bind("show_preview", &controller.show_preview_);
+    ctor.Bind("preview_text", &controller.preview_text_);
+    ctor.Bind("choose_mode", &controller.choose_mode_);
     ctor.Bind("show_call_video_option", &controller.show_call_video_option_);
     ctor.Bind("call_video_allowed", &controller.call_video_allowed_);
     ctor.BindEventCallback("toggle_contact", &PeoplePickerController::ToggleContactCallback);
@@ -430,7 +434,30 @@ void PeoplePickerController::OpenForCallMakeGroup(const std::string& call_id) {
   NotifySurfaceChanged();
 }
 
-void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
+void PeoplePickerController::OpenForResult(PeoplePickerChooseOptions options, PeoplePickerChooseDone done,
+                                           std::function<void()> cancel) {
+  if (!MessagingInitialized()) {
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
+    if (cancel) {
+      cancel(); // the caller's Forward button must not wait for a picker that never opened
+    }
+    return;
+  }
+  Open(PeoplePickerMode::ChooseTargets, {},
+       [this, options = std::move(options), done = std::move(done), cancel = std::move(cancel)]() mutable {
+         choose_options_ = std::move(options);
+         choose_done_ = std::move(done);
+         choose_cancel_ = std::move(cancel);
+         choose_all_ = choose_options_.list ? choose_options_.list() : std::vector<ForwardTarget>{};
+         preview_text_ = choose_options_.preview.c_str();
+         show_preview_ = !choose_options_.preview.empty();
+         choose_mode_ = true;
+         empty_hint_ = "";
+       });
+}
+
+void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids,
+                                  std::function<void()> prepare) {
   if (!MessagingInitialized()) {
     UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
     NotifySurfaceChanged();
@@ -453,10 +480,17 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
   group_title_help_ = Tr("people_picker.group_title_help").c_str();
   pending_member_ids_.clear();
   member_summary_.clear();
-  title_ = SelectStepTitle().c_str();
   empty_hint_ = Tr("people_picker.empty").c_str();
+  if (prepare) {
+    prepare();
+  }
+  title_ = SelectStepTitle().c_str();
 
-  SyncRows();
+  if (mode_ == PeoplePickerMode::ChooseTargets) {
+    SyncChooseRows();
+  } else {
+    SyncRows();
+  }
   UpdateCta();
   DirtyAll();
 
@@ -464,6 +498,12 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
   spec.key = "people_picker";
   // On the phone every picker is an iOS page sheet (Kenneth 2026-11-04); desktop keeps the centred panel.
   spec.page_sheet = true;
+  if (mode_ == PeoplePickerMode::ChooseTargets && Platform::IsDesktop()) {
+    // Forward to, on a computer: a centred card (people_picker_wide) in the modal frame. The other pickers keep the
+    // phone's page, which a file path in rml_path keeps from being swapped for a `_wide` view.
+    spec.rml_path = "people_picker_wide";
+    spec.modal = true;
+  }
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();
@@ -485,6 +525,13 @@ void PeoplePickerController::RegisterFlow() {
       [this]() { OnFlowDismissed(); });
 }
 
+void PeoplePickerController::CloseChooseTargets() {
+  if (mode_ == PeoplePickerMode::ChooseTargets && layer_id_ >= 0) {
+    Close();
+    NotifySurfaceChanged();
+  }
+}
+
 void PeoplePickerController::Close() {
   if (flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();
@@ -500,9 +547,13 @@ void PeoplePickerController::Close() {
 
 void PeoplePickerController::OnFlowDismissed() {
   layer_id_ = -1;
+  const std::function<void()> cancel = mode_ == PeoplePickerMode::ChooseTargets ? std::move(choose_cancel_) : nullptr;
   ResetState();
   DirtyAll();
   NotifySurfaceChanged();
+  if (cancel) {
+    cancel();
+  }
 }
 
 void PeoplePickerController::ResetState() {
@@ -523,6 +574,13 @@ void PeoplePickerController::ResetState() {
   group_sending_ = false;
   group_roster_count_ = 0;
   member_rows_.clear();
+  choose_options_ = {};
+  choose_done_ = nullptr;
+  choose_cancel_ = nullptr;
+  choose_all_.clear();
+  preview_text_ = "";
+  show_preview_ = false;
+  choose_mode_ = false;
   show_checks_ = true;
   show_cta_ = true;
   show_add_members_ = false;
@@ -596,6 +654,57 @@ void PeoplePickerController::SyncRows() {
       selected_ids_.insert(contact.id);
     }
     rows_.push_back(std::move(row));
+  }
+}
+
+void PeoplePickerController::SyncChooseRows() {
+  rows_.clear();
+  std::string query = search_query_.c_str();
+  std::transform(query.begin(), query.end(), query.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  const bool full = selected_ids_.size() >= choose_options_.max_targets;
+  for (const ForwardTarget& target : choose_all_) {
+    if (!ContainsIgnoreCase(target.title, query) && !ContainsIgnoreCase(target.subtitle, query)) {
+      continue;
+    }
+    PickerRow row;
+    row.id = target.Key().c_str();
+    row.title = target.title.empty() ? Tr("people_picker.unnamed").c_str() : target.title.c_str();
+    row.subtitle = target.subtitle.c_str();
+    row.selected = selected_ids_.count(target.Key()) > 0;
+    row.disabled = full && !row.selected; // greyed once the limit is reached
+    rows_.push_back(std::move(row));
+  }
+}
+
+void PeoplePickerController::OnToggleChoose(const std::string& key) {
+  if (selected_ids_.count(key) > 0) {
+    selected_ids_.erase(key);
+  } else {
+    if (selected_ids_.size() >= choose_options_.max_targets) {
+      ShowToast(choose_options_.limit_message); // the pill says why this one cannot be chosen
+      return;
+    }
+    selected_ids_.insert(key);
+  }
+  SyncChooseRows();
+  UpdateCta();
+  DirtyAll();
+}
+
+void PeoplePickerController::OnChooseConfirm() {
+  std::vector<ForwardTarget> chosen;
+  for (const ForwardTarget& target : choose_all_) {
+    if (selected_ids_.count(target.Key()) > 0) {
+      chosen.push_back(target);
+    }
+  }
+  PeoplePickerChooseDone done = std::move(choose_done_);
+  choose_done_ = nullptr;
+  Close(); // closes first, then hands the choice back: the host is looking at its chat when it runs
+  NotifySurfaceChanged();
+  if (done && !chosen.empty()) {
+    done(std::move(chosen));
   }
 }
 
@@ -1065,6 +1174,8 @@ std::string PeoplePickerController::SelectStepTitle() const {
       return Tr("people_picker.title_add");
     case PeoplePickerMode::CallMakeGroup:
       return Tr("people_picker.title_call_make_group");
+    case PeoplePickerMode::ChooseTargets:
+      return choose_options_.title;
     default:
       return Tr("people_picker.title");
   }
@@ -1087,6 +1198,9 @@ void PeoplePickerController::UpdateCta() {
     case PeoplePickerCta::Message:
       cta_label_ = Tr("people_picker.cta_message").c_str();
       break;
+    case PeoplePickerCta::Send:
+      cta_label_ = choose_options_.send_label.c_str();
+      break;
     case PeoplePickerCta::CreateGroup:
       cta_label_ = Tr("people_picker.cta_next").c_str();
       break;
@@ -1101,6 +1215,9 @@ void PeoplePickerController::UpdateCta() {
     default:
       cta_label_ = Tr("people_picker.cta_select").c_str();
       break;
+  }
+  if (mode_ == PeoplePickerMode::ChooseTargets) {
+    cta_label_ = choose_options_.send_label.c_str(); // the same word with nothing ticked (the button is greyed)
   }
 }
 
@@ -1193,6 +1310,9 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "show_checks");
   host.Dirty("people_picker", "show_cta");
   host.Dirty("people_picker", "show_add_members");
+  host.Dirty("people_picker", "show_preview");
+  host.Dirty("people_picker", "preview_text");
+  host.Dirty("people_picker", "choose_mode");
 }
 
 void PeoplePickerController::ToggleContactCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
@@ -1243,6 +1363,10 @@ void PeoplePickerController::OnToggleContact(const std::string& contact_id) {
   if (contact_id.empty() || locked_ids_.count(contact_id) > 0 || group_sending_) {
     return;
   }
+  if (mode_ == PeoplePickerMode::ChooseTargets) {
+    OnToggleChoose(contact_id);
+    return;
+  }
   if (selected_ids_.count(contact_id) > 0) {
     selected_ids_.erase(contact_id);
   } else {
@@ -1273,6 +1397,8 @@ void PeoplePickerController::OnSearchChanged() {
     SyncGroupMemberRows();
   } else if (mode_ == PeoplePickerMode::GroupAddMember) {
     SyncGroupAddRows();
+  } else if (mode_ == PeoplePickerMode::ChooseTargets) {
+    SyncChooseRows();
   } else {
     SyncRows();
   }
@@ -1290,6 +1416,15 @@ void PeoplePickerController::CloseAddMembers() {
 }
 
 void PeoplePickerController::OnCancel() {
+  if (mode_ == PeoplePickerMode::ChooseTargets) {
+    const std::function<void()> cancel = std::move(choose_cancel_);
+    Close();
+    NotifySurfaceChanged();
+    if (cancel) {
+      cancel();
+    }
+    return;
+  }
   CloseAddMembers();
   NotifySurfaceChanged();
 }
@@ -1306,6 +1441,10 @@ void PeoplePickerController::OnConfirm() {
     return;
   }
   const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
+  if (cta == PeoplePickerCta::Send) {
+    OnChooseConfirm();
+    return;
+  }
   if (cta == PeoplePickerCta::Invite) {
     OnInviteMembers();
     return;

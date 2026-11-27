@@ -22,15 +22,18 @@ inline bool ThreadTakesReactions(const ThreadKind kind) {
 struct MessageMenuSlots {
   bool react = false; // the reaction row and its "+"
   bool reply = false;
+  bool forward = false; // text and contact cards (ChatPresenter::CanForward); between Reply and Copy
   bool copy = false;
   bool edit = false;
 };
 
 inline MessageMenuSlots DecideMessageMenuSlots(const bool thread_takes_reactions, const bool has_text,
-                                               const bool can_edit_now, const bool editing) {
+                                               const bool can_edit_now, const bool editing,
+                                               const bool can_forward = false) {
   MessageMenuSlots slots;
   slots.react = thread_takes_reactions;
   slots.reply = has_text && !editing;
+  slots.forward = can_forward;
   slots.copy = has_text;
   slots.edit = can_edit_now && !editing;
   return slots;
