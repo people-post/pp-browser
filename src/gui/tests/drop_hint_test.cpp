@@ -1,0 +1,250 @@
+// DEV/PLAN-desktop-drop-paste.md, C: the hint over the chat while files are dragged onto it. The shell fields (Bind /
+// Dirty / set), the overlay in both desktop chat layouts (and in no other pane), and its real styles: the words show
+// when `drop_hint_visible` is true, not when false, centred on the chat, and it never takes a click.
+#include "foundation/i18n/LocalizationService.h"
+#include "gui/shell/DataModelHost.h"
+#include "gui/shell/ShellHost.h"
+#include "gui/shell/ShellLayoutRml.h"
+#include "lib/ui/ShellLayout.h"
+
+#include <ui/core/Core.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/paint/RenderInterface.h>
+#include <gtest/gtest.h>
+
+#include <filesystem>
+#include <fstream>
+#include <regex>
+#include <sstream>
+#include <string>
+
+namespace pbr {
+namespace {
+
+class NullRender : public ui::RenderInterface {
+public:
+  ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
+  void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle) override {}
+  void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
+  ui::TextureHandle LoadTexture(ui::Vector2i& dimensions, const ui::String&) override {
+    dimensions = {24, 24};
+    return 2;
+  }
+  ui::TextureHandle GenerateTexture(ui::Span<const ui::byte>, ui::Vector2i) override { return 1; }
+  void ReleaseTexture(ui::TextureHandle) override {}
+  void EnableScissorRegion(bool) override {}
+  void SetScissorRegion(ui::Rectanglei) override {}
+};
+
+std::string Asset(const std::string& relative) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  return out.str();
+}
+
+bool Has(const std::string& text, const std::string& part) {
+  return text.find(part) != std::string::npos;
+}
+
+ShellState DesktopChat(const LayoutMode mode) {
+  ShellState state;
+  state.layout_mode = mode;
+  state.nav_tab = NavTab::Sessions;
+  if (mode == LayoutMode::Compact) {
+    state.compact_chat_open = true;
+  } else {
+    state.panes.push_back({.spec = {.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true}, .id = 1});
+    state.primary_pane_key = "chat";
+  }
+  return state;
+}
+
+TEST(DropHintMarkupTest, TheWideChatPaneAndTheNarrowChatPageEachCarryTheHint) {
+  const std::string hint = ShellLayoutRml::DropHintRml();
+  ASSERT_TRUE(Has(hint, "data-if=\"drop_hint_visible\""));
+  ASSERT_TRUE(Has(hint, "{{drop_hint_text}}"));
+
+  const std::string wide = ShellLayoutRml(DesktopChat(LayoutMode::Expanded), false, "").ShellRoot();
+  const size_t pane = wide.find("id=\"pane-chat\"");
+  const size_t at = wide.find(hint);
+  ASSERT_NE(pane, std::string::npos);
+  ASSERT_NE(at, std::string::npos) << "the wide chat pane has the hint";
+  EXPECT_GT(at, pane);
+  EXPECT_LT(at, wide.find("id=\"pane-composer-chat\"")) << "inside the pane, before its composer strip";
+  EXPECT_EQ(wide.find(hint, at + 1), std::string::npos) << "one";
+
+  const std::string narrow = ShellLayoutRml(DesktopChat(LayoutMode::Compact), false, "").ShellRoot();
+  const size_t overlay = narrow.find("id=\"shell-chat-overlay\"");
+  ASSERT_NE(overlay, std::string::npos);
+  ASSERT_NE(narrow.find(hint), std::string::npos) << "the narrow chat page has the hint";
+  EXPECT_GT(narrow.find(hint), overlay);
+}
+
+TEST(DropHintMarkupTest, NoOtherPaneHasIt) {
+  ShellState state;
+  state.layout_mode = LayoutMode::Expanded;
+  state.nav_tab = NavTab::Contacts;
+  state.panes.push_back({.spec = {.key = "contact_detail", .rml_path = "views/contact_detail.rml"}, .id = 1});
+  state.primary_pane_key = "contact_detail";
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "drop-hint"));
+  ShellState list_only;
+  list_only.layout_mode = LayoutMode::Compact;
+  list_only.nav_tab = NavTab::Sessions;
+  EXPECT_FALSE(Has(ShellLayoutRml(list_only, false, "").ShellRoot(), "drop-hint")) << "the list shows, no chat open";
+}
+
+TEST(DropHintShellTest, TheShellKeepsAndClearsTheHintText) {
+  ShellHost host;
+  EXPECT_FALSE(host.State().drop_hint_visible);
+  host.SetDropHint("Drop to send to Ada");
+  EXPECT_TRUE(host.State().drop_hint_visible);
+  EXPECT_EQ(std::string(host.State().drop_hint_text.c_str()), "Drop to send to Ada");
+  host.SetDropHint("Files can't be sent here"); // the refusal's own line replaces it
+  EXPECT_EQ(std::string(host.State().drop_hint_text.c_str()), "Files can't be sent here");
+  host.SetDropHint("");
+  EXPECT_FALSE(host.State().drop_hint_visible);
+  EXPECT_TRUE(host.State().drop_hint_text.empty());
+}
+
+TEST(DropHintShellTest, TheWakeForTheHintsSecondIsArmedByNotifyFrameEnd) {
+  ShellHost host;
+  host.BindDropHintWake([]() { return std::optional<int64_t>(700); });
+  ui::SetRenderInterface(nullptr);
+  NullRender renderer;
+  ui::SetRenderInterface(&renderer);
+  ASSERT_TRUE(ui::Initialise());
+  ui::Context* context = ui::CreateContext("drop-hint-wake-test", {400, 300});
+  ASSERT_NE(context, nullptr);
+  context->Update(); // resets the next-update timeout to "never"
+  host.NotifyFrameEnd(context);
+  EXPECT_LE(context->GetNextUpdateDelay(), 0.7 + 1e-6);
+  EXPECT_GT(context->GetNextUpdateDelay(), 0.0);
+  host.BindDropHintWake({});
+  context->Update();
+  host.NotifyFrameEnd(context);
+  EXPECT_GT(context->GetNextUpdateDelay(), 60.0) << "with no hint pending the shell asks for no wake of its own";
+  ui::RemoveContext("drop-hint-wake-test");
+  ui::Shutdown();
+  ui::SetRenderInterface(nullptr);
+}
+
+constexpr const char* kContext = "drop-hint-render-test";
+
+class DropHintRenderTest : public testing::TestWithParam<LayoutMode> {
+protected:
+  void TearDown() override {
+    DataModelHost::Instance().Clear();
+    if (context) {
+      ui::RemoveContext(kContext);
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
+    ui::SetRenderInterface(nullptr);
+  }
+
+  void Load() {
+    ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    LocalizationService::Instance().SetPreferredLanguage("en");
+    ui::SetRenderInterface(&renderer);
+    initialized = ui::Initialise();
+    ASSERT_TRUE(initialized);
+    for (const char* file : {"fonts/LatoLatin-Regular.ttf", "fonts/Inter-Regular.ttf", "fonts/Inter-Bold.ttf"}) {
+      ASSERT_TRUE(ui::LoadFontFace((std::filesystem::path(PP_BROWSER_ASSETS_DIR) / file).string()));
+    }
+    context = ui::CreateContext(kContext, {1000, 700});
+    ASSERT_NE(context, nullptr);
+    context->ActivateTheme("light", true);
+    ASSERT_TRUE(host.RegisterWindowModel(context));
+
+    // The real layout markup with only the window model's `drop_hint_visible` left bound: everything else in it is
+    // another model's and is not under test here.
+    std::string root = ShellLayoutRml(DesktopChat(GetParam()), false, "").ShellRoot();
+    root = std::regex_replace(
+        root, std::regex("\\s+data-(?!model=\"window\"|if=\"drop_hint_visible\")[a-z-]+=\"[^\"]*\""), "");
+    root = std::regex_replace(root, std::regex("\\{\\{(?!drop_hint_text)[^}]*\\}\\}"), ""); // other models' words
+    const bool wide = GetParam() == LayoutMode::Expanded;
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            (wide ? Asset("themes/wide.rcss") : std::string()) + Asset("themes/colors-light.rcss") +
+                            "#frame { position: absolute; top: 0dp; left: 0dp; width: 1000dp; height: 700dp; }"
+                            ".shell-layer { position: absolute; top: 0dp; left: 0dp; right: 0dp; bottom: 0dp; }"
+                            ".shell-pane-row { display: flex; flex-direction: row; width: 100%; height: 100%; }"
+                            ".shell-pane-chat { flex: 1; }"
+                            "</style></head><body><div id=\"frame\" class=\"" +
+                            std::string(wide ? "shell-body--wide" : "shell-body--compact") + "\">" + root +
+                            "</div></body></rml>";
+    document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+  }
+
+  ui::Element* Pane() {
+    return document->GetElementById(GetParam() == LayoutMode::Expanded ? "pane-chat" : "shell-chat-overlay");
+  }
+  ui::Element* Hint() { return document->GetElementById("drop-hint"); }
+  ui::Element* Label() {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, "drop-hint-label");
+    return found.empty() ? nullptr : found.front();
+  }
+
+  NullRender renderer;
+  bool initialized = false;
+  ui::Context* context = nullptr;
+  ui::ElementDocument* document = nullptr;
+  ShellHost host;
+};
+
+TEST_P(DropHintRenderTest, TheWordsShowWhileTheHintIsOnAndNotWhenItIsOff) {
+  Load();
+  ASSERT_NE(Hint(), nullptr);
+  EXPECT_FALSE(Hint()->IsVisible()) << "off at first";
+
+  host.SetDropHint("Drop to send to Ada");
+  context->Update();
+  ASSERT_TRUE(Hint()->IsVisible());
+  ASSERT_NE(Label(), nullptr);
+  EXPECT_NE(Label()->GetInnerRML().find("Drop to send to Ada"), std::string::npos);
+  EXPECT_GT(Label()->GetBox().GetSize(ui::BoxArea::Border).x, 100.f) << "readable, not collapsed";
+
+  host.SetDropHint("");
+  context->Update();
+  EXPECT_FALSE(Hint()->IsVisible());
+}
+
+TEST_P(DropHintRenderTest, TheHintCoversTheChatCentresItsLabelAndTakesNoClick) {
+  Load();
+  host.SetDropHint("Drop to send to Ada");
+  context->Update();
+  ui::Element* pane = Pane();
+  ui::Element* hint = Hint();
+  ui::Element* label = Label();
+  ASSERT_TRUE(pane && hint && label);
+  const ui::Vector2f pane_at = pane->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f pane_size = pane->GetBox().GetSize(ui::BoxArea::Border);
+  const ui::Vector2f hint_at = hint->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f hint_size = hint->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_NEAR(hint_at.x, pane_at.x, 0.5f);
+  EXPECT_NEAR(hint_at.y, pane_at.y, 0.5f);
+  EXPECT_NEAR(hint_size.x, pane_size.x, 0.5f);
+  EXPECT_NEAR(hint_size.y, pane_size.y, 0.5f) << "the whole chat";
+  const ui::Vector2f label_at = label->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f label_size = label->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_NEAR(label_at.x + label_size.x * 0.5f, hint_at.x + hint_size.x * 0.5f, 1.f) << "centred across";
+  EXPECT_NEAR(label_at.y + label_size.y * 0.5f, hint_at.y + hint_size.y * 0.5f, 1.f) << "and down";
+  EXPECT_EQ(hint->GetComputedValues().pointer_events(), ui::Style::PointerEvents::None);
+  EXPECT_GE(label->GetComputedValues().font_size(), 20.f) << "big readable words";
+}
+
+INSTANTIATE_TEST_SUITE_P(DesktopChatLayouts, DropHintRenderTest,
+                         testing::Values(LayoutMode::Expanded, LayoutMode::Compact),
+                         [](const testing::TestParamInfo<LayoutMode>& info) {
+                           return info.param == LayoutMode::Expanded ? "Wide" : "Narrow";
+                         });
+
+} // namespace
+} // namespace pbr

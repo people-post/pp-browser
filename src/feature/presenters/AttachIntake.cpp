@@ -66,6 +66,23 @@ const char* AttachRefusalKey(const AttachRefusal refusal) {
   return nullptr;
 }
 
+DropVerdict DecideDrop(const bool has_position, const bool inside_chat, const AttachRefusal refusal) {
+  if (!has_position) {
+    return DropVerdict::NoPosition;
+  }
+  if (!inside_chat) {
+    return DropVerdict::Outside;
+  }
+  return refusal == AttachRefusal::None ? DropVerdict::Take : DropVerdict::Refuse;
+}
+
+const char* DropHintKey(const bool inside_chat, const AttachRefusal refusal) {
+  if (!inside_chat) {
+    return nullptr;
+  }
+  return refusal == AttachRefusal::None ? "chat.drop.hint" : AttachRefusalKey(refusal);
+}
+
 FileFacts GatherFileFacts(const std::string& path) {
   FileFacts facts;
   std::error_code ec;

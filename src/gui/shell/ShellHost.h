@@ -165,6 +165,12 @@ public:
   void CloseAllLayers();
   /** The desktop title strip's text (WindowTitleFor); no effect on a platform without the strip. */
   void SetWindowTitle(const std::string& title);
+  /** The drop hint over the chat pane: `text` shows it, empty hides it. Dirties only on change. */
+  void SetDropHint(const std::string& text);
+  /** How long until the drop hint should hide itself (empty = no wake needed); NotifyFrameEnd arms the idle wake from it. */
+  void BindDropHintWake(std::function<std::optional<int64_t>()> ms_until_hide) {
+    drop_hint_wake_ = std::move(ms_until_hide);
+  }
   /** The drawer's rows have their swipe listeners (only while it is mounted). */
   bool AiDrawerRowSwipesAttached() const { return drawer_session_swipe_.Attached(); }
   /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */
@@ -626,6 +632,7 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
+  std::function<std::optional<int64_t>()> drop_hint_wake_;
   ShellAiDot ai_dot_{state_};
   ShellHomeMascot home_mascot_;
   /** The look pref (`auto`, `a`-`d`) and when `auto` was last resolved to state_.ai_dot_look (a day can turn over). */

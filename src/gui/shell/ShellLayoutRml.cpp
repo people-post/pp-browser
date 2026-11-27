@@ -42,6 +42,11 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 } // namespace
 
+std::string ShellLayoutRml::DropHintRml() {
+  return "<div class=\"drop-hint\" id=\"drop-hint\" data-if=\"drop_hint_visible\"><div class=\"drop-hint-label\">"
+         "{{drop_hint_text}}</div></div>";
+}
+
 /** The hold-to-talk bubble (components.rcss `.voice-bubble`): shown while a phone hold records; its box and the level
  *  bars are the chat model's (VoiceComposer). It is a child of the overlay, so its dp position is the window's. */
 std::string ShellLayoutRml::VoiceBubbleRml() {
@@ -104,6 +109,9 @@ std::string ShellLayoutRml::PaneSlot(const std::string& key, const char* extra_c
   }
   out << ">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
+  if (key == "chat") {
+    out << DropHintRml();
+  }
   if (with_composer_slot) {
     // The wide composer strip floats over the transcript's end like the phone's bars: its first child is the bar's
     // material (the phone's x-bar / x-bar-blur colours and blur), the mount paints above it (wide.rcss).
@@ -256,6 +264,7 @@ std::string ShellLayoutRml::CompactBase() const {
         << "\" id=\"shell-composer-mount\"></div>";
     out << "</div>";
     out << VoiceBubbleRml();
+    out << DropHintRml();
     out << "</div>";
   }
 

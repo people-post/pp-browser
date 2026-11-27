@@ -17683,3 +17683,28 @@ textarea:composing ~ .ps-placeholder {
   min-width: 120dp;
   min-height: 50dp;
 }
+
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml; colours in colors.rcss.tmpl): a soft tint over the whole
+   chat with a card in the middle. It never takes a click: the drag is the OS's, and a hint that stays for a moment
+   after it must not block the chat. */
+.drop-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-hint-label {
+  max-width: 80%;
+  padding: 20dp 28dp;
+  border-radius: 20dp;
+  font-size: 20dp;
+  font-weight: bold;
+  text-align: center;
+}

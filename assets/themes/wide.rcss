@@ -3192,3 +3192,10 @@
 .shell-body--wide .forward-progress-card .forward-progress-btn {
   min-height: 44dp;
 }
+
+/* The drop hint over the conversation column: bigger words for a mouse-and-window layout. */
+.shell-body--wide .drop-hint-label {
+  padding: 28dp 40dp;
+  border-radius: 24dp;
+  font-size: 24dp;
+}

@@ -66,6 +66,24 @@ AttachRefusal RefusalFor(const AttachState& state);
 /** The locale key of the pill that says why; nullptr = say nothing (locked, or a paste already being written). */
 const char* AttachRefusalKey(AttachRefusal refusal);
 
+/** What a drop that ends at a place means (step C). */
+enum class DropVerdict {
+  /** Inside the chat and files are taken now: on to the preview. */
+  Take,
+  /** Inside the chat but not taken now: OpenAttachPreview says why with the same pill. */
+  Refuse,
+  /** Released somewhere else: nothing is taken ("Drop it onto the chat to send"). */
+  Outside,
+  /** The pointer's place is not known: nothing is taken, whatever else holds ("Drag and drop isn't available"). */
+  NoPosition,
+};
+
+/** `has_position` first: a drop with no known place is never taken, even when the chat would take files. */
+DropVerdict DecideDrop(bool has_position, bool inside_chat, AttachRefusal refusal);
+
+/** The hover hint's locale key: the "drop to send" line, a refusal's own line, or nullptr = no hint (outside the chat, or a refusal that says nothing). */
+const char* DropHintKey(bool inside_chat, AttachRefusal refusal);
+
 enum class FileStatus { Regular, Directory, Missing, Error };
 /** What a file is by its head (PNG / JPEG / GIF / WebP) or, for a video, by its name; anything else is Other. */
 enum class SniffedType { Png, Jpeg, Gif, Webp, Video, Other };

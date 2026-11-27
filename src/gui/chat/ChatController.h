@@ -14,6 +14,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PlatformShareFile.h"
+#include "foundation/platform/ui/DropCollector.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
@@ -188,6 +189,17 @@ public:
   SessionStore& Store() override;
   const SessionStore& Store() const;
   void Update();
+
+  /**
+   * Files dragged onto the window (a computer's native window; DropCollector via the app event hooks, DEV/PLAN-desktop-drop-paste.md C).
+   * `OnDropHover`: the pointer's place in UI coordinates, or empty = the drag is over (hide the hint). `OnFilesDropped`:
+   * the files and where the pointer last was (empty = it never had a place: nothing is taken). Only the open chat's own
+   * pane counts; the hint and the drop use the same RefusalFor as the "+" menu. UI thread.
+   */
+  void OnDropHover(std::optional<DropUiPoint> point);
+  void OnFilesDropped(std::vector<std::string> paths, std::optional<DropUiPoint> position);
+  /** Shows the hint over the chat with `text`; empty hides it (ShellHost::SetDropHint). */
+  void BindDropHint(std::function<void(const std::string& text)> set_hint) { set_drop_hint_ = std::move(set_hint); }
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
   /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
@@ -489,6 +501,9 @@ private:
   /** What AttachIntake decides on, read from the controller now. */
   AttachState CurrentAttachState() const;
   AttachIntakePorts MakeAttachIntakePorts();
+  /** The open chat's pane (the conversation column; the narrow layout's chat page) holds the point (UI coordinates). */
+  bool ChatPaneContains(DropUiPoint point) const;
+  void HideDropHint();
   /** AttachIntake's last step: the queue and the page for `items` in `thread_id`; false when the page could not open. */
   bool OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
@@ -1126,6 +1141,10 @@ private:
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
+  std::function<void(const std::string& text)> set_drop_hint_;
+  /** The hint is showing; the preview page was open when it last was set (a page opening under it hides it). */
+  bool drop_hint_shown_ = false;
+  bool drop_hint_preview_open_ = false;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this,           presenter_,       chat_,

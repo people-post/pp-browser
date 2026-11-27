@@ -6,7 +6,9 @@ class Context;
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace pbr {
 
@@ -24,6 +26,13 @@ public:
    */
   using FingerHandler = std::function<bool(ui::Context* context, const SDL_Event& event)>;
   static void SetFingerHandler(FingerHandler handler);
+
+  /** Once per loop turn (UI thread): hides the drop hint when no position came for a second (DropCollector::Tick). */
+  static void TickDrop();
+  /** Time to the TickDrop that would hide the hint, for the idle wake; empty = none pending. */
+  static std::optional<int64_t> MsUntilDropHintHide();
+  /** Tests only: forget a drag in progress and the "first position seen" log. */
+  static void ResetDropForTest();
 };
 
 } // namespace pbr

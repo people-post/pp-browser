@@ -372,6 +372,7 @@ endif()
 # lib/ui is product shell only (theme/catalogs). See PLATFORM_CODE.md.
 set(_pp_platform_ui_sources
   ui/DesktopWindowChrome.cpp
+  ui/DropCollector.cpp
   ui/PlatformNavigation.cpp
   ui/SdlAppEvents.cpp
   ui/gl/MobileGlLifecycle.cpp

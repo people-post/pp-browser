@@ -157,6 +157,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
+    ctor.Bind("drop_hint_visible", &host.state_.drop_hint_visible);
+    ctor.Bind("drop_hint_text", &host.state_.drop_hint_text);
     ctor.Bind("window_title", &host.state_.window_title);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
@@ -1103,6 +1105,17 @@ void ShellHost::SetWindowTitle(const std::string& title) {
   }
   state_.window_title = title.c_str();
   DataModelHost::Instance().Dirty("window", "window_title");
+}
+
+void ShellHost::SetDropHint(const std::string& text) {
+  const bool visible = !text.empty();
+  if (state_.drop_hint_visible == visible && state_.drop_hint_text == text.c_str()) {
+    return;
+  }
+  state_.drop_hint_visible = visible;
+  state_.drop_hint_text = text.c_str();
+  DataModelHost::Instance().Dirty("window", "drop_hint_visible");
+  DataModelHost::Instance().Dirty("window", "drop_hint_text");
 }
 
 void ShellHost::CloseAllLayers() {
@@ -3756,6 +3769,13 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   // Home's favourites row: one frame when its scroll has been still long enough to count as at rest.
   if (const std::optional<double> snap_sec = favorites_snap_.SecondsUntilRest(ShellFavoritesSnap::NowSeconds())) {
     delay_sec = std::min(delay_sec, *snap_sec);
+  }
+
+  // The drop hint hides itself a second after the last drag position (SdlAppEvents::TickDrop), with no event to wake on.
+  if (drop_hint_wake_) {
+    if (const std::optional<int64_t> hide_ms = drop_hint_wake_()) {
+      delay_sec = std::min(delay_sec, static_cast<double>(*hide_ms) / 1000.0);
+    }
   }
 
   if (std::isfinite(delay_sec)) {

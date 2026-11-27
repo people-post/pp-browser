@@ -4223,6 +4223,77 @@ AttachIntakePorts ChatController::MakeAttachIntakePorts() {
   return ports;
 }
 
+bool ChatController::ChatPaneContains(const DropUiPoint point) const {
+  ui::ElementDocument* document = context_ ? context_->GetDocument(0) : nullptr;
+  if (!document) {
+    return false;
+  }
+  // The wide layout's conversation column, or the narrow layout's chat page (absent while the list shows).
+  ui::Element* pane = document->GetElementById(
+      ChromeSnapshot().layout_mode == LayoutMode::Expanded ? "pane-chat" : "shell-chat-overlay");
+  if (!pane || !pane->IsVisible()) {
+    return false;
+  }
+  const ui::Vector2f origin = pane->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = pane->GetBox().GetSize(ui::BoxArea::Border);
+  const float x = static_cast<float>(point.x);
+  const float y = static_cast<float>(point.y);
+  return x >= origin.x && x < origin.x + size.x && y >= origin.y && y < origin.y + size.y;
+}
+
+void ChatController::HideDropHint() {
+  drop_hint_shown_ = false;
+  if (set_drop_hint_) {
+    set_drop_hint_({});
+  }
+}
+
+void ChatController::OnDropHover(const std::optional<DropUiPoint> point) {
+  if (!point) {
+    HideDropHint();
+    return;
+  }
+  const AttachState attach = CurrentAttachState();
+  const char* key = DropHintKey(ChatPaneContains(*point), RefusalFor(attach));
+  if (!key) {
+    HideDropHint();
+    return;
+  }
+  const std::string text = Tr(key, {{"name", std::string(chat_.thread_title.c_str())}});
+  drop_hint_shown_ = !text.empty();
+  drop_hint_preview_open_ = attach.preview_open;
+  if (set_drop_hint_) {
+    set_drop_hint_(text);
+  }
+}
+
+void ChatController::OnFilesDropped(std::vector<std::string> paths, const std::optional<DropUiPoint> position) {
+  HideDropHint();
+  const AttachState attach = CurrentAttachState();
+  const AttachRefusal refusal = RefusalFor(attach);
+  if (refusal == AttachRefusal::NotReady) {
+    return; // locked: the files are not taken and nothing is said
+  }
+  const bool inside = position && ChatPaneContains(*position);
+  switch (DecideDrop(position.has_value(), inside, refusal)) {
+    case DropVerdict::NoPosition:
+      ShowToast(Tr("chat.drop.no_position"));
+      return;
+    case DropVerdict::Outside:
+      ShowToast(Tr("chat.drop.outside"));
+      return;
+    case DropVerdict::Take:
+    case DropVerdict::Refuse: // OpenAttachPreview refuses with the same pill the hint showed
+      break;
+  }
+  std::vector<AttachCandidate> candidates;
+  candidates.reserve(paths.size());
+  for (std::string& path : paths) {
+    candidates.push_back(AttachCandidate{std::move(path), false});
+  }
+  OpenAttachPreview(std::move(candidates), AttachSource::Drop);
+}
+
 void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, const AttachSource source) {
   if (!attach_intake_) {
     attach_intake_ = std::make_unique<AttachIntake>(MakeAttachIntakePorts());
@@ -7861,6 +7932,13 @@ void ChatController::OnApplicationPause() {
 
 void ChatController::Update() {
   picture_send_.Update();
+  if (drop_hint_shown_) {
+    // Locked, or the preview page opened under it: the hint goes.
+    const AttachState attach = CurrentAttachState();
+    if (!attach.ready || (attach.preview_open && !drop_hint_preview_open_)) {
+      HideDropHint();
+    }
+  }
   // The "Forwarding" page: its numbers; and its leaving when a call starts (the call's controls sit under it).
   if (forward_flow_->ProgressOpen() && ChromeSnapshot().call_in_progress) {
     forward_flow_->OnCallStarted();

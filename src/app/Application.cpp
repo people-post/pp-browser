@@ -990,6 +990,11 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
       .on_sync_system_theme = [](ui::Context* ctx) { Theme::SyncSystemTheme(ctx); },
       .on_context_pointer = [](ui::Context* ctx, int x,
                                int y) { return ContextMenuHost::Instance().OnContextPointer(ctx, x, y); },
+      .on_drop_hover = [this](std::optional<DropUiPoint> point) { chat_->OnDropHover(point); },
+      .on_files_dropped =
+          [this](std::vector<std::string> paths, std::optional<DropUiPoint> position) {
+            chat_->OnFilesDropped(std::move(paths), position);
+          },
   });
   SdlAppEvents::Install();
   InstallStayConnectedService(); // P011: Android's foreground service follows the setting
@@ -1596,6 +1601,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
+  chat_->BindDropHint([this](const std::string& text) { shell_->SetDropHint(text); });
+  shell.BindDropHintWake([]() { return SdlAppEvents::MsUntilDropHintHide(); });
   chat_->BindConversationsFacade(messaging_facade_.get());
   chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
@@ -3119,6 +3126,7 @@ void Application::Run() {
     }
     qr_scan_->Tick();
     avatar_crop_->Tick();
+    SdlAppEvents::TickDrop(); // the drop hint's one second
     {
       UiCostTimer timer(&UiCostCounters::AddChatUpdateUs);
       chat_->Update();

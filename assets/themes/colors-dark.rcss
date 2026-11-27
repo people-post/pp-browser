@@ -733,6 +733,17 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml): a soft tint over the chat, a card with the words. */
+.drop-hint {
+  background-color: #0a84ff2e;
+}
+
+.drop-hint-label {
+  background-color: #1c1c1e;
+  color: #ffffff;
+  border: 2dp #0a84ff;
+}
+
 /* No shadow (DESIGN-pp-ui §6; a shadow here also drew a grey block on the simulator): a hairline keeps the white
    pill apart from a white page. */
 .shell-body--compact .shell-toast {
