@@ -20,20 +20,45 @@ std::string ReadAll(const std::string& path) {
   return out.str();
 }
 
-/** The names of the std::function members of `struct ForwardPorts { ... };`. */
+std::string StripComments(std::string text) {
+  text = std::regex_replace(text, std::regex(R"(/\*[\s\S]*?\*/)"), " ");
+  text = std::regex_replace(text, std::regex(R"(//[^\n]*)"), " ");
+  return text;
+}
+
+/** The names of every member of `struct ForwardPorts { ... };`, whatever its type. */
 std::set<std::string> DeclaredPorts(const std::string& header) {
-  const size_t begin = header.find("struct ForwardPorts {");
-  const size_t end = header.find("\n};", begin);
+  const std::string text = StripComments(header);
+  const size_t begin = text.find("struct ForwardPorts {");
   EXPECT_NE(begin, std::string::npos);
-  EXPECT_NE(end, std::string::npos);
-  std::string body = header.substr(begin, end - begin);
-  body = std::regex_replace(body, std::regex(R"(/\*[\s\S]*?\*/)"), " "); // comments
-  body = std::regex_replace(body, std::regex(R"(//[^\n]*)"), " ");
+  size_t at = text.find('{', begin) + 1;
   std::set<std::string> names;
-  // "std::function<...> name;" - the type may span lines and holds nested <> and ().
-  const std::regex member(R"(>\s*([a-z_][a-z_0-9]*)\s*;)");
-  for (auto it = std::sregex_iterator(body.begin(), body.end(), member); it != std::sregex_iterator(); ++it) {
-    names.insert((*it)[1]);
+  std::string statement;
+  int depth = 0; // (), <> and {} inside a member's type or initialiser
+  for (; at < text.size(); ++at) {
+    const char c = text[at];
+    if (c == '(' || c == '<' || c == '{') {
+      ++depth;
+    } else if (c == ')' || c == '>') {
+      --depth;
+    } else if (c == '}') {
+      if (depth == 0) {
+        break; // the struct's end
+      }
+      --depth;
+    }
+    if (c == ';' && depth == 0) {
+      const size_t equals = statement.find('=');
+      const std::string head = equals == std::string::npos ? statement : statement.substr(0, equals);
+      const std::regex name(R"(([A-Za-z_][A-Za-z_0-9]*)\s*$)");
+      std::smatch m;
+      if (std::regex_search(head, m, name)) {
+        names.insert(m[1]);
+      }
+      statement.clear();
+    } else {
+      statement += c;
+    }
   }
   return names;
 }
@@ -41,7 +66,7 @@ std::set<std::string> DeclaredPorts(const std::string& header) {
 TEST(ForwardPortsWiringTest, EveryForwardPortIsWiredFromTheFacade) {
   const std::string root = PP_SOURCE_DIR;
   const std::string header = ReadAll(root + "/src/feature/presenters/MessageForward.h");
-  std::string source = ReadAll(root + "/src/feature/presenters/ChatPresenter.cpp");
+  const std::string source = StripComments(ReadAll(root + "/src/feature/presenters/ChatPresenter.cpp"));
   ASSERT_FALSE(header.empty());
   ASSERT_FALSE(source.empty());
   const size_t begin = source.find("ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {");
@@ -52,17 +77,11 @@ TEST(ForwardPortsWiringTest, EveryForwardPortIsWiredFromTheFacade) {
 
   const std::set<std::string> declared = DeclaredPorts(header);
   ASSERT_GE(declared.size(), 15u) << "the parse found the struct's members";
-  // Not from the facade, on purpose: the presenter's own switch (SetForwardAttachmentBusy / ChatController).
-  const std::set<std::string> elsewhere = {"attachment_busy"};
+  EXPECT_EQ(declared.count("staged_attachments"), 1u);
+  EXPECT_EQ(declared.count("now_ms"), 1u);
   for (const std::string& name : declared) {
-    if (elsewhere.count(name) > 0) {
-      continue;
-    }
     EXPECT_NE(wiring.find("ports." + name + " ="), std::string::npos)
         << "ForwardPorts::" << name << " is declared but FacadeForwardPorts never sets it";
-  }
-  for (const std::string& name : elsewhere) {
-    EXPECT_EQ(declared.count(name), 1u) << name << " is no longer a port: drop it from the exemption";
   }
 }
 

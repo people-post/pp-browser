@@ -167,9 +167,13 @@ Roe<std::vector<uint8_t>> OutgoingAttachmentStore::ReadCipher(const std::string&
 }
 
 std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(const std::string& thread_id,
-                                                                             const ByteVector& dek) const {
+                                                                             const ByteVector& dek,
+                                                                             bool* complete) const {
   std::vector<OutgoingAttachmentRecord> found;
+  bool all_read = true;
   std::error_code ec;
+  const bool dir_exists = std::filesystem::exists(Dir(), ec);
+  ec.clear();
   for (std::filesystem::directory_iterator it(Dir(), ec), end; !ec && it != end; it.increment(ec)) {
     const std::string name = it->path().filename().string();
     if (name.size() < 5 || name.substr(name.size() - 4) != ".rec") {
@@ -179,9 +183,17 @@ std::vector<OutgoingAttachmentRecord> OutgoingAttachmentStore::ListForThread(con
     if (!HasCipher(id)) {
       continue;
     }
-    if (auto record = Load(id, dek); record && record->thread_id == thread_id) {
-      found.push_back(std::move(*record));
+    if (auto record = Load(id, dek)) {
+      if (record->thread_id == thread_id) {
+        found.push_back(std::move(*record));
+      }
+    } else {
+      all_read = false; // a record that cannot be read may be this chat's
     }
+  }
+  if (complete) {
+    // A folder that is not there yet holds nothing; one that could not be listed (ec) is not known to be empty.
+    *complete = all_read && (!ec || !dir_exists);
   }
   std::sort(found.begin(), found.end(), [](const OutgoingAttachmentRecord& a, const OutgoingAttachmentRecord& b) {
     return a.created_ms < b.created_ms;

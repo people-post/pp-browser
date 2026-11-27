@@ -3842,7 +3842,8 @@ void ChatController::StartAttachmentRetry(const std::string& item_id, const std:
 }
 
 bool ChatController::AttachmentBusy() const {
-  return chat_.attachment_uploading || chat_.attachment_preparing || (picture_queue_ && picture_queue_->Active());
+  return chat_.attachment_uploading || chat_.attachment_preparing || (picture_queue_ && picture_queue_->Active()) ||
+         presenter_.ForwardUploadBusy(); // a forward's upload is an attachment being sent too
 }
 
 PictureSendQueue* ChatController::BeginPictureQueue(const std::string& thread_id) {

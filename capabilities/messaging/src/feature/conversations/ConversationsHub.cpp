@@ -3501,6 +3501,20 @@ std::vector<OutgoingAttachmentRecord> ConversationsHub::PendingOutgoingAttachmen
   return OutgoingAttachmentStore(data_dir_, profile_id_).ListForThread(thread_id, dek);
 }
 
+std::optional<std::vector<OutgoingAttachmentRecord>> ConversationsHub::PendingOutgoingAttachmentsChecked(
+    const std::string& thread_id) {
+  const ByteVector dek = Attachments().CopyDek();
+  if (dek.empty() || profile_id_.empty() || data_dir_.empty()) {
+    return std::nullopt;
+  }
+  bool complete = true;
+  auto found = OutgoingAttachmentStore(data_dir_, profile_id_).ListForThread(thread_id, dek, &complete);
+  if (!complete) {
+    return std::nullopt;
+  }
+  return found;
+}
+
 void ConversationsHub::DiscardOutgoingAttachment(const std::string& record_id) {
   OutgoingAttachmentStore(data_dir_, profile_id_).Remove(record_id);
 }

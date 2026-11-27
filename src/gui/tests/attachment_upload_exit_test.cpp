@@ -178,9 +178,9 @@ TEST(AttachmentUploadExit, PictureQueueEventsByIdReachTheirOwnRowBesideAFailedOn
 TEST(AttachmentUploadExit, PictureQueueOneBusyCheckHoldsTheSlotForTheQueue) {
   const std::string source = Controller();
   const std::string busy = Body(source, "bool ChatController::AttachmentBusy() const {");
-  EXPECT_NE(busy.find("return chat_.attachment_uploading || chat_.attachment_preparing || (picture_queue_ && "
-                      "picture_queue_->Active());"),
-            std::string::npos);
+  // The picture queue holds the slot, and so does a forward's upload (the run's, or one let go of that has not answered).
+  EXPECT_NE(busy.find("(picture_queue_ && picture_queue_->Active()) ||"), std::string::npos);
+  EXPECT_NE(busy.find("presenter_.ForwardUploadBusy()"), std::string::npos);
   // The former ad-hoc checks (step1.md §7: 1-4, 6-11, 13), each now the predicate.
   struct Site {
     const char* where;

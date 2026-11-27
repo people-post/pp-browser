@@ -1771,9 +1771,13 @@ ForwardPorts FacadeForwardPorts(ConversationsFacade* facade) {
   // The ids of the encrypted copies held for a retry in this chat (OutgoingAttachmentStore, via the hub), read on the UI
   // thread like ChatController does. A send that fails after staging leaves one; the device's pace refusal, which comes
   // before anything is staged, leaves none: that is how the run tells a server 429 from the pace.
-  ports.staged_attachments = [facade](const std::string& thread_id) {
+  ports.staged_attachments = [facade](const std::string& thread_id) -> std::optional<std::vector<std::string>> {
+    const auto records = facade->PendingOutgoingAttachmentsChecked(thread_id);
+    if (!records) {
+      return std::nullopt; // locked, or the list could not be read: not the same as "nothing staged"
+    }
     std::vector<std::string> ids;
-    for (const OutgoingAttachmentRecord& record : facade->PendingOutgoingAttachments(thread_id)) {
+    for (const OutgoingAttachmentRecord& record : *records) {
       ids.push_back(record.id);
     }
     return ids;
@@ -1897,13 +1901,23 @@ void ChatPresenter::ForwardSelectedTo(std::vector<ForwardTarget> targets,
       done(none);
     }
   };
+  if (targets.size() > kMaxForwardTargets) {
+    refuse(); // too many chats: told at once, the choosing is left as it is
+    return;
+  }
   bool page = false;
+  std::set<std::string> uploadable;
   if (!forward_run_ && !forward_selection_.Ids().empty() && !targets.empty() && targets.size() <= kMaxForwardTargets) {
     // The limits first, with the choosing left as it is: the person takes some away and sends again.
     const ForwardCheck check = CheckForward();
     if (check.refusal != ForwardRefusal::None) {
       refuse(check.refusal);
       return;
+    }
+    for (const ForwardItemFacts& item : check.items) {
+      if (item.kind != ForwardItemKind::Text && item.kind != ForwardItemKind::Card && item.has_local_bytes) {
+        uploadable.insert(item.message_id); // only what was counted is ever uploaded
+      }
     }
     page = check.uploads > 0; // the one test for "this forward uploads something": the call refusal and the page
   }
@@ -1923,7 +1937,8 @@ void ChatPresenter::ForwardSelectedTo(std::vector<ForwardTarget> targets,
   forward_run_account_ = ports.account_id ? ports.account_id() : std::string();
   forward_has_page_ = page;
   forward_done_ = std::move(done);
-  forward_run_ = std::make_shared<ForwardRun>(std::move(ports), source, std::move(ids), std::move(targets));
+  forward_run_ =
+      std::make_shared<ForwardRun>(std::move(ports), source, std::move(ids), std::move(targets), std::move(uploadable));
   forward_run_->SetWake([this, alive = std::weak_ptr<int>(alive_), weak = std::weak_ptr<ForwardRun>(forward_run_)]() {
     // An attachment's answer or a timer: always on a later UI task, never inside the run's own Step. It may come after
     // this presenter is gone (the run's cell outlives it): then nothing of the presenter is touched, not even to post.
@@ -1956,6 +1971,11 @@ void ChatPresenter::OnForwardWake(const std::shared_ptr<ForwardRun>& run) {
   }
   if (run == forward_interrupted_run_) {
     run->Collect(); // the item that was under way when it stopped: only the count changes
+  }
+  for (const ForwardOrphan& orphan : forward_orphans_) {
+    if (orphan.run == run) {
+      run->Collect(); // a let-go upload answered: it no longer keeps the composer busy
+    }
   }
 }
 
@@ -2037,8 +2057,7 @@ ForwardCheck ChatPresenter::CheckForward() {
     }
     items.push_back(std::move(item));
   }
-  const bool busy =
-      (forward_attachment_busy_ && forward_attachment_busy_()) || (ports.attachment_busy && ports.attachment_busy());
+  const bool busy = (forward_attachment_busy_ && forward_attachment_busy_()) || ForwardUploadBusy();
   ForwardCheck check = CheckForwardLimits(std::move(items), busy);
   if (check.refusal == ForwardRefusal::None && check.uploads > 0 && forward_call_active_ && forward_call_active_()) {
     check.refusal = ForwardRefusal::CallActive;
@@ -2096,6 +2115,7 @@ void ChatPresenter::CloseForward() {
   std::shared_ptr<ForwardRun> run = std::move(forward_run_);
   forward_run_.reset();
   run->Stop(ForwardStop::Abandoned);
+  KeepWhileUploading(run);
   auto done = std::move(forward_done_);
   forward_done_ = nullptr;
   if (done) {
@@ -2132,6 +2152,7 @@ void ChatPresenter::StopForwardRun(const ForwardStop kind) {
   forward_run_.reset();
   forward_done_ = nullptr;
   run->Stop(kind);
+  KeepWhileUploading(run);
   const ForwardResult& result = run->Result();
   if (kind == ForwardStop::SourceGone) {
     // Told now, where the user is looking: the chat it belonged to is gone.
@@ -2148,6 +2169,29 @@ void ChatPresenter::StopForwardRun(const ForwardStop kind) {
     forward_interrupted_run_ = std::move(run);
     forward_interrupted_at_ms_ = ForwardPortsNow().now_ms ? ForwardPortsNow().now_ms() : SteadyNowMs();
   }
+}
+
+void ChatPresenter::KeepWhileUploading(const std::shared_ptr<ForwardRun>& run) {
+  if (run && run->InFlight()) {
+    const ForwardPorts& ports = ForwardPortsNow();
+    forward_orphans_.push_back({run, ports.now_ms ? ports.now_ms() : SteadyNowMs()});
+  }
+}
+
+bool ChatPresenter::ForwardUploadBusy() const {
+  if (forward_run_ && forward_run_->InFlight()) {
+    return true;
+  }
+  if (forward_orphans_.empty()) {
+    return false;
+  }
+  const ForwardPorts* ports = forward_ports_ ? &*forward_ports_ : (facade_ports_ ? &*facade_ports_ : nullptr);
+  const int64_t now = ports && ports->now_ms ? ports->now_ms() : SteadyNowMs();
+  // Answered ones go; one the messaging layer never answers stops counting after kForwardOrphanBusyMs.
+  std::erase_if(forward_orphans_, [now](const ForwardOrphan& orphan) {
+    return !orphan.run->InFlight() || now - orphan.since_ms >= kForwardOrphanBusyMs;
+  });
+  return !forward_orphans_.empty();
 }
 
 bool ChatPresenter::ForwardNoticePending() {
