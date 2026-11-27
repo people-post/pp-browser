@@ -625,3 +625,23 @@ TEST(ConfigJsonTest, MachinePrefsUpdateCardFieldsAreOptionalAndRoundTrip) {
   EXPECT_EQ(parsed.update_card_dismissals, 1);
   EXPECT_EQ(parsed.update_card_dismissed_ms, 1700000000000);
 }
+
+// projects/node-relay NR001: `node.<service>` is kept as the file has it — a build reads the services it has, and a
+// writer never drops the others'.
+TEST(ConfigJsonTest, KeepsTheNodeServicesSectionAsWritten) {
+  auto file = pbr::TryParseObject(R"({ "node": { "relay": { "enabled": true, "retention_days": 3 },
+                                                  "files": { "max_bytes": 1024 } } })");
+  ASSERT_TRUE(file.has_value());
+  pbr::AppConfig config;
+  pbr::AppConfigFromObject(*file, config);
+  const pbr::Object* relay = config.node.getObject("relay");
+  ASSERT_NE(relay, nullptr);
+  EXPECT_EQ(relay->getIf<bool>("enabled"), true);
+  EXPECT_EQ(relay->getIf<int64_t>("retention_days"), 3);
+  ASSERT_NE(config.node.getObject("files"), nullptr) << "a service this build does not know is kept too";
+
+  const pbr::Object out = pbr::AppConfigToObject(config);
+  ASSERT_NE(out.getObject("node"), nullptr);
+  EXPECT_EQ(out.getObject("node")->getObject("relay")->getIf<int64_t>("retention_days"), 3);
+  EXPECT_FALSE(pbr::AppConfigToObject(pbr::AppConfig{}).contains("node")) << "nothing written when there is none";
+}
