@@ -78,7 +78,6 @@
             data-event-click="select_nav_tab('me')">
       <div class="shell-nav-tab-icon-wrap">
         <svg src="../icons/v2/tab-me.svg" width="24" height="24"></svg>
-        <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.me}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>

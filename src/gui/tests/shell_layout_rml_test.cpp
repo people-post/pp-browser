@@ -40,6 +40,19 @@ ShellState WithChatPane(const LayoutMode mode) {
   return state;
 }
 
+// The owner dropped the red dot for the network reachability state (2026-11-27): Settings list rows and the
+// nav rail's Me tab carry no attention dot; the status bar text is the only place the state shows.
+TEST(ShellLayoutRmlTest, NoAttentionDotOnSettingsRowsOrTheMeTab) {
+  const std::string settings = ReadAsset("views/settings.rml");
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  ASSERT_FALSE(settings.empty());
+  ASSERT_FALSE(rail.empty());
+  EXPECT_FALSE(Has(settings, "attention"));
+  EXPECT_FALSE(Has(settings, "badge-dot"));
+  EXPECT_FALSE(Has(rail, "me_attention"));
+  EXPECT_TRUE(Has(rail, "nav_sessions_unread")) << "the unread badges stay";
+}
+
 TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   const std::string rml = ShellLayoutRml(WithChatPane(LayoutMode::Expanded), false, "").ShellRoot();
   EXPECT_TRUE(Has(rml, "shell-nav-rail-mount"));
