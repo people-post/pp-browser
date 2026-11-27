@@ -55,7 +55,7 @@ protected:
 TEST_F(RelayStoreTest, APutIsPolledInOrderAndTheCursorMovesOn) {
   auto& store = Open();
   for (uint64_t i = 1; i <= 3; ++i) {
-    auto put = store.Put("account:bob", Record("account:alice", "s1", i));
+    const auto put = store.Put("account:bob", Record("account:alice", "s1", i));
     ASSERT_TRUE(static_cast<bool>(put));
     EXPECT_EQ(put->outcome, RelayStore::PutOutcome::Stored);
     EXPECT_EQ(put->seq, i);
@@ -79,7 +79,7 @@ TEST_F(RelayStoreTest, APageStopsAfterTheRecordThatCrossesItsBytes) {
   for (uint64_t i = 1; i <= 3; ++i) {
     ASSERT_TRUE(static_cast<bool>(store.Put("account:bob", Record("account:alice", "s1", i, 100))));
   }
-  auto page = store.Poll("account:bob", 0, 10, 150);
+  const auto page = store.Poll("account:bob", 0, 10, 150);
   ASSERT_EQ(page->records.size(), 2u);
   EXPECT_TRUE(page->more);
 }
@@ -103,7 +103,7 @@ TEST_F(RelayStoreTest, TheSendersTtlAndUrgentShortenRetentionNeverLengthen) {
   MailRecord urgent = Record("account:a", "s", 4);
   urgent.urgent = true;
   ASSERT_TRUE(static_cast<bool>(store.Put("account:bob", urgent)));
-  auto page = store.Poll("account:bob", 0, 10, 1 << 20);
+  const auto page = store.Poll("account:bob", 0, 10, 1 << 20);
   ASSERT_EQ(page->records.size(), 4u);
   EXPECT_EQ(page->records[0].expires_at_ms - now_, RelayStore::kMinTtlMs) << "at least a minute";
   EXPECT_EQ(page->records[1].expires_at_ms - now_, 3600'000);
@@ -158,7 +158,7 @@ TEST_F(RelayStoreTest, ClearAndDeleteKeepTheMailboxOrder) {
   ASSERT_TRUE(static_cast<bool>(store.Put("account:bob", Record("account:a", "s", 2))));
   EXPECT_EQ(*store.ClearBefore("account:bob", now_), 1);
   EXPECT_EQ(*store.DeleteMailbox("account:bob"), 1);
-  auto put = store.Put("account:bob", Record("account:a", "s", 3));
+  const auto put = store.Put("account:bob", Record("account:a", "s", 3));
   EXPECT_EQ(put->seq, 3u) << "a device's cursor never points past a reused seq";
 }
 
@@ -190,7 +190,7 @@ TEST_F(RelayStoreTest, ANewerSchemaIsRefusedUntouched) {
   ASSERT_EQ(sqlite3_open((dir_ / RelayStore::kFileName).string().c_str(), &db), SQLITE_OK);
   ASSERT_EQ(sqlite3_exec(db, "PRAGMA user_version=2", nullptr, nullptr, nullptr), SQLITE_OK);
   sqlite3_close(db);
-  auto opened = RelayStore::Open(dir_.string(), {});
+  const auto opened = RelayStore::Open(dir_.string(), {});
   ASSERT_FALSE(static_cast<bool>(opened));
   EXPECT_NE(opened.error().message.find("from a newer pp-node (schema 2, this one 1)"), std::string::npos);
   ASSERT_EQ(sqlite3_open((dir_ / RelayStore::kFileName).string().c_str(), &db), SQLITE_OK);

@@ -37,7 +37,7 @@ TEST(RelayServiceTest, OnItNeedsAStartedMesh) {
   relay::RelayService::Options options;
   options.work_dir = (FreshDir() / "relay").string();
   options.settings.enabled = true;
-  auto started = relay.Start(mesh, options);
+  const auto started = relay.Start(mesh, options);
   ASSERT_FALSE(static_cast<bool>(started));
   EXPECT_NE(started.error().message.find("not started"), std::string::npos);
   EXPECT_FALSE(relay.Started());

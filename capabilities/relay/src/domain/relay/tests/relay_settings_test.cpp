@@ -25,7 +25,7 @@ struct FakeEnv {
 
 // projects/node-relay NR007: off until enabled (Hongwei, 2026-11-27), with the defaults below.
 TEST(RelaySettingsTest, OffWithTheDefaultsWhenNothingIsWritten) {
-  auto s = relay::RelaySettings::Read(nullptr, {});
+  const auto s = relay::RelaySettings::Read(nullptr, {});
   ASSERT_TRUE(static_cast<bool>(s)) << s.error().message;
   EXPECT_FALSE(s->enabled);
   EXPECT_EQ(s->retention_days, 7);
@@ -42,7 +42,7 @@ TEST(RelaySettingsTest, TheFileSetsThemAndTheEnvironmentWins) {
   FakeEnv env;
   env.vars["PP_NODE_RELAY_MAX_RECORDS"] = " 200 ";
   env.vars["PP_NODE_RELAY_MAX_BYTES"] = "1048576";
-  auto s = relay::RelaySettings::Read(&section, env.Lookup());
+  const auto s = relay::RelaySettings::Read(&section, env.Lookup());
   ASSERT_TRUE(static_cast<bool>(s)) << s.error().message;
   EXPECT_TRUE(s->enabled);
   EXPECT_EQ(s->retention_days, 14);
@@ -85,7 +85,7 @@ TEST(RelaySettingsTest, KeysItDoesNotKnowAreNamed) {
   Object section;
   section.set("retention_day", int64_t{30});
   std::vector<std::string> unknown;
-  auto s = relay::RelaySettings::Read(&section, {}, &unknown);
+  const auto s = relay::RelaySettings::Read(&section, {}, &unknown);
   ASSERT_TRUE(static_cast<bool>(s));
   EXPECT_EQ(s->retention_days, 7) << "the typo did not set it";
   EXPECT_EQ(unknown, std::vector<std::string>{"retention_day"});

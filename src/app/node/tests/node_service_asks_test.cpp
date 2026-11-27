@@ -44,19 +44,19 @@ const std::vector<std::string> kKnown = {"ledger", "relay"};
 
 // projects/node-relay NR001, rule 4: asking for a service the build lacks fails the start.
 TEST(NodeServiceAsksTest, AnAskForAServiceThisBuildLacksFails) {
-  auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(true), {"ledger"}, kKnown);
+  const auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(true), {"ledger"}, kKnown);
   ASSERT_FALSE(static_cast<bool>(asks));
   EXPECT_NE(asks.error().message.find("node.relay.enabled is on, but this build has no relay"), std::string::npos);
 }
 
 TEST(NodeServiceAsksTest, ASectionWithoutAnAskIsOnlyIgnored) {
-  auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(false), {"ledger"}, kKnown);
+  const auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(false), {"ledger"}, kKnown);
   ASSERT_TRUE(static_cast<bool>(asks));
   EXPECT_EQ(*asks, std::vector<std::string>{"relay"});
 }
 
 TEST(NodeServiceAsksTest, ABuildWithTheServiceHasNothingToCheck) {
-  auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(true), {"ledger", "relay"}, kKnown);
+  const auto asks = pbr::CheckPpNodeServiceAsks(WithRelay(true), {"ledger", "relay"}, kKnown);
   ASSERT_TRUE(static_cast<bool>(asks));
   EXPECT_TRUE(asks->empty());
 }
