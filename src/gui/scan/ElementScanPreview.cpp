@@ -95,8 +95,9 @@ void ElementScanPreview::OnRender() {
   const ScanPreviewLayout layout = LayoutScanPreview(box, width_, height_, computer);
   const bool mirrored = computer && mirrored_;
   ui::Mesh mesh;
-  ui::MeshUtilities::GenerateQuad(mesh, layout.image_offset, layout.image_size, ui::ColourbPremultiplied(255, 255, 255, 255),
-                                  ui::Vector2f(mirrored ? 1.f : 0.f, 0.f), ui::Vector2f(mirrored ? 0.f : 1.f, 1.f));
+  ui::MeshUtilities::GenerateQuad(mesh, layout.image_offset, layout.image_size,
+                                  ui::ColourbPremultiplied(255, 255, 255, 255), ui::Vector2f(mirrored ? 1.f : 0.f, 0.f),
+                                  ui::Vector2f(mirrored ? 0.f : 1.f, 1.f));
   geometry_ = manager->MakeGeometry(std::move(mesh));
   geometry_.Render(GetAbsoluteOffset(ui::BoxArea::Content), texture_);
   // Phones draw the viewfinder in the view instead (qr_scan.rml: a fixed square, its corners and a moving line over
@@ -109,10 +110,12 @@ void ElementScanPreview::OnRender() {
   if (manager != frame_manager_ || finder_box != frame_box_) {
     frame_manager_ = manager;
     frame_box_ = finder_box;
-    frame_ = manager->MakeGeometry(ViewfinderFrameMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
+    frame_ = manager->MakeGeometry(
+        ViewfinderFrameMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
   }
   frame_.Render(GetAbsoluteOffset(ui::BoxArea::Content) + finder_at);
-  scan_line_ = manager->MakeGeometry(ScanLineMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
+  scan_line_ =
+      manager->MakeGeometry(ScanLineMesh(finder_box, computer ? layout.guide_side : std::min(box.x, box.y) * .68f));
   scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content) + finder_at);
 }
 

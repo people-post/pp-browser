@@ -198,13 +198,13 @@ TEST_F(ScanPreviewTest, TheComputerScanFillsTheWindowAndKeepsItsControlsOnScreen
                               Window{800, 560}, Window{500, 800}}) {
     const std::string where = std::to_string(window.width) + "x" + std::to_string(window.height);
     context->SetDimensions({window.width, window.height});
-    const std::string rml = "<rml><head><style>" +
-                            ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") + "body { width: " +
-                            std::to_string(window.width) + "px; height: " + std::to_string(window.height) +
-                            "px; }</style></head><body>"
-                            "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\">"
-                            "<div class=\"shell-overlay-body shell-layer-computer\">" +
-                            view + "</div></div></body></rml>";
+    const std::string rml =
+        "<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
+        "body { width: " + std::to_string(window.width) + "px; height: " + std::to_string(window.height) +
+        "px; }</style></head><body>"
+        "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\">"
+        "<div class=\"shell-overlay-body shell-layer-computer\">" +
+        view + "</div></div></body></rml>";
     auto* document = context->LoadDocumentFromMemory(rml);
     ASSERT_NE(document, nullptr) << where;
     document->Show();
@@ -214,8 +214,8 @@ TEST_F(ScanPreviewTest, TheComputerScanFillsTheWindowAndKeepsItsControlsOnScreen
       document->GetElementsByClassName(found, cls);
       return found.empty() ? nullptr : found.front();
     };
-    for (const char* shown : {"qr-scan-camera", "qr-scan-back", "qr-scan-computer-bar", "qr-scan-computer-hint",
-                              "qr-scan-actions"}) {
+    for (const char* shown :
+         {"qr-scan-camera", "qr-scan-back", "qr-scan-computer-bar", "qr-scan-computer-hint", "qr-scan-actions"}) {
       ASSERT_NE(first(shown), nullptr) << where << " " << shown;
       EXPECT_TRUE(first(shown)->IsVisible(true)) << where << " " << shown;
     }
@@ -264,7 +264,8 @@ TEST_F(ScanPreviewTest, TheComputerScanFillsTheWindowAndKeepsItsControlsOnScreen
     EXPECT_LE(layout.image_offset.y + layout.image_size.y, box.y + 0.01f) << where;
     EXPECT_NEAR(layout.guide_side, 0.7f * std::min(layout.image_size.x, layout.image_size.y), 0.01f) << where;
     const float guide_bottom = layout.image_offset.y + (layout.image_size.y + layout.guide_side) / 2.f;
-    EXPECT_LE(layout.guide_side, std::min(layout.image_size.x, layout.image_size.y)) << where << ": guide inside the picture";
+    EXPECT_LE(layout.guide_side, std::min(layout.image_size.x, layout.image_size.y))
+        << where << ": guide inside the picture";
     EXPECT_LE(guide_bottom, first("qr-scan-computer-bar")->GetAbsoluteOffset(ui::BoxArea::Border).y + 0.5f)
         << where << ": the bar does not cover the guide";
     // A portrait frame fits the other way round.
@@ -282,8 +283,9 @@ TEST_F(ScanPreviewTest, TheComputerScanFillsTheWindowAndKeepsItsControlsOnScreen
 TEST_F(ScanPreviewTest, OnlyAComputersLayerDrawsThePreviewMirrored) {
   for (const char* layer : {"shell-layer-computer", "shell-layer-compact"}) {
     for (const bool mirrored : {false, true}) {
-      const std::string rml = std::string("<rml><head><style>scan-preview {display:block; width:200px; height:200px;}"
-                                          "</style></head><body><div class=\"") +
+      const std::string rml = std::string(
+                                  "<rml><head><style>scan-preview {display:block; width:200px; height:200px;}"
+                                  "</style></head><body><div class=\"") +
                               layer + "\"><scan-preview id=\"p\"></scan-preview></div></body></rml>";
       renderer.picture_left_u = renderer.picture_right_u = -1.f;
       auto* document = context->LoadDocumentFromMemory(rml);

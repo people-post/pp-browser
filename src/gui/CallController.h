@@ -416,7 +416,8 @@ private:
   /** The word the switch logs for the change in flight (SyncScreenAwake sets it just before). */
   const char* screen_awake_reason_ = "ended";
   ScreenAwakeSync screen_awake_{[this](const bool on) {
-    ScreenAwakeHolds::Shared().Set(ScreenAwakeHolds::Holder::Call, on, screen_awake_reason_); // a forward's page may hold it too
+    ScreenAwakeHolds::Shared().Set(ScreenAwakeHolds::Holder::Call, on,
+                                   screen_awake_reason_); // a forward's page may hold it too
   }};
   static constexpr int64_t kProximityRecheckMs = 500;
   bool proximity_wanted_ = false;

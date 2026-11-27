@@ -40,7 +40,7 @@ struct FakeState {
   CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
-  int rotate_cw = 0;        // geometry the fake camera reports
+  int rotate_cw = 0; // geometry the fake camera reports
   bool mirror_preview = false;
   bool pre_rotated = false; // frames arrive rotated so that rotate_cw makes them upright
   std::atomic<bool> permission_pending{false};
