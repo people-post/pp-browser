@@ -17030,7 +17030,6 @@ textarea:composing ~ .ps-placeholder {
   width: 32dp;
   height: 32dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 19dp;
   animation: 0.9s linear infinite forward-progress-spin;
 }
