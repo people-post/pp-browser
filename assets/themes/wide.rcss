@@ -3125,14 +3125,21 @@
    modal frame (PaneSpec::modal, as "Forward to"), over the window-wide dimmed scrim, so the chat stays visible behind it.
    The frame is the card (colour, radius and shadow in colors.rcss.tmpl, the close button at its corner); the phone's
    full-screen layer (components.rcss) is turned into an ordinary block inside it. The surface is translucent (the chat
-   shows through) but not blurred: the wide frame's blur budget (two) is the chat's own header and composer bars, and a
-   blur of the window behind the card is not worth the cost. */
+   shows through) and frosted: the backdrop blur reads what is painted before the card (the chat and the scrim). The
+   wide frame's two other blurs (header and composer bars) are already off while any layer is over the base
+   (ShellInterruption::ResolveFrost), so this is the only blur on screen. ShellLayoutRml adds shell-frame--solid when
+   transparency is off: no blur, the opaque card colour (colors.rcss.tmpl). */
 .shell-body--wide .shell-modal-stage .shell-frame--forward_progress {
+  backdrop-filter: blur(28px);
   flex: 0 1 340dp;
   width: 340dp;
   max-width: 340dp;
   height: auto;
   max-height: 100%;
+}
+
+.shell-body--wide .shell-modal-stage .shell-frame--forward_progress.shell-frame--solid {
+  backdrop-filter: none;
 }
 
 /* The stage takes the clicks beside the card (the scrim under it would close the layer, which stops the forward). */

@@ -5084,8 +5084,17 @@ input.checkbox:checked {
 }
 
 .shell-body--wide .shell-frame--forward_progress {
-  background-color: #ffffffd6;
+  background-color: #ffffff94;
   border: 1dp #3c3c434a;
+}
+
+/* Transparency off (Reduce transparency, or the frost switch off): no blur, so the surface is the opaque card colour. */
+.shell-body--wide .shell-frame--forward_progress.shell-frame--solid {
+  background-color: #f2f2f7;
+}
+
+.shell-scrim.shell-scrim--forward_progress {
+  background-color: #00000038;
 }
 
 .shell-body--wide .forward-progress-card .forward-progress-bar {

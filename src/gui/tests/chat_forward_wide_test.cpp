@@ -985,8 +985,8 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
   }
 }
 
-// The wide progress card is translucent (the chat shows through), not blurred, in both themes, and its progress track
-// stays visible on that surface.
+// The wide progress card is frosted glass in both themes: a translucent surface (about 58%) over a backdrop blur on its
+// rule in wide.rcss, a lighter scrim of its own, and its progress track stays visible on that surface.
 TEST_F(ForwardWideTest, ForwardProgressCardSurfaceIsTranslucentInBothThemes) {
   const std::regex frame(
       "\\.shell-body--wide \\.shell-frame--forward_progress \\{\\s*background-color: #[0-9a-f]{6}([0-9a-f]{2});");
@@ -999,9 +999,31 @@ TEST_F(ForwardWideTest, ForwardProgressCardSurfaceIsTranslucentInBothThemes) {
     ASSERT_TRUE(std::regex_search(css, found, frame)) << theme;
     const int alpha = std::stoi(found[1].str(), nullptr, 16);
     EXPECT_LT(alpha, 255) << "the card surface is translucent: " << theme;
-    EXPECT_GE(alpha, 0xb0) << "but dense enough to read over unblurred chat text: " << theme;
+    EXPECT_GE(alpha, 0x80) << "but not so thin that the text behind wins: " << theme;
+    EXPECT_LE(alpha, 0xa0) << "the glass lets the chat through (about 55-62%): " << theme;
     ASSERT_TRUE(std::regex_search(css, found, track)) << theme;
     EXPECT_GE(std::stoi(found[1].str(), nullptr, 16), 0x50) << "the track stays visible: " << theme;
+  }
+  const std::string wide = Asset("themes/wide.rcss");
+  const std::regex blur(
+      "\\.shell-body--wide \\.shell-modal-stage \\.shell-frame--forward_progress \\{\\s*backdrop-filter: "
+      "blur\\(([0-9]+)px\\);");
+  std::smatch blurred;
+  ASSERT_TRUE(std::regex_search(wide, blurred, blur)) << "the card rule carries the backdrop blur";
+  EXPECT_GE(std::stoi(blurred[1].str()), 20) << "at least the bars' blur";
+  EXPECT_NE(wide.find(".shell-frame--forward_progress.shell-frame--solid {\n  backdrop-filter: none;"),
+            std::string::npos)
+      << "transparency off: no blur";
+  // The scrim of this layer only is lighter than the shared one.
+  const std::regex scrim("\\.shell-scrim\\.shell-scrim--forward_progress \\{\\s*background-color: #0{6}([0-9a-f]{2});");
+  const std::regex shared("\\.shell-scrim \\{\\s*background-color: #0{6}([0-9a-f]{2});");
+  for (const char* theme : {"themes/colors-light.rcss", "themes/colors-dark.rcss"}) {
+    const std::string css = Asset(theme);
+    std::smatch own;
+    std::smatch base;
+    ASSERT_TRUE(std::regex_search(css, own, scrim)) << theme;
+    ASSERT_TRUE(std::regex_search(css, base, shared)) << theme;
+    EXPECT_LT(std::stoi(own[1].str(), nullptr, 16), std::stoi(base[1].str(), nullptr, 16)) << theme;
   }
 }
 

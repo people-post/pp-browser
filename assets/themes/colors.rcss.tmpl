@@ -5200,6 +5200,15 @@ input.checkbox:checked {
   border: 1dp {{separator}};
 }
 
+/* Transparency off (Reduce transparency, or the frost switch off): no blur, so the surface is the opaque card colour. */
+.shell-body--wide .shell-frame--forward_progress.shell-frame--solid {
+  background-color: {{bg-card-2}};
+}
+
+.shell-scrim.shell-scrim--forward_progress {
+  background-color: {{x-fwd-scrim}};
+}
+
 .shell-body--wide .forward-progress-card .forward-progress-bar {
   background-color: {{x-fwd-track}};
 }
