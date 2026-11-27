@@ -930,13 +930,23 @@ TEST_F(ChatWideLayoutTest, EveryBubbleKindHasItsTailAnchoredToTheBubblesBottomCo
   }
 }
 
-// The macOS window's outer corner (borderless, transparent, shaped by WindowChrome_Darwin.mm): the 1dp outline follows
-// an 18dp radius; a maximized or full-screen window (no `framed` class) is square as before, and a window that is not the
-// macOS one (Windows, Linux: no `round` class) keeps its square outline.
-TEST_F(ChatWideLayoutTest, TheMacWindowOutlineFollowsTheRoundedOuterCorner) {
+// The macOS window's outer edge (borderless, transparent, shaped by WindowChrome_Darwin.mm): the system layer that clips
+// the 18pt corners also draws the hairline outline, so the shell draws no border and no radius of its own there; a
+// window that is not the macOS one (Windows, Linux: no `round` class) keeps its 1dp square outline, and a maximized or
+// full-screen one (no `framed` class) none.
+TEST_F(ChatWideLayoutTest, TheMacWindowEdgeIsDrawnByTheSystemLayerNotTheShell) {
   const std::string mm =
       ReadAll(std::string(PP_SOURCE_DIR) + "/src/foundation/platform/desktop/WindowChrome_Darwin.mm");
   EXPECT_NE(mm.find("kWindowCornerRadiusPt = 18.0"), std::string::npos);
+  EXPECT_NE(mm.find("layer.borderWidth"), std::string::npos);
+  EXPECT_NE(mm.find("kCACornerCurveContinuous"), std::string::npos);
+  // The layer's outline colours are the shell's former RCSS border colours (#3c3c434a light, #54545899 dark).
+  EXPECT_NE(mm.find("0x3c / 255.0, 0x3c / 255.0, 0x43 / 255.0"), std::string::npos);
+  EXPECT_NE(mm.find("kOutlineLightAlpha = 0x4a / 255.0"), std::string::npos);
+  EXPECT_NE(mm.find("0x54 / 255.0, 0x54 / 255.0, 0x58 / 255.0"), std::string::npos);
+  EXPECT_NE(mm.find("kOutlineDarkAlpha = 0x99 / 255.0"), std::string::npos);
+  EXPECT_NE(Asset("themes/colors-light.rcss").find("border-color: #3c3c434a;"), std::string::npos);
+  EXPECT_NE(Asset("themes/colors-dark.rcss").find("border-color: #54545899;"), std::string::npos);
   EXPECT_NE(Asset("samples/window_shell.rml").find("data-class-shell-body--round=\"titlebar_traffic_lights\""),
             std::string::npos);
   const std::string rml =
@@ -952,10 +962,16 @@ TEST_F(ChatWideLayoutTest, TheMacWindowOutlineFollowsTheRoundedOuterCorner) {
   ASSERT_NE(document, nullptr);
   document->Show();
   context->Update();
-  EXPECT_FLOAT_EQ(document->GetElementById("mac")->GetComputedValues().border_top_left_radius(), 18.f);
-  EXPECT_FLOAT_EQ(document->GetElementById("mac")->GetComputedValues().border_bottom_right_radius(), 18.f);
-  EXPECT_FLOAT_EQ(document->GetElementById("win")->GetComputedValues().border_top_left_radius(), 0.f);
-  EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_left_radius(), 0.f);
+  const auto& mac = document->GetElementById("mac")->GetComputedValues();
+  EXPECT_FLOAT_EQ(mac.border_top_width(), 0.f) << "the system layer draws the outline";
+  EXPECT_FLOAT_EQ(mac.border_left_width(), 0.f);
+  EXPECT_FLOAT_EQ(mac.border_top_left_radius(), 0.f) << "the system layer cuts the corners";
+  EXPECT_FLOAT_EQ(mac.border_bottom_right_radius(), 0.f);
+  const auto& win = document->GetElementById("win")->GetComputedValues();
+  EXPECT_FLOAT_EQ(win.border_top_width(), 1.f) << "Windows / Linux keep the shell's own outline";
+  EXPECT_FLOAT_EQ(win.border_left_width(), 1.f);
+  EXPECT_FLOAT_EQ(win.border_top_left_radius(), 0.f);
+  EXPECT_FLOAT_EQ(document->GetElementById("max")->GetComputedValues().border_top_width(), 0.f);
 }
 
 // Windows 11 rounds our borderless window itself when asked (WindowCorners_Win32.cpp: DWMWA_WINDOW_CORNER_PREFERENCE 33

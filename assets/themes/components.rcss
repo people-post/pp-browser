@@ -1825,10 +1825,12 @@ select selectbox option {
   border-width: 1dp;
 }
 
-/* The macOS window's own shape (WindowChrome_Darwin.mm kWindowCornerRadiusPt, the same 18): its outline follows the
-   rounded corner. Linux and Windows 10 keep their square window. */
+/* The macOS window's own shape (WindowChrome_Darwin.mm kWindowCornerRadiusPt, 18): the system layer that clips the
+   corners also draws the hairline outline, so there is one edge, not two. Draw no border here (and no radius: the layer
+   cuts the corners; a second, coarsely anti-aliased curve at the same radius is what looked jagged). If that radius
+   changes, nothing here has to. Linux and Windows 10 keep their square window. */
 .shell-body--framed.shell-body--round {
-  border-radius: 18dp;
+  border-width: 0dp;
 }
 
 /* Windows 11 rounds the window itself (WindowCorners_Win32.cpp, DWMWCP_ROUND: the system's small radius, 8px at 100%
