@@ -1196,7 +1196,6 @@
     "chat.attach.photo": "照片",
     "chat.attach.title": "发送",
     "chat.attach.file": "文件",
-    "chat.attach.picture": "图片",
     "chat.attach.send_compressed": "发送",
     "chat.attach.send_original": "发原图",
     "chat.attach.not_sent_left_chat": "你离开了这个聊天，刚才选的内容没有发送。",

@@ -61,6 +61,8 @@ struct Fakes {
   int send_asks = 0;
   /** A computer window (ps_desktop): the recipient line and the file card show only there. */
   bool desktop = false;
+  /** The chat's display name the chip shows. */
+  std::string recipient_name = "Ann Lee";
   int next_layer = 7;
   std::function<void()> on_cancel;
   std::vector<PictureSendReport> reports;
@@ -151,8 +153,8 @@ protected:
       }
     };
     host.is_desktop = [this]() { return fakes_.desktop; };
-    host.recipient = []() { return std::string("To Ann Lee"); };
-    host.recipient_words = []() { return NameWords{"To ", "Ann Lee", ""}; };
+    host.recipient = [this]() { return "To " + fakes_.recipient_name; };
+    host.recipient_words = [this]() { return NameWords{"To ", fakes_.recipient_name, ""}; };
     host.items_title = [](const size_t n) {
       // The real wording is looked up by the key the app uses, so the page's one-file / many-files split is what is tested.
       return std::string(PictureSendItemsTitleKey(n) == std::string("picture_send.title_one_file")
@@ -1459,6 +1461,51 @@ TEST_P(PictureSendDesktopPageTest, AFilesOnlyQueueShowsTheFileCardTheRecipientAn
   EXPECT_EQ(Count(".ps-original"), 0U) << "\"original\" is for pictures";
   EXPECT_EQ(Text(".ps-title"), "Send file");
   ExpectEverythingInsideTheWindow();
+}
+
+// The bug this pins: the chip's round avatar once showed the raw template text instead of the initial. The text a
+// node shows is what an element holds after its data views ran, so no element of the page may still hold a template.
+TEST_P(PictureSendDesktopPageTest, NoElementOfThePageStillHoldsTemplateText) {
+  Arrive("a.jpg", kMb);
+  Arrive("/some/dir/report.pdf", 3 * kMb, PictureSendKind::File);
+  Frames();
+  ASSERT_TRUE(controller_.IsOpen());
+  // Only the page's own text nodes count: an element's inner RML also holds the template of a data-for repeat.
+  ui::ElementList all;
+  document_->QuerySelectorAll(all, "*");
+  ASSERT_GT(all.size(), 20U);
+  size_t texts = 0;
+  for (ui::Element* element : all) {
+    for (int i = 0; i < element->GetNumChildren(true); ++i) {
+      ui::Element* child = element->GetChild(i);
+      if (child->GetTagName() != "#text") {
+        continue;
+      }
+      ++texts;
+      const std::string text = child->GetInnerRML().c_str();
+      EXPECT_EQ(text.find("{{"), std::string::npos) << element->GetClassNames().c_str() << ": " << text;
+      EXPECT_EQ(text.find("}}"), std::string::npos) << element->GetClassNames().c_str() << ": " << text;
+    }
+  }
+  EXPECT_GT(texts, 5U) << "the walk reached the page's words";
+}
+
+TEST_P(PictureSendDesktopPageTest, TheAvatarShowsTheFirstLetterOfTheChatNameUpperCasedOrItsFirstCharacter) {
+  const std::pair<const char*, const char*> cases[] = {
+      {"Kenwin-DEV", "K"}, {"kenwin", "K"}, {"\xE7\x8E\x8B\xE5\xB0\x8F\xE6\x98\x8E", "\xE7\x8E\x8B"}, {"", ""}};
+  for (const auto& [name, initial] : cases) {
+    if (controller_.IsOpen()) {
+      controller_.OnBack();
+      Frames();
+    }
+    fakes_.recipient_name = name;
+    queue_ = std::make_unique<PictureSendQueue>("chat-origin", AttachmentLimits{}, QueuePorts(fakes_));
+    Arrive("a.jpg", kMb);
+    Frames();
+    ASSERT_TRUE(controller_.IsOpen()) << name;
+    EXPECT_EQ(Text(".ps-chip-avatar"), initial) << "for \"" << name << "\"";
+    EXPECT_EQ(Text(".ps-chip-name"), name);
+  }
 }
 
 TEST_P(PictureSendDesktopPageTest, AMixedQueueShowsTheStripWithAFileCellAndTheOriginalChoice) {

@@ -2,6 +2,7 @@
 // and in what order, what the worker's facts turn a batch into, and the intake that ties them to ports.
 #include "feature/presenters/AttachIntake.h"
 
+#include "common/PathUtf8.h"
 #include "lib/messaging/AttachmentLimits.h"
 
 #include <gtest/gtest.h>
@@ -301,6 +302,27 @@ TEST_F(GatherFactsTest, AVideoIsKnownByItsName) {
   EXPECT_EQ(GatherFileFacts(Write("clip.mp4", Padded("whatever"))).sniffed, SniffedType::Video);
   EXPECT_EQ(GatherFileFacts(Write("clip.mov", Padded("whatever"))).sniffed, SniffedType::Video);
   EXPECT_EQ(GatherFileFacts(Write("song.mp3", Padded("whatever"))).sniffed, SniffedType::Other) << "audio is a file";
+}
+
+// A path arrives as UTF-8 bytes (the system dialog, a drop, the clipboard). On Windows a narrow path is read as the ANSI
+// code page, so a Chinese file name or folder was "unreadable" there; macOS passes either way, Windows CI is the check.
+TEST_F(GatherFactsTest, AFileWithAChineseNameInAChineseFolderAndASpaceIsFoundSizedAndSniffed) {
+  const std::filesystem::path folder =
+      dir_ / PathFromUtf8("\xE5\x9B\xBE\xE7\x89\x87 \xE6\x96\x87\xE4\xBB\xB6\xE5\xA4\xB9");
+  std::filesystem::create_directories(folder);
+  const std::filesystem::path file = folder / PathFromUtf8("\xE6\xB5\x8B\xE8\xAF\x95 \xE5\x9B\xBE\xE7\x89\x87.png");
+  const std::string png = Padded(std::string("\x89PNG\r\n\x1a\n", 8));
+  {
+    std::ofstream out(file, std::ios::binary);
+    out.write(png.data(), static_cast<std::streamsize>(png.size()));
+  }
+  const FileFacts facts = GatherFileFacts(PathToUtf8(file)); // the UTF-8 bytes, as the dialog hands them
+  EXPECT_EQ(facts.status, FileStatus::Regular);
+  EXPECT_EQ(facts.size, png.size());
+  EXPECT_EQ(facts.sniffed, SniffedType::Png);
+  EXPECT_EQ(GatherFileFacts(PathToUtf8(folder)).status, FileStatus::Directory);
+  EXPECT_EQ(GatherFileFacts(PathToUtf8(folder / PathFromUtf8("\xE6\xB2\xA1\xE6\x9C\x89.png"))).status,
+            FileStatus::Missing);
 }
 
 TEST_F(GatherFactsTest, FolderMissingAndNotAPlainFileAreTold) {

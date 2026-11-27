@@ -1,6 +1,7 @@
 #include "feature/presenters/PictureSendQueue.h"
 
 #include "foundation/error/AppError.h"
+#include "common/PathUtf8.h"
 #include "lib/messaging/AttachmentCache.h"
 
 #include <algorithm>
@@ -116,8 +117,7 @@ std::optional<uint64_t> PictureSendQueue::Add(std::string path, const PictureSen
   item.kind = kind;
   item.bytes = bytes;
   item.pixels = pixels;
-  item.display_name =
-      display_name.empty() ? std::filesystem::path(item.path).filename().string() : std::move(display_name);
+  item.display_name = display_name.empty() ? PathToUtf8(PathFromUtf8(item.path).filename()) : std::move(display_name);
   item.owned = owned;
   item.too_large = PictureOverLimit(item, original_, limits_);
   const uint64_t id = item.id;

@@ -3233,12 +3233,6 @@ void ChatController::OnAttachFile(ui::Event* ev) {
       });
     };
   };
-  const auto pick_computer_photos = [this, picked_for_preview]() {
-    return [this, picked_for_preview]() {
-      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_for_preview(ArmPick()), nullptr,
-                                 static_cast<int>(PictureSendQueue::kMaxItems));
-    };
-  };
   // A picture is asked about before it goes: sent smaller (the default) or as it is. A video from the phone's
   // library has no such choice and goes straight on.
   const auto picked_picture = [this](const uint64_t serial) {
@@ -3264,8 +3258,8 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     };
   };
   // "Photo" on a phone: the library with pictures and videos.
-  const auto pick_photo_or_video = [this, picked_picture, pick_computer_photos, thread_id]() {
-    return [this, picked_picture, pick_computer_photos, thread_id]() {
+  const auto pick_photo_or_video = [this, picked_picture, thread_id]() {
+    return [this, picked_picture, thread_id]() {
       const uint64_t serial = ArmPick();
       if (Platform::Detect() == PlatformKind::IOS) {
         // iPhone / iPad: up to nine, in the order tapped, one at a time into the preview page (the picture and the
@@ -3292,11 +3286,6 @@ void ChatController::OnAttachFile(ui::Event* ev) {
               AppRuntime::PostUI(
                   [this, serial, index, total, path]() { OnPhotoBatchItem(serial, index, total, path); });
             });
-        return;
-      }
-      if (!Platform::IsMobile()) {
-        // The computer: the system dialog, several at once, into the same send-preview page the phone uses.
-        pick_computer_photos()(); // arms its own pick (a newer pick ends the one armed above)
         return;
       }
       ShowOpenPhotoLibraryDialog(Backend::GetWindow(), picked_picture(serial), [this, serial](const std::string& name) {
@@ -3332,7 +3321,13 @@ void ChatController::OnAttachFile(ui::Event* ev) {
         {}, /*above=*/true);
     return;
   }
-  // The wide layout (a computer, an iPad window): the same "+" and the same choices as the phone's card, those that apply
+  // A computer (Kenneth 2026-11-27): the system dialog already picks pictures and files together, so "+" opens it at
+  // once: several files, up to nine, into the send-preview page. No menu asking "picture or file" first.
+  if (!Platform::IsMobile()) {
+    pick_file()();
+    return;
+  }
+  // The wide layout (an iPad window): the same "+" and the same choices as the phone's card, those that apply
   // here: the camera only where the composer offers one (ShowCaptureEntry), Photos and videos, File.
   if (ev && ChromeSnapshot().layout_mode == LayoutMode::Expanded) {
     std::vector<ContextMenuAction> wide_actions;
@@ -3347,15 +3342,8 @@ void ChatController::OnAttachFile(ui::Event* ev) {
                                                               /*above=*/true);
     return;
   }
-  // A phone keeps photos and files apart; the desktop dialog shows both at once, so there a picture and a file
-  // have their own entries.
   std::vector<ContextMenuAction> actions;
-  if (Platform::IsMobile()) {
-    actions.push_back(
-        {"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
-  } else {
-    actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_computer_photos()});
-  }
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
   actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
   actions.push_back(AttachCancelAction());
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
@@ -4013,7 +4001,7 @@ PictureSendPorts ChatController::MakePictureSendPorts(const uint64_t serial) {
   ports.release_owned = [dir = PastedDir()](const std::string& path) { ReleasePastedFile(path, dir); };
   ports.remove_file = [](const std::string& path) {
     std::error_code ec;
-    std::filesystem::remove(path, ec);
+    std::filesystem::remove(PathFromUtf8(path), ec);
   };
   ports.now_ms = []() { return SteadyNowMs(); };
   ports.schedule_tick = [this, current](const int64_t delay_ms) {
@@ -4054,7 +4042,7 @@ PictureSendPreviewFiles MakePicturePreviewFiles(const std::string& path, const P
   const auto drop = [](const std::string& file) {
     if (!file.empty()) {
       std::error_code ec;
-      std::filesystem::remove(file, ec);
+      std::filesystem::remove(PathFromUtf8(file), ec);
     }
   };
   if (large.path.empty()) {
@@ -4083,7 +4071,7 @@ PictureSendHost ChatController::MakePictureSendHost() {
   PictureSendHost host;
   host.queue = [this]() { return picture_queue_.get(); };
   host.preview_root = [this]() {
-    return facade_ ? (std::filesystem::path(facade_->ProfileDataDir()) / "picked" / "preview").string() : std::string();
+    return facade_ ? PathToUtf8(PathFromUtf8(facade_->ProfileDataDir()) / "picked" / "preview") : std::string();
   };
   host.make_preview = &MakePicturePreviewFiles;
   // The computer page names who it goes to (the chat header's own title) and says how many items a batch with a file has.
@@ -4318,7 +4306,7 @@ void ChatController::OpenAttachPreview(std::vector<AttachCandidate> candidates, 
 }
 
 std::filesystem::path ChatController::PastedRoot() const {
-  return std::filesystem::path(AppPaths::CacheDir()) / "pasted";
+  return PathFromUtf8(AppPaths::CacheDir()) / "pasted";
 }
 
 std::filesystem::path ChatController::PastedDir() const {
@@ -4611,8 +4599,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   send_cancel_ = std::make_shared<std::atomic<bool>>(false);
   const auto cancel = send_cancel_;
   const std::string shown_name = DisplayNameFromPickedPath(path); // a content:// URI is not a name
-  chat_.attachment_draft_name =
-      (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
+  chat_.attachment_draft_name = (shown_name.empty() ? PathToUtf8(PathFromUtf8(path).filename()) : shown_name).c_str();
   ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();

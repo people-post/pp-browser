@@ -1,5 +1,6 @@
 // DEV/PLAN-desktop-drop-paste.md, D1: the one folder pasted pictures are written to, and the rule that only files inside
 // it are ever deleted. Everything runs on the real file system inside the test's own temp folder.
+#include "common/PathUtf8.h"
 #include "foundation/platform/PastedFiles.h"
 
 #include <gtest/gtest.h>
@@ -46,6 +47,20 @@ protected:
   fs::path dir_;
   fs::path outside_;
 };
+
+// The folder sits under the user's profile or cache, which may have a Chinese name; paths are UTF-8 strings. On
+// Windows a narrow path is the ANSI code page, so such a folder was unreadable (macOS passes either way).
+TEST_F(PastedFilesTest, AChineseFolderWithASpaceTakesAWriteHandsBackUtf8AndReleasesIt) {
+  const fs::path dir = root_ / PathFromUtf8("\xE7\x94\xA8\xE6\x88\xB7 \xE7\xBC\x93\xE5\xAD\x98") / "pasted";
+  const auto written = WritePastedFile(dir, "png-bytes", "png");
+  ASSERT_TRUE(written.has_value());
+  EXPECT_EQ(*written, PathToUtf8(PathFromUtf8(*written))) << "the string is UTF-8, whatever the platform";
+  EXPECT_NE(written->find("\xE7\x94\xA8\xE6\x88\xB7 \xE7\xBC\x93\xE5\xAD\x98"), std::string::npos);
+  EXPECT_TRUE(fs::exists(PathFromUtf8(*written)));
+  EXPECT_EQ(Read(PathFromUtf8(*written)), "png-bytes");
+  EXPECT_TRUE(ReleasePastedFile(*written, dir));
+  EXPECT_FALSE(fs::exists(PathFromUtf8(*written)));
+}
 
 TEST_F(PastedFilesTest, WritingMakesTheFolderAndNamesFilesInOrder) {
   const auto first = WritePastedFile(dir_, "one", "png");

@@ -5,6 +5,7 @@
 #include "foundation/platform/ImageThumbnail.h"
 #include "foundation/platform/VideoPosterExtractor.h"
 #include "common/ImageMetadata.h"
+#include "common/PathUtf8.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/AttachmentCache.h"
 
@@ -37,17 +38,17 @@ Error Unprocessable() {
 }
 
 std::string StemOf(const std::string& filename) {
-  return std::filesystem::path(filename).stem().string();
+  return PathToUtf8(PathFromUtf8(filename).stem());
 }
 
 /** Read a whole file, refusing one over `max_bytes` before it is opened. */
 Roe<std::vector<uint8_t>> ReadAll(const std::string& path, const uint64_t max_bytes) {
   std::error_code ec;
-  const auto size = std::filesystem::file_size(path, ec);
+  const auto size = std::filesystem::file_size(PathFromUtf8(path), ec);
   if (!ec && size > max_bytes) {
     return TooLarge(max_bytes);
   }
-  std::ifstream input(path, std::ios::binary);
+  std::ifstream input(PathFromUtf8(path), std::ios::binary);
   if (!input) {
     return PrepError(OutgoingAttachmentError::Unreadable, "Could not read attachment file",
                      Tr("chat.attachment.read_failed"));
@@ -75,12 +76,12 @@ namespace {
 
 /** The name to send under: the pick's own, else "attachment" with the extension its first bytes imply. */
 std::string NameForPick(const std::string& path, const std::string& picked_name) {
-  std::string name = picked_name.empty() ? std::filesystem::path(path).filename().string() : picked_name;
+  std::string name = picked_name.empty() ? PathToUtf8(PathFromUtf8(path).filename()) : picked_name;
   if (name.empty()) {
     name = "attachment";
   }
-  if (std::filesystem::path(name).extension().empty()) {
-    std::ifstream in(path, std::ios::binary);
+  if (PathFromUtf8(name).extension().empty()) {
+    std::ifstream in(PathFromUtf8(path), std::ios::binary);
     std::vector<uint8_t> head(32);
     in.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
     head.resize(static_cast<size_t>(in.gcount()));
@@ -181,9 +182,9 @@ UploadThumbnail WriteThumbnailFile(Roe<std::vector<uint8_t>> jpeg, const std::st
     return {};
   }
   std::error_code ec;
-  std::filesystem::create_directories(scratch_dir, ec);
+  std::filesystem::create_directories(PathFromUtf8(scratch_dir), ec);
   static std::atomic<uint64_t> serial{0};
-  const auto path = std::filesystem::path(scratch_dir) / ("upload-thumb-" + std::to_string(++serial) + ".jpg");
+  const auto path = PathFromUtf8(scratch_dir) / ("upload-thumb-" + std::to_string(++serial) + ".jpg");
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(jpeg->data()), static_cast<std::streamsize>(jpeg->size()));
   if (!out) {
@@ -192,7 +193,7 @@ UploadThumbnail WriteThumbnailFile(Roe<std::vector<uint8_t>> jpeg, const std::st
     return {};
   }
   UploadThumbnail thumb;
-  thumb.path = path.string();
+  thumb.path = PathToUtf8(path);
   if (const auto header = ReadImageHeaderBytes(*jpeg)) {
     thumb.width = header->width;
     thumb.height = header->height;

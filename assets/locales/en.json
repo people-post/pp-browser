@@ -1217,7 +1217,6 @@
     "chat.attach.photo": "Photo",
     "chat.attach.title": "Send",
     "chat.attach.file": "File",
-    "chat.attach.picture": "Picture",
     "chat.attach.send_compressed": "Send",
     "chat.attach.send_original": "Send original",
     "chat.attach.not_sent_left_chat": "You left this chat, so the item you picked was not sent.",
