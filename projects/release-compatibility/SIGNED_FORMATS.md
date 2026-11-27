@@ -268,7 +268,7 @@ register:  "pp-browser:relay-register" 00 ‖ u8 4 ‖ LenUtf8 audience ‖ LenU
            ‖ LenBytes account signing key (typed) ‖ LenBytes account KEM key (typed) ‖ i64 timestamp ‖ ext area
 ```
 
-- Domains: the 20 of [SERVICE_ENDPOINTS § The audience](../../docs/contracts/SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)
+- Domains: the 17 of [SERVICE_ENDPOINTS § The audience](../../docs/contracts/SERVICE_ENDPOINTS.md#the-audience-every-signed-command-names-its-relay)
   without their `-v1` (`pp-browser:relay-revoke`, `…:relay-locker-put`, …). Fields otherwise unchanged; register
   drops its `signature_alg` byte.
 - Body: `sign_version: 4` (read first by the relay, as today), `audience` (the relay's transport PeerId, from its
