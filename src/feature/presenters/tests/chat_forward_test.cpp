@@ -364,16 +364,16 @@ TEST_F(ChatForwardTest, ForwardKeepsOrderInEveryTarget) {
 
 TEST_F(ChatForwardTest, EachTargetIsFilledCompletelyBeforeTheNext) {
   AddTexts(5);
-  // 5 messages to 4 chats is 20 sends: more than one batch, so the order is held across batches.
-  const auto result = Forward({"m1", "m2", "m3", "m4", "m5"}, {"bob", "carol", "club", "dave"});
+  // 5 messages to 3 chats is 15 sends: more than one batch, so the order is held across batches.
+  const auto result = Forward({"m1", "m2", "m3", "m4", "m5"}, {"bob", "carol", "club"});
   ASSERT_TRUE(result);
-  ASSERT_EQ(chats.calls.size(), 20u);
-  const std::vector<std::string> order{"bob", "carol", "club", "dave"};
+  ASSERT_EQ(chats.calls.size(), 15u);
+  const std::vector<std::string> order{"bob", "carol", "club"};
   for (size_t i = 0; i < chats.calls.size(); ++i) {
     EXPECT_EQ(chats.calls[i].thread, order[i / 5]) << "send " << i;
     EXPECT_EQ(chats.calls[i].text, "text " + std::to_string(i % 5 + 1)) << "send " << i;
   }
-  EXPECT_EQ(result->forwarded, 20u);
+  EXPECT_EQ(result->forwarded, 15u);
 }
 
 TEST_F(ChatForwardTest, AOneToOneTargetUsesSendUserMessageAndAGroupUsesSendGroupMessage) {
@@ -419,10 +419,9 @@ TEST_F(ChatForwardTest, ATargetThatCanNoLongerBeWrittenToIsSkippedAndCounted) {
 TEST_F(ChatForwardTest, AMessageRefusedInEveryChatIsCountedOnceNotOncePerChat) {
   AddTexts(3);
   chats.refused_texts = {"text 2"};
-  chats.targets["erin"] = ForwardTargetKind::Direct;
-  const auto result = Forward({"m1", "m2", "m3"}, {"bob", "carol", "dave", "erin"});
+  const auto result = Forward({"m1", "m2", "m3"}, {"bob", "carol", "dave"});
   ASSERT_TRUE(result);
-  EXPECT_EQ(result->forwarded, 8u);
+  EXPECT_EQ(result->forwarded, 6u);
   EXPECT_EQ(result->send_errors, 1u) << "messages that failed, not sends that failed";
   EXPECT_EQ(result->skipped_messages, 0u);
 }
@@ -462,26 +461,26 @@ TEST_F(ChatForwardTest, SelectionStopsAtThirty) {
   EXPECT_EQ(presenter.ToggleForwardSelection("m5"), ChatPresenter::ForwardTick::NotForwardable);
 }
 
-TEST_F(ChatForwardTest, TargetsStopAtNine) {
+TEST_F(ChatForwardTest, TargetsStopAtThree) {
   AddTexts(1);
-  std::vector<std::string> ten;
-  std::vector<std::string> nine;
-  for (int i = 1; i <= 10; ++i) {
+  std::vector<std::string> four;
+  std::vector<std::string> three;
+  for (int i = 1; i <= 4; ++i) {
     const std::string id = "chat-" + std::to_string(i);
     chats.targets[id] = ForwardTargetKind::Direct;
-    ten.push_back(id);
-    if (i <= 9) {
-      nine.push_back(id);
+    four.push_back(id);
+    if (i <= 3) {
+      three.push_back(id);
     }
   }
-  const auto too_many = Forward({"m1"}, ten);
+  const auto too_many = Forward({"m1"}, four);
   ASSERT_TRUE(too_many);
   EXPECT_TRUE(too_many->nothing_sent);
-  EXPECT_TRUE(chats.calls.empty()) << "a tenth chat is refused before anything is sent";
+  EXPECT_TRUE(chats.calls.empty()) << "a fourth chat is refused before anything is sent";
 
-  const auto ok = Forward({"m1"}, nine);
+  const auto ok = Forward({"m1"}, three);
   ASSERT_TRUE(ok);
-  EXPECT_EQ(ok->forwarded, 9u);
+  EXPECT_EQ(ok->forwarded, 3u);
   EXPECT_FALSE(ok->nothing_sent);
 }
 
@@ -727,9 +726,9 @@ TEST_F(ChatForwardTest, APersonWithNoChatYetGetsOneRightBeforeTheSendsToThem) {
 
 TEST_F(ChatForwardTest, ARefusedForwardMakesNoChatForAnyone) {
   AddTexts(1);
-  // More than nine chats: refused before anything.
+  // More than three chats: refused before anything.
   std::vector<ForwardTarget> ten;
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 4; ++i) {
     ten.push_back(Chat("", "c-new" + std::to_string(i), "P", false, 0));
   }
   ASSERT_TRUE(presenter.BeginForwardSelection("m1"));
@@ -738,7 +737,7 @@ TEST_F(ChatForwardTest, ARefusedForwardMakesNoChatForAnyone) {
   Drain();
   ASSERT_TRUE(refused);
   EXPECT_TRUE(refused->nothing_sent);
-  EXPECT_TRUE(chats.made.empty()) << "ten chats: no chat is made for any of them";
+  EXPECT_TRUE(chats.made.empty()) << "four chats: no chat is made for any of them";
 
   // One forward still sending: a second is refused and makes nothing either.
   ASSERT_TRUE(presenter.BeginForwardSelection("m1"));

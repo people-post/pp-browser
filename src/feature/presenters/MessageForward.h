@@ -21,7 +21,7 @@ namespace pbr {
 
 /** At most this many messages go in one forward, to at most this many chats. */
 inline constexpr size_t kMaxForwardMessages = 30;
-inline constexpr size_t kMaxForwardTargets = 9;
+inline constexpr size_t kMaxForwardTargets = 3;
 
 /**
  * Whether `message` can be forwarded: text (also quote replies, edited ones, and an AI chat's questions and answers)

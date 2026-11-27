@@ -1559,7 +1559,7 @@
     "chat.forward.failed": "Couldn't forward",
     "chat.forward.cannot": "This message can't be forwarded yet",
     "chat.forward.limit_messages": "You can forward up to 30 messages at once",
-    "chat.forward.limit_targets": "You can forward to up to 9 chats at once",
+    "chat.forward.limit_targets": "You can forward to up to 3 chats at once",
     "chat.forward.interrupted": "Only some of it was forwarded",
     "chat.menu.edit": "Edit",
     "chat.menu.save_as": "Save as…",
