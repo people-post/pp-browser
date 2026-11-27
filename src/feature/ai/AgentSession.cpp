@@ -1415,10 +1415,10 @@ void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::
   if (match && match->tool == capability) {
     plan = BuildLocalTurnPlan(*match, state->pending_user_text, BuildLocalPlanContext(state, capability));
     if (std::holds_alternative<LocalQuestion>(plan)) {
-      plan = AskForTool(capability, state->pending_user_text);
+      plan = AskForTool(capability, state->pending_user_text, BuildLocalPlanContext(state, capability));
     }
   } else {
-    plan = AskForTool(capability, state->pending_user_text);
+    plan = AskForTool(capability, state->pending_user_text, BuildLocalPlanContext(state, capability));
   }
   if (!std::holds_alternative<TurnPlan>(plan) &&
       IsLocalActionQuestion(state->pending_user_text, ToolIsSettingsRead(capability))) {
@@ -1463,6 +1463,11 @@ void AgentSession::HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan
   if (const auto* ambiguous = std::get_if<LocalAmbiguous>(&plan)) {
     EmitLocalActionMetric(state->Log(), ambiguous->tool, "ambiguous", false);
     FinishLocalAnswer(state, RenderLocalAmbiguous(*ambiguous, ambiguous->query), RenderMode::PeopleList);
+    return;
+  }
+  if (const auto* statement = std::get_if<LocalStatement>(&plan)) {
+    EmitLocalActionMetric(state->Log(), tool, "stated", false);
+    FinishLocalAnswer(state, RenderLocalStatement(*statement), RenderMode::Markdown);
     return;
   }
   if (std::holds_alternative<LocalCancelled>(plan)) {

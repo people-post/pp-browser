@@ -300,7 +300,11 @@ std::string RenderLocalAsk(const LocalAsk& ask) {
       return text;
     }
   }
-  return Tr(ask.question_key);
+  return Tr(ask.question_key, Args(ask.args.begin(), ask.args.end()));
+}
+
+std::string RenderLocalStatement(const LocalStatement& statement) {
+  return Tr(statement.key, Args(statement.args.begin(), statement.args.end()));
 }
 
 std::string RenderLocalResult(const std::string& tool, const Object& result_json, const LocalRenderContext& ctx) {

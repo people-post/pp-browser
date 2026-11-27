@@ -629,3 +629,86 @@ TEST(LocalActionPlannerTest, ABareSettingNameAsksOnOrOff) {
   ExpectAsk(PlanFor("透明度呢"), "settings.ask.on_or_off", "透明度呢");
   EXPECT_EQ(std::get<LocalAsk>(PlanFor("透明度呢")).tool, "set_reduce_transparency");
 }
+
+// --- Language that the build does not offer; natural appearance words (2026-11-27 device log) ---------------
+
+namespace {
+
+const LocalStatement* AsStatement(const LocalPlan& p) {
+  return std::get_if<LocalStatement>(&p);
+}
+
+std::string ArgOf(const std::vector<std::pair<std::string, std::string>>& args, const std::string& key) {
+  for (const auto& [k, v] : args) {
+    if (k == key) {
+      return v;
+    }
+  }
+  return "<missing>";
+}
+
+LocalPlanContext Offered(std::vector<std::pair<std::string, std::string>> locales) {
+  LocalPlanContext ctx;
+  ctx.locales = std::move(locales);
+  return ctx;
+}
+
+} // namespace
+
+TEST(LocalActionPlannerTest, SetLanguageWithOneLocaleSaysSoAndNeverAsks) {
+  const LocalPlanContext only_english = Offered({{"en", "English"}});
+  const LocalAsk open{"set_language", "language", "settings.ask.language", ""};
+  const std::vector<LocalPlan> plans = {
+      PlanFor("界面改成中文", only_english),
+      PlanFor("请切换到中文", only_english),
+      PlanFor("switch to Chinese", only_english),
+      PlanFor("switch to English", only_english),
+      PlanAs("set_language", "set the language to English", "set the language to", only_english),
+      PlanAs("set_language", "换个语言", "换个语言", only_english),
+      AskForTool("set_language", "换个语言", only_english),
+      ResolvePendingAnswer(open, "chinese", only_english),
+      ResolvePendingAnswer(open, "中文", only_english),
+  };
+  for (size_t i = 0; i < plans.size(); ++i) {
+    const LocalStatement* statement = AsStatement(plans[i]);
+    ASSERT_NE(statement, nullptr) << "case " << i;
+    EXPECT_EQ(statement->key, "settings.language.only_one") << "case " << i;
+    EXPECT_EQ(ArgOf(statement->args, "language"), "English") << "case " << i;
+  }
+}
+
+TEST(LocalActionPlannerTest, AnsweringALanguageThatIsNotOfferedIsRefusedOnce) {
+  const LocalPlanContext ctx = Offered({{"en", "English"}, {"fr", "Français"}});
+  const LocalAsk open{"set_language", "language", "settings.ask.language", ""};
+  const std::vector<LocalPlan> plans = {
+      PlanFor("切换到中文", ctx),
+      PlanFor("switch to Chinese", ctx),
+      ResolvePendingAnswer(open, "chinese", ctx),
+      ResolvePendingAnswer(open, "繁体中文", ctx),
+  };
+  for (size_t i = 0; i < plans.size(); ++i) {
+    const LocalStatement* statement = AsStatement(plans[i]);
+    ASSERT_NE(statement, nullptr) << "case " << i;
+    EXPECT_EQ(statement->key, "settings.language.not_offered") << "case " << i;
+    EXPECT_EQ(ArgOf(statement->args, "list"), "English, Français") << "case " << i;
+  }
+  // An offered language still works, and a reply that names nothing is still asked again.
+  ExpectText(ResolvePendingAnswer(open, "français", ctx), "set_language", "language", "fr", "offered");
+  ExpectAsk(ResolvePendingAnswer(open, "嗯", ctx), "settings.ask.language", "unclear");
+}
+
+TEST(LocalActionPlannerTest, TheLanguageQuestionListsOnlyTheLocalesOffered) {
+  const LocalPlanContext ctx = Offered({{"en", "English"}, {"fr", "Français"}});
+  for (const LocalPlan& plan :
+       {AskForTool("set_language", "换个语言", ctx), PlanAs("set_language", "换个语言", "换个语言", ctx)}) {
+    const auto* ask = std::get_if<LocalAsk>(&plan);
+    ASSERT_NE(ask, nullptr);
+    EXPECT_EQ(ask->question_key, "settings.ask.language");
+    EXPECT_EQ(ArgOf(ask->args, "list"), "English, Français");
+  }
+  // Nothing known: the two languages the app has always shipped.
+  const LocalPlan plain = AskForTool("set_language", "换个语言");
+  const auto* ask = std::get_if<LocalAsk>(&plain);
+  ASSERT_NE(ask, nullptr);
+  EXPECT_EQ(ArgOf(ask->args, "list"), "简体中文, English");
+}

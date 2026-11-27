@@ -2275,7 +2275,9 @@
     "settings.ask.on_or_off.set_call_diagnostics": "Turn call diagnostics on or off?",
     "settings.ask.on_or_off.set_node_enabled": "Turn helping the network (node) on or off?",
     "settings.ask.appearance": "Light, dark, or follow the system?",
-    "settings.ask.language": "Which language: Chinese or English?",
+    "settings.ask.language": "Which language? You can choose: {list}.",
+    "settings.language.only_one": "This version of PP is in {language} only.",
+    "settings.language.not_offered": "PP doesn't have that language yet. You can choose: {list}.",
     "settings.ask.policy": "Who should be allowed: everyone, contacts only, or nobody?",
     "settings.ask.mesh_capability":
         "Which network capability: relay, media relay, DHT, direct connections, or prefer contacts?",
