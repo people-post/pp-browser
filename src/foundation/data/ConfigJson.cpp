@@ -772,6 +772,9 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("registration", ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
+  if (!config.node.empty()) {
+    object.set("node", config.node);
+  }
   if (!config.data_dir.empty()) {
     object.set("data_dir", config.data_dir);
   }
@@ -858,6 +861,9 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* mesh = object.getObject("mesh")) {
     MeshConfigFromObject(*mesh, config.mesh);
+  }
+  if (const Object* node = object.getObject("node")) {
+    config.node = *node;
   }
 }
 

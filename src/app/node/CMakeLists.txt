@@ -10,6 +10,7 @@ add_library(pp_app_node STATIC
   NodeBootstrap.cpp
   NodeCompatFloor.cpp
   NodeEnvOverlay.cpp
+  NodeServiceAsks.cpp
   NodeHeartbeat.cpp
   NodeMeshPublish.cpp
   NodeMetrics.cpp
@@ -60,6 +61,7 @@ if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
     tests/node_env_overlay_test.cpp
+    tests/node_service_asks_test.cpp
     tests/node_heartbeat_test.cpp
     tests/status_http_server_test.cpp
     tests/node_upgrade_notice_test.cpp
@@ -70,6 +72,7 @@ if(PP_BROWSER_BUILD_TESTS)
     StatusHttpProtocol.cpp
     StatusHttpServer.cpp
     NodeEnvOverlay.cpp
+    NodeServiceAsks.cpp
   )
   target_include_directories(pp_browser_pp_node_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src
