@@ -141,3 +141,7 @@ x-vbubble-ink-2	#000000bf	#ffffffe6	extra: the voice bubble's second line (75% /
 x-vbubble-shadow	#0000002e	#0000008c	extra: the voice bubble's soft diffuse shadow (it replaces an edge line)
 x-vbar-armed	#ff3b301a	#ff453a29	extra: the voice bar while the cancel is armed (soft red, 10% / 16%)
 x-vbar-ink-armed	#b3261e	#ff968c	extra: text and icon of the armed voice bar
+x-ring-disc	#00000080	#00000080	extra: the small upload ring's disc (the chat upload disc, rgba(0,0,0,128)); the same in both themes, white on it reads on the composer card
+x-ring-track	#ffffff4d	#ffffff4d	extra: the unfilled part of that ring (white 30%)
+x-ring-core	#262626	#262626	extra: the opaque centre disc of that ring
+x-ring-ink	#ffffff	#ffffff	extra: the spinner arc of that ring (white)

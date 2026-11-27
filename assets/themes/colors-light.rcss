@@ -171,6 +171,23 @@ selection {
   color: #ffffff;
 }
 
+.prompt-upload-ring,
+.prompt-upload-spinner {
+  background-color: #00000080;
+}
+
+.prompt-upload-ring-track {
+  background-color: #ffffff4d;
+}
+
+.prompt-upload-ring-core {
+  background-color: #262626;
+}
+
+.prompt-upload-spinner-arc {
+  border-color: #ffffff #ffffff #ffffff transparent;
+}
+
 /* The hold-to-talk bubble (components.rcss). Material: the bar colour (opaque with Transparency off), the frosted
    bar colour with the blur on the frosted overlay, or the 88% colour without blur (the fallback). */
 .voice-bubble {

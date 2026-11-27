@@ -835,8 +835,8 @@ select selectbox option {
   opacity: 0.72;
 }
 
-/* The upload card (sending a picture or file): picture or type badge, name over a progress bar, red cancel disc.
-   The bar breathes (opacity only: no layout per frame) while bytes move; it stops when done or cancelled. */
+/* The upload card (sending a picture or file): picture or type badge, name over the status line, the upload ring, red
+   cancel disc. */
 .prompt-upload-card {
   flex: 1;
   min-width: 0;
@@ -875,27 +875,47 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
-.prompt-upload-bar {
-  height: 6dp;
-  border-radius: 3dp;
-  background-color: rgba(127, 127, 127, 0.28);
+/* The upload ring of the chat bubbles (.chat-pending-*) at 2/3: a 32dp disc, a 26dp ring (its unfilled track a faint
+   white; the filled part is the conic-gradient decorator TranscriptRml's PendingRingDecorator builds, bound as
+   attachment_ring_decor) and a 20dp core. Too small for the number: it stays in the status line. Unknown amount: the
+   same disc with the ring turning, the same 32dp box. */
+.prompt-upload-ring,
+.prompt-upload-spinner {
+  position: relative;
+  flex-shrink: 0;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
 }
 
-.prompt-upload-fill {
-  height: 6dp;
-  min-width: 6dp;
-  border-radius: 3dp;
-  background-color: #0a84ff;
+.prompt-upload-ring-track {
+  position: absolute;
+  top: 3dp;
+  left: 3dp;
+  width: 26dp;
+  height: 26dp;
+  border-radius: 13dp;
 }
 
-@keyframes prompt-upload-breathe {
-  0% { opacity: 1; }
-  50% { opacity: 0.55; }
-  100% { opacity: 1; }
+.prompt-upload-spinner-arc {
+  position: absolute;
+  top: 3dp;
+  left: 3dp;
+  width: 26dp;
+  height: 26dp;
+  box-sizing: border-box;
+  border-width: 3dp;
+  border-radius: 13dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
 }
 
-.prompt-upload-fill--moving {
-  animation: 1.4s sine-in-out infinite prompt-upload-breathe;
+.prompt-upload-ring-core {
+  position: absolute;
+  top: 6dp;
+  left: 6dp;
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
 }
 
 .prompt-upload-status {

@@ -1,6 +1,7 @@
 #include "gui/chat/AttachMenuRules.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/TranscriptRml.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -103,6 +104,7 @@ public:
                             "attachment_status",
                             "attachment_preparing",
                             "attachment_progress_width",
+                            "attachment_ring_decor",
                             "attachment_thumb",
                             "attachment_type_label",
                             "attachment_cancelling",
@@ -340,8 +342,8 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
   EXPECT_TRUE(InsideClass("prompt-attachment-chip-action", "prompt-composer-status"));
 }
 
-// Going up: the card (type badge, name, bar, red ✕), not the chip; no Retry and no "Cancel" text button.
-TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheCardWithBadgeNameBarAndCancel) {
+// Going up: the card (type badge, name, ring, red ✕), not the chip; no Retry and no "Cancel" text button.
+TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheCardWithBadgeNameRingAndCancel) {
   state.attachment_uploading = true;
   state.attachment_here = true;
   state.attachment_draft_name = "song.mp3";
@@ -356,22 +358,23 @@ TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheCardWithBadgeNameBarAn
   EXPECT_EQ(Shown("prompt-upload-type"), 1) << "no picture: the storage page's type badge";
   EXPECT_EQ(Shown("prompt-upload-thumb"), 0);
   EXPECT_EQ(Shown("prompt-upload-name"), 1);
-  EXPECT_EQ(Shown("prompt-upload-bar"), 1);
+  EXPECT_EQ(Shown("prompt-upload-ring"), 1);
+  EXPECT_EQ(Shown("prompt-upload-spinner"), 0);
+  EXPECT_EQ(Shown("prompt-upload-bar"), 0);
   EXPECT_EQ(Shown("prompt-upload-cancel"), 1);
   EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 1);
   EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 0);
   ui::ElementList fills;
   document->GetElementsByClassName(fills, "prompt-upload-fill");
-  ASSERT_EQ(fills.size(), 1u);
-  EXPECT_TRUE(fills[0]->IsClassSet("prompt-upload-fill--moving")) << "it moves while bytes go";
+  EXPECT_TRUE(fills.empty()) << "no bar is left";
   ui::ElementList cancels;
   document->GetElementsByClassName(cancels, "prompt-upload-cancel");
   ASSERT_EQ(cancels.size(), 1u);
   EXPECT_FALSE(cancels[0]->GetAttribute<ui::String>("title", "").empty()) << "the ✕ says what it does";
 }
 
-// A picture shows itself instead of the badge; Cancel pressed: the bar stops and the ✕ turns into a spinner.
-TEST_F(ComposerVoiceMarkupTest, APictureShowsItsThumbAndCancellingStopsTheBar) {
+// A picture shows itself instead of the badge; Cancel pressed: the ✕ turns into a spinner.
+TEST_F(ComposerVoiceMarkupTest, APictureShowsItsThumbAndCancellingShowsTheSpinnerOnTheCancel) {
   state.attachment_uploading = true;
   state.attachment_here = true;
   state.attachment_draft_name = "photo.jpg";
@@ -383,10 +386,7 @@ TEST_F(ComposerVoiceMarkupTest, APictureShowsItsThumbAndCancellingStopsTheBar) {
   EXPECT_EQ(Shown("prompt-upload-type"), 0);
   EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 0);
   EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 1);
-  ui::ElementList fills;
-  document->GetElementsByClassName(fills, "prompt-upload-fill");
-  ASSERT_EQ(fills.size(), 1u);
-  EXPECT_FALSE(fills[0]->IsClassSet("prompt-upload-fill--moving"));
+  EXPECT_EQ(Shown("prompt-upload-ring"), 1) << "the ring stays, the cancel disc shows the wait";
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
@@ -1053,11 +1053,48 @@ void CheckUploadCardSize(ComposerVoiceMarkupTest& t, ChatScreenState& state) {
   EXPECT_FLOAT_EQ(unknown.y, 60.f) << "card height";
 }
 
+// The ring replaces the bar (owner 2026-11-27): a known amount shows the ring (its decorator is the chat upload ring's),
+// no amount yet shows the turning ring in the same 32dp box; there is never a bar.
+void CheckUploadRing(ComposerVoiceMarkupTest& t, ChatScreenState& state) {
+  state.attachment_uploading = true;
+  state.attachment_here = true;
+  state.attachment_draft_name = "song.mp3";
+  state.attachment_type_label = "MP3";
+  state.attachment_progress_width = "0%";
+  state.attachment_ring_decor = "none";
+  t.Apply();
+  EXPECT_EQ(t.Shown("prompt-upload-spinner"), 1);
+  EXPECT_EQ(t.Shown("prompt-upload-ring"), 0);
+  EXPECT_EQ(t.Shown("prompt-upload-bar"), 0);
+  const ui::Vector2f spin = t.SizeOf("prompt-upload-spinner");
+  state.attachment_progress_width = "42%";
+  state.attachment_ring_decor = PendingRingDecorator(42).c_str();
+  t.Apply();
+  EXPECT_EQ(t.Shown("prompt-upload-ring"), 1);
+  EXPECT_EQ(t.Shown("prompt-upload-spinner"), 0);
+  EXPECT_EQ(t.Shown("prompt-upload-bar"), 0);
+  EXPECT_EQ(t.Shown("prompt-upload-ring-track"), 1);
+  const ui::Vector2f ring = t.SizeOf("prompt-upload-ring");
+  EXPECT_NEAR(ring.x, spin.x, 1.f);
+  EXPECT_NEAR(ring.y, spin.y, 1.f);
+  EXPECT_NEAR(ring.x, 32.f, 1.f);
+  ui::ElementList tracks;
+  t.document->GetElementsByClassName(tracks, "prompt-upload-ring-track");
+  ASSERT_EQ(tracks.size(), 1u);
+  EXPECT_EQ(tracks[0]->GetProperty<ui::String>("decorator"), ui::String(PendingRingDecorator(42).c_str()));
+}
+
 TEST_F(ComposerVoiceMarkupTest, TheUploadCardKeepsItsSizeInEveryState) {
   CheckUploadCardSize(*this, state);
 }
 TEST_F(ComposerWideUploadTest, TheUploadCardKeepsItsSizeInEveryState) {
   CheckUploadCardSize(*this, state);
+}
+TEST_F(ComposerVoiceMarkupTest, TheUploadRingReplacesTheBar) {
+  CheckUploadRing(*this, state);
+}
+TEST_F(ComposerWideUploadTest, TheUploadRingReplacesTheBar) {
+  CheckUploadRing(*this, state);
 }
 
 } // namespace

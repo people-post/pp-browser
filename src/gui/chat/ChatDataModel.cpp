@@ -90,6 +90,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("attachment_status", &state.attachment_status);
   ctor.Bind("attachment_failed", &state.attachment_failed);
   ctor.Bind("attachment_progress_width", &state.attachment_progress_width);
+  ctor.Bind("attachment_ring_decor", &state.attachment_ring_decor);
   ctor.Bind("attachment_thumb", &state.attachment_thumb);
   ctor.Bind("attachment_type_label", &state.attachment_type_label);
   ctor.Bind("attachment_cancelling", &state.attachment_cancelling);
@@ -306,6 +307,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "attachment_status");
   DataModelHost::Instance().Dirty("chat", "attachment_failed");
   DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
+  DataModelHost::Instance().Dirty("chat", "attachment_ring_decor");
   DataModelHost::Instance().Dirty("chat", "attachment_thumb");
   DataModelHost::Instance().Dirty("chat", "attachment_type_label");
   DataModelHost::Instance().Dirty("chat", "attachment_cancelling");

@@ -73,6 +73,8 @@ struct ChatScreenState {
   /** The upload card: the bar's fill ("37%"), a small picture of what is sent (picture / video; empty: the type
    *  badge instead), the badge's text ("MP3", as on the storage page), and Cancel pressed (bar stops, the ✕ dims). */
   ui::String attachment_progress_width = "0%";
+  /** The same amount as the upload ring's conic-gradient decorator (PendingRingDecorator), "none" at 0. */
+  ui::String attachment_ring_decor = "none";
   ui::String attachment_thumb;
   ui::String attachment_type_label;
   bool attachment_cancelling = false;

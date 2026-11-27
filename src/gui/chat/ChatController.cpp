@@ -3393,8 +3393,10 @@ std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgr
                                    {{"percent", std::to_string(percent)}})
                                     .c_str();
       chat_.attachment_progress_width = (std::to_string(percent) + "%").c_str();
+      chat_.attachment_ring_decor = PendingRingDecorator(percent).c_str();
       DataModelHost::Instance().Dirty("chat", "attachment_status");
       DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
+      DataModelHost::Instance().Dirty("chat", "attachment_ring_decor");
       // The picture bubble: only its ring and its percent line change (every 5%), the row is not drawn again.
       if (const std::optional<std::string> id = pending_uploads_.Progress(percent);
           id && pending_uploads_.Queue().Find(*id)->ShowsIn(ActiveThreadId()) && context_ && context_->GetDocument(0)) {
@@ -3663,6 +3665,7 @@ void ChatController::ResetUploadCard(const std::string& name) {
   }
   chat_.attachment_thumb = "";
   chat_.attachment_progress_width = "0%";
+  chat_.attachment_ring_decor = "none";
   chat_.attachment_type_label = AttachmentTypeLabel(name, AttachmentMimeFromFilename(name)).c_str();
   chat_.attachment_cancelling = false;
 }
