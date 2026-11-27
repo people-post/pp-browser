@@ -153,7 +153,7 @@ CI uses ccache on every platform automatically via `-DPP_BROWSER_COMPILER_CACHE=
 
 ### Capabilities on their own
 
-`capabilities/CMakeLists.txt` builds chosen capability folders and what is below them, without the app — the shape of a capabilities repo (capability-repos [CR023](../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first) step 4):
+`capabilities/CMakeLists.txt` builds chosen capability folders and what is below them, without the app — the shape of a capability repo (capability-repos [CR023](../../projects/capability-repos/DECISIONS.md#cr023--calls-becomes-repo-ready-first) step 4):
 
 ```bash
 cmake -S capabilities -B build-calls -DCMAKE_BUILD_TYPE=Debug -DPP_CAPABILITIES=calls   # base … media, calls

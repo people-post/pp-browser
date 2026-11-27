@@ -146,7 +146,7 @@ media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus its
   capability builds on is the gate's order (the gate checks it). CI's **capabilities** job builds and tests calls so.
   A capability reaches its host only through values and ports: calls' host contract is in
   [capabilities/calls/README.md](../../capabilities/calls/README.md).
-- A later split into the capabilities repo is a `git subtree split` of the folder.
+- A later split into a capability repo (capability-repos CR027: pp-cpp-core, pp-node, each on demand) is a `git subtree split` of the folder.
 - A capability ships ideas, not a database ([CR024](../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)):
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest

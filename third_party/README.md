@@ -53,6 +53,6 @@ linked here by target; their versions and licences are in those repos. Bumping o
 linked them).
 
 **Across repos** (CR012, [DESIGN § Open questions](../projects/capability-repos/DESIGN.md#open-questions) 3): when a
-second repo builds the same vendored code (the capabilities repo, CR006), the copy moves to one shared home — a repo of
+second repo builds the same vendored code (a capability repo such as pp-cpp-core, CR027), the copy moves to one shared home — a repo of
 its own or pp-cpp-common, not decided — with this manifest's shape, and each repo links it from there. Until then
 pp-browser is the only one, and this folder is that home.

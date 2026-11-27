@@ -30,7 +30,7 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
 **Later, by design (NR011):** offers to anyone, payment through the pricing project, org accounts and delegation.
 
 **Order with capability-repos:** pp-specs (its CR025 step 2) first, because the protocol and vectors live there; the
-edition is built in this repository, where pp-node is; capability-repos' P4 moves pp-node, with the edition, once the
+edition is built in this repository, where pp-node is; capability-repos' P4 moves pp-node into its own repo, pp-node (CR027, CR028), with the edition, once the
 mailbox works.
 
 **NR3 must also:** follow NR001's data-folder rules 2 and 4 for the relay (expiry on start, a schema version on its

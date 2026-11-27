@@ -43,7 +43,7 @@ arrives twice is dropped by its id (`RelayReceivePipeline`, `BenignDuplicate`).
 the add-on capabilities, the services that keep data or act for accounts; the message relay is the first. The default
 `pp-node` links none of them, and CI checks both that and the default image's size. The ledger role stays in the core,
 off unless asked. No runtime plugin (C++ has no stable binary interface) and no separate repo (pin skew, hook drift, release
-lag): the edition lives where pp-node lives, in this repository today and in pp-node's own once capability-repos' P4
+lag): the edition lives where pp-node lives, in this repository today and in its own repo, pp-node, once capability-repos' P4 (CR027, CR028)
 moves it.
 
 ### 2. One protocol, two bindings (NR002)
