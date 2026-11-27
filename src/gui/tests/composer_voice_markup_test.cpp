@@ -44,7 +44,7 @@ std::string ReadAll(const std::string& path) {
 // The real composer.rml mounted on the real "chat" data model: the unit tests of VoiceComposer stop at
 // ChatScreenState, so a markup / binding fault that hides the microphone button only shows on a device.
 class ComposerVoiceMarkupTest : public testing::Test {
-protected:
+public:
   void SetUp() override {
     ui::SetRenderInterface(&renderer);
     initialized = ui::Initialise();
@@ -60,7 +60,7 @@ protected:
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
       }
     }));
-    std::ifstream file(std::string(PP_BROWSER_ASSETS_DIR) + "/views/composer.rml");
+    std::ifstream file(std::string(PP_BROWSER_ASSETS_DIR) + "/views/" + view_);
     ASSERT_TRUE(file.good());
     std::ostringstream body;
     body << file.rdbuf();
@@ -179,6 +179,7 @@ protected:
   /** Wraps the composer, e.g. in the phone chat window's class (the phone rules of components.rcss). */
   std::string wrap_open_;
   std::string wrap_close_;
+  std::string view_ = "composer.rml";
   NullRender renderer;
   bool initialized = false;
   ui::Context* context = nullptr;
@@ -1020,6 +1021,43 @@ TEST_F(VoiceBubbleMarkupTest, EachStateShowsItsOwnFirstAndSecondLine) {
   EXPECT_TRUE(Bubble()->IsClassSet("voice-bubble--armed")) << "armed: the soft red tint is this class's";
   EXPECT_EQ(Shown("voice-bubble-bin"), 1);
   EXPECT_EQ(second_line(), Tr("chat.voice.hint_slide_down"));
+}
+
+// The upload card's box, pinned before the bar became a ring (2026-11-27): the same height and width whatever the
+// state (amount known, not known yet, cancelling), phone and desktop. The values must not change with the ring.
+class ComposerWideUploadTest : public ComposerVoiceMarkupTest {
+protected:
+  ComposerWideUploadTest() { view_ = "composer_wide.rml"; }
+};
+
+void CheckUploadCardSize(ComposerVoiceMarkupTest& t, ChatScreenState& state) {
+  state.attachment_uploading = true;
+  state.attachment_here = true;
+  state.attachment_draft_name = "song.mp3";
+  state.attachment_type_label = "MP3";
+  state.attachment_status = "Uploading";
+  state.attachment_progress_width = "0%";
+  t.Apply();
+  const ui::Vector2f unknown = t.SizeOf("prompt-upload-card");
+  EXPECT_GT(unknown.y, 40.f);
+  state.attachment_progress_width = "42%";
+  t.Apply();
+  const ui::Vector2f known = t.SizeOf("prompt-upload-card");
+  state.attachment_cancelling = true;
+  t.Apply();
+  const ui::Vector2f cancelling = t.SizeOf("prompt-upload-card");
+  EXPECT_EQ(known.y, unknown.y);
+  EXPECT_EQ(cancelling.y, unknown.y);
+  EXPECT_EQ(known.x, unknown.x);
+  EXPECT_EQ(cancelling.x, unknown.x);
+  EXPECT_FLOAT_EQ(unknown.y, 60.f) << "card height";
+}
+
+TEST_F(ComposerVoiceMarkupTest, TheUploadCardKeepsItsSizeInEveryState) {
+  CheckUploadCardSize(*this, state);
+}
+TEST_F(ComposerWideUploadTest, TheUploadCardKeepsItsSizeInEveryState) {
+  CheckUploadCardSize(*this, state);
 }
 
 } // namespace
