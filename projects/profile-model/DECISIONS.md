@@ -237,3 +237,33 @@ one locker, one LLM token, the operator's policy. Each of those wants one owner.
 being registered and reachable elsewhere — the relay list already does.
 **Alternatives rejected:** several backends per profile (PM009's later feature): it needs rules for which locker and
 which history, for what the relay list gives.
+
+## PM013 — The ledger network is a choice of its own, pinned by network card
+
+**Date:** 2026-11-27
+**Status:** Accepted (Hongwei, 2026-11-27). Not built: the app has no ledger client yet; pp-node's ledger role already
+works this way. The screens' words are Kenneth's (default: below).
+**Decision:**
+- A **ledger network** — pp-ledger's devnet, testnet or mainnet
+  ([pp-ledger RL009](https://github.com/people-post/pp-ledger/blob/main/projects/release/DECISIONS.md), or a chain
+  anyone runs) — is not one of the app's networks (PM001) and not a service of a backend (PM002): a third-party
+  network the profile chooses on its own, by its **network card** (network id and genesis hash), never by an address
+  alone.
+- **A tester build never opens pp-ledger's mainnet**, as it never opens `main` (PM001): it neither holds nor uses a
+  mainnet ledger key. Testnet and devnet: in any build.
+- **A ledger key belongs to one ledger network:** kept under its network id, it never signs for another, so nothing
+  made for a test network spends on the real one.
+- **The ledger network is always shown** on every screen that reads or signs for it; a test network says so plainly
+  (default words: "Testnet — tokens have no value").
+- **pp-node:** its ledger role's network is its own pp-ledger `config.json` (upstreams, `networkAnchor`), not the
+  node's backend; a fleet picks it per environment.
+**Rationale:**
+- pp-ledger's testnet runs for months before its mainnet: meanwhile the store app's prod backend (and a prod node's
+  ledger role) must use the testnet, the only public chain. Tying the ledger network to the app's network would force
+  prod to a mainnet that does not exist yet, and later stop a prod user trying the testnet.
+- The chain is not ours to bind: anyone may run a network, and org services are defaults, not dependencies.
+- What must never happen is real value in a tester build, or a test key spending real tokens: the guard and the keys
+  per network say exactly that.
+**Alternatives rejected:** the ledger network from the app's network (`main` → mainnet, `staging` → testnet): wrong
+during the testnet's soak, and it makes a third party's chain part of our backend.
+
