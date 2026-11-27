@@ -3018,7 +3018,7 @@
 
 /* ---- Choosing messages to forward (chat_wide.rml, composer_wide.rml): the phone's bars, in the conversation column.
    The top bar takes the header's place (the strip's material stays under it); the Forward button takes the composer's
-   place, one pill at most 360dp wide on the strip's centre line; a row makes room for its tick, and its cover (above the
+   place, one 160dp pill on the strip's centre line; a row makes room for its tick, and its cover (above the
    hover bar and the content, whose own clicks it takes) turns every click on the row into a tick. ---- */
 .shell-body--wide .chat-header > .chat-forward-top {
   position: relative;
@@ -3031,13 +3031,15 @@
 }
 
 .shell-body--wide .shell-pane-composer .chat-forward-next {
-  width: 100%;
-  max-width: 360dp;
+  width: 160dp;
   margin: 0 auto;
 }
 
+/* A row in the mode is its own stacking context (components.rcss), under the composer strip (z-index 2); repeated here
+   so the wide rule keeps it. */
 .shell-body--wide .message-row-forward-mode {
   padding-left: 40dp;
+  z-index: 1;
 }
 
 .shell-body--wide .message-forward-check {
@@ -3119,24 +3121,50 @@
   white-space: nowrap;
 }
 
-/* The "Forwarding 2/7" page (forward_progress_wide.rml): the layer is the phone's (components.rcss, centred); the content
-   is a card in the middle, never wider than the window less 12dp each side and never taller than it. */
+/* The "Forwarding 2/7" page (forward_progress_wide.rml): a small centred card (340dp wide, as tall as its content) in the
+   modal frame (PaneSpec::modal, as "Forward to"), over the window-wide dimmed scrim, so the chat stays visible behind it.
+   The frame is the card (colour, radius and shadow in colors.rcss.tmpl, the close button at its corner); the phone's
+   full-screen layer (components.rcss) is turned into an ordinary block inside it. No backdrop blur: the engine's one
+   frosted bar per position is the chat's own, and a blur of the whole window behind the card is not worth the cost. */
+.shell-body--wide .shell-modal-stage .shell-frame--forward_progress {
+  flex: 0 1 340dp;
+  width: 340dp;
+  max-width: 340dp;
+  height: auto;
+  max-height: 100%;
+}
+
+/* The stage takes the clicks beside the card (the scrim under it would close the layer, which stops the forward). */
+.shell-body--wide .shell-modal-stage--forward_progress {
+  pointer-events: auto;
+}
+
+.shell-body--wide .shell-frame--forward_progress .shell-overlay-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  padding: 0;
+}
+
 .shell-body--wide .forward-progress--wide {
-  padding: 12dp;
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  display: block;
+  width: 100%;
   box-sizing: border-box;
 }
 
 .shell-body--wide .forward-progress-card {
   width: 100%;
-  max-width: 440dp;
   max-height: 100%;
   overflow-y: auto;
-  padding: 32dp;
+  padding: 40dp 28dp 28dp 28dp;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
-  border-radius: 16dp;
 }
 
 .shell-body--wide .forward-progress-card .forward-progress-title {

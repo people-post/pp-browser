@@ -6,6 +6,7 @@
 #include "feature/presenters/MessageForward.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/FlowCoordinator.h"
+#include "gui/chat/ChatController.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ForwardProgressController.h"
 #include "gui/chat/TranscriptRml.h"
@@ -256,6 +257,130 @@ TEST_F(ForwardWideTest, WideSelectionModeKeepsTheTopAndBottomBarsInsideTheChatCo
         ticks_drawn += Drawn(tick) ? 1u : 0u;
       }
       EXPECT_EQ(ticks_drawn, 2u) << where;
+    }
+  }
+}
+
+// The Forward button is a normal-sized button (not a strip across the column), and a click anywhere on the bar goes to
+// the bar: the rows' covers (z-index 7) and ticks (z-index 8) used to sit above the floating composer strip (z-index 2),
+// so a click on Forward also ticked / unticked the row under it. The newest row also rests above the strip.
+TEST_F(ForwardWideTest, WideForwardBarTakesItsOwnClicksAndKeepsTheLastRowClear) {
+  for (const Window& window : kWindows) {
+    const std::string where = std::to_string(window.w) + "x" + std::to_string(window.h);
+    NewContext(window);
+    ChatScreenState chat;
+    chat.use_messages_layout = true;
+    chat.has_turns = true;
+    chat.thread_title = "Ann Lee";
+    chat.forward_selecting = true;
+    chat.forward_can_next = true;
+    chat.forward_count_label = "9 selected";
+    std::vector<std::string> ids;
+    for (int i = 0; i < 30; ++i) {
+      ids.push_back("m" + std::to_string(i));
+    }
+    for (int i = 0; i < 30; ++i) {
+      chat.messages.push_back(ChooseRow(ids[i], i % 2 == 0, true, i % 3 == 0));
+    }
+    int taps = 0;
+    int nexts = 0;
+    ASSERT_TRUE(DataModelHost::Instance().Register(context_, "chat", [&](ui::DataModelConstructor& ctor) {
+      BindChatScreenState(ctor, chat);
+      ctor.BindEventCallback("forward_tap",
+                             [&taps](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++taps; });
+      ctor.BindEventCallback("forward_next",
+                             [&nexts](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { ++nexts; });
+      ctor.BindEventCallback("messages_scroll", [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
+    }));
+    ShellState state;
+    state.layout_mode = LayoutMode::Expanded;
+    state.nav_tab = NavTab::Sessions;
+    state.panes.push_back({.spec = {.key = "chat", .rml_path = "views/chat.rml", .provides_composer = true}, .id = 1});
+    state.primary_pane_key = "chat";
+    LoadShell(window, state, [](std::string& root) {
+      Fill(root, "pane-body-chat", Asset("views/chat_wide.rml"));
+      Fill(root, "pane-composer-chat", Asset("views/composer_wide.rml"));
+    });
+    ui::Element* messages = document_->QuerySelector("#chat-messages");
+    ASSERT_NE(messages, nullptr) << where;
+    for (int i = 0; i < 4; ++i) {
+      ChatController::KeepClearOfComposer(document_->QuerySelector("#pane-chat"), "pane-composer-chat");
+      context_->Update();
+      messages->SetScrollTop(messages->GetScrollHeight());
+      context_->Update();
+    }
+    // The newest row (and its tick) rests above the floating strip's panel.
+    ui::Element* panel = document_->QuerySelector(".shell-pane-composer-bar > .bar-material");
+    ASSERT_NE(panel, nullptr) << where;
+    ui::ElementList rows;
+    messages->GetElementsByClassName(rows, "message-row");
+    ASSERT_FALSE(rows.empty()) << where;
+    EXPECT_LE(BoxOf(rows.back()).bottom, BoxOf(panel).top + 0.5f) << "the last row is not under the bar: " << where;
+    for (ui::Element* tick : All("message-forward-check")) {
+      if (Drawn(tick) && BoxOf(tick).top >= BoxOf(rows.back()).top) {
+        EXPECT_LE(BoxOf(tick).bottom, BoxOf(panel).top + 0.5f) << where;
+      }
+    }
+    // Scrolled up, so that rows lie under the floating strip.
+    messages->SetScrollTop(messages->GetScrollHeight() / 2.f);
+    for (int i = 0; i < 3; ++i) {
+      context_->Update();
+    }
+    ui::Element* next = First("chat-forward-next");
+    ASSERT_TRUE(next && Drawn(next)) << where;
+    const Box button = BoxOf(next);
+    EXPECT_GE(button.W(), 140.f) << where;
+    EXPECT_LE(button.W(), 180.5f) << "a normal-sized button, not a strip: " << where;
+    EXPECT_GE(button.H(), 44.f) << where;
+    const Box col = BoxOf(document_->QuerySelector("#pane-chat"));
+    EXPECT_NEAR((button.left + button.right) / 2, (col.left + col.right) / 2, 1.5f)
+        << "centred in the column: " << where;
+    // Every point of the button and of the bar's strip takes the click itself, never a row's cover or tick.
+    ui::Element* strip = First("shell-pane-composer-bar");
+    ASSERT_NE(strip, nullptr) << where;
+    const Box bar = BoxOf(strip);
+    for (const Box& area : {button, bar}) {
+      for (const float fx : {0.1f, 0.5f, 0.9f}) {
+        for (const float fy : {0.1f, 0.5f, 0.9f}) {
+          const ui::Vector2f at{area.left + area.W() * fx, area.top + area.H() * fy};
+          ui::Element* hit = context_->GetElementAtPoint(at);
+          ASSERT_NE(hit, nullptr) << where;
+          for (ui::Element* e = hit; e; e = e->GetParentNode()) {
+            EXPECT_FALSE(e->IsClassSet("message-forward-cover") || e->IsClassSet("message-forward-check"))
+                << "a click on the bar reaches a message row: " << where << " at " << at.x << "," << at.y;
+          }
+        }
+      }
+    }
+    {
+      size_t under = 0;
+      const float cx = (button.left + button.right) / 2, cy = (button.top + button.bottom) / 2;
+      for (ui::Element* cover : All("message-forward-cover")) {
+        const Box b = BoxOf(cover);
+        under += (b.left <= cx && cx <= b.right && b.top <= cy && cy <= b.bottom) ? 1u : 0u;
+      }
+      EXPECT_GE(under, 1u) << "precondition: a row's cover lies under the button: " << where;
+    }
+    // A real click on the button (move, press, release) is one Forward and no tick change.
+    context_->ProcessMouseMove(static_cast<int>((button.left + button.right) / 2),
+                               static_cast<int>((button.top + button.bottom) / 2), 0);
+    context_->ProcessMouseButtonDown(0, 0);
+    context_->ProcessMouseButtonUp(0, 0);
+    context_->Update();
+    EXPECT_EQ(nexts, 1) << where;
+    EXPECT_EQ(taps, 0) << "the click also reached a row: " << where;
+    // A click on a row above the bar still ticks it (the fix keeps the covers working).
+    for (ui::Element* cover : All("message-forward-cover")) {
+      const Box b = BoxOf(cover);
+      if (b.top > col.top + 120.f && b.bottom < bar.top - 4.f) {
+        context_->ProcessMouseMove(static_cast<int>((b.left + b.right) / 2), static_cast<int>((b.top + b.bottom) / 2),
+                                   0);
+        context_->ProcessMouseButtonDown(0, 0);
+        context_->ProcessMouseButtonUp(0, 0);
+        context_->Update();
+        EXPECT_EQ(taps, 1) << "a click on a row above the bar ticks it: " << where;
+        break;
+      }
     }
   }
 }
@@ -736,7 +861,7 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
   for (const char* language : {"en", "zh-Hans"}) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     LocalizationService& tr = LocalizationService::Instance();
-    for (const Window& window : kWindows) {
+    for (const Window& window : std::vector<Window>{{1280, 800}, {1000, 700}, {1280, 720}, {1024, 640}, {900, 600}}) {
       for (const Page& page : pages) {
         const std::string where =
             std::string(language) + " " + std::to_string(window.w) + "x" + std::to_string(window.h) + " " + page.name;
@@ -767,6 +892,7 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
         layer.key = "forward_progress";
         layer.rml_path = "forward_progress";
         layer.full_screen = true;
+        layer.modal = true;
         state.overlay_stack.push_back(layer);
         LoadShell(window, state,
                   [](std::string& root) { Fill(root, "overlay-body-7", Asset("views/forward_progress_wide.rml")); });
@@ -780,7 +906,41 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
         EXPECT_LE(card.right, static_cast<float>(window.w) - kMargin) << where;
         EXPECT_LE(card.bottom, static_cast<float>(window.h) - kMargin) << where;
         EXPECT_NEAR((card.left + card.right) / 2, window.w / 2.f, 1.5f) << "centred: " << where;
-        EXPECT_LE(card.W(), 440.5f) << where;
+        EXPECT_LE(card.W(), 380.5f) << "a small card, not a page: " << where;
+        // The frame is the card the person sees: inside the window, centred, small, with its close button in its corner,
+        // over a dimmed scrim that covers the window and takes the clicks.
+        ui::Element* frame_element = First("shell-frame--forward_progress");
+        ASSERT_NE(frame_element, nullptr) << where;
+        const Box frame = BoxOf(frame_element);
+        EXPECT_LE(frame.W(), 380.5f) << where;
+        EXPECT_LE(frame.H(), 420.f) << "content height, not the window: " << where;
+        EXPECT_GE(frame.left, kMargin) << where;
+        EXPECT_LE(frame.right, static_cast<float>(window.w) - kMargin) << where;
+        EXPECT_NEAR((frame.left + frame.right) / 2, window.w / 2.f, 1.5f) << where;
+        EXPECT_NEAR((frame.top + frame.bottom) / 2, window.h / 2.f, 20.f) << where;
+        EXPECT_GE(card.left, frame.left - 0.5f) << where;
+        EXPECT_LE(card.right, frame.right + 0.5f) << where;
+        ui::Element* close_x = First("shell-close-btn");
+        ASSERT_TRUE(close_x && Drawn(close_x)) << where;
+        const Box x = BoxOf(close_x);
+        EXPECT_GE(x.left, frame.left) << where;
+        EXPECT_LE(x.right, frame.right) << where;
+        EXPECT_GE(x.top, frame.top) << where;
+        EXPECT_LE(x.bottom, frame.top + 56.f) << "the close button is in the card's top corner: " << where;
+        ui::Element* scrim = document_->GetElementById("shell-modal-scrim-7");
+        ASSERT_NE(scrim, nullptr) << where;
+        EXPECT_GE(BoxOf(scrim).W(), static_cast<float>(window.w) - 0.5f) << "the scrim covers the window: " << where;
+        EXPECT_GE(BoxOf(scrim).H(), static_cast<float>(window.h) - 0.5f) << where;
+        // The scrim is translucent (the theme's #RRGGBBAA), so the chat shows through; the stage over it takes the clicks
+        // (a click beside the card must not close the layer, which would stop the forward).
+        EXPECT_TRUE(std::regex_search(Asset("themes/colors-light.rcss"),
+                                      std::regex("\\.shell-scrim \\{\\s*background-color: #[0-9a-f]{6}[0-8][0-9a-f];")))
+            << where;
+        ui::Element* stage = document_->GetElementById("shell-modal-stage-7");
+        ASSERT_NE(stage, nullptr) << where;
+        EXPECT_TRUE(stage->IsClassSet("shell-modal-stage--forward_progress")) << where;
+        EXPECT_EQ(stage->GetComputedValues().pointer_events(), ui::Style::PointerEvents::Auto) << where;
+        // Both "title / status / buttons" are in the frame and visible (below).
 
         std::vector<const char*> parts = {"forward-progress-title", "forward-progress-activity",
                                           "forward-progress-line"};
@@ -897,7 +1057,7 @@ TEST_F(ForwardWideTest, EscOnTheWideProgressPageCancels) {
   ASSERT_EQ(pushed, 1);
   EXPECT_EQ(spec.key, "forward_progress");
   EXPECT_TRUE(spec.full_screen);
-  EXPECT_FALSE(spec.modal) << "no x and no scrim click: Cancel is the way out";
+  EXPECT_TRUE(spec.modal) << "a card over a dimmed scrim that takes the clicks (the phone ignores it)";
   EXPECT_EQ(ViewCatalog::KeyForLayout(spec.rml_path, true), "forward_progress_wide") << "a window gets the card";
   EXPECT_TRUE(coordinator.HandleDismiss()) << "Esc is taken";
   EXPECT_EQ(cancels, 1) << "as Cancel";

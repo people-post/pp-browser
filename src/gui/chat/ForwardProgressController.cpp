@@ -63,7 +63,8 @@ void ForwardProgressController::Open() {
   spec.key = "forward_progress";
   spec.rml_path = "forward_progress";
   spec.role = PaneRole::Transient;
-  spec.full_screen = true;
+  spec.full_screen = true; // the phone's page
+  spec.modal = true;       // a window: a small card over a dimmed, click-blocking scrim (the phone ignores it)
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
     return;

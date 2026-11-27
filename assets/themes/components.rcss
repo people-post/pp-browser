@@ -295,6 +295,9 @@ select selectbox option {
 .message-row-forward-mode {
   position: relative;
   padding-left: 40dp;
+  /* Its own stacking context, under the composer bar (z-index 2): the cover (7) and tick (8) must not rise above the
+     Forward button, or a click on it also ticks the row beneath. */
+  z-index: 1;
 }
 
 .message-forward-check {

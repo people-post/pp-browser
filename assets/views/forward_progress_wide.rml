@@ -1,6 +1,6 @@
 <!-- The "Forwarding 2/7" page for the wide window (forward_progress.rml's content as a card centred in the layer). Same
-     data model and events as forward_progress.rml (ForwardProgressController); no logic here. There is no x: Cancel
-     (or Esc) is the only way out, and losing focus or minimising the window does not stop the forward on a computer.
+     data model and events as forward_progress.rml (ForwardProgressController); no logic here. The frame's x (the shell's) stops the forward like
+     Cancel; Esc is Cancel too, and losing focus or minimising the window does not stop the forward on a computer.
      Styles: assets/themes/wide.rcss. -->
 <div class="forward-progress forward-progress--wide" data-model="forward_progress">
   <div class="forward-progress-card">

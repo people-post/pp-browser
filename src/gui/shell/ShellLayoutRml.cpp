@@ -404,7 +404,8 @@ std::string ShellLayoutRml::Overlays() const {
     out << "<div class=\"shell-scrim\"" << (modal ? " id=\"shell-modal-scrim-" + std::to_string(overlay.id) + "\"" : "")
         << " data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     if (modal) {
-      out << "<div class=\"shell-modal-stage\" id=\"shell-modal-stage-" << overlay.id << "\">";
+      out << "<div class=\"shell-modal-stage shell-modal-stage--" << overlay.key << "\" id=\"shell-modal-stage-"
+          << overlay.id << "\">";
     }
     out << "<div class=\"shell-frame shell-frame--" << overlay.key << "\">";
     out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_layer(" << overlay.id << ")\">";

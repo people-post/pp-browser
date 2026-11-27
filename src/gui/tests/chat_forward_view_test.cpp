@@ -403,6 +403,33 @@ TEST_F(ChatForwardViewTest, TheTitleBarCountsAndCancelsAndTheComposerGivesWayToT
   EXPECT_EQ(nexts, 1);
 }
 
+// A click on the Forward button never ticks the row that lies under the bar (the transcript runs under the composer
+// bar): the rows' covers and ticks sit below the bar in the stacking order.
+TEST_F(ChatForwardViewTest, AClickOnTheForwardButtonDoesNotTickTheRowUnderIt) {
+  state.messages.clear();
+  for (int i = 0; i < 40; ++i) {
+    state.messages.push_back(
+        Row("r" + std::to_string(i), "<div class=\"bubble bubble-assistant\">a message</div>", true, false));
+  }
+  Refresh();
+  ui::Element* messages = document->GetElementById("chat-messages");
+  ASSERT_NE(messages, nullptr);
+  messages->SetScrollTop(messages->GetScrollHeight() / 2.f);
+  context->Update();
+  ui::Element* next = Shown("chat-forward-next").at(0);
+  const Edges e = BorderEdges(next);
+  const float cx = (e.left + e.right) / 2, cy = (e.top + e.bottom) / 2;
+  bool row_under = false;
+  for (ui::Element* cover : Shown("message-forward-cover")) {
+    const Edges c = BorderEdges(cover);
+    row_under = row_under || (c.left <= cx && cx <= c.right && c.top <= cy && cy <= c.bottom);
+  }
+  ASSERT_TRUE(row_under) << "precondition: a row lies under the button";
+  Tap(next);
+  EXPECT_EQ(nexts, 1);
+  EXPECT_TRUE(taps.empty()) << "the click also ticked the row under the bar";
+}
+
 TEST_F(ChatForwardViewTest, TheForwardBarIsDisabledWithNothingSelected) {
   state.forward_can_next = false;
   state.forward_count_label = "0 selected";
