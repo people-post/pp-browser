@@ -155,10 +155,17 @@ function(pp_pin_make_available name)
       add_subdirectory("${_src}" "${CMAKE_BINARY_DIR}/_deps/${_fc}-build" EXCLUDE_FROM_ALL)
     endif()
   else()
+    set(_git_config "")
+    if(ARG_FILES_ONLY)
+      # A files-only repo holds data compared byte for byte (pp-specs' vectors): never let git convert line ends,
+      # whatever the machine's core.autocrlf (Windows runners default to true and turned LF into CRLF).
+      set(_git_config GIT_CONFIG core.autocrlf=false)
+    endif()
     FetchContent_Declare(
       ${_fc}
       GIT_REPOSITORY ${${_p}_GIT_REPOSITORY}
       GIT_TAG ${_tag}
+      ${_git_config}
     )
     # A repo without a CMakeLists.txt (FILES_ONLY) is only fetched: MakeAvailable adds nothing for it.
     FetchContent_MakeAvailable(${_fc})
