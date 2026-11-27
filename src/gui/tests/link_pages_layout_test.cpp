@@ -39,6 +39,10 @@ public:
   void SetScissorRegion(ui::Rectanglei) override {}
 };
 
+// The window's density (a Retina Mac is 2): the context is `scale` times as many pixels and every measure below is read
+// back in dp. 1 for the older checks.
+float g_scale = 1.f;
+
 std::string ReadAll(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
@@ -192,7 +196,6 @@ std::string Bind(std::string rml, const Vars& vars) {
   return LocalizationService::Instance().LocalizeText(text);
 }
 
-
 // The new device's page as the shell binds it: the code's side, whether a camera is listed, whether a reply was pasted,
 // and the error line (empty: none).
 Vars GateVars(const std::string& side, const bool can_scan, const bool reply_pasted, const std::string& error) {
@@ -250,19 +253,25 @@ protected:
     ui::SetRenderInterface(nullptr);
   }
 
-  void Mount(const std::string& body, const int width, const int height, const bool dark = false) {
+  // `app_type`: the page in the app's own type (foundation.rcss: LatoLatin 16dp), not the test's Inter 15dp.
+  void Mount(const std::string& body, const int width, const int height, const bool dark = false,
+             const bool app_type = false) {
     width_ = width;
     height_ = height;
     if (context) {
       ui::RemoveContext("link-pages-layout-test");
       context = nullptr;
     }
-    context = ui::CreateContext("link-pages-layout-test", {width, height});
+    context = ui::CreateContext("link-pages-layout-test",
+                                {static_cast<int>(width * g_scale), static_cast<int>(height * g_scale)});
+    context->SetDensityIndependentPixelRatio(g_scale);
     ASSERT_NE(context, nullptr);
     const std::string rml = "<rml><head><style>" + ReadAll(AssetPath("themes/foundation.rcss")) +
                             ReadAll(AssetPath("themes/components.rcss")) +
                             ReadAll(AssetPath(dark ? "themes/colors-dark.rcss" : "themes/colors-light.rcss")) +
-                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+                            "</style></head><body style=\"padding: 0;" +
+                            std::string(app_type ? "" : " font-family: Inter; font-size: 15dp;") +
+                            "\">"
                             "<div style=\"position: absolute; top: 0; left: 0; width: " +
                             std::to_string(width) + "dp; height: " + std::to_string(height) + "dp;\">" + body +
                             "</div></body></rml>";
@@ -302,15 +311,15 @@ protected:
     float MidX() const { return (left + right) / 2; }
   };
   static Edges Box(ui::Element* element) {
-    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
-    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border) / g_scale;
+    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border) / g_scale;
     return {at.x, at.y, at.x + size.x, at.y + size.y};
   }
 
   // The middle of the room an element's children have (a scrollbar, when it scrolls, takes its share of the width).
   static float ContentMidX(ui::Element* element) {
-    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Content);
-    return at.x + element->GetBox().GetSize(ui::BoxArea::Content).x / 2.f;
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Content) / g_scale;
+    return at.x + element->GetBox().GetSize(ui::BoxArea::Content).x / g_scale / 2.f;
   }
 
   // What the person can tap: every visible button.
@@ -327,8 +336,8 @@ protected:
   }
   // The room inside an element's padding: its content box.
   static Edges ContentBox(ui::Element* element) {
-    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Content);
-    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Content);
+    const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Content) / g_scale;
+    const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Content) / g_scale;
     return {at.x, at.y, at.x + size.x, at.y + size.y};
   }
   // Every visible button, and the given extra blocks, lies inside the card's content box.
@@ -554,8 +563,9 @@ struct DesktopWindow {
 };
 constexpr DesktopWindow kDesktopWindows[] = {{1280, 800}, {1100, 700}, {1024, 640}, {900, 600}, {800, 560}, {500, 800}};
 
-const char* const kGateErrorKeys[] = {"pin.link_offer_failed",   "pin.link_err_expired",   "pin.link_err_not_for_this_device",
-                                      "pin.link_err_unreadable", "pin.link_err_newer",     "pin.link_paste_empty"};
+const char* const kGateErrorKeys[] = {
+    "pin.link_offer_failed",   "pin.link_err_expired", "pin.link_err_not_for_this_device",
+    "pin.link_err_unreadable", "pin.link_err_newer",   "pin.link_paste_empty"};
 
 // Every shown element under `root` (text nodes have no box of their own and are left out).
 void CollectShown(ui::Element* root, std::vector<ui::Element*>& out) {
@@ -579,9 +589,8 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryStat
     bool reply_pasted;
     const char* error_key; // nullptr: no error line
   };
-  std::vector<Case> cases{{"no camera", false, false, nullptr},
-                          {"camera", true, false, nullptr},
-                          {"reply pasted", true, true, nullptr}};
+  std::vector<Case> cases{
+      {"no camera", false, false, nullptr}, {"camera", true, false, nullptr}, {"reply pasted", true, true, nullptr}};
   for (const char* key : kGateErrorKeys) {
     cases.push_back({key, true, false, key});
   }
@@ -618,8 +627,8 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryStat
         const float h = static_cast<float>(window.height);
         for (ui::Element* e : shown) {
           const Edges box = Box(e);
-          const std::string who = where + ": " + std::string(e->GetTagName().c_str()) + "." +
-                                  std::string(e->GetClassNames().c_str());
+          const std::string who =
+              where + ": " + std::string(e->GetTagName().c_str()) + "." + std::string(e->GetClassNames().c_str());
           EXPECT_GE(box.left, -0.5f) << who << " is left of the window";
           EXPECT_GE(box.top, -0.5f) << who << " is above the window";
           EXPECT_LE(box.right, w + 0.5f) << who << " is right of the window";
@@ -651,7 +660,7 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryStat
         ASSERT_NE(qr, nullptr) << where;
         EXPECT_FLOAT_EQ(Box(qr).right - Box(qr).left, static_cast<float>(layout.side_dp)) << where;
         EXPECT_GE(layout.side_dp, kLinkQrDesktopMinDp) << where;
-        EXPECT_LE(layout.side_dp, kLinkQrDesktopMaxDp) << where << ": never larger than the cap the page always had";
+        EXPECT_LE(layout.side_dp, kLinkComputerQrMaxDp) << where << ": never larger than the computer page's cap";
         ui::Element* digits = One("shell-pin-gate-code");
         ASSERT_NE(digits, nullptr) << where;
         EXPECT_EQ(Visible("shell-pin-gate-computer-note").size(), state_case.reply_pasted ? 0U : 1U) << where;
@@ -663,7 +672,8 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryStat
           }
           EXPECT_GE(Box(digits).left + 0.5f, Box(qr).right) << where << ": the digits are right of the code";
           EXPECT_LE(Box(One("shell-pin-gate-copy")).bottom, Box(body).bottom + 0.5f) << where;
-          EXPECT_NEAR(Box(One("shell-pin-gate-copy")).MidX(), Box(qr).MidX(), 1.f) << where << ": Copy is under the code";
+          EXPECT_NEAR(Box(One("shell-pin-gate-copy")).MidX(), Box(qr).MidX(), 1.f)
+              << where << ": Copy is under the code";
         } else {
           EXPECT_TRUE(Visible("shell-pin-gate-cols").empty()) << where;
           EXPECT_NEAR(Box(qr).MidX(), ContentMidX(body), 1.f) << where << ": the code is centred";
@@ -672,6 +682,121 @@ TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerFitsTheWindowInEveryStat
       }
     }
   }
+}
+
+// --- containment on the owner's real window ---------------------------------------------------------------------------
+//
+// 2026-11-26: on the owner's Mac (1280x720 dp at scale 2) Back, Copy and Continue stuck out of the card and the second
+// step overflowed it, while the checks above passed: they used Inter 15dp instead of the app's LatoLatin 16dp, had no
+// window of 720dp, and measured buttons against the window, not against the card. Here EVERY shown box, and every
+// box's own content, must lie inside the card's content box, and the card inside the window with air around it.
+
+constexpr DesktopWindow kRealWindows[] = {{1280, 720}, {1440, 900}, {1512, 982}, {1280, 800}, {1100, 700},
+                                          {1024, 640}, {900, 600},  {800, 560},  {500, 800}};
+
+TEST_F(LinkPagesLayoutTest, TheNewDevicesPageOnAComputerKeepsEveryBoxInsideTheCard) {
+  struct Case {
+    const char* name;
+    bool can_scan;
+    bool reply_pasted;
+    std::string error; // empty: none
+  };
+  std::vector<Case> cases{{"no camera", false, false, ""},
+                          {"camera", true, false, ""},
+                          {"reply pasted", true, true, ""},
+                          {"long error", true, false,
+                           "That code is not for this device. Scan the one your main device shows now, and check the 4 "
+                           "digits match before you go on."}};
+  for (const char* key : kGateErrorKeys) {
+    cases.push_back({key, true, false, Tr(key)});
+  }
+  constexpr float kAir = 12.f;
+  for (const float scale : {2.f, 1.f}) {
+    g_scale = scale;
+    for (const char* lang : {"en", "zh-Hans"}) {
+      LocalizationService::Instance().SetPreferredLanguage(lang);
+      for (const DesktopWindow& window : kRealWindows) {
+        const LinkComputerLayout layout =
+            LinkComputerLayoutFor(static_cast<float>(window.width), static_cast<float>(window.height));
+        for (const Case& state_case : cases) {
+          const std::string where = std::string(lang) + " " + std::to_string(window.width) + "x" +
+                                    std::to_string(window.height) + "@" + std::to_string(static_cast<int>(scale)) +
+                                    "x " + state_case.name + (layout.two_columns ? " (two columns)" : " (one column)");
+          ShellState state;
+          state.desktop_computer = true;
+          state.link_two_columns = layout.two_columns;
+          state.layout_mode = window.width < 600 ? LayoutMode::Compact : LayoutMode::Expanded;
+          state.pin_gate.active = true;
+          state.pin_gate.link_paste_mode = true;
+          const Vars vars = GateVars(std::to_string(layout.side_dp) + "dp", state_case.can_scan,
+                                     state_case.reply_pasted, state_case.error);
+          Mount(Bind(ShellLayoutRml(state, false, "").PinGate(), vars), window.width, window.height, false, true);
+          ASSERT_NE(document, nullptr) << where;
+          ui::Element* card = One("shell-pin-gate");
+          ASSERT_NE(card, nullptr) << where;
+          ui::Element* body = One("shell-pin-gate-body");
+          ASSERT_NE(body, nullptr) << where;
+          const float w = static_cast<float>(window.width);
+          const float h = static_cast<float>(window.height);
+          const Edges outer = Box(card);
+          const bool short_window = window.height < 640; // such a window may scroll its body
+          // The owner: "shrink everything a bit so it sits inside the card with air around it". The card takes at most 90%
+          // of the window's height and of its width (up to 720dp), the code at most 320dp.
+          EXPECT_LE(outer.right - outer.left, std::min(720.f, 0.9f * w) + 0.5f) << where << ": the card is too wide";
+          if (window.height >= 640) {
+            EXPECT_LE(outer.bottom - outer.top, 0.9f * h + 0.5f) << where << ": the card is too tall";
+          }
+          EXPECT_LE(layout.side_dp, 320) << where << ": the code is too large";
+          // Nothing inside the card comes within 12dp of its edge.
+          for (ui::Element* button : Buttons()) {
+            const Edges box = Box(button);
+            EXPECT_GE(box.left, outer.left + kAir - 0.5f) << where << ": a button is too close to the card's left edge";
+            EXPECT_LE(box.right, outer.right - kAir + 0.5f)
+                << where << ": a button is too close to the card's right edge";
+            if (!short_window) {
+              EXPECT_LE(box.bottom, outer.bottom - kAir + 0.5f)
+                  << where << ": a button is too close to the card's bottom";
+            }
+          }
+          EXPECT_GE(outer.left, kAir - 0.5f) << where << ": air left of the card";
+          EXPECT_LE(outer.right, w - kAir + 0.5f) << where << ": air right of the card";
+          if (!short_window) {
+            EXPECT_GE(outer.top, kAir - 0.5f) << where << ": air above the card";
+            EXPECT_LE(outer.bottom, h - kAir + 0.5f) << where << ": air under the card";
+          }
+          const Edges room = ContentBox(card);
+          std::vector<ui::Element*> shown;
+          CollectShown(card, shown);
+          for (ui::Element* e : shown) {
+            if (e->IsClassSet("shell-pin-gate-material")) {
+              continue; // the frosted backdrop fills the card by design
+            }
+            const Edges box = Box(e);
+            const std::string who =
+                where + ": " + std::string(e->GetTagName().c_str()) + "." + std::string(e->GetClassNames().c_str());
+            EXPECT_GE(box.left, room.left - 0.5f) << who << " sticks out on the left";
+            EXPECT_LE(box.right, room.right + 0.5f) << who << " sticks out on the right";
+            if (!short_window) {
+              EXPECT_GE(box.top, room.top - 0.5f) << who << " sticks out on the top";
+              EXPECT_LE(box.bottom, room.bottom + 0.5f) << who << " sticks out at the bottom";
+              EXPECT_LE(e->GetScrollWidth(), e->GetClientWidth() + g_scale)
+                  << who << ": its own content is wider than it";
+            }
+          }
+          if (!short_window) {
+            EXPECT_LE(body->GetScrollHeight(), body->GetClientHeight() + g_scale)
+                << where << ": the body needs scrolling";
+            EXPECT_LE(card->GetScrollHeight(), card->GetClientHeight() + g_scale)
+                << where << ": the card needs scrolling";
+          }
+          for (ui::Element* button : Buttons()) {
+            EXPECT_GE(Box(button).bottom - Box(button).top, 43.9f) << where << " target too small";
+          }
+        }
+      }
+    }
+  }
+  g_scale = 1.f;
 }
 
 // A window too small for the 280dp code: the body scrolls, the footer does not move.
@@ -708,13 +833,13 @@ TEST(LinkPagesDisplayTest, TheComputerPageFollowsTheWindow) {
   // Wide and tall enough: the code beside the steps, at most the cap the page always had.
   const LinkComputerLayout big = LinkComputerLayoutFor(1280.f, 800.f);
   EXPECT_TRUE(big.two_columns);
-  EXPECT_EQ(big.side_dp, kLinkQrDesktopMaxDp);
+  EXPECT_EQ(big.side_dp, kLinkComputerQrMaxDp);
   // Never taller than the window and never under the minimum.
   for (const DesktopWindow& window : kDesktopWindows) {
     const LinkComputerLayout layout =
         LinkComputerLayoutFor(static_cast<float>(window.width), static_cast<float>(window.height));
     EXPECT_GE(layout.side_dp, kLinkQrDesktopMinDp);
-    EXPECT_LE(layout.side_dp, kLinkQrDesktopMaxDp);
+    EXPECT_LE(layout.side_dp, kLinkComputerQrMaxDp);
   }
   // A narrow window stacks the page; a short one shrinks the code to 280dp.
   EXPECT_FALSE(LinkComputerLayoutFor(500.f, 800.f).two_columns);
@@ -870,8 +995,8 @@ TEST_F(LinkPagesLayoutTest, TheMainDevicesPageOnAComputerFitsTheSettingsPane) {
         CollectShown(pane, shown);
         for (ui::Element* e : shown) {
           const Edges box = Box(e);
-          const std::string who = where + ": " + std::string(e->GetTagName().c_str()) + "." +
-                                  std::string(e->GetClassNames().c_str());
+          const std::string who =
+              where + ": " + std::string(e->GetTagName().c_str()) + "." + std::string(e->GetClassNames().c_str());
           EXPECT_LE(box.right, static_cast<float>(pane_width) + 0.5f) << who << " is right of the pane";
           if (fits) {
             EXPECT_LE(box.bottom, static_cast<float>(pane_height) + 0.5f) << who << " is below the pane";

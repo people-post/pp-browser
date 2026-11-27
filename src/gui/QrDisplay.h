@@ -56,17 +56,20 @@ struct LinkComputerLayout {
   int side_dp = kLinkQrDesktopMinDp;
 };
 
-/** Card: 96% of the window wide up to 960dp, 24dp padding a side, 24dp between the columns. */
-inline constexpr int kLinkComputerCardMaxWidthDp = 960;
-inline constexpr int kLinkComputerPaddingDp = 24;
-inline constexpr int kLinkComputerGapDp = 24;
+/** Card: 90% of the window wide and tall (air around it), at most 720dp wide, 20dp padding a side, 20dp between columns. */
+inline constexpr float kLinkComputerCardFraction = 0.9f;
+inline constexpr int kLinkComputerCardMaxWidthDp = 720;
+inline constexpr int kLinkComputerPaddingDp = 20;
+inline constexpr int kLinkComputerGapDp = 20;
+/** The code on this page is at most this large (the main device's page keeps kLinkQrDesktopMaxDp). */
+inline constexpr int kLinkComputerQrMaxDp = 320;
 /** The right column's least width (the steps and the Paste / Scan row). */
-inline constexpr int kLinkComputerRightMinDp = 380;
+inline constexpr int kLinkComputerRightMinDp = 340;
 /** Height, in dp, kept for everything but the code: two columns (title, Copy, footer, padding), one column (all that). */
 inline constexpr int kLinkComputerReservedTwoColumnsHeightDp = 190;
 inline constexpr int kLinkComputerReservedOneColumnHeightDp = 490;
 /** Two columns need at least this much window height (the right column's own height, measured by the layout test). */
-inline constexpr int kLinkComputerTwoColumnsMinHeightDp = 520;
+inline constexpr int kLinkComputerTwoColumnsMinHeightDp = 470;
 
 /** Pure part: the layout for a window `width_dp` by `height_dp`. */
 LinkComputerLayout LinkComputerLayoutFor(float width_dp, float height_dp);
