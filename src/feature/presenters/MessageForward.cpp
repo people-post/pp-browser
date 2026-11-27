@@ -18,11 +18,7 @@ bool CanForwardMessage(const ThreadMessage& message) {
   if (IsLocalActionMessage(message) || message.ai_image_json) {
     return false;
   }
-  // Ours that is still queued, or did not go out: it has no settled text to hand on (its red mark has its own tap).
-  if (message.sender_contact_id == kLocalSelfContactId &&
-      (message.delivery == MessageDelivery::Pending || message.delivery == MessageDelivery::Failed)) {
-    return false;
-  }
+  // Our own text and cards forward whatever their delivery state: the words are settled the moment they are sent.
   switch (message.content_type) {
     case ChatContentType::Text:
       return !message.text.empty();
@@ -30,6 +26,11 @@ bool CanForwardMessage(const ThreadMessage& message) {
       // Sent again as stored: the card must still read as one (nothing is rebuilt from the contact it names).
       return static_cast<bool>(ChatPayloadCodec::DecodeContactCardJson(message.payload_json));
     case ChatContentType::Attachment: {
+      // Ours that is still queued, or did not go out: its bytes are not settled (its red mark has its own tap).
+      if (message.sender_contact_id == kLocalSelfContactId &&
+          (message.delivery == MessageDelivery::Pending || message.delivery == MessageDelivery::Failed)) {
+        return false;
+      }
       // Resent from the stored fields and bytes: it needs a name for the file and a hash to find the bytes by.
       auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
       return fields && !fields->content_hash.empty();
@@ -154,7 +155,8 @@ namespace {
 
 bool NameBefore(const ForwardTarget& a, const ForwardTarget& b) {
   const auto fold = [](std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
   };
   const std::string left = fold(a.title);

@@ -26,7 +26,7 @@ namespace pbr {
 
 /** At most this many messages go in one forward, to at most this many chats. */
 inline constexpr size_t kMaxForwardMessages = 30;
-inline constexpr size_t kMaxForwardTargets = 9;
+inline constexpr size_t kMaxForwardTargets = 3;
 /**
  * What the uploads of one forward may add up to (DEV/PLAN-message-forward-files-v3.md): at most this many uploads
  * (attachments x chats) and this many bytes (each attachment's size x chats). Text and cards never count.

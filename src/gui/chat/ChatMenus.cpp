@@ -233,9 +233,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   // (ChatPresenter::CanForward); right after Reply, before Copy. An attachment has no words, so this does not wait for any.
   if (presenter_.CanForward(message_id)) {
     actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
-                       [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/share.svg"});
+                       [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/forward.svg"});
     actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
-                       [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/check.svg"});
+                       [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/select.svg"});
   }
   if (!text.empty()) {
     // Copy gives the words of a message. A picture, video, file or voice message has none (its "text" is the file name,

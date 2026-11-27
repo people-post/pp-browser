@@ -43,7 +43,7 @@ struct PeoplePickerChooseOptions {
   std::function<std::string(size_t chats)> refusal;
   /** The bottom pill when one more than `max_targets` is tapped. */
   std::string limit_message;
-  size_t max_targets = 9;
+  size_t max_targets = 3;
   /** What can be chosen, in the order to show it (the list is read when the picker opens). */
   std::function<std::vector<ForwardTarget>()> list;
 };

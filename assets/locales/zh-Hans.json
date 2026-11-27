@@ -1514,7 +1514,7 @@
     "chat.forward.failed": "转发失败",
     "chat.forward.cannot": "这条消息暂时不能转发",
     "chat.forward.limit_messages": "一次最多转发 30 条",
-    "chat.forward.limit_targets": "一次最多转发给 9 个聊天",
+    "chat.forward.limit_targets": "一次最多转发给 3 个聊天",
     "chat.forward.interrupted": "只转发了一部分",
     "chat.forward.note_without_bytes": "有 {n} 条本机没有内容，不会转发",
     "chat.forward.limit_uploads": "图片和文件一次最多发 5 份（现在是 {n} 份），请少选几条或少选几个聊天",
