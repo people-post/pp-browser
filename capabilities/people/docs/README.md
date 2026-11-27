@@ -9,7 +9,7 @@ Identity: keys, account cards, contacts, devices and the account locker's format
 ## Docs about it
 
 - Contracts: [ACCOUNT_CARD](../../../docs/contracts/ACCOUNT_CARD.md), [ACCOUNT_LOCKER](../../../docs/contracts/ACCOUNT_LOCKER.md)
-- Vectors: `src/lib/people/tests/data/`: `account_card_vectors.json`, `account_locker_vectors.json`
+- Vectors: pp-specs `vectors/`: `account_card_vectors.json`, `account_locker_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [multi-device-account](../../../projects/multi-device-account/), [multi-relay](../../../projects/multi-relay/)
 - Decisions: [CR008](../../../projects/capability-repos/DECISIONS.md#cr008--identity-is-people-the-backend-client-is-net-pricing-is-part-of-messaging), [CR013](../../../projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order), [CR022](../../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)
 

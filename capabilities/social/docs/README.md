@@ -8,7 +8,7 @@ Public posts (signed, hash-chained author logs) and the content store they share
 
 ## Docs about it
 
-- Vectors: `src/lib/posts/tests/data/post_vectors.json`
+- Vectors: pp-specs `vectors/post_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [social-posts](../../../projects/social-posts/), [content-cas](../../../projects/content-cas/)
 - Decisions: [CR009](../../../projects/capability-repos/DECISIONS.md#cr009--posts-and-content-are-one-capability-below-messaging), [CR022](../../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split), [CR024](../../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)
 

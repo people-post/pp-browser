@@ -4,7 +4,7 @@ pp_browser_add_lib_folder_tests(
   pp_lib_net
   pp_browser_net_test
   PRIVATE_DEFINITIONS
-    PP_RELAY_CERTIFICATE_VECTORS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data/relay_certificate_vectors.json"
+    PP_RELAY_CERTIFICATE_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/relay_certificate_vectors.json"
   LINK_LIBS
     pp_lib_net_testing
     CURL::libcurl

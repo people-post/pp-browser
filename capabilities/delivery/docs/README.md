@@ -9,7 +9,7 @@ Secure delivery below messaging and realtime: pairwise and public E2E sessions, 
 ## Docs about it
 
 - Contracts: [WIRE_SCHEMAS](../../../docs/contracts/WIRE_SCHEMAS.md), [MESSAGE_ENCRYPTION](../../../docs/contracts/MESSAGE_ENCRYPTION.md)
-- Vectors: `src/lib/delivery/tests/data/`: `envelope_vectors.json`, `peer_request_vectors.json`, `relay_grant_vectors.json`, `relay_sign_vectors.json`
+- Vectors: pp-specs `vectors/`: `envelope_vectors.json`, `peer_request_vectors.json`, `relay_grant_vectors.json`, `relay_sign_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [e2e-message-crypto](../../../projects/e2e-message-crypto/), [chat-storage-and-memory](../../../projects/chat-storage-and-memory/), [multi-relay](../../../projects/multi-relay/)
 - Decisions: [CR020](../../../projects/capability-repos/DECISIONS.md#cr020--secure-delivery-below-messaging-and-realtime), [CR021](../../../projects/capability-repos/DECISIONS.md#cr021--pp-browsers-crypto-formats-are-deliverys-pp-cpp-crypto-takes-only-generic-pieces), [CR024](../../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)
 

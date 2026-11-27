@@ -1,6 +1,6 @@
 // PeerRequestAuth v2's frozen vectors (release-compatibility SIGNED_FORMATS § 2.7, § 6): the signed bytes of a fixed
 // history, blob and account-card request (the history one also with one unknown non-critical entry), and signed
-// fixtures with the verdict the receiver's order gives each. The committed file is data/peer_request_vectors.json;
+// fixtures with the verdict the receiver's order gives each. The file is pp-specs' vectors/peer_request_vectors.json;
 // PP_WRITE_PEER_REQUEST_VECTORS=<path> writes a fresh one (keys from fixed seeds; ML-DSA signatures are randomized,
 // so only they differ between runs).
 

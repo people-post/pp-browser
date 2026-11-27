@@ -170,8 +170,10 @@
 
 ## Next
 
-1. Contracts repo (CR010): pp-specs, now that release 1 has shipped — CR025 step 2 (the shared contracts, the vector
-   files and the cross-repo programs, this project included). First, because [node-relay](../node-relay/README.md)'s
+1. Contracts repo (CR010): pp-specs, now that release 1 has shipped — CR025 step 2. **Started 2026-11-27:**
+   [pp-specs](https://github.com/people-post/pp-specs) created (public), the 17 vector files imported byte for byte with a
+   sha256 manifest, tagged `v1.0.0`; pp-browser's tests read them at that pin and its copies are gone. Left: the relay
+   and the three libraries pin it too; the shared contracts and the cross-repo programs (this project included) move. First, because [node-relay](../node-relay/README.md)'s
    relay protocol and its vectors are specified there (its NR1).
 2. P3's namespaces when a second app needs a capability.
 3. The same standalone build for the next capability a second app asks for (net and base for the operator app,
@@ -184,7 +186,7 @@
 
 **pp-ledger-apps' operator app** needs the relay id, operator set and relay certificate code: net's
 `capabilities/net/src/lib/net/RelayCertificate.*` and base's `capabilities/base/src/foundation/crypto/RelayId.*`,
-with `capabilities/net/src/lib/net/tests/data/relay_certificate_vectors.json`
+with pp-specs `vectors/relay_certificate_vectors.json`
 ([pp-ledger-apps OP008](https://github.com/people-post/pp-ledger-apps/blob/main/projects/operator-app/DECISIONS.md)).
 It is P4's first move (CR005), after release 1: not earlier, because pp-browser keeps its pins during the freeze.
 Not pp-cpp-crypto: its README keeps product wire formats in the apps, and only the hashing, signatures, typed blobs

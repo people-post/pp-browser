@@ -9,7 +9,7 @@ The Brief backend client: registration, the directory, blobs, push and the relay
 ## Docs about it
 
 - Contracts: [SERVICE_ENDPOINTS](../../../docs/contracts/SERVICE_ENDPOINTS.md)
-- Vectors: `src/lib/net/tests/data/relay_certificate_vectors.json`
+- Vectors: pp-specs `vectors/relay_certificate_vectors.json` (at the tag `cmake/PpPins.cmake` pins; [pp-specs](https://github.com/people-post/pp-specs/blob/main/vectors/README.md))
 - Projects: [push-notifications](../../../projects/push-notifications/), [relay-blob-upload](../../../projects/relay-blob-upload/), [multi-relay](../../../projects/multi-relay/), [capability-repos § A second app is waiting](../../../projects/capability-repos/CURRENT_STATE.md#a-second-app-is-waiting-2026-11-22)
 - Decisions: [CR008](../../../projects/capability-repos/DECISIONS.md#cr008--identity-is-people-the-backend-client-is-net-pricing-is-part-of-messaging), [CR022](../../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)
 

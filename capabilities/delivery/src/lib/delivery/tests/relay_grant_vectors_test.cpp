@@ -1,6 +1,6 @@
 // Relay grant v2's frozen vectors (release-compatibility SIGNED_FORMATS § 2.4, § 6): the signed bytes of fixed grants
 // (an empty area, one unknown non-critical entry), signed fixtures, and the receiver's verdict on each refusal. The
-// relay's grant check (pp-relay-apis `grant.ts`) reads data/relay_grant_vectors.json byte for byte.
+// relay's grant check (pp-relay-apis `grant.ts`) reads pp-specs' vectors/relay_grant_vectors.json byte for byte.
 // PP_WRITE_RELAY_GRANT_VECTORS=<path> writes a fresh file; the comparison leaves out the hedged signatures.
 
 #include "lib/delivery/RelayGrantSigner.h"

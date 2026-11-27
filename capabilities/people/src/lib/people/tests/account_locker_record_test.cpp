@@ -1,6 +1,6 @@
 // Locker record v2 and the state's version (release-compatibility SIGNED_FORMATS § 2.6, INVENTORY T7): the receiver's
 // order for a record, a newer app's copy skipped and not written over, writers that keep what they do not know, and
-// the frozen vectors (data/account_locker_vectors.json) the relay's locker store (pp-relay-apis `crypto/locker.ts`)
+// the frozen vectors (pp-specs' vectors/account_locker_vectors.json) the relay's locker store (pp-relay-apis `crypto/locker.ts`)
 // reads byte for byte. PP_WRITE_ACCOUNT_LOCKER_VECTORS=<path> writes a fresh file.
 
 #include "lib/people/AccountLocker.h"

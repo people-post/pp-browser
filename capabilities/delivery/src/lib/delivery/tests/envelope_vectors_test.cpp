@@ -1,7 +1,7 @@
 // Envelope v4's frozen vectors (release-compatibility SIGNED_FORMATS § 2.1, § 6): the signed bytes of one fixed
 // envelope with an empty extension area and with one unknown non-critical entry, and signed fixtures with the verdict
 // the receiver's order gives each (accepted, older, needs update before verifying, needs update after it, forged,
-// malformed). The committed file is data/envelope_vectors.json; PP_WRITE_ENVELOPE_VECTORS=<path> writes a fresh one
+// malformed). The file is pp-specs' vectors/envelope_vectors.json; PP_WRITE_ENVELOPE_VECTORS=<path> writes a fresh one
 // (the device keys come from fixed seeds; ML-DSA signatures are randomized, so only they differ between runs).
 
 #include "lib/delivery/EnvelopeSigner.h"

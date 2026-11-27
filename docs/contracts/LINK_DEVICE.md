@@ -140,7 +140,7 @@ nickname); only how the seed arrives differs.
 
 ## Vectors
 
-`capabilities/base/src/foundation/crypto/tests/data/link_handshake_vectors.json`: an offer from fixed coins, its text and
+pp-specs `vectors/link_handshake_vectors.json`: an offer from fixed coins, its text and
 its code (frozen), and two replies that key opens (randomized: compared without `reply_b64`, each checked to open to its
 bundle). `PP_WRITE_LINK_HANDSHAKE_VECTORS=<path>` writes a fresh file.
 

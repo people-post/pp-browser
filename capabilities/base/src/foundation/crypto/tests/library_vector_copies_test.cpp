@@ -1,7 +1,7 @@
-// The libraries' frozen vector files, copied into pp-browser (docs/contracts/SIGNED_EXTENSIONS.md § Vector files):
-// pp-cpp-common's ext_area_vectors.json and pp-cpp-crypto's alg_id_vectors.json are the same bytes as the pinned tags'
-// (the relay copies them from here). After a library bump, PP_WRITE_EXT_AREA_VECTORS=<path> /
-// PP_WRITE_ALG_ID_VECTORS=<path> write the pinned tag's file there (normally the committed copy's path).
+// The libraries' frozen vector files, as pp-specs holds them (docs/contracts/SIGNED_EXTENSIONS.md § Vector files):
+// pp-specs' ext_area_vectors.json and alg_id_vectors.json are the same bytes as pp-cpp-common's and pp-cpp-crypto's
+// at their pinned tags, while the libraries still keep their own. After a library bump, PP_WRITE_EXT_AREA_VECTORS=<path>
+// / PP_WRITE_ALG_ID_VECTORS=<path> write the pinned tag's file there, for a pp-specs pull request.
 
 #include "common/tests/VectorFile.h"
 

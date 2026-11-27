@@ -1,6 +1,6 @@
 // The group objects' frozen vectors (release-compatibility SIGNED_FORMATS § 2.5, § 6): roster statement v4, dissolved
 // v4, owner transfer v2 and roster change v2 — the signed bytes of fixed inputs (an empty area, one unknown
-// non-critical entry), signed fixtures, and the receiver's verdict on each refusal (data/group_roster_vectors.json).
+// non-critical entry), signed fixtures, and the receiver's verdict on each refusal (pp-specs' vectors/group_roster_vectors.json).
 // The app tells only "update needed" (AppError::NewerFormat) from a refusal, so a group fixture's verdict is
 // `accepted`, `needs_update` or `refused`. PP_WRITE_GROUP_ROSTER_VECTORS=<path> writes a fresh file.
 
