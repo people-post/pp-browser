@@ -51,7 +51,8 @@ private:
   int layer_id_ = -1;
   ui::String title_;
   ui::String line_;
-  ui::String bar_width_ = "0%";
+  ui::String ring_decor_ = "none";
+  ui::String percent_text_ = "0%";
   bool has_percent_ = false;
   bool finishing_ = false;
   bool can_close_ = false;

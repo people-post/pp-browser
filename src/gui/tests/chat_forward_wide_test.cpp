@@ -852,7 +852,7 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
     ForwardProgressView view;
   };
   const std::vector<Page> pages = {
-      {"percent", {"Forwarding 12/30", "Quarterly-report-final-version-2026.pdf 37%", 37, false, false}},
+      {"percent", {"Forwarding 12/30", "", 37, false, false}},
       {"spinner", {"Forwarding 3/5", "Sending… 21s", -1, false, false}},
       {"wait", {"Forwarding 3/5", "One moment, almost there", -1, false, false}},
       {"finishing", {"Forwarding 3/5", "Finishing — the current item will still go through…", -1, true, false}},
@@ -862,6 +862,8 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
     LocalizationService::Instance().SetPreferredLanguage(language);
     LocalizationService& tr = LocalizationService::Instance();
     for (const Window& window : std::vector<Window>{{1280, 800}, {1000, 700}, {1280, 720}, {1024, 640}, {900, 600}}) {
+      Box ring_box{};
+      float ring_frame_height = 0.f;
       for (const Page& page : pages) {
         const std::string where =
             std::string(language) + " " + std::to_string(window.w) + "x" + std::to_string(window.h) + " " + page.name;
@@ -942,8 +944,10 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
         EXPECT_EQ(stage->GetComputedValues().pointer_events(), ui::Style::PointerEvents::Auto) << where;
         // Both "title / status / buttons" are in the frame and visible (below).
 
-        std::vector<const char*> parts = {"forward-progress-title", "forward-progress-activity",
-                                          "forward-progress-line"};
+        std::vector<const char*> parts = {"forward-progress-title", "forward-progress-activity"};
+        if (!view.line.empty()) {
+          parts.push_back("forward-progress-line"); // a figure's page has none: it is in the ring
+        }
         if (!view.finishing) {
           parts.push_back("forward-progress-stay");
         }
@@ -975,23 +979,48 @@ TEST_F(ForwardWideTest, ForwardProgressWideKeepsEverythingInsideTheCard) {
         // The line under the title in a window's words, not the phone's.
         const std::string words = card_element->GetInnerRML().c_str();
         EXPECT_EQ(words.find(tr.Tr("chat.forward.progress_stay").c_str()), std::string::npos) << where;
-        // The percent bar or the spinner, one of them, inside the card.
-        const bool bar = Drawn(First("forward-progress-bar"));
-        const bool spinner = Drawn(First("forward-progress-spinner"));
-        EXPECT_NE(bar, spinner) << where;
-        EXPECT_EQ(bar, view.percent >= 0) << where;
+        // The ring (with the percentage in it) or the spinner, one of them, inside the card; never a bar.
+        ui::Element* ring = First("forward-progress-ring");
+        ui::Element* spinner = First("forward-progress-spinner");
+        const bool ring_drawn = Drawn(ring);
+        const bool spinner_drawn = Drawn(spinner);
+        EXPECT_NE(ring_drawn, spinner_drawn) << where;
+        EXPECT_EQ(ring_drawn, view.percent >= 0) << where;
+        EXPECT_EQ(First("forward-progress-bar"), nullptr) << "the bar is gone: " << where;
+        ui::Element* shown = ring_drawn ? ring : spinner;
+        const Box shown_box = BoxOf(shown);
+        EXPECT_NEAR(shown_box.W(), 72.f, 1.f) << where;
+        EXPECT_NEAR(shown_box.H(), 72.f, 1.f) << where;
+        EXPECT_GE(shown_box.left, card.left + kMargin) << where;
+        EXPECT_LE(shown_box.right, card.right - kMargin) << where;
+        EXPECT_NEAR((shown_box.left + shown_box.right) / 2, (card.left + card.right) / 2, 1.5f) << where;
+        if (ring_drawn) {
+          ui::Element* text = First("forward-progress-ring-text");
+          ASSERT_NE(text, nullptr) << where;
+          EXPECT_EQ(std::string(text->GetInnerRML().c_str()), "37%") << where;
+          const Box core = BoxOf(text->GetParentNode());
+          const Box t = BoxOf(text);
+          EXPECT_GE(t.left, core.left - 0.5f) << "the figure is inside the ring: " << where;
+          EXPECT_LE(t.right, core.right + 0.5f) << where;
+          ring_box = shown_box;
+          ring_frame_height = frame.H();
+        } else if (ring_frame_height > 0.f && !view.finishing) {
+          EXPECT_NEAR(shown_box.left, ring_box.left, 1.f) << "the spinner sits where the ring was: " << where;
+          EXPECT_NEAR(shown_box.top, ring_box.top, 1.f) << where;
+          EXPECT_NEAR(frame.H(), ring_frame_height, 1.f) << "the card does not change height: " << where;
+        }
       }
     }
   }
 }
 
 // The wide progress card is frosted glass in both themes: a translucent surface (about 58%) over a backdrop blur on its
-// rule in wide.rcss, a lighter scrim of its own, and its progress track stays visible on that surface.
+// rule in wide.rcss, a lighter scrim of its own, and the ring's disc and white figure stay readable on that surface.
 TEST_F(ForwardWideTest, ForwardProgressCardSurfaceIsTranslucentInBothThemes) {
   const std::regex frame(
       "\\.shell-body--wide \\.shell-frame--forward_progress \\{\\s*background-color: #[0-9a-f]{6}([0-9a-f]{2});");
-  const std::regex track(
-      "\\.shell-body--wide \\.forward-progress-card \\.forward-progress-bar \\{\\s*background-color: "
+  const std::regex disc(
+      "\\.forward-progress-ring,\\s*\\.forward-progress-spinner \\{\\s*background-color: "
       "#[0-9a-f]{6}([0-9a-f]{2});");
   for (const char* theme : {"themes/colors-light.rcss", "themes/colors-dark.rcss"}) {
     const std::string css = Asset(theme);
@@ -1001,8 +1030,11 @@ TEST_F(ForwardWideTest, ForwardProgressCardSurfaceIsTranslucentInBothThemes) {
     EXPECT_LT(alpha, 255) << "the card surface is translucent: " << theme;
     EXPECT_GE(alpha, 0x80) << "but not so thin that the text behind wins: " << theme;
     EXPECT_LE(alpha, 0xa0) << "the glass lets the chat through (about 55-62%): " << theme;
-    ASSERT_TRUE(std::regex_search(css, found, track)) << theme;
-    EXPECT_GE(std::stoi(found[1].str(), nullptr, 16), 0x50) << "the track stays visible: " << theme;
+    ASSERT_TRUE(std::regex_search(css, found, disc)) << theme;
+    EXPECT_GE(std::stoi(found[1].str(), nullptr, 16), 0x60) << "the ring's disc stays visible: " << theme;
+    EXPECT_EQ(css.find("forward-progress-bar"), std::string::npos) << "no bar rules left: " << theme;
+    EXPECT_NE(css.find(".forward-progress-ring-text {\n  color: #ffffff;"), std::string::npos)
+        << "a white figure on the dark core: " << theme;
   }
   const std::string wide = Asset("themes/wide.rcss");
   const std::regex blur(

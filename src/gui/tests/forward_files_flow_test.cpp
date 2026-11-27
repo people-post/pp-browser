@@ -440,7 +440,7 @@ TEST_F(ForwardFilesFlowTest, TheProgressPageShowsActivityForTheCurrentItem) {
   uploads.front().progress(30, 120);
   flow->Tick(true);
   EXPECT_EQ(views.back().percent, 25);
-  EXPECT_EQ(views.back().line, "25%");
+  EXPECT_TRUE(views.back().line.empty()) << "the figure is in the ring, not in the line";
   uploads.front().progress(120, 120);
   flow->Tick(true);
   EXPECT_EQ(views.back().percent, 100);

@@ -6,9 +6,13 @@
   <div class="forward-progress-card">
     <p class="forward-progress-title">{{fp_title}}</p>
     <div class="forward-progress-activity">
-      <div class="forward-progress-spinner" data-if="!fp_has_percent"></div>
-      <div class="forward-progress-bar" data-if="fp_has_percent">
-        <div class="forward-progress-bar-fill" data-style-width="fp_bar_width"></div>
+      <div class="forward-progress-spinner" data-if="!fp_has_percent">
+        <div class="forward-progress-spinner-arc"></div>
+        <div class="forward-progress-ring-core"></div>
+      </div>
+      <div class="forward-progress-ring" data-if="fp_has_percent">
+        <div class="forward-progress-ring-track" data-style-decorator="fp_ring_decor"></div>
+        <div class="forward-progress-ring-core"><p class="forward-progress-ring-text">{{fp_percent_text}}</p></div>
       </div>
     </div>
     <p class="forward-progress-line">{{fp_line}}</p>

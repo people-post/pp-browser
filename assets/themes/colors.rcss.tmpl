@@ -5170,17 +5170,25 @@ input.checkbox:checked {
   color: {{label-2}};
 }
 
+.forward-progress-ring,
 .forward-progress-spinner {
-  border-color: {{label-3}};
-  border-top-color: {{accent}};
+  background-color: {{x-fwd-ring-disc}};
 }
 
-.forward-progress-bar {
-  background-color: {{fill-2}};
+.forward-progress-ring-track {
+  background-color: {{x-fwd-ring-track}};
 }
 
-.forward-progress-bar-fill {
-  background-color: {{accent}};
+.forward-progress-ring-core {
+  background-color: {{x-fwd-ring-core}};
+}
+
+.forward-progress-ring-text {
+  color: {{x-fwd-ring-ink}};
+}
+
+.forward-progress-spinner-arc {
+  border-color: {{x-fwd-ring-ink}} {{x-fwd-ring-ink}} {{x-fwd-ring-ink}} transparent;
 }
 
 .shell-body--wide .forward-progress--wide {
@@ -5207,10 +5215,6 @@ input.checkbox:checked {
 
 .shell-scrim.shell-scrim--forward_progress {
   background-color: {{x-fwd-scrim}};
-}
-
-.shell-body--wide .forward-progress-card .forward-progress-bar {
-  background-color: {{x-fwd-track}};
 }
 
 }

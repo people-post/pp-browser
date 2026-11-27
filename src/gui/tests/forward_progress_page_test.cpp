@@ -114,6 +114,7 @@ TEST_F(ForwardProgressPageTest, ShowsTheTitleAnActivityRingAndCancelWhileAnItemU
   EXPECT_EQ(std::string(Shown("forward-progress-title")[0]->GetInnerRML().c_str()), "Forwarding 2/7");
   EXPECT_EQ(Shown("forward-progress-spinner").size(), 1u) << "no figure yet: activity";
   EXPECT_TRUE(Shown("forward-progress-bar").empty());
+  EXPECT_TRUE(Shown("forward-progress-ring").empty());
   EXPECT_EQ(Shown("forward-progress-stay").size(), 1u) << "the line that says leaving stops it";
   ASSERT_EQ(Shown("forward-progress-btn").size(), 1u) << "Cancel only";
   Tap(Shown("forward-progress-btn")[0]);
@@ -121,14 +122,52 @@ TEST_F(ForwardProgressPageTest, ShowsTheTitleAnActivityRingAndCancelWhileAnItemU
   EXPECT_EQ(closes, 0);
 }
 
-TEST_F(ForwardProgressPageTest, ShowsABarForAPercentAndTheFinishingStateHasNoCancelUntilCloseIsOffered) {
+TEST_F(ForwardProgressPageTest, ShowsTheUploadRingWithThePercentInsideNotABar) {
   ForwardProgressView view;
   view.title = "Forwarding 1/3";
-  view.percent = 40;
-  view.line = "40%";
+  view.percent = 42;
   Draw(view);
-  EXPECT_EQ(Shown("forward-progress-bar").size(), 1u);
+  ASSERT_EQ(Shown("forward-progress-ring").size(), 1u);
+  EXPECT_TRUE(Shown("forward-progress-bar").empty()) << "no horizontal bar any more";
   EXPECT_TRUE(Shown("forward-progress-spinner").empty());
+  ASSERT_EQ(Shown("forward-progress-ring-text").size(), 1u);
+  EXPECT_EQ(std::string(Shown("forward-progress-ring-text")[0]->GetInnerRML().c_str()), "42%");
+  ui::Element* ring = Shown("forward-progress-ring")[0];
+  const ui::Vector2f ring_at = ring->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f ring_size = ring->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_NEAR(ring_size.x, 72.f, 1.f);
+  EXPECT_NEAR(ring_size.y, 72.f, 1.f);
+  EXPECT_NEAR(ring_at.x + ring_size.x / 2, 195.f, 1.5f) << "centred on the page";
+  // The filled part is the chat ring's conic-gradient decorator, set from the model.
+  ASSERT_EQ(Shown("forward-progress-ring-track").size(), 1u);
+  const std::string decorator = Shown("forward-progress-ring-track")[0]->GetProperty("decorator")->ToString().c_str();
+  EXPECT_NE(decorator.find("conic-gradient"), std::string::npos) << decorator;
+  EXPECT_NE(decorator.find("42%"), std::string::npos) << decorator;
+  ui::Element* text = Shown("forward-progress-ring-text")[0];
+  const ui::Vector2f t_at = text->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f t_size = text->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_GE(t_at.x, ring_at.x);
+  EXPECT_LE(t_at.x + t_size.x, ring_at.x + ring_size.x) << "the figure is inside the ring";
+
+  // Switching to the unknown amount: the spinner takes the ring's place and the page keeps its height.
+  const ui::Vector2f actions_before = Shown("forward-progress-actions")[0]->GetAbsoluteOffset(ui::BoxArea::Border);
+  view.percent = -1;
+  view.line = "Sending… 3s";
+  Draw(view);
+  ASSERT_EQ(Shown("forward-progress-spinner").size(), 1u);
+  EXPECT_TRUE(Shown("forward-progress-ring").empty());
+  ui::Element* spinner = Shown("forward-progress-spinner")[0];
+  const ui::Vector2f spin_at = spinner->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f spin_size = spinner->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_NEAR(spin_at.x, ring_at.x, 1.f);
+  EXPECT_NEAR(spin_at.y, ring_at.y, 1.f);
+  EXPECT_NEAR(spin_size.x, ring_size.x, 1.f);
+  EXPECT_NEAR(spin_size.y, ring_size.y, 1.f);
+  EXPECT_NEAR(Shown("forward-progress-actions")[0]->GetAbsoluteOffset(ui::BoxArea::Border).y, actions_before.y, 1.f)
+      << "the buttons do not move between the two states";
+  view.percent = 40;
+  view.line = "";
+  Draw(view);
 
   view.finishing = true;
   view.percent = -1;

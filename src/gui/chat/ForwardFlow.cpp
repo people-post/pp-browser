@@ -43,7 +43,7 @@ ForwardProgressView MakeForwardProgressView(const ForwardProgress& progress, con
     view.line = Tr("chat.forward.progress_wait");
   } else if (progress.uploading && progress.bytes_total > 0 && progress.bytes_done > 0) {
     view.percent = static_cast<int>(std::min<uint64_t>(100, progress.bytes_done * 100 / progress.bytes_total));
-    view.line = std::to_string(view.percent) + "%";
+    // The amount is in the ring on the page: no second "N%" under it.
   } else if (progress.uploading) {
     const int64_t seconds = std::max<int64_t>(0, (now_ms - progress.uploading_since_ms) / 1000);
     view.line = Tr("chat.forward.progress_sending", {{"s", std::to_string(seconds)}});
