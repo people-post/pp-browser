@@ -78,7 +78,7 @@ MeshTrafficRates MeshTrafficSampler::Sample(const MeshTrafficTotals& now) {
   return rates_;
 }
 
-MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh) {
+MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh, const size_t links) {
   MeshTrafficTotals totals;
   totals.at = std::chrono::steady_clock::now();
   if (!mesh || !mesh->IsRunning() || !mesh->Amp()) {
@@ -86,7 +86,9 @@ MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh) {
   }
   auto& runtime = mesh->Amp()->Runtime();
   totals.available = true;
-  runtime.WithIoLock([&]() { totals.links = runtime.Links().CountLinks(); });
+  // The count the io lane published, not a read under the io lock: this runs inside SDL's event watch during a live
+  // resize, where waiting for that lock can deadlock against the pump posting to the UI (#816).
+  totals.links = links;
   const pp::adp::EndpointStats traffic = runtime.GetEndpoint().Stats();
   totals.sent_bytes = traffic.tx_bytes;
   totals.received_bytes = traffic.rx_bytes;
@@ -147,7 +149,7 @@ MessagingShellPorts MakeMessagingShellPorts(ConversationsHub& hub) {
   deps.last_mesh_error = [&hub]() { return hub.LastMeshError(); };
   deps.retest_reachability = [&hub]() { hub.RunReachabilityProbe(false); };
   deps.relay_load_stats = [&hub]() { return CollectRelayRuntimeStats(hub.Mesh()); };
-  deps.traffic_totals = [&hub]() { return CollectMeshTrafficTotals(hub.Mesh()); };
+  deps.traffic_totals = [&hub]() { return CollectMeshTrafficTotals(hub.Mesh(), hub.MeshLinkCount()); };
   return MakeMessagingShellPorts(std::move(deps));
 }
 
