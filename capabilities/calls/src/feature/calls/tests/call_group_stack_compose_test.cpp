@@ -391,6 +391,7 @@ protected:
   }
 
   void AcceptInvite(size_t i, const std::string& call_id) {
+    WaitPastJoinStamps(call_id);
     auto pending = sides_[i].ui->TopPendingInvite();
     ASSERT_TRUE(pending && pending->has_value()) << "invite should land on side " << i;
     ASSERT_EQ((*pending)->call_id, call_id);
@@ -539,7 +540,6 @@ protected:
         return DirectPairLive(kA, first);
       });
       EXPECT_TRUE(DirectPairLive(kA, first)) << "first accept must be a direct 1:1 (V050):" << Describe(call_id);
-      WaitPastJoinStamp(first, call_id);
     }
     AcceptInvite(second, call_id);
     DrainUntil(
@@ -553,17 +553,24 @@ protected:
   }
 
   /**
-   * The initiator's clock moves past the join stamp it gave `joiner`, so the next accept is stamped later: "joined
-   * first" is then the earlier stamp, not the tie-break (equal stamps go to the lower identity, which is random here).
-   * A fast Mac took both accepts in one millisecond.
+   * Before an accept, the clock moves past every join stamp the call has on any side (they share this process's
+   * clock), so the join it gets is later than every join before it: "joined first", and so the sticky initiator
+   * (V021, the earliest stamp), is the order the test plays, never the tie-break. Equal stamps go to the lower
+   * identity, random here: when the initiator's own stamp (StartCall) and the first accept fell in one millisecond,
+   * the first acceptor became the initiator half the time and moved the group on a roster, before the joiner's
+   * CallAccept said which hop it could reach (V050). A fast Mac also took two accepts in one millisecond.
    */
-  void WaitPastJoinStamp(size_t joiner, const std::string& call_id) {
-    auto row = sides_[kA].stack->Sessions()->FindParticipant(call_id, sides_[joiner].local_identity);
-    if (!row || !row->has_value() || !(*row)->joined_at) {
-      return;
+  void WaitPastJoinStamps(const std::string& call_id) {
+    int64_t latest = 0;
+    for (const StackSide& side : sides_) {
+      for (const StackSide& member : sides_) {
+        auto row = side.stack->Sessions()->FindParticipant(call_id, member.local_identity);
+        if (row && row->has_value() && (*row)->joined_at) {
+          latest = std::max(latest, *(*row)->joined_at);
+        }
+      }
     }
-    const int64_t stamp = *(*row)->joined_at;
-    while (util::NowUnixMs() <= stamp) {
+    while (util::NowUnixMs() <= latest) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
