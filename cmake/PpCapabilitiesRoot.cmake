@@ -66,7 +66,7 @@ endif()
 
 option(PP_BROWSER_BUILD_TESTS "Build the capabilities' unit and in-process tests" ON)
 include(dependencies)
-if(NOT PP_BROWSER_HEADLESS)
+if(NOT PP_BROWSER_HEADLESS AND "media" IN_LIST _pp_built)
   include(PpCppUi) # SDL3 for media's devices
 endif()
 find_package(Threads REQUIRED)

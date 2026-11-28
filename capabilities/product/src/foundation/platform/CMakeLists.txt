@@ -1,5 +1,11 @@
 include(PpBrowserBase)
 
+# The app this build is for: its assets and its relays' certificates are its own (capability-repos CR027: this folder
+# goes to pp-cpp-core, the app that builds it names its root). Default: the configure's top source dir.
+if(NOT DEFINED PP_APP_ROOT)
+  set(PP_APP_ROOT "${CMAKE_SOURCE_DIR}")
+endif()
+
 # The product's platform core (capability-repos CR028): the backends a build can run and what is compiled in for them
 # (origins, relay ids, relay certificates, the tester gate, relay.content_sha256), the platform, the paths the apps keep
 # their files under, the log defaults, and the OS helpers pp-node uses (the executable's path, the data-folder lock,
@@ -50,7 +56,7 @@ if(PP_BROWSER_PACKAGED_BUILD OR PP_BROWSER_IS_MOBILE)
   target_compile_definitions(pp_product_platform PRIVATE PP_BROWSER_PACKAGED_BUILD=1)
 else()
   target_compile_definitions(pp_product_platform PRIVATE
-    PP_BROWSER_ASSETS_DIR="${PP_BROWSER_ROOT}/assets")
+    PP_BROWSER_ASSETS_DIR="${PP_APP_ROOT}/assets")
 endif()
 
 # Compile-time backend origins (scheme://host, no path); PP_BROWSER_ORIGIN overrides them at runtime.
@@ -112,11 +118,11 @@ endif()
 # starts from, so it knows the audience before its first fetch and never goes below it. A file holds the certificate's
 # standard base64 (`relay-operator.mjs combine` prints it; lines may wrap), `#` comment lines, or `pending` (none yet:
 # the relay's own certificate is fetched). Generated into CompiledRelayCertificates.inc as string literals.
-set(PP_RELAY_CERT_FILE_PROD "${PP_BROWSER_ROOT}/config/relay-certs/prod.cert" CACHE FILEPATH
+set(PP_RELAY_CERT_FILE_PROD "${PP_APP_ROOT}/config/relay-certs/prod.cert" CACHE FILEPATH
     "The prod relay's certificate compiled into the client")
-set(PP_RELAY_CERT_FILE_STAGING "${PP_BROWSER_ROOT}/config/relay-certs/staging.cert" CACHE FILEPATH
+set(PP_RELAY_CERT_FILE_STAGING "${PP_APP_ROOT}/config/relay-certs/staging.cert" CACHE FILEPATH
     "The staging relay's certificate compiled into the client")
-set(PP_RELAY_CERT_FILE_DEV "${PP_BROWSER_ROOT}/config/relay-certs/dev.cert" CACHE FILEPATH
+set(PP_RELAY_CERT_FILE_DEV "${PP_APP_ROOT}/config/relay-certs/dev.cert" CACHE FILEPATH
     "The dev relay's certificate compiled into the client")
 function(pp_browser_relay_certificate_literal file out_var)
   set(_text "")
