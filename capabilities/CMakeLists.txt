@@ -31,5 +31,6 @@ if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "iOS|Android")
 endif()
 
 set(PP_CAPABILITIES_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(PP_APP_ROOT "${_pp_root}") # the assets, relay certificates and commit the product capability reads
 set(PP_CAPABILITIES_DEFAULT "calls")
 include(PpCapabilitiesRoot)

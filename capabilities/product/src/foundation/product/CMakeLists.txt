@@ -12,10 +12,14 @@ set(PP_BUILD_COMMIT "" CACHE STRING "Commit shown in About (hex hash); empty = P
 
 # The commit comes from a target that runs on EVERY build (CMake script mode, no shell), not from configure:
 # the generated file is rewritten only when its text changes, so only BuildInfoGenerated.cpp recompiles.
+# The commit is the app's: the root of the app this build is for (default: the configure's top source dir).
+if(NOT DEFINED PP_APP_ROOT)
+  set(PP_APP_ROOT "${CMAKE_SOURCE_DIR}")
+endif()
 set(PP_BUILD_INFO_GENERATED "${CMAKE_CURRENT_BINARY_DIR}/BuildInfoGenerated.cpp")
 add_custom_target(pp_build_info_generate
   COMMAND ${CMAKE_COMMAND}
-    "-DSOURCE_DIR=${PP_BROWSER_ROOT}"
+    "-DSOURCE_DIR=${PP_APP_ROOT}"
     "-DOUTPUT=${PP_BUILD_INFO_GENERATED}"
     "-DBUILD_TAG=${PP_BUILD_TAG}"
     "-DBUILD_COMMIT=${PP_BUILD_COMMIT}"
