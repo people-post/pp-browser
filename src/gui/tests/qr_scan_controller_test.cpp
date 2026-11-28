@@ -1,5 +1,6 @@
 #include "gui/scan/QrScanController.h"
 #include "gui/UserFeedback.h"
+#include "common/runtime/AppRuntime.h"
 #include "gui/contacts/ContactsController.h"
 #include "lib/messaging/ContactLocator.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -66,7 +67,10 @@ protected:
   /** The OS prompt is up: iOS resigns the app active (SDL's WILL_ENTER_BACKGROUND). */
   static void PromptShows() { AppLifecycle::OnWillEnterBackground(); }
   /** The prompt has gone: the app is active again. */
-  static void PromptGoes() { AppLifecycle::OnDidEnterForeground(); }
+  static void PromptGoes() {
+    AppLifecycle::OnDidEnterForeground();
+    AppRuntime::RunUITasks(); // the foreground listeners run on the next UI turn (#816)
+  }
 
   FakeCamera camera;
   MediaDeviceArbiter devices{CreateNullMediaDeviceBackend()};
