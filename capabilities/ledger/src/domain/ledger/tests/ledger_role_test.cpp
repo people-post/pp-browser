@@ -1,4 +1,4 @@
-#include "domain/node/NodeLedgerRole.h"
+#include "domain/ledger/LedgerRole.h"
 
 #include "mesh/testing/mesh_harness_support.h"
 #include "ledger/network/AmpLedgerServer.h"
@@ -25,6 +25,7 @@
 #include "common/MeshAlias.h"
 
 using namespace pbr;
+using pbr::ledger::LedgerRole;
 using namespace std::chrono_literals;
 
 // pp-ledger platform-integration pi4: pp-node runs a ledger relay or miner on its mesh runtime, with
@@ -58,7 +59,7 @@ std::unique_ptr<pp::amp::AmpStack> MakeStack(const std::shared_ptr<pp::adp::Memo
   return std::move(*stack);
 }
 
-class NodeLedgerRoleTest : public ::testing::Test {
+class LedgerRoleTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
@@ -102,10 +103,10 @@ protected:
 
 } // namespace
 
-TEST_F(NodeLedgerRoleTest, ARelayAdvertisesTheLedgerWhileBoundAndWithdrawsItAtStop) {
+TEST_F(LedgerRoleTest, ARelayAdvertisesTheLedgerWhileBoundAndWithdrawsItAtStop) {
   WriteRelayConfig();
-  NodeLedgerRole ledger;
-  ASSERT_TRUE(static_cast<bool>(ledger.Start(mesh_, {NodeLedgerRole::Role::Relay, dir_.string()})));
+  LedgerRole ledger;
+  ASSERT_TRUE(static_cast<bool>(ledger.Start(mesh_, {LedgerRole::Role::Relay, dir_.string()})));
 
   const auto until = std::chrono::steady_clock::now() + 10s;
   while (!ledger.Listening() && std::chrono::steady_clock::now() < until) {
@@ -127,15 +128,15 @@ TEST_F(NodeLedgerRoleTest, ARelayAdvertisesTheLedgerWhileBoundAndWithdrawsItAtSt
   EXPECT_FALSE(ledger.Failure().has_value()) << "a requested stop is not a failure";
 }
 
-TEST_F(NodeLedgerRoleTest, AStoppedMeshTakesNoRole) {
+TEST_F(LedgerRoleTest, AStoppedMeshTakesNoRole) {
   mesh_.Stop();
-  NodeLedgerRole ledger;
-  EXPECT_FALSE(static_cast<bool>(ledger.Start(mesh_, {NodeLedgerRole::Role::Relay, dir_.string()})));
+  LedgerRole ledger;
+  EXPECT_FALSE(static_cast<bool>(ledger.Start(mesh_, {LedgerRole::Role::Relay, dir_.string()})));
 }
 
-TEST(NodeLedgerRoleNamesTest, RelayOrMinerOnly) {
-  EXPECT_EQ(NodeLedgerRole::RoleNamed("relay"), std::optional<NodeLedgerRole::Role>(NodeLedgerRole::Role::Relay));
-  EXPECT_EQ(NodeLedgerRole::RoleNamed("miner"), std::optional<NodeLedgerRole::Role>(NodeLedgerRole::Role::Miner));
-  EXPECT_FALSE(NodeLedgerRole::RoleNamed("beacon").has_value()) << "a beacon runs standalone only";
-  EXPECT_FALSE(NodeLedgerRole::RoleNamed("").has_value());
+TEST(LedgerRoleNamesTest, RelayOrMinerOnly) {
+  EXPECT_EQ(LedgerRole::RoleNamed("relay"), std::optional<LedgerRole::Role>(LedgerRole::Role::Relay));
+  EXPECT_EQ(LedgerRole::RoleNamed("miner"), std::optional<LedgerRole::Role>(LedgerRole::Role::Miner));
+  EXPECT_FALSE(LedgerRole::RoleNamed("beacon").has_value()) << "a beacon runs standalone only";
+  EXPECT_FALSE(LedgerRole::RoleNamed("").has_value());
 }

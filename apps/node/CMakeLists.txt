@@ -20,7 +20,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   endif()
   set(PP_BROWSER_HEADLESS ON CACHE BOOL "Headless: pp-node only" FORCE)
   set(PP_CAPABILITIES_DIR "${_pp_root}/capabilities")
-  set(PP_CAPABILITIES_DEFAULT "product;node;relay")
+  set(PP_CAPABILITIES_DEFAULT "product;node;relay;ledger")
   include(PpCapabilitiesRoot)
 endif()
 

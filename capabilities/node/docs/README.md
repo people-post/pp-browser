@@ -1,6 +1,6 @@
 # node — capability docs
 
-Node services and roles: what a node hosts, its DHT and directory config, its own directory row, and the ledger role. Headless; pp-node and the product's mesh share it. pp-node itself is an app (`apps/node/`).
+Node services: what a node hosts, its DHT and directory config, its own directory row. The ledger role is its own capability, [`capabilities/ledger/`](../../ledger/docs/README.md). Headless; pp-node and the product's mesh share it. pp-node itself is an app (`apps/node/`).
 
 **Paths** (under this folder; includes read as before, e.g. `"domain/node/…"`): [`src/domain/node/`](../src/domain/node/). Its targets are in [`CMakeLists.txt`](../CMakeLists.txt); its tests carry the CTest label `capability:node`.
 

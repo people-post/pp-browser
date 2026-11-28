@@ -150,7 +150,7 @@ set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"
   "^pp_amp_"
-  # pp-ledger, behind pp_domain_node_ledger (PP_BROWSER_WITH_LEDGER)
+  # pp-ledger, behind pp_domain_ledger (capabilities/ledger, PP_BROWSER_WITH_LEDGER)
   "^pp_(server|client|network|ledger|ledger_common|ledger_amp|consensus|chain|chain_types|operation)$")
 
 # pp_browser_assert_node_link_allowlist(<target> [EXTRA <regex>...]): EXTRA widens the allowlist for this target only.
