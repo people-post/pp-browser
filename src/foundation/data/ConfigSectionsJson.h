@@ -10,6 +10,9 @@
 
 namespace pbr {
 
+/** The config file's `config_version` this build writes; a newer one is refused (both apps). */
+inline constexpr int kConfigFileVersion = 1;
+
 // The config file's sections both apps read (capability-repos CR028): the mesh, the service endpoints (registration,
 // relay, directory) and a custom backend's services. pp-node reads them with no other part of the desktop's config;
 // ConfigJson.h has the rest.
