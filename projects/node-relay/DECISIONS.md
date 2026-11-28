@@ -122,16 +122,23 @@ fallback only (they would rarely get mail, and a home group would gain nothing w
 ## NR007 — Light by default, and every limit a setting
 
 **Date:** 2026-11-27  
-**Status:** Accepted (Hongwei, 2026-11-27: configurable, with these defaults)  
+**Status:** Accepted (Hongwei, 2026-11-27: configurable, with these defaults; off until enabled, and plain metadata in
+a private folder)  
 **Decision:** A node relay's mailbox limits are settings in the node's config, each with an environment override as
-the node's other settings have, defaulting to: records kept 7 days (a sender's shorter `ttl_s` tier sooner); at most
-1,000 records and 16 MiB per account; a node-wide budget from `mesh.capacity`. Past a limit the relay answers `busy`,
+the node's other settings have (`node.relay.retention_days`, `max_records`, `max_bytes`; `PP_NODE_RELAY_<KEY>`),
+defaulting to: records kept 7 days, at most 30 (a sender's shorter `ttl_s`, or `urgent`, sooner); at most 1,000
+records and 16 MiB per account; a node-wide budget from `mesh.capacity`. The relay is off until `node.relay.enabled`
+(a node never keeps mail for accounts unasked, whichever build it is). Its store keeps metadata (who sent to whom,
+streams, times) plain, as the HTTPS relay's database does, in a folder only the node's user can read; bodies are
+sealed end to end, and the privacy statement says what an operator's disk holds. Past a limit the relay answers `busy`,
 with the service's load level (N033). The relay reports its limits in its `relay-identity` answer, so a recipient's app
 can say how long its relay keeps mail and a sender's knows what to expect.  
 **Rationale:** The `https://` copy carries durability under the default delivery (NR006), so a node relay can stay small
 enough for a Raspberry Pi and cheap enough to volunteer; an operator with room, or a group relying on it, raises them.  
-**Alternatives:** Fixed limits (one size for a Pi and a server); the HTTPS relay's 90 days as the default (a volunteer's
-disk for little gain while both copies exist).
+**Alternatives:** Fixed limits (one size for a Pi and a server); the HTTPS relay's 30 days as the default (a volunteer's
+disk for little gain while both copies exist); dropping the oldest when full, as the HTTPS relay does (a full node
+relay says so instead, and the `https://` copy carries the mail); metadata sealed with the node's key and indexed by
+keyed hashes (more code; the running relay sees what it serves anyway).
 
 ## NR008 — Admission by invite
 

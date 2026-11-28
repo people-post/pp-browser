@@ -167,11 +167,10 @@ mode reads a local checkout) — capability-repos CR025 step 2. pp-browser keeps
 - **Who writes a file:** the repository whose tests generate it: pp-cpp-common `ext_area`, pp-cpp-crypto `alg_id` and
   `seeded_keygen`, pp-cpp-mesh `dht_record`, pp-browser the rest (per object, beside the object's test). New cases are
   generated there and brought to pp-specs by pull request; then the pins move.
-- **Who still keeps copies:** pp-cpp-common, pp-cpp-crypto and pp-cpp-mesh their own files, and the relay nine
-  (`scripts/vector-copies.json` there, by sha256), until each pins pp-specs. `library_vector_copies_test` checks that
-  pp-specs' `ext_area` and `alg_id` files are the libraries' at their pinned tags; after a library bump,
-  `PP_WRITE_EXT_AREA_VECTORS=<path>` / `PP_WRITE_ALG_ID_VECTORS=<path>` write the pinned tag's file, for a pp-specs pull
-  request.
+- **Who still keeps copies:** pp-cpp-crypto and pp-cpp-mesh their own files at the tags pp-browser pins, and the relay
+  nine (`scripts/vector-copies.json` there, by sha256), until each pins pp-specs. pp-cpp-common keeps none since v1.5.2.
+  `library_vector_copies_test` checks that pp-specs' `alg_id` file is pp-cpp-crypto's at its pinned tag; after a bump,
+  `PP_WRITE_ALG_ID_VECTORS=<path>` writes the pinned tag's file, for a pp-specs pull request.
 - pp-browser's files use `common/tests/VectorFile.h`: the path from the test target's definition
   (`PP_<NAME>_VECTORS_PATH`, in pp-specs), `PP_WRITE_<NAME>_VECTORS=<path>` to write a fresh file (two-space JSON, final
   newline) for a pp-specs pull request, `WithoutKeys` to compare without the randomized signatures.

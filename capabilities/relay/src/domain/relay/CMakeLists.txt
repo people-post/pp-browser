@@ -1,11 +1,16 @@
 include(PpBrowserDomain)
 
-# The message relay, an add-on of pp-node-plus (projects/node-relay): empty until NR3 adds the mailbox. Headless.
+# The message relay, an add-on of pp-node-plus (projects/node-relay): its settings and its store; NR3 adds the
+# protocol. Headless.
 pp_browser_add_domain_library(pp_domain_relay
   SOURCES
     RelayService.cpp
+    RelaySettings.cpp
+    RelayStore.cpp
   PUBLIC_LIBS
-    pp_mesh)
+    pp_mesh
+  PRIVATE_LIBS
+    SQLite::SQLite3)
 # Whichever node build links the service starts it (src/app/node/main.cpp), as PP_BROWSER_HAS_LEDGER does the ledger's.
 target_compile_definitions(pp_domain_relay PUBLIC PP_NODE_HAS_RELAY)
 

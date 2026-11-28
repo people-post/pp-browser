@@ -18,10 +18,20 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
   [BUILD § Headless mesh node](../../docs/ops/BUILD.md#headless-mesh-node-pp-node).
 - **One node per data folder** (#805, merged 2026-11-27): a node holds `<data dir>/pp-node.lock` for its life, so a
   second process on the folder exits (NR001's "never at once").
+- **NR3, first half (the protocol-free part):**
+  - The relay's settings: `node.relay.enabled` (off by default, Hongwei 2026-11-27), `retention_days` (7, at most 30),
+    `max_records` (1000) and `max_bytes` (16 MiB) per account, each with a `PP_NODE_RELAY_<KEY>` override
+    ([CONFIGURATION § pp-node services](../../docs/ops/CONFIGURATION.md#pp-node-services-node)).
+  - Its store (`RelayStore`, `<profile dir>/relay/relay.db`): put with dedup by (sender, stream, index key), poll by
+    cursor, stream history, clear, delete a mailbox, expiry, usage; full means `busy`, never dropping the oldest.
+    Metadata is plain in a 0700 folder (Hongwei 2026-11-27).
+  - NR001's data-folder rules 2 and 4: the store refuses a newer schema untouched and expires on open; an explicit ask
+    for a service the build lacks fails the start (`node.<service>.enabled`, `PP_NODE_<SERVICE>_ENABLED`).
+  - The config keeps the `node` section as written (`AppConfig::node`). SQLite is built in headless trees too, linked
+    only by pp-node-plus.
 
 **Open, with defaults until decided:**
-- The settings' names (NR007): one section per service in the node's config (`node.relay.…`, its on/off switch among
-  them; tier-free, NR001), each with a `PP_NODE_…` override. NR3 adds the relay's.
+- The node-wide budget from `mesh.capacity` (NR007): not a setting yet; NR3's second half, with the load level.
 - What `pp-node-plus` shares with `pp-node`: its config (`/etc/pp-node`), data dir, user and ports, so switching a
   node to pp-node-plus keeps them (NR2's packaging). Each add-on's own files go under `<data dir>/<add-on>`
   (`<data dir>/relay` first).
@@ -33,8 +43,8 @@ Design written ([DESIGN.md](DESIGN.md)); NR001–NR011 accepted by Hongwei (NR00
 edition is built in this repository, where pp-node is; capability-repos' P4 moves pp-node into its own repo, pp-node (CR027, CR028), with the edition, once the
 mailbox works.
 
-**NR3 must also:** follow NR001's data-folder rules 2 and 4 for the relay (expiry on start, a schema version on its
-store; an explicit `node.relay` ask in a build without it fails the start).
-
-**Next:** NR3, the mailbox on `pp-node-plus`, once pp-specs #4 is accepted. NR3 must combine the relay protocol with
-the ledger role's protocols in `MeshHost::SetAppProtocols`, which replaces the whole list.
+**Next:** NR3's second half, once pp-specs #4 is accepted: the protocol on the store (registration, send, poll, ack,
+clear, `watch` over `/pp/rpc/relay/1.0.0`), certificate v2 and `relay-identity` over Amp, admission by invite with the
+owner's revoke, `/metrics` and the load level, the node-wide budget, a periodic `Expire`, and the server checks against
+pp-specs' vectors. It must combine the relay protocol with the ledger role's protocols in `MeshHost::SetAppProtocols`,
+which replaces the whole list. The store's schema 1 can change freely until pp-node-plus's first release (NR5).

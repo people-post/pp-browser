@@ -9,6 +9,7 @@
 #include "foundation/platform/BackendTable.h"
 #include "foundation/product/DevTools.h"
 #include "common/ServiceEndpoints.h"
+#include "common/Value.h"
 
 #include <cstdint>
 #include <string>
@@ -105,6 +106,12 @@ struct AppConfig {
    * Default 0 (free).
    */
   int64_t initiation_floor = 0;
+  /**
+   * `node`: the settings of a node's optional services (projects/node-relay NR001), `node.<service>.…`, kept as the
+   * file has them. A build with the service reads its own section; pp-node itself reads only each `enabled` (an
+   * explicit ask for a service the build lacks fails its start). Tier-free; kept and written back as read.
+   */
+  Object node;
 };
 
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults);

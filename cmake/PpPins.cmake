@@ -11,7 +11,7 @@
 include(PpFetchPin)
 
 #      repo           tag                  used by
-pp_pin(pp-cpp-common  TAG v1.5.1)          # both: the runtime, JSON, logging
+pp_pin(pp-cpp-common  TAG v1.5.2)          # both: the runtime, JSON, logging
 pp_pin(pp-cpp-crypto  TAG v1.4.1)          # both: sodium, ML-KEM / ML-DSA, BoringSSL
 pp_pin(pp-cpp-amp     TAG v6.1.0)          # both: the Amp links
 pp_pin(pp-cpp-mesh    TAG v10.2.0)         # both: the mesh host and its services

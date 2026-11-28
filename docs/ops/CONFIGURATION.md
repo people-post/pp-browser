@@ -49,6 +49,8 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
 | `PP_NODE_LOG_LEVEL` | log level | Or `--log-level`: `debug` \| `info` (default) \| `warning` \| `error`; `--debug` = `debug`. A server's log: unlike the desktop app's quiet default, startup, listen address, ledger role and shutdown show at `info` |
 | `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
+| `PP_NODE_RELAY_ENABLED` | `node.relay.enabled` | Same bool forms. The message relay of a build that has it (pp-node-plus); default **off**. On in a build without it, the node refuses to start ([Node services](#pp-node-services-node)) |
+| `PP_NODE_RELAY_RETENTION_DAYS` / `_MAX_RECORDS` / `_MAX_BYTES` | `node.relay.*` | Whole numbers within their bounds ([Node services](#pp-node-services-node)); anything else fails the start, naming the key |
 | `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/main/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
 **Mesh heartbeat (opt-in):** with `mesh_publish` **and** `mesh_heartbeat` on (`PP_NODE_MESH_HEARTBEAT=1`; off by default — it tells the directory when this node is up and from which address, so it is meant for org-run seeds: privacy P011) and `registration.base_url` set, pp-node signs and posts a liveness heartbeat every 5 minutes, re-registers when the directory forgot it, and reports `retiring` on SIGTERM/SIGINT (fixed interval). A failed first registration is retried with backoff (10 s doubling to 5 min). On a **loopback** status bind, `POST /control/state` moves the reported state (same Bearer token when set; other binds answer 405; JSON `Content-Type` required, requests with an `Origin` header or a non-loopback `Host` get 403):
@@ -58,6 +60,23 @@ curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' h
 ```
 
 States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).
+
+#### pp-node services (`node`)
+
+The settings of a node's optional services, one section each (`node.<service>`; projects/node-relay NR001). They are the same whichever build has the service. A build without the service ignores its section, with one log line, unless the section asks for it (`enabled: true`, or `PP_NODE_<SERVICE>_ENABLED`): then the node refuses to start, so an operator never believes a service runs that does not.
+
+```json
+{ "node": { "relay": { "enabled": true, "retention_days": 7, "max_records": 1000, "max_bytes": 16777216 } } }
+```
+
+| Key | Default | Bounds | What |
+|-----|---------|--------|------|
+| `node.relay.enabled` | `false` | | The message relay (pp-node-plus). Off until enabled: a node never keeps mail for accounts unasked (NR007) |
+| `node.relay.retention_days` | 7 | 1–30 | How long a record waits at most; a sender's `ttl_s`, or an urgent record (2 min), sooner |
+| `node.relay.max_records` | 1000 | 1–1,000,000 | Records waiting per account; past it the relay takes nothing new for that account (`busy`) |
+| `node.relay.max_bytes` | 16 MiB | 256 KiB–64 GiB | Bytes waiting per account (the sealed records), the same way |
+
+A value of the wrong type or out of bounds fails the start, naming the key; a key the relay does not know is logged and ignored. Its store is `<profile dir>/relay/relay.db` ([DATA_LAYOUT](../contracts/DATA_LAYOUT.md)).
 
 #### pp-node relay identity
 

@@ -43,6 +43,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # brief_llm_api_key, brief_llm_token_expires_at, brief_llm_guest_api_key); an identity.enc that still holds them gives them up at its next save
     account_locker.json     # (below) moved here from the profile's top level at the first start after P3
     client_compat.json      # (below) likewise
+  relay/                    # pp-node with the message relay on (node-relay NR007; 0700): relay.db, its store (SQLite, user_version 1; 0600): every account's mailbox, metadata plain, bodies sealed end to end; a newer user_version is refused untouched, and what is past its time is deleted on open
   mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 2; optional amp_wire / node_version / features, N032); per profile;
                             # optional source = the primary directory's address it came from (pp-cpp-mesh 10.2.0): a list saved from another
                             # directory is not loaded (written over at the next good refresh); one without a source (saved before) is loaded as before

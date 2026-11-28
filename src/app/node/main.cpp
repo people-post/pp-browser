@@ -3,6 +3,7 @@
 #include "app/node/NodeEnvOverlay.h"
 #include "app/node/NodeHeartbeat.h"
 #include "app/node/NodeMetrics.h"
+#include "app/node/NodeServiceAsks.h"
 #include "app/node/NodeMeshPublish.h"
 #include "app/node/NodeUpgradeNotice.h"
 #include "app/node/StatusHttpProtocol.h"
@@ -30,6 +31,7 @@
 #endif
 #if defined(PP_NODE_HAS_RELAY)
 #include "domain/relay/RelayService.h"
+#include "domain/relay/RelaySettings.h"
 #endif
 
 #include <atomic>
@@ -246,18 +248,31 @@ class NodeServicesSlot {
 public:
   pbr::Roe<void> Start(pbr::NodeBootstrapResult& boot) {
     std::string started;
+    auto log = pbr::logging::getRootLogger();
 #if defined(PP_NODE_HAS_RELAY)
+    std::vector<std::string> unknown;
+    auto settings = pbr::relay::RelaySettings::Read(
+        boot.config.node.getObject("relay"), [](const char* name) -> const char* { return std::getenv(name); },
+        &unknown);
+    if (!settings) {
+      return settings.error();
+    }
+    for (const std::string& key : unknown) {
+      log.warning << "node.relay." << key << " is not a relay setting; ignored";
+    }
+    log.info << "relay: " << settings->Describe();
     pbr::relay::RelayService::Options relay_options;
     relay_options.work_dir = boot.profile_data_dir + "/relay";
+    relay_options.settings = *settings;
     if (auto ok = relay_.Start(*boot.mesh, std::move(relay_options)); !ok) {
       return ok;
     }
-    started += " relay";
+    if (relay_.Started()) {
+      started += " relay";
+    }
 #endif
     (void)boot;
-    if (!started.empty()) {
-      pbr::logging::getRootLogger().info << "node services started:" << started;
-    }
+    log.info << "node services started:" << (started.empty() ? " none" : started);
     return {};
   }
 
@@ -578,6 +593,18 @@ int main(int argc, char** argv) {
   }
 
   // A service this build lacks keeps its data and is not served; another build serves it again (NR001).
+  // NR001's rule 4: asking for a service this build lacks fails the start; a section without an ask is ignored.
+  const std::vector<std::string> known_services = SplitNames(PP_NODE_KNOWN_SERVICE_NAMES);
+  pbr::ApplyPpNodeServiceEnvOverlays(boot->config, known_services);
+  auto asks = pbr::CheckPpNodeServiceAsks(boot->config, g_services, known_services);
+  if (!asks) {
+    root.error << asks.error().message;
+    ShutdownNode(*boot);
+    return 2;
+  }
+  for (const std::string& service : *asks) {
+    root.info << "node." << service << " settings ignored: this build has no " << service;
+  }
   g_dormant = DormantServices(boot->profile_data_dir);
   if (!g_dormant.empty()) {
     root.warning << "data for services this build lacks is kept, not served: " << JoinNames(g_dormant)
