@@ -184,4 +184,3 @@ TEST(NodeConfigTest, TheNodesLoaderAgreesWithTheAppsUnderAnOriginOverride) {
   SetEnv("PP_BROWSER_RELAY_ID", "relay:lab");
   ExpectBothLoadersAgree("PP_BROWSER_ORIGIN");
 }
-
