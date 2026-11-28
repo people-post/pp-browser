@@ -109,6 +109,9 @@ KEYCHAIN_PATH=""
 KEYCHAIN_PASSWORD=""
 TEMP_P12=""
 TEMP_P8=""
+# This run's own folder for the decoded secrets (the .p12, the notary .p8), removed on exit. A self-hosted Mac keeps its
+# temp folder between jobs: a fixed file name there collided with the last run's, and a key the cleanup missed stayed.
+SECRETS_DIR=""
 # The user's keychain search list before this run, put back on exit: a self-hosted Mac keeps it after the job.
 SAVED_KEYCHAINS=()
 KEYCHAINS_SAVED=0
@@ -128,7 +131,18 @@ cleanup() {
   if [[ -n "${TEMP_P8:-}" && -f "$TEMP_P8" ]]; then
     rm -f "$TEMP_P8"
   fi
+  if [[ -n "${SECRETS_DIR:-}" && -d "$SECRETS_DIR" ]]; then
+    rm -rf "$SECRETS_DIR"
+  fi
   return 0
+}
+
+# Makes SECRETS_DIR once (0700, a random name: macOS's mktemp randomizes only the X's at the very end of a template).
+ensure_secrets_dir() {
+  if [[ -z "$SECRETS_DIR" ]]; then
+    SECRETS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pp-sign.XXXXXXXX")"
+    chmod 700 "$SECRETS_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -138,7 +152,8 @@ prepare_keychain() {
 
   local p12_path=""
   if [[ -n "${APPLE_CERTIFICATE_BASE64:-}" ]]; then
-    TEMP_P12="$(mktemp "${TMPDIR:-/tmp}/frame-cert.XXXXXX.p12")"
+    ensure_secrets_dir
+    TEMP_P12="${SECRETS_DIR}/cert.p12"
     decode_base64_to "$APPLE_CERTIFICATE_BASE64" "$TEMP_P12"
     p12_path="$TEMP_P12"
   elif [[ -n "${APPLE_CERTIFICATE_PATH:-}" ]]; then
@@ -182,19 +197,23 @@ prepare_keychain() {
   security list-keychains -d user -s "$KEYCHAIN_PATH" ${SAVED_KEYCHAINS[@]+"${SAVED_KEYCHAINS[@]}"}
 }
 
-notary_key_path() {
+# Sets NOTARY_KEY. Called in this shell, never in $( ): a subshell's TEMP_P8 never reached the exit cleanup, and the
+# decoded key stayed behind on a self-hosted Mac.
+NOTARY_KEY=""
+prepare_notary_key() {
   if [[ -n "${APPLE_NOTARY_P8_PATH:-}" ]]; then
     if [[ ! -f "$APPLE_NOTARY_P8_PATH" ]]; then
       echo "error: notary key not found: ${APPLE_NOTARY_P8_PATH}" >&2
       exit 1
     fi
-    printf '%s' "$APPLE_NOTARY_P8_PATH"
+    NOTARY_KEY="$APPLE_NOTARY_P8_PATH"
     return
   fi
 
-  TEMP_P8="$(mktemp "${TMPDIR:-/tmp}/AuthKey.XXXXXX.p8")"
-  decode_base64_to "$APPLE_NOTARY_P8_BASE64" "$TEMP_P8"
-  printf '%s' "$TEMP_P8"
+  ensure_secrets_dir
+  TEMP_P8="${SECRETS_DIR}/AuthKey.p8"
+  (umask 077 && decode_base64_to "$APPLE_NOTARY_P8_BASE64" "$TEMP_P8")
+  NOTARY_KEY="$TEMP_P8"
 }
 
 cmd_sign_app() {
@@ -272,8 +291,8 @@ cmd_notarize() {
 
   local submit_path
   submit_path="$(submission_path_for "$artifact")"
-  local p8
-  p8="$(notary_key_path)"
+  prepare_notary_key
+  local p8="$NOTARY_KEY"
 
   log "Submitting ${submit_path} for notarization"
   # --wait exits 0 even when status is Invalid; parse JSON and fail explicitly.
