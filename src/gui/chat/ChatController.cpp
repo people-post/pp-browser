@@ -8577,6 +8577,9 @@ void ChatController::Shutdown() {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
+  // Last: every pasted file has been released above. This run's folder (pasted pictures are the one place chat content
+  // sits unencrypted outside the profile) goes with the process; another run's folder is never touched.
+  RemovePastedRunDir(PastedRoot(), PastedDir());
 }
 
 // --- Search inside the open chat -------------------------------------------------------------------------------

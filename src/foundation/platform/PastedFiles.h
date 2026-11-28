@@ -24,6 +24,13 @@ std::optional<std::string> WritePastedFile(const std::filesystem::path& dir, con
  */
 bool ReleasePastedFile(const std::string& path, const std::filesystem::path& dir);
 
+/**
+ * Clean exit: removes this run's own folder `run_dir` with what is left in it. Only when `run_dir` is a plain folder (not
+ * a link) directly under `root` and `root` itself is not a link; anything else is left alone, and a link inside the folder
+ * is removed as itself (never followed). `root` and every other run's folder are never touched. True when the folder went.
+ */
+bool RemovePastedRunDir(const std::filesystem::path& root, const std::filesystem::path& run_dir);
+
 /** A fresh random id for this run's folder (hex). */
 std::string NewPastedRunId();
 

@@ -85,6 +85,28 @@ bool ReleasePastedFile(const std::string& path, const fs::path& dir) {
   return fs::remove(file, ec) && !ec;
 }
 
+bool RemovePastedRunDir(const fs::path& root, const fs::path& run_dir) {
+  if (root.empty() || run_dir.empty()) {
+    return false;
+  }
+  std::error_code ec;
+  if (fs::is_symlink(root, ec) || !fs::is_directory(root, ec)) {
+    return false;
+  }
+  // Exactly one level under the root: the root itself, a deeper path and anything outside are not this run's folder.
+  const fs::path own = run_dir.lexically_normal();
+  if (!own.has_filename() ? own.parent_path().parent_path() != root.lexically_normal()
+                          : own.parent_path() != root.lexically_normal()) {
+    return false;
+  }
+  const fs::file_status status = fs::symlink_status(run_dir, ec);
+  if (ec || status.type() != fs::file_type::directory) {
+    return false; // missing, or a link (even one that points at a folder)
+  }
+  fs::remove_all(run_dir, ec); // a link inside is removed as itself, never followed
+  return !ec && !fs::exists(fs::symlink_status(run_dir, ec));
+}
+
 namespace {
 
 /** The newest write time of `entry` and everything inside it (links are not followed); `fallback` when it cannot be told. */

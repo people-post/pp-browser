@@ -166,6 +166,65 @@ void Age(const fs::path& path, const std::chrono::hours by) {
 }
 
 /** Two "instances" share one cache root; each has its own run folder under <cache>/pasted. */
+TEST_F(PastedFilesTest, ACleanExitRemovesThisRunsFolderWithWhatIsLeftInItAndNothingElse) {
+  const fs::path mine = dir_ / "run-a";
+  const fs::path other = dir_ / "run-b";
+  Touch(mine / "Pasted image 1.png");
+  Touch(mine / "sub" / "x.png");
+  Touch(other / "Pasted image 2.png");
+  Touch(dir_ / "stray.txt");
+  EXPECT_TRUE(RemovePastedRunDir(dir_, mine));
+  EXPECT_FALSE(fs::exists(mine));
+  EXPECT_TRUE(fs::exists(other / "Pasted image 2.png")) << "another run's folder is never touched";
+  EXPECT_TRUE(fs::exists(dir_ / "stray.txt"));
+  EXPECT_TRUE(fs::is_directory(dir_)) << "the shared root stays";
+  EXPECT_FALSE(RemovePastedRunDir(dir_, mine)) << "nothing there any more";
+}
+
+TEST_F(PastedFilesTest, ACleanExitRefusesTheRootAnythingDeeperAndAnythingOutside) {
+  Touch(dir_ / "run-a" / "deep" / "f.png");
+  Touch(outside_ / "mine.txt");
+  EXPECT_FALSE(RemovePastedRunDir(dir_, dir_)) << "the shared root";
+  EXPECT_FALSE(RemovePastedRunDir(dir_, dir_ / "run-a" / "deep")) << "not directly under the root";
+  EXPECT_FALSE(RemovePastedRunDir(dir_, outside_)) << "outside the root";
+  EXPECT_FALSE(RemovePastedRunDir(dir_, dir_ / ".." / "elsewhere")) << ".. does not get out";
+  EXPECT_FALSE(RemovePastedRunDir(dir_, fs::path()));
+  EXPECT_TRUE(fs::exists(dir_ / "run-a" / "deep" / "f.png"));
+  EXPECT_TRUE(fs::exists(outside_ / "mine.txt"));
+}
+
+TEST_F(PastedFilesTest, ACleanExitNeverFollowsALink) {
+  Touch(outside_ / "precious.txt");
+  std::error_code ec;
+  // The run folder itself is a link to a folder elsewhere: left alone.
+  fs::create_directories(dir_);
+  fs::create_directory_symlink(outside_, dir_ / "run-link", ec);
+  if (ec) {
+    GTEST_SKIP() << "this platform cannot make a folder link here";
+  }
+  EXPECT_FALSE(RemovePastedRunDir(dir_, dir_ / "run-link"));
+  EXPECT_TRUE(fs::exists(outside_ / "precious.txt"));
+  // A link inside the run folder is removed as itself; what it points at stays.
+  Touch(dir_ / "run-a" / "f.png");
+  fs::create_directory_symlink(outside_, dir_ / "run-a" / "gate", ec);
+  ASSERT_FALSE(ec);
+  EXPECT_TRUE(RemovePastedRunDir(dir_, dir_ / "run-a"));
+  EXPECT_FALSE(fs::exists(dir_ / "run-a"));
+  EXPECT_TRUE(fs::exists(outside_ / "precious.txt")) << "the link's target is untouched";
+}
+
+TEST_F(PastedFilesTest, ACleanExitRefusesWhenTheRootIsALink) {
+  Touch(outside_ / "run-a" / "f.png");
+  std::error_code ec;
+  fs::create_directories(dir_.parent_path());
+  fs::create_directory_symlink(outside_, root_ / "linked-root", ec);
+  if (ec) {
+    GTEST_SKIP() << "this platform cannot make a folder link here";
+  }
+  EXPECT_FALSE(RemovePastedRunDir(root_ / "linked-root", root_ / "linked-root" / "run-a"));
+  EXPECT_TRUE(fs::exists(outside_ / "run-a" / "f.png"));
+}
+
 class PastedRunsTest : public PastedFilesTest {
 protected:
   void SetUp() override {
