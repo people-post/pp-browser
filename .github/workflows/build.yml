@@ -23,8 +23,14 @@ on:
     # batches; the integration branch's push builds each batch once (CI time is short).
     branches: [main, 'release/**']
   # The backport bot (backport.yml) runs this on its backport/* branch: a PR it opens with the workflow token starts
-  # no pull_request run. A dispatch runs everything, as a release branch's push does.
+  # no pull_request run. A dispatch runs everything, as a release branch's push does; with `nightly` it is a nightly
+  # run too (the moved-since gate and the issue report), to try them without waiting for the schedule.
   workflow_dispatch:
+    inputs:
+      nightly:
+        description: 'Run as the nightly: skip when main has not moved since the last nightly that passed, then report (issues only on main)'
+        type: boolean
+        default: false
   # Every platform on main once a night (Hongwei 2026-11-28): a push to main builds Ubuntu only, the slow platforms
   # (Windows, macOS, the phones, the node editions, calls alone) run here — skipped when main has not moved since the
   # last nightly that passed. A failing nightly opens an issue (nightly-report, at the end).
@@ -43,7 +49,7 @@ concurrency:
 jobs:
   # The nightly run builds main unless it is where the last nightly that passed built it.
   nightly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || inputs.nightly
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -72,7 +78,7 @@ jobs:
     needs: nightly
     runs-on: ubuntu-24.04
     if: >-
-      !cancelled() && (github.event_name != 'schedule' || needs.nightly.outputs.run == 'true') &&
+      !cancelled() && ((github.event_name != 'schedule' && !inputs.nightly) || needs.nightly.outputs.run == 'true') &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     outputs:
       # False on a push to main: Windows, macOS, iOS, Android, calls alone and the node editions wait for the nightly.
@@ -970,7 +976,7 @@ jobs:
   # on the open one) with the jobs that failed; the next nightly that passes closes it.
   nightly-report:
     needs: [nightly, required]
-    if: always() && github.event_name == 'schedule' && needs.nightly.outputs.run == 'true'
+    if: always() && (github.event_name == 'schedule' || inputs.nightly) && needs.nightly.outputs.run == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -982,7 +988,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.required.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # A nightly dispatched on another branch (trying the workflow) says what it would do and touches no issue.
+          ON_MAIN: ${{ github.ref == 'refs/heads/main' }}
         run: |
+          gh() { if [ "$ON_MAIN" = true ] || [ "$1 $2" = "issue list" ] || [ "$1 $2" = "run view" ]; then command gh "$@"; else echo "would run: gh $*"; fi; }
           title="Nightly build fails on main"
           open=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
             --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
