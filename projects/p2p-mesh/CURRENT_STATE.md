@@ -47,7 +47,7 @@
 | Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
 | Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `ConversationsHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
-| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
+| Binary | `pp-node` (`apps/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
 | Dial-back | `/pp-mesh/reach/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`, the only integration line; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |

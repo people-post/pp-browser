@@ -14,7 +14,7 @@ scripts/test/pp_node_stress.py bridges --build build-pp-node --pairs 100 --durat
 ```
 
 - **The node** is `--build`'s pp-node (a Release build: `build-pp-node`; the script refuses a Debug one), pinned to `--node-cores` (default `0-1`: a two-core seed) with `taskset`, on loopback. It is isolated: no seeds (an unroutable TEST-NET bootstrap, as the docker labs use), no directory, no publishing. The run stops if it ever links to anything but this host.
-- **The load** is `pp-node-load` (`src/app/node/tools/load/`), on `--load-cores`. Each simulated client is its own Amp peer (identity, UDP socket):
+- **The load** is `pp-node-load` (`apps/node/src/app/node/tools/load/`), on `--load-cores`. Each simulated client is its own Amp peer (identity, UDP socket):
   - `park`: associate, reserve, renew every `--renew` s (10: a call's cadence);
   - `calls`: `--calls` group calls of `--members` on the node's media_relay, each member sending audio (40 ms frames) and video (`--video-kbps` 500, `--fps` 15, ~1100 B packets) and subscribing to the others;
   - `bridges`: relayed 1:1 pairs — a parked target, a dialer bridged to it by PeerId, the same media both ways. The pairs' channel is the probe's reliable one, not a call's best-effort carrier: its numbers are a worst case for real relayed calls.

@@ -224,7 +224,7 @@ function(pp_browser_add_symbol_check target)
       "-DPP_SYMBOLS_FORBID=${_forbid}"
       "-DPP_SYMBOLS_REQUIRE=${_require}"
       "-DPP_SYMBOLS_WHY=${ARG_WHY}"
-      -P ${CMAKE_SOURCE_DIR}/cmake/CheckSymbols.cmake
+      -P ${PP_BROWSER_ROOT}/cmake/CheckSymbols.cmake
     COMMENT "Checking ${target}'s symbols"
     VERBATIM)
 endfunction()
@@ -269,7 +269,7 @@ function(pp_browser_add_no_ui_link_check target)
       -DPP_BROWSER_NO_UI_SYMTOOL=${_pp_symtool}
       -DPP_BROWSER_NO_UI_SYMTOOL_KIND=${_pp_symtool_kind}
       -DPP_BROWSER_NO_UI_LABEL=${target}
-      -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoUiSymbols.cmake
+      -P ${PP_BROWSER_ROOT}/cmake/CheckNoUiSymbols.cmake
     COMMENT "Checking ${target} for UI/SDL symbols"
     VERBATIM)
 endfunction()

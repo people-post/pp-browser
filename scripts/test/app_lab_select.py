@@ -95,7 +95,7 @@ PATH_RULES = [
     # The lab itself: its driver, its stack and its probe.
     (("scripts/test/pp_app_lab.py", "scripts/test/app_lab_select.py", "scripts/test/pp_local_test.sh",
       "packaging/pp-node/docker-compose.app-lab*", "packaging/pp-node/app-lab-*",
-      "src/app/node/tools/app_probe/*"), ALL, "the app lab and its probe"),
+      "src/app/probes/app_probe/*"), ALL, "the app lab and its probe"),
     ((".github/workflows/lab-run.yml", ".github/workflows/lab-smoke.yml", ".github/workflows/lab-nightly.yml"),
      ("smoke",), "the lab's workflows"),
     (("docs/*", "projects/*", "design/*", "reports/*", "*.md", "LICENSE*"), NONE, "docs"),
@@ -110,7 +110,8 @@ PATH_RULES = [
     (("capabilities/*",), "capability", "a capability folder: it and the capabilities above it"),
     (("src/feature/*", "src/foundation/*", "src/lib/storage/*", "src/domain/*", "src/app/Bootstrap.*"), ALL,
      "the app stack pp-app-probe runs (ProductStack, presenters, storage, config)"),
-    (("src/app/node/*", "packaging/pp-node/Dockerfile", "packaging/pp-node/config.json.example"), ("node",),
+    (("apps/node/*", "src/app/probes/call_probe/*", "packaging/pp-node/Dockerfile",
+      "packaging/pp-node/config.json.example"), ("node",),
      "pp-node, the lab's seeds"),
     (("packaging/pp-node/Dockerfile.hard-*", "packaging/pp-node/hard-gw-*"), ("mesh",),
      "the NAT gateways (--suite app-nat)"),

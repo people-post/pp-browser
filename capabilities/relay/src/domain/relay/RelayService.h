@@ -14,7 +14,7 @@
 /**
  * The relay capability (projects/node-relay NR001). A node service's code is in its own namespace, pbr::<service>:
  * the symbol check that keeps a build's services out of the other build is made from the service's name
- * (src/app/node/CMakeLists.txt), so moving a service between pp-node and pp-node-plus renames nothing here.
+ * (apps/node/CMakeLists.txt), so moving a service between pp-node and pp-node-plus renames nothing here.
  */
 namespace pbr::relay {
 

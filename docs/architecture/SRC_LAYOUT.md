@@ -101,7 +101,7 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | broadcast | `lib/broadcast`, `feature/broadcast` |
 | node | `domain/node` |
 | relay | `domain/relay` — the message relay, an add-on only pp-node-plus links (node-relay NR001) |
-| node_app | `app/node` — pp-node, an app (CR017), and pp-node-plus (pp-node with the add-ons) |
+| node_app | `app/node` — pp-node, an app (CR017), and pp-node-plus (pp-node with the add-ons); in its own folder, `apps/node/src/` (CR028) |
 | product | `foundation/data`, `foundation/platform`, `foundation/i18n`, `foundation/product` — config, paths, platform hooks, text (CR015); its headless part both apps use is `capabilities/product` (CR028) |
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |
 
@@ -119,7 +119,8 @@ A capability moves out of `src/` into its own folder, `capabilities/<name>/`, be
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
 Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`), and so does the base:
 `capabilities/base/src/` holds `common` and foundation's runtime, TLS, errors, diagnostics, crypto and identity
-(CR023 step 3). The headless product base both apps use is `capabilities/product/src/` (`foundation/product`,
+(CR023 step 3). pp-node has a folder of its own outside `src/`, `apps/node/` (its include root `apps/node/src/`, never
+`src/`; it also configures on its own, CR028). The headless product base both apps use is `capabilities/product/src/` (`foundation/product`,
 `platform`, `data`: the build's identity, backends, paths, profiles; CR028). `src/` keeps the desktop's own product
 base (`foundation/data`, `platform`, `i18n`, `product` — its config, platform hooks, catalogs, the product's name) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
 `lib/storage`, `lib/scan`, the app's `feature/` modules). The
@@ -256,7 +257,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 | `domain/delivery/` | Delivery (`pp_domain_delivery`, CR020): the mesh transport for direct chat, account cards over the mesh, the send path (routes, outbox and retries, the control lane). Chat history and the transport bundle (`PeerTransports`) are `feature/conversations`' |
 
-The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
+The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `apps/node/` stays thin (main, bootstrap, env overlay, status HTTP); the node's lab tools (`pp-node-probe`, `pp-node-load`) live in `apps/node/src/app/node/tools/`, the app's probes (`pp-app-probe`, `pp-call-probe`) in `src/app/probes/`.
 
 ## Feature subfolders
 

@@ -3,7 +3,7 @@
 # in the config names a set: clients find a service by what a node advertises.
 #
 # A service is a capability library that defines PP_NODE_HAS_<SERVICE> (PUBLIC), so the binary that links it starts it
-# (src/app/node/main.cpp). Its code is in its own namespace, which is what the symbol checks look for.
+# (apps/node/src/app/node/main.cpp). Its code is in its own namespace, which is what the symbol checks look for.
 
 # Every service a node can be built with, in the capability order. For each: its library, what it needs, and what
 # tells its code apart in a symbol listing (a mangled-name fragment).
@@ -86,9 +86,9 @@ function(pp_add_node_binary target services)
   pp_node_services("${services}" OUT_LIBS _libs OUT_ALLOW _allow OUT_REQUIRE _require OUT_FORBID _forbid
     OUT_EDITION _edition)
   if(ARG_EXCLUDE_FROM_ALL)
-    add_executable(${target} EXCLUDE_FROM_ALL main.cpp)
+    add_executable(${target} EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/src/app/node/main.cpp)
   else()
-    add_executable(${target} main.cpp)
+    add_executable(${target} ${CMAKE_CURRENT_SOURCE_DIR}/src/app/node/main.cpp)
   endif()
   string(JOIN "," _names ${services})
   string(JOIN "," _known ${PP_NODE_KNOWN_SERVICES})

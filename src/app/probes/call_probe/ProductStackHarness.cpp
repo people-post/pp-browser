@@ -1,4 +1,4 @@
-#include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "app/probes/call_probe/ProductStackHarness.h"
 #include "lib/storage/ProfileStorage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"

@@ -1,9 +1,10 @@
-# Lab / smoke tools beside pp-node. Sources live here so node code and test tooling are easy to
-# tell apart; binaries still land in the pp-node build dir (scripts / hard lab mount it as /probes).
+# The app's probes (the hard lab and the app lab drive them): the product stack with no GUI. pp-call-probe runs it over
+# real Amp links, pp-app-probe is the app itself, one scripted user per process. They need the app's code, so they are
+# the app's (capability-repos CR028), not the node's; their binaries land beside pp-node's as before (the labs mount
+# that dir as /probes).
 include(PpBrowserWarnings)
 set(_pp_node_tools_out "${CMAKE_BINARY_DIR}/src/app/node")
 
-# Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
   pp_mesh
   pp_amp_link
@@ -13,20 +14,6 @@ set(_pp_probe_libs
   Threads::Threads
   sodium
 )
-
-add_executable(pp-node-probe probe/main.cpp)
-target_include_directories(pp-node-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pp-node-probe PRIVATE ${_pp_probe_libs})
-pp_browser_apply_warnings(pp-node-probe)
-set_target_properties(pp-node-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
-install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
-
-# Stress lab load generator (docs/ops/STRESS_LAB.md): many Amp clients against one pp-node.
-add_executable(pp-node-load load/main.cpp)
-target_include_directories(pp-node-load PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(pp-node-load PRIVATE ${_pp_probe_libs})
-pp_browser_apply_warnings(pp-node-load)
-set_target_properties(pp-node-load PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
 
 # call_probe needs AmpDirectChatTransport (--with-chat); skip in headless (no messaging).
 if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
