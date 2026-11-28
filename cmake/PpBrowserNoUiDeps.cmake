@@ -139,7 +139,10 @@ endfunction()
 # service outside its set.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_app_node$"
-  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|product|runtime_core|tls)$"
+  "^pp_foundation_(crypto|error|identity|product|runtime_core|tls)$"
+  # The product base both apps use (capabilities/product, capability-repos CR028); not the desktop's own config,
+  # text or platform (pp_foundation_data / _i18n / _platform_core).
+  "^pp_product_(data|platform)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
   "^pp_people_common$"

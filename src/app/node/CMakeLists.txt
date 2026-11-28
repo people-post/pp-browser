@@ -29,8 +29,9 @@ target_link_libraries(pp_app_node PUBLIC
   pp_lib_people
   pp_lib_net
   pp_foundation_crypto
-  pp_foundation_data
-  pp_foundation_platform_core
+  pp_product_data
+  pp_product_platform
+  pp_foundation_product
   pp_foundation_runtime_core
   pp_foundation_error
   pp_pbr_common

@@ -124,6 +124,10 @@ jobs:
               - 'CMakeLists.txt'
               - 'third_party/**'
               - '.github/workflows/build.yml'
+            # The headless product base both apps use (CR028); no capability builds on it.
+            product:
+              - *capability_base
+              - 'capabilities/product/**'
             people: &people
               - *capability_base
               - 'capabilities/people/**'
@@ -165,6 +169,7 @@ jobs:
             node_editions:
               - *node
               - *relay
+              - 'capabilities/product/**'
               - 'src/app/node/**'
               - 'src/foundation/**'
               - 'src/common/**'
@@ -380,7 +385,7 @@ jobs:
           fi
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in base people net social delivery pricing media messaging calls broadcast node relay; do
+            for capability in base product people net social delivery pricing media messaging calls broadcast node relay; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

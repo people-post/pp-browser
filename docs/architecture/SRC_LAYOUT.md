@@ -102,7 +102,7 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | node | `domain/node` |
 | relay | `domain/relay` — the message relay, an add-on only pp-node-plus links (node-relay NR001) |
 | node_app | `app/node` — pp-node, an app (CR017), and pp-node-plus (pp-node with the add-ons) |
-| product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
+| product | `foundation/data`, `foundation/platform`, `foundation/i18n`, `foundation/product` — config, paths, platform hooks, text (CR015); its headless part both apps use is `capabilities/product` (CR028) |
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |
 
 A capability includes and links only those before it in the order (tests included: they move with it). The
@@ -119,8 +119,9 @@ A capability moves out of `src/` into its own folder, `capabilities/<name>/`, be
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
 Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`), and so does the base:
 `capabilities/base/src/` holds `common` and foundation's runtime, TLS, errors, diagnostics, crypto and identity
-(CR023 step 3). `src/` keeps the product's base (`foundation/data`, `platform`, `i18n`, `product` — config, paths,
-platform hooks, catalogs, the product's name and version) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
+(CR023 step 3). The headless product base both apps use is `capabilities/product/src/` (`foundation/product`,
+`platform`, `data`: the build's identity, backends, paths, profiles; CR028). `src/` keeps the desktop's own product
+base (`foundation/data`, `platform`, `i18n`, `product` — its config, platform hooks, catalogs, the product's name) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
 `lib/storage`, `lib/scan`, the app's `feature/` modules). The
 `common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`,
 media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus itself, so a split of media carries those.

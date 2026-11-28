@@ -1,21 +1,17 @@
 pp_browser_add_foundation_library(pp_foundation_data
   SOURCES
-    AppPaths.cpp
     BackendProfile.cpp
     Config.cpp
     ConfigJson.cpp
-    ConfigSectionsJson.cpp
     ConfigSecretsStore.cpp
-    MeshRole.cpp
     LlmPreset.cpp
     PlatformDefaults.cpp
-    ProfileRegistry.cpp
-    ProfileManifest.cpp
     ProfileServices.cpp
     SessionStore.cpp
     UiDemoConfig.cpp
     UserPreferences.cpp
   PUBLIC_LIBS
+    pp_product_data
     pp_foundation_platform_core
     pp_foundation_crypto)
 

@@ -1,0 +1,3 @@
+pp_browser_add_foundation_folder_tests(
+  pp_product_platform
+  pp_product_platform_test)

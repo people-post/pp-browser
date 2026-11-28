@@ -26,6 +26,7 @@ import subprocess
 # One tag per capability folder (capabilities/<name>/, CTest label capability:<name>, build.yml's `changes`
 # filters). The base (capabilities/base) is below all of them and has no tag: a change there picks everything.
 CAPABILITY_TAGS = {
+    "product": "the product base both apps use (capabilities/product): backends, paths, profiles, the build's identity",
     "people": "identity, contacts, account cards and keys, the directory",
     "net": "the relay client and registration",
     "social": "posts and content",
@@ -53,6 +54,7 @@ VOCABULARY = {**CAPABILITY_TAGS, **LAB_TAGS}
 # filters, where each capability's filter is the ones below it plus its folder; app_lab_select_test.py checks the
 # two agree.
 BELOW = {
+    "product": (),
     "people": (),
     "net": ("people",),
     "social": ("people",),
@@ -103,7 +105,7 @@ PATH_RULES = [
     (("android/*", "ios/*", "packaging/ios/*", "packaging/macos/*", "scripts/*", ".github/*", ".cursor/*",
       ".vscode/*", ".clang-format", ".gitignore", ".git-blame-ignore-revs", "config.json.example",
       ".exmaple-config.json"), NONE, "other platforms, tooling and CI (not on the lab's Linux build)"),
-    (("capabilities/base/*", "cmake/*", "CMakeLists.txt", "src/CMakeLists.txt", "third_party/*"), ALL,
+    (("capabilities/base/*", "capabilities/product/*", "cmake/*", "CMakeLists.txt", "src/CMakeLists.txt", "third_party/*"), ALL,
      "the base, the build and the pinned libraries (pp-cpp-*)"),
     (("capabilities/*",), "capability", "a capability folder: it and the capabilities above it"),
     (("src/feature/*", "src/foundation/*", "src/lib/storage/*", "src/domain/*", "src/app/Bootstrap.*"), ALL,

@@ -41,6 +41,8 @@ endif()
 # What each capability builds on: the capability order (DESIGN § Target). check_capability_edges.py holds this table
 # to its own (ALLOWED), so the two cannot drift.
 set(PP_CAPABILITY_BELOW_base "")
+# The headless product base both apps use (CR028): only apps include it; no capability builds on it.
+set(PP_CAPABILITY_BELOW_product base)
 set(PP_CAPABILITY_BELOW_people base)
 set(PP_CAPABILITY_BELOW_net base people)
 set(PP_CAPABILITY_BELOW_social base people)
@@ -53,7 +55,7 @@ set(PP_CAPABILITY_BELOW_broadcast base people net delivery pricing media calls)
 set(PP_CAPABILITY_BELOW_node base people net)
 set(PP_CAPABILITY_BELOW_relay base people net)
 # The folders in the order a capability's targets need the ones below it defined first (src/CMakeLists.txt's order).
-set(_pp_order base people net social delivery pricing media messaging calls broadcast node relay)
+set(_pp_order base product people net social delivery pricing media messaging calls broadcast node relay)
 
 set(PP_CAPABILITIES "calls" CACHE STRING "The capabilities to build, with everything below them (;-list)")
 set(_pp_built "")

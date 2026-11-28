@@ -3,6 +3,8 @@
 # (capabilities name what they link; check_capability_edges.py, CR016).
 # The base (capabilities/base, CR023 step 3), then the app's own common layer and the product's base.
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/base ${CMAKE_BINARY_DIR}/capabilities/base)
+# The headless product base both apps use (CR028); the app's own on top of it in foundation/.
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/product ${CMAKE_BINARY_DIR}/capabilities/product)
 add_subdirectory(common/ui)
 add_subdirectory(foundation)
 # Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.

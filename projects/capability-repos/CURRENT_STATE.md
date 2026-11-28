@@ -189,7 +189,11 @@
      `relay.content_sha256`, `node`); `src/app/node/NodeConfigLoad` is the one place it meets `AppConfig`, loading with
      the app's loader. `node_config_test` pins what the node reads, for stage 2's loader of its own. pp-node now warns
      when a built-in backend ignores the file's `registration`.
-   - **Stage 2:** `capabilities/product` and the node's own loader; then the standalone build.
+   - **Stage 2, in review (one PR, a commit per step):** 2a the config file's shared sections out of the desktop's
+     `ConfigJson` (`ConfigSectionsJson`), `MeshRole.h` off `Config.h`; 2b pp-node's own loader (`LoadNodeConfig`), held
+     to the app's by `node_config_test` (21 files × 4 builds); 2c `capabilities/product` (`pp_foundation_product`,
+     `pp_product_platform`, `pp_product_data`), which pp-node links instead of the desktop's `pp_foundation_data` and
+     `pp_foundation_platform_core`; 2d the standalone pp-node build.
 5. P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
    node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
    the add-ons, its packaging and release) rather than moving code still being built.
