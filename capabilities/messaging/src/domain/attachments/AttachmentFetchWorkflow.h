@@ -404,6 +404,8 @@ private:
   int others_since_own_ = 0;
   /** Under mutex_: a budget wake is set (one at a time); its coordinator timer (0: none, or the test's). */
   bool budget_wake_pending_ = false;
+  /** Under mutex_: when the pending budget wake is due (the workflow's clock); past it, the wake was lost. */
+  int64_t budget_wake_deadline_ms_ = 0;
   uint64_t budget_wake_timer_ = 0;
   std::function<void(int64_t, std::function<void()>)> budget_wake_for_test_;
   /** Under mutex_: hex of the hashes a DeleteLocalAttachments is deleting. */

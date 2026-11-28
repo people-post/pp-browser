@@ -221,6 +221,37 @@ TEST_F(DownloadOrderTest, ThirtyOwnDeviceFilesAllStartAMinuteAtATimeAndNoneIsThr
   EXPECT_EQ(Wakes(), 0u) << "nothing waits any more";
 }
 
+// The budget wake is a gated one-shot timer: a reset or quit during its minute drops it unseen. The next kick after
+// its deadline (a rewire, a network change, a new file) takes it as lost and sets another; one before it does not.
+TEST_F(DownloadOrderTest, ALostBudgetWakeIsSetAgainByTheNextKickAfterItsDeadline) {
+  std::vector<std::string> names;
+  for (int i = 0; i < 30; ++i) {
+    names.push_back("s" + std::to_string(i));
+    workflow_.EnqueueFromMessage("t1", File(names.back(), kOwn));
+  }
+  ASSERT_TRUE(WaitFor([&] { return CountIn(names, State::Ready) == 10u; }));
+  ASSERT_TRUE(WaitFor([&] { return Wakes() == 1u; })) << "the first wake (never run: lost to a reset)";
+
+  now_ms_ += 30'000;
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::Smart); // a kick before the deadline
+  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::seconds(5)));
+  EXPECT_EQ(Wakes(), 1u) << "the wake may still come: none more";
+  EXPECT_EQ(CountIn(names, State::Ready), 10u);
+
+  now_ms_ += 32'000; // past the lost wake's deadline: the minute has also moved on
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::Smart); // what a rewire does
+  ASSERT_TRUE(WaitFor([&] { return CountIn(names, State::Ready) == 20u; }));
+  ASSERT_TRUE(WaitFor([&] { return Wakes() == 2u; })) << "a new wake for the last ten";
+  {
+    std::lock_guard lock(mutex_);
+    wakes_.erase(wakes_.begin()); // the lost one
+  }
+  now_ms_ += 60'000;
+  RunWake();
+  ASSERT_TRUE(AllReady(names));
+  EXPECT_EQ(CountIn(names, State::Pending), 0u);
+}
+
 // The same burst from another person: still ten, the rest Download rows that never start by themselves.
 TEST_F(DownloadOrderTest, ThirtyFilesFromAnotherPersonStillThrottleAsBefore) {
   std::vector<std::string> names;

@@ -73,6 +73,8 @@ constexpr int64_t kChangePostStaleMs = 2000;
 constexpr int kOthersBeforeOwnFloor = 3;
 /** AutoDownloadBudget's window (AttachmentLimits.cpp): a start counts against its sender for this long. */
 constexpr int64_t kAutoDownloadBudgetWindowMs = 60 * 1000;
+/** How late past its deadline a budget wake may still come before it is taken as lost. */
+constexpr int64_t kBudgetWakeLatenessMs = 1000;
 
 /** Content hashes a message refers to (attachment, AI image). */
 std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
@@ -741,13 +743,23 @@ bool AttachmentFetchWorkflow::IsForced(const std::string& key) const {
 
 void AttachmentFetchWorkflow::ScheduleBudgetWake() {
   std::function<void(int64_t, std::function<void()>)> schedule;
+  uint64_t lost_timer = 0;
   {
     std::lock_guard lock(mutex_);
-    if (budget_wake_pending_) {
+    const int64_t now_ms = NowMsLocked();
+    // A wake is set and its time has not passed (by more than the timer's own lateness): it will come. One past it was
+    // dropped by the runtime's gate (a reset or quit during its minute: the timer runs only on an open gate and in the
+    // epoch it was set in), so another is set.
+    if (budget_wake_pending_ && now_ms < budget_wake_deadline_ms_ + kBudgetWakeLatenessMs) {
       return;
     }
     budget_wake_pending_ = true;
+    budget_wake_deadline_ms_ = now_ms + kAutoDownloadBudgetWindowMs;
+    lost_timer = std::exchange(budget_wake_timer_, 0);
     schedule = budget_wake_for_test_;
+  }
+  if (lost_timer != 0) {
+    AppRuntime::CancelCoordinatorTimer(lost_timer); // should it be only late, not lost, it does not wake twice
   }
   // The automatic limits count one minute back from now: a minute on, at least the oldest start has left the window.
   auto wake = [this]() {
