@@ -55,7 +55,7 @@ jobs:
             | jq -r --argjson cutoff "$cutoff" \
                 '.[] | select((.lastAccessedAt | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $cutoff) | .id' \
             | while read -r id; do
-                gh cache delete "$id"
+                gh cache delete "$id" || true
               done
 
   # Only main saves ccache, one entry per commit: keep the newest two per branch and kind (the next main run may still
@@ -86,7 +86,7 @@ jobs:
           cat superseded.tsv
           if [ "$DELETE" = "true" ]; then
             cut -f1 superseded.tsv | while read -r id; do
-              gh cache delete "$id"
+              gh cache delete "$id" || true
             done
           else
             echo "Not deleting (stage one: only a manual run with dry_run=false deletes)."

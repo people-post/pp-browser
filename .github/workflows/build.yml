@@ -433,7 +433,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
   # Downloadable Linux build of every main push (no tests: the build job runs them). Packaged
   # layout (bin/ + share/pp-browser/assets); no backend URL is compiled in, set PP_BROWSER_ORIGIN at run time.
@@ -595,7 +595,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .cache/ccache
-          key: ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
   android:
     needs: changes
@@ -714,7 +714,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}-${{ github.sha }}
+          key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
 
       # An artifact name takes no '/': release/app-1.1 → release-app-1.1.
       - name: Artifact name
