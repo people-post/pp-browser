@@ -80,6 +80,11 @@ A value of the wrong type or out of bounds fails the start, naming the key; a ke
 
 #### pp-node relay identity
 
+**Where its registration comes from:** on a built-in backend (prod, staging, dev) the backend's own, compiled into
+the build; a `registration` section in the file is ignored there, and pp-node says so at start (a WARNING naming the
+backend). On a custom backend (`backend.env: "custom"`) the file's `registration`, as for `relay` and `directory`.
+Either way `PP_NODE_REGISTRATION_BASE_URL` / `PP_NODE_REGISTRATION_RELAY_ID` win, applied after the file.
+
 The relay a node registers at (`registration.base_url`; registration, heartbeat) is addressed by its origin **and its
 relay id** (release-compatibility [SIGNED_FORMATS § 3](../../projects/release-compatibility/SIGNED_FORMATS.md#3-the-relay-operator-set-and-certificate),
 [SERVICE_ENDPOINTS § Pins](../contracts/SERVICE_ENDPOINTS.md#pins)): `registration.relay_id`
