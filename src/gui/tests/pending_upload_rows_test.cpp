@@ -742,15 +742,21 @@ TEST(AttachIntakeSourcePinTest, OnAComputerPlusOpensTheOneMultiSelectDialogAndNe
 // files must turn a string into a path only through PathFromUtf8 (and back through PathToUtf8). A source pin: the
 // behavioural tests (attach_intake_test, pasted_files_test) are the real check on Windows CI.
 TEST(AttachPathsUtf8PinTest, NoNarrowStringBecomesAPathInTheAttachCodeOutsideTheHelper) {
-  const std::vector<std::string> files = {
-      "src/feature/presenters/AttachIntake.cpp",        "src/feature/presenters/PictureSendQueue.cpp",
-      "src/foundation/platform/PastedFiles.cpp",        "src/gui/chat/OutgoingAttachmentPrep.cpp",
-      "capabilities/base/src/common/ImageMetadata.cpp", "src/gui/chat/PictureSendController.cpp"};
+  // Paths under this tree, and pp-cpp-core's (ImageMetadata is the base's, CR027) under its checkout.
+  const std::string core = "core:";
+  const std::vector<std::string> files = {"src/feature/presenters/AttachIntake.cpp",
+                                          "src/feature/presenters/PictureSendQueue.cpp",
+                                          "src/foundation/platform/PastedFiles.cpp",
+                                          "src/gui/chat/OutgoingAttachmentPrep.cpp",
+                                          "core:capabilities/base/src/common/ImageMetadata.cpp",
+                                          "src/gui/chat/PictureSendController.cpp"};
   const std::regex direct(R"((?:filesystem|fs)::path\(\s*[A-Za-z_])");
   const std::regex narrow_call(
       R"((?:filesystem|fs)::(?:status|symlink_status|file_size|weakly_canonical|create_directories)\((?:path|scratch_dir|root)\b|ifstream\s+\w+\((?:path|file)\b)");
   for (const std::string& file : files) {
-    const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/" + file);
+    const bool in_core = file.rfind(core, 0) == 0;
+    const std::string source = in_core ? ReadAll(std::string(PP_CPP_CORE_SOURCE_DIR) + "/" + file.substr(core.size()))
+                                       : ReadAll(std::string(PP_SOURCE_DIR) + "/" + file);
     ASSERT_FALSE(source.empty()) << file;
     EXPECT_NE(source.find("common/PathUtf8.h"), std::string::npos) << file << " uses the UTF-8 helper";
     std::smatch hit;

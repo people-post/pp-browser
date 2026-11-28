@@ -4,7 +4,8 @@ pp_browser_add_feature_folder_tests(
   LINK_LIBS pp_lib_net_testing
   PRIVATE_DEFINITIONS
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets"
-    PP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    PP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    PP_CPP_CORE_SOURCE_DIR="${PP_CPP_CORE_DIR}") # source pins of core's files (cmake/PpCore.cmake)
 
 include(pp_lib_rmlui)
 pp_browser_link_rmlui_core(pp_browser_gui_test)
