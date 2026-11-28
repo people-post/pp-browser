@@ -12,6 +12,7 @@
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "gui/chat/ChatPeerSheet.h"
+#include "gui/chat/MessageMenuSlots.h"
 #include "lib/delivery/SendRelayOptions.h"
 
 #include <ui/base/SystemInterface.h>
@@ -131,6 +132,42 @@ void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions) {
   });
 }
 
+const char* MessageBarActionId(const MessageBarAction action) {
+  switch (action) {
+    case MessageBarAction::Reply:
+      return "reply_message";
+    case MessageBarAction::Forward:
+      return "forward_message";
+    case MessageBarAction::React:
+      return "react_more";
+    case MessageBarAction::More:
+      break;
+  }
+  return "";
+}
+
+void ChatMenus::RunMessageBarAction(ui::Event& ev, const MessageBarAction action) {
+  ui::Element* button = ev.GetCurrentElement();
+  if (!button) {
+    return;
+  }
+  ContextMenuRequest request;
+  request.target = button; // inside the message row: ForRequest finds its message-id upwards
+  request.context = button->GetContext();
+  request.position = MenuPositionBelowRightAlignedEvent(ev);
+  if (action == MessageBarAction::More) {
+    ContextMenuHost::Instance().ShowAt(request);
+    return;
+  }
+  const std::string id = MessageBarActionId(action);
+  for (ContextMenuAction& item : ForRequest(request)) {
+    if (item.id == id && item.run) {
+      item.run();
+      return;
+    }
+  }
+}
+
 std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& request) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();
@@ -183,6 +220,9 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
     return actions;
   }
 
+  if (presenter_.ForwardChoosing()) {
+    return actions; // choosing messages to forward: a press on a row is a tick, not a menu
+  }
   const std::string message_id = FindAttributeUp(request.target, "message-id");
   if (message_id.empty() || IsPendingUploadRowId(message_id) || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete; a picture being sent is none
@@ -190,27 +230,6 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (host_.IsCallRecord(message_id)) {
     return actions; // a call record is one tap (call back) and no menu (Kenneth 2026-11-12)
   }
-  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
-  for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
-    ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
-                              host_.ToggleReaction(message_id, emoji);
-                              host_.RememberEmoji(emoji);
-                            }};
-    react.quick = true;
-    actions.push_back(std::move(react));
-  }
-  ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
-  more.quick = true;
-  more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
-  // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
-  actions.push_back(std::move(more));
-
-  // A contact card: its person can be added (the card is checked first).
-  if (host_.IsContactCard(message_id)) {
-    actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
-                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/v2/user-plus.svg"});
-  }
-
   // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
   std::string text;
   if (request.context) {
@@ -221,14 +240,58 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (text.empty()) {
     text = host_.MessagePlainText(message_id);
   }
-  if (!text.empty()) {
-    // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+  // What this menu offers is decided once (MessageMenuSlots.h): the wide layout's hover bar draws the same slots. A
+  // conversation takes reactions only when there is someone to send them to; an AI conversation offers none.
+  auto open_thread = facade->GetActiveThread();
+  const MessageMenuSlots slots = DecideMessageMenuSlots(open_thread && ThreadTakesReactions(open_thread->kind),
+                                                        !text.empty(), host_.CanEditMessage(message_id),
+                                                        chat_.editing_message, presenter_.CanForward(message_id));
+
+  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
+  if (slots.react) {
+    for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
+      ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
+                                host_.ToggleReaction(message_id, emoji);
+                                host_.RememberEmoji(emoji);
+                              }};
+      react.quick = true;
+      actions.push_back(std::move(react));
+    }
+    ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
+    more.quick = true;
+    more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
+    // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
+    actions.push_back(std::move(more));
+  }
+
+  // A contact card: its person can be added (the card is checked first).
+  if (host_.IsContactCard(message_id)) {
+    actions.push_back({"add_contact_from_card", Tr("chat.menu.add_to_contacts"), nullptr,
+                       [this, message_id]() { host_.AddContactFromCard(message_id); }, "../icons/v2/user-plus.svg"});
+  }
+
+  // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+  if (slots.reply) {
     actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { host_.StartQuoteReply(text); },
                        "../icons/v2/reply.svg"});
-    actions.push_back(
-        {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
+  }
+  // Forward (this message) and Select: text, contact cards and pictures, videos, files and voice messages
+  // (ChatPresenter::CanForward); right after Reply, before Copy. An attachment has no words, so this does not wait for any.
+  if (slots.forward) {
+    actions.push_back({"forward_message", Tr("chat.menu.forward"), nullptr,
+                       [this, message_id]() { host_.BeginForward(message_id); }, "../icons/v2/forward.svg"});
+    actions.push_back({"select_messages", Tr("chat.menu.select"), nullptr,
+                       [this, message_id]() { host_.BeginSelect(message_id); }, "../icons/v2/select.svg"});
+  }
+  if (slots.copy) {
+    // Copy gives the words of a message. A picture, video, file or voice message has none (its "text" is the file name,
+    // and a name is not what anyone means by copying a picture), so it has no Copy at all (Kenneth 2026-11-26).
+    if (!presenter_.IsAttachmentMessage(message_id)) {
+      actions.push_back(
+          {"copy_message", Tr("common.copy"), nullptr, [text]() { CopyToClipboard(text); }, "../icons/v2/copy.svg"});
+    }
     // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
-    if (auto active = facade->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+    if (open_thread && open_thread->kind == ThreadKind::Direct && !chat_.editing_message) {
       actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr,
                          [this, text]() { host_.StartQuoteReply(text, "@ai "); }, "../icons/v2/sparkle.svg"});
     }
@@ -237,7 +300,7 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   // message, nothing that would start another edit or a reply (the words being edited stay as typed).
   if (chat_.editing_message) {
     RemoveActionsWhileEditing(actions);
-  } else if (host_.CanEditMessage(message_id)) {
+  } else if (slots.edit) {
     InsertEditAction(actions, [this, message_id]() { host_.StartEditMessage(message_id); });
   }
   // A received attachment's way out of the app (DEV/PLAN-received-file-save-as.md): opened after this menu is gone.

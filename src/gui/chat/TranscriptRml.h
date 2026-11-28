@@ -127,6 +127,11 @@ std::string PendingUploadRml(const PendingUpload& upload);
 std::string PendingUploadRml(const PendingUpload& upload, const TranscriptFacts& facts, int64_t timestamp_ms);
 /** The type tile's text for a file name: its extension in capitals, at most 4 letters or digits; else empty (icon). */
 std::string FileTypeTileLabel(const std::string& name);
+/**
+ * The colour family of a type tile label (FileTypeTileLabel's result, in capitals): "txt", "pdf", "zip", "doc", "xls",
+ * or "other" (no label, or one with no family). The send preview paints its type badges by it (class `ps-kind--<kind>`).
+ */
+std::string FileTypeTileKind(const std::string& label);
 
 /** The ring's `decorator` value at `percent`: none at 0 (no sliver at the seam), a whole circle at 100. */
 std::string PendingRingDecorator(int percent);

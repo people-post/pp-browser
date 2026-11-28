@@ -4,6 +4,7 @@
 pp_browser_add_feature_library(pp_feature_presenters
   SOURCES
     AccountSyncState.cpp
+    AttachIntake.cpp
     AttachmentExit.cpp
     AttachmentPicks.cpp
     AvatarCropFrame.cpp
@@ -31,7 +32,9 @@ pp_browser_add_feature_library(pp_feature_presenters
     HomeBrief.cpp
     HomeToday.cpp
     MessageEdit.cpp
+    MessageForward.cpp
     MessageResend.cpp
+    NewsReader.cpp
     NewCallGuard.cpp
     PendingUpload.cpp
     PictureSendQueue.cpp

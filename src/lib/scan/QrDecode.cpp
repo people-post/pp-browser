@@ -5,14 +5,15 @@
 #include <memory>
 
 namespace pbr {
-QrDetection InspectQr(const VideoFrameRgba& frame) {
+QrDetection InspectQr(const VideoFrameRgba& frame, int max_edge) {
   if (frame.width <= 0 || frame.height <= 0 || frame.width > 8192 || frame.height > 8192 ||
       frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
     return {};
   }
   std::unique_ptr<quirc, decltype(&quirc_destroy)> decoder(quirc_new(), quirc_destroy);
   // Keep scanning bounded even when a camera ignores the requested capture resolution.
-  const int step = std::max(1, (std::max(frame.width, frame.height) + 1279) / 1280);
+  max_edge = std::max(1, max_edge);
+  const int step = std::max(1, (std::max(frame.width, frame.height) + max_edge - 1) / max_edge);
   const int width = frame.width / step;
   const int height = frame.height / step;
   if (!decoder || width <= 0 || height <= 0 || quirc_resize(decoder.get(), width, height) < 0) {
@@ -62,7 +63,7 @@ QrDetection InspectQr(const VideoFrameRgba& frame) {
   return result;
 }
 
-std::optional<std::string> DecodeQr(const VideoFrameRgba& frame) {
-  return InspectQr(frame).text;
+std::optional<std::string> DecodeQr(const VideoFrameRgba& frame, int max_edge) {
+  return InspectQr(frame, max_edge).text;
 }
 } // namespace pbr

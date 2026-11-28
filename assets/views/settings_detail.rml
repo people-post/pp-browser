@@ -1,4 +1,7 @@
-<div class="settings-detail-panel stack" data-model="settings">
+<!-- `settings-detail--profile`: the wide stylesheet shows My profile as the phone does (its phone-only rows), where the
+     desktop's own blocks differ (wide.rcss). -->
+<div class="settings-detail-panel stack" data-model="settings"
+     data-class-settings-detail--profile="selected_id == 'profile'">
   <div class="settings-detail-header row">
     <p class="settings-header-title">{{selected_title}}</p>
   </div>

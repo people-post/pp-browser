@@ -5,6 +5,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
+#include "feature/presenters/MessageForward.h"
 #include "gui/chat/VoiceBubble.h"
 #include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
@@ -1271,6 +1272,20 @@ std::string FileTypeTileLabel(const std::string& name) {
   return ext;
 }
 
+std::string FileTypeTileKind(const std::string& label) {
+  static const std::pair<const char*, const char*> kKinds[] = {
+      {"TXT", "txt"},  {"MD", "txt"},  {"LOG", "txt"}, {"RTF", "txt"},  {"PDF", "pdf"}, {"ZIP", "zip"}, {"RAR", "zip"},
+      {"7Z", "zip"},   {"TAR", "zip"}, {"GZ", "zip"},  {"TGZ", "zip"},  {"BZ2", "zip"}, {"XZ", "zip"},  {"DOC", "doc"},
+      {"DOCX", "doc"}, {"ODT", "doc"}, {"XLS", "xls"}, {"XLSX", "xls"}, {"CSV", "xls"}, {"ODS", "xls"},
+  };
+  for (const auto& entry : kKinds) {
+    if (label == entry.first) {
+      return entry.second;
+    }
+  }
+  return "other";
+}
+
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
                                                 const TranscriptFacts& facts_in,
                                                 const std::optional<MentionRoster>& mentions) {
@@ -1355,6 +1370,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
                              : RowClass(message.sender_contact_id).c_str();
     row.mentions_me = mentions_me;
     row.has_reactions = !entry.reactions.empty();
+    row.forwardable = CanForwardMessage(message); // choosing messages to forward reads this, not the store
     if (!entry.control) {
       row.time_label = EditedTimeLabel(message, MessageTimeLabel(message.timestamp, now_ms)).c_str();
     }
@@ -1366,6 +1382,15 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       prev_ms = message.timestamp;
     }
     const bool plain = !entry.control && message.content_type != ChatContentType::System;
+    row.has_actions = plain && !call_row && content.find("bubble-deleted") == std::string::npos;
+    row.can_edit = row.has_actions && facts.can_edit && facts.can_edit(message.id);
+    if (row.has_actions && facts.bar_offer) {
+      const TranscriptFacts::MessageBarOffer offer = facts.bar_offer(message.id);
+      row.bar_react = offer.react;
+      row.bar_reply = offer.reply;
+    }
+    // Forward is the row's own answer (built from its message): no store read per row per render.
+    row.bar_forward = row.has_actions && row.forwardable;
     const bool continues_run = plain && !new_day && run_sender == message.sender_contact_id &&
                                message.timestamp - run_start_ms <= kRunGapMs && message.timestamp >= run_start_ms;
     row.run_start = !continues_run;

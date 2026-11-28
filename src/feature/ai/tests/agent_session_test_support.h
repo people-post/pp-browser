@@ -15,6 +15,7 @@
 #include "lib/ai/ToolRegistry.h"
 #include "lib/ai/mcp/McpClient.h"
 #include "common/ValueJson.h"
+#include "foundation/tls/CurlSsl.h"
 
 #include <gtest/gtest.h>
 
@@ -265,6 +266,7 @@ inline AgentImageTurn TestImage(const std::string& message_id = {}) {
 class AgentSessionBriefStreamTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    SetCurlIgnoreEnvProxyForTest(true); // the closed port refuses at once, whatever proxy the machine has set
     AppRuntime::Initialize(AppRuntimeConfig{});
     // Every completions request (the model pipeline, output repair, compaction) is counted and kept here.
     LlmClient::SetRequestObserverForTests([this](const std::string& body) {
@@ -276,6 +278,7 @@ protected:
     session_.reset();
     AppRuntime::Shutdown();
     LlmClient::SetRequestObserverForTests(nullptr);
+    SetCurlIgnoreEnvProxyForTest(false);
   }
 
   void Start(const std::string& preset = "brief") { StartWith(MakeConfig(preset)); }

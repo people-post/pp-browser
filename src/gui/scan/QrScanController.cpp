@@ -1,5 +1,7 @@
 #include "gui/scan/QrScanController.h"
 
+#include "foundation/platform/Platform.h"
+
 #include "gui/scan/ElementScanPreview.h"
 #include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
@@ -16,6 +18,9 @@
 #include <utility>
 
 namespace pbr {
+bool QrScanController::CanScan() const {
+  return ScanOffered(Platform::IsDesktop(), scanner_.CameraAvailable());
+}
 
 namespace {
 logging::Logger& ScanLog() {
@@ -98,6 +103,7 @@ bool QrScanController::RegisterModel(ui::Context* context) {
 }
 
 void QrScanController::Open(QrScanResultCallback on_result, std::function<void()> on_closed) {
+  ScanLog().info << "Open requested (camera permission " << static_cast<int>(camera_.state()) << ")";
   Close();
   const auto ignored = [&on_closed](const char* why) {
     ScanLog().warning << "Open ignored: " << why;
@@ -203,7 +209,8 @@ void QrScanController::BeginCapture() {
   failed_ = false;
   // iOS preview is portrait-locked; scanning need not start the call's gravity sensor.
   const int rotation = context_ && !CameraRotationFollowsDevice() ? CameraDisplayRotationDegrees() : 0;
-  scanner_.Start(rotation);
+  // A computer shows the whole frame in a window-sized layer (ElementScanPreview); the decoder is not told.
+  scanner_.Start(rotation, Platform::IsDesktop());
   Dirty();
 }
 
@@ -301,6 +308,7 @@ void QrScanController::Tick() {
       preview = dynamic_cast<ElementScanPreview*>(preview_.get());
     }
     if (preview) {
+      preview->SetMirrored(update.mirror_preview);
       preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
     }
     Dirty();

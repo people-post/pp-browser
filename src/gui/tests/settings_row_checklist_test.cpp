@@ -455,18 +455,22 @@ TEST(SettingsSensitiveActionsTest, EachEventSitsOnOneElementPerLayoutUnderItsOld
       {"devices", "open_security_page('transfer')", "!own_devices_not_main && !own_list_getting && !own_list_missing",
        1, 0},
       // The "?" of the action: next to the top sentence on the main device, after a linked phone's "Main device
-      // (manage)" label (the card's second line has none), and the link page's note (in the hidden desktop wrapper here).
+      // (manage)" label (the card's second line has none), and the link page's note (the desktop's too, since the steps list that held it went).
       {"devices", "ask_setting_help('settings.security.transfer_row')",
        "!own_devices_not_main && !own_list_getting && !own_list_missing@@own_devices_not_main && "
-       "!own_devices_signed_out;;!device.is_this_device && device.is_main@@-",
-       2, 0},
+       "!own_devices_signed_out;;!device.is_this_device && device.is_main@@!link_reply_shown",
+       2, 1},
       // No list of ours found on our relays: the one way to start a new one (it asks first: SettingsOwnDevicesTest).
       {"devices", "start_new_device_list()", "own_list_missing", 1, 1},
       // Here the transfer block sits in the devices section's desktop wrapper: its scan and paste buttons (M027) show
       // on the desktop only. Their own page is checked in the next test.
       {"devices", "link_scan_offer()",
        "security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan", 0, 1},
-      {"devices", "link_paste_offer()", "security_can_export_link && !own_devices_not_main && !link_reply_shown", 0, 1},
+      // (Paste is the main button when no camera is listed, the second one when there is: one element for each case.)
+      {"devices", "link_paste_offer()",
+       "security_can_export_link && !own_devices_not_main && !link_reply_shown;;link_can_scan@"
+       "security_can_export_link && !own_devices_not_main && !link_reply_shown;;!link_can_scan",
+       0, 2},
       // The phone's device rows moved into a sheet (open_own_device_actions); its two actions run the same Remove /
       // MakeMain the desktop buttons' events run (SettingsOwnDevicesTest). The desktop keeps one element per event.
       {"devices", "make_main_device(device_index)", "own_devices_shown;;device.can_manage", 0, 1},
@@ -517,7 +521,7 @@ TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageReadsTheNewDevice
       EXPECT_EQ(o.gates, gate + ";;link_can_scan");
       ++scan;
     } else if (o.token == "data-event-click=\"link_paste_offer()\"") {
-      EXPECT_EQ(o.gates, gate);
+      EXPECT_TRUE(o.gates == gate + ";;link_can_scan" || o.gates == gate + ";;!link_can_scan") << o.gates;
       ++paste;
     } else if (o.token == "data-event-click=\"copy_link_reply()\"") {
       EXPECT_EQ(o.gates, "link_reply_shown");
@@ -525,7 +529,7 @@ TEST(SettingsSensitiveActionsTest, TheTransferBlockOnItsOwnPageReadsTheNewDevice
     }
   }
   EXPECT_EQ(scan, 1);
-  EXPECT_EQ(paste, 1);
+  EXPECT_EQ(paste, 2) << "second choice beside Scan, or the only choice without a camera";
   EXPECT_EQ(copy, 1);
 }
 

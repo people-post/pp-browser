@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -695,12 +696,28 @@ std::string ParsePolicy(const std::string& region) {
   return anyone ? "everyone" : "contacts_only";
 }
 
+using LocaleList = std::vector<std::pair<std::string, std::string>>;
+
+/** The locales on offer: the context's, or the two the app has always shipped when the caller knows nothing. */
+LocaleList OfferedLocales(const LocalPlanContext& ctx) {
+  return ctx.locales.empty() ? LocaleList{{"zh-Hans", "简体中文"}, {"en", "English"}} : ctx.locales;
+}
+
+std::string LocaleLabel(const std::pair<std::string, std::string>& locale) {
+  return locale.second.empty() ? locale.first : locale.second;
+}
+
+std::string LocaleNames(const LocaleList& locales) {
+  std::string out;
+  for (const auto& locale : locales) {
+    out += (out.empty() ? "" : ", ") + LocaleLabel(locale);
+  }
+  return out;
+}
+
 std::string ParseLanguage(const std::string& region, const LocalPlanContext& ctx) {
   const Haystack h(region);
-  std::vector<std::pair<std::string, std::string>> locales = ctx.locales;
-  if (locales.empty()) {
-    locales = {{"zh-Hans", "简体中文"}, {"en", "English"}};
-  }
+  const LocaleList locales = OfferedLocales(ctx);
   std::vector<std::string> tags;
   const auto add = [&](const std::string& tag) {
     if (std::find(tags.begin(), tags.end(), tag) == tags.end()) {
@@ -740,6 +757,39 @@ std::string ParseLanguage(const std::string& region, const LocalPlanContext& ctx
     }
   }
   return tags.size() == 1 ? tags.front() : std::string();
+}
+
+/** The user names Chinese or English, but the locales on offer have none of it. */
+bool NamesALanguageNotOffered(const std::string& region, const LocaleList& locales) {
+  const Haystack h(region);
+  const auto offers = [&](const char* prefix) {
+    return std::any_of(locales.begin(), locales.end(),
+                       [&](const auto& locale) { return LowerAscii(locale.first).rfind(prefix, 0) == 0; });
+  };
+  const bool chinese = h.HasAny(kLocaleChineseWords) || h.HasAny(kLocaleTraditionalWords);
+  return (chinese && !offers("zh")) || (h.HasAny(kLocaleEnglishWords) && !offers("en"));
+}
+
+/**
+ * A language request that a question cannot help with: with one locale there is nothing to choose, and a language
+ * the app does not have is refused once instead of asked about again (the answer would loop).
+ */
+std::optional<LocalStatement> LanguageStatement(const std::string& region, const LocalPlanContext& ctx) {
+  const LocaleList locales = OfferedLocales(ctx);
+  if (locales.size() < 2) {
+    return LocalStatement{"settings.language.only_one", {{"language", LocaleLabel(locales.front())}}};
+  }
+  if (ParseLanguage(region, ctx).empty() && NamesALanguageNotOffered(region, locales)) {
+    return LocalStatement{"settings.language.not_offered", {{"list", LocaleNames(locales)}}};
+  }
+  return std::nullopt;
+}
+
+/** The language question lists the locales actually on offer. */
+LocalAsk LanguageAsk(const std::string& tool, const LocalPlanContext& ctx) {
+  LocalAsk ask = Ask(tool, "language", "settings.ask.language");
+  ask.args = {{"list", LocaleNames(OfferedLocales(ctx))}};
+  return ask;
 }
 
 /** Capability flags named in the sentence, in a fixed order. */
@@ -980,7 +1030,7 @@ bool IsLocalActionQuestion(const std::string& text, const bool settings_read) {
   return IsQuestion(text, settings_read);
 }
 
-LocalPlan AskForTool(const std::string& tool, const std::string& text) {
+LocalPlan AskForTool(const std::string& tool, const std::string& text, const LocalPlanContext& ctx) {
   switch (ClassOf(tool)) {
     case ToolClass::NoArg:
       return MakePlan(tool, Object{}, text, false);
@@ -998,7 +1048,10 @@ LocalPlan AskForTool(const std::string& tool, const std::string& text) {
     case ToolClass::Appearance:
       return Ask(tool, "appearance", "settings.ask.appearance");
     case ToolClass::Language:
-      return Ask(tool, "language", "settings.ask.language");
+      if (auto statement = LanguageStatement(text, ctx)) {
+        return *statement;
+      }
+      return LanguageAsk(tool, ctx);
     case ToolClass::Policy:
       return Ask(tool, "policy", "settings.ask.policy");
     case ToolClass::Mesh:
@@ -1024,7 +1077,7 @@ LocalPlan Dispatch(const std::string& tool, const std::string& text, const AppAc
     return LocalQuestion{};
   }
   if (!match || match->matched_spans.empty()) {
-    return AskForTool(tool, text);
+    return AskForTool(tool, text, ctx);
   }
   const std::vector<AppActionSpan>& spans = match->matched_spans;
   const Parts parts = SplitSentence(text, spans);
@@ -1085,9 +1138,11 @@ LocalPlan Dispatch(const std::string& tool, const std::string& text, const AppAc
                        : MakeTextPlan(tool, "appearance", v, text, only_first);
     }
     case ToolClass::Language: {
+      if (auto statement = LanguageStatement(parts.region, ctx)) {
+        return *statement;
+      }
       const std::string v = ParseLanguage(parts.region, ctx);
-      return v.empty() ? LocalPlan(Ask(tool, "language", "settings.ask.language"))
-                       : MakeTextPlan(tool, "language", v, text, only_first);
+      return v.empty() ? LocalPlan(LanguageAsk(tool, ctx)) : MakeTextPlan(tool, "language", v, text, only_first);
     }
     case ToolClass::Policy: {
       const std::string v = ParsePolicy(parts.region);
@@ -1158,8 +1213,13 @@ LocalPlan ResolvePendingAnswer(const LocalAsk& ask, const std::string& answer, c
       parsed = MakeTextPlan(tool, "appearance", v, answer, false);
     }
   } else if (ask.missing == "language") {
+    if (auto statement = LanguageStatement(trimmed, ctx)) {
+      return *statement;
+    }
     if (const std::string v = ParseLanguage(trimmed, ctx); !v.empty()) {
       parsed = MakeTextPlan(tool, "language", v, answer, false);
+    } else {
+      parsed = LanguageAsk(tool, ctx);
     }
   } else if (ask.missing == "policy") {
     if (const std::string v = ParsePolicy(trimmed); !v.empty()) {

@@ -62,7 +62,11 @@ private:
   std::shared_ptr<State> state_;
 };
 
-enum class PictureSendKind { Picture, Video };
+/** A File is anything that is neither a picture nor a video: sent as it is, with no preview and no "original" choice. */
+enum class PictureSendKind { Picture, Video, File };
+
+/** The locale key of the preview page's title for a batch that has a file in it: one item reads "Send file", more are counted. */
+const char* PictureSendItemsTitleKey(size_t items);
 
 /** Where an item is. Every state after Sending is final; RateLimited sends it back to Waiting. */
 enum class PictureItemState {
@@ -86,6 +90,10 @@ struct PictureSendItem {
   std::string path;
   PictureSendKind kind = PictureSendKind::Picture;
   uint64_t bytes = 0;
+  /** What the page calls it: the path's file name unless the caller gave one (a pasted picture has no name of its own). */
+  std::string display_name;
+  /** The path is a file this app made for the item (not the person's own): only those go through `release_owned`. */
+  bool owned = false;
   /** Width × height from the file's head; 0 when it could not be read. */
   uint64_t pixels = 0;
   /** The preview page's own files for it (deleted with the item, and when sending starts). */
@@ -97,8 +105,9 @@ struct PictureSendItem {
 };
 
 /**
- * The item cannot be sent the way it would go: a video over `max_video_bytes`; a picture sent as it is (`original`)
- * over the original-picture byte limit; a picture to be shrunk with more pixels than may be decoded.
+ * The item cannot be sent the way it would go: a video over `max_video_bytes`; a file over `max_file_bytes` (whatever
+ * `original` says); a picture sent as it is (`original`) over the original-picture byte limit; a picture to be shrunk
+ * with more pixels than may be decoded.
  */
 bool PictureOverLimit(const PictureSendItem& item, bool original, const AttachmentLimits& limits);
 
@@ -164,6 +173,11 @@ struct PictureSendPorts {
   std::function<void(const std::string& thread_id, const std::string& text)> put_back_text;
   /** Deletes a picked copy that is no longer needed (once per item). */
   std::function<void(const std::string& path)> release;
+  /**
+   * Deletes a file this app made for an item (`PictureSendItem::owned`, a pasted picture) that is no longer needed.
+   * Called instead of `release` for those items; when unset they go through `release`.
+   */
+  std::function<void(const std::string& path)> release_owned;
   /** Deletes a preview page file of an item. */
   std::function<void(const std::string& path)> remove_file;
   /** A steady clock in milliseconds. */
@@ -190,6 +204,8 @@ public:
   static constexpr int64_t kRateLimitRetryMs = 15000;
 
   PictureSendQueue(std::string thread_id, AttachmentLimits limits, PictureSendPorts ports);
+  /** A queue let go before it ended: the owned files of the items still waiting are deleted (nothing else is touched). */
+  ~PictureSendQueue();
 
   /** The chat the pictures were picked in: they and the text go there, and the text goes back there. */
   const std::string& ThreadId() const { return thread_id_; }
@@ -199,7 +215,8 @@ public:
    * A picked copy arrived. Its id; none when it cannot join (the queue is full or ended): its file is released then.
    * After Start it joins the end of the line (more were still being copied when Send was tapped).
    */
-  std::optional<uint64_t> Add(std::string path, PictureSendKind kind, uint64_t bytes, uint64_t pixels = 0);
+  std::optional<uint64_t> Add(std::string path, PictureSendKind kind, uint64_t bytes, uint64_t pixels = 0,
+                              std::string display_name = {}, bool owned = false);
   /** More copies are on their way: after Start the queue waits for them before it ends. */
   void SetArriving(bool arriving);
   /** Before Start only: the item goes, its copy is released and its preview files deleted. */
@@ -257,6 +274,7 @@ private:
   PictureSendItem* Find(uint64_t id);
   void RemovePreviewFiles(PictureSendItem& item);
   void ReleaseItem(PictureSendItem& item, PictureItemState final_state);
+  void ReleaseFile(const std::string& path, bool owned);
   void Pump();
   void PumpOnce();
   void End(PictureSendExit exit);

@@ -40,12 +40,64 @@ ShellState WithChatPane(const LayoutMode mode) {
   return state;
 }
 
+// The owner dropped the red dot for the network reachability state (2026-11-27): Settings list rows and the
+// nav rail's Me tab carry no attention dot; the status bar text is the only place the state shows.
+TEST(ShellLayoutRmlTest, NoAttentionDotOnSettingsRowsOrTheMeTab) {
+  const std::string settings = ReadAsset("views/settings.rml");
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  ASSERT_FALSE(settings.empty());
+  ASSERT_FALSE(rail.empty());
+  EXPECT_FALSE(Has(settings, "attention"));
+  EXPECT_FALSE(Has(settings, "badge-dot"));
+  EXPECT_FALSE(Has(rail, "me_attention"));
+  EXPECT_TRUE(Has(rail, "nav_sessions_unread")) << "the unread badges stay";
+}
+
 TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   const std::string rml = ShellLayoutRml(WithChatPane(LayoutMode::Expanded), false, "").ShellRoot();
   EXPECT_TRUE(Has(rml, "shell-nav-rail-mount"));
   EXPECT_TRUE(Has(rml, "shell-nav-content-mount")) << "Sessions has a list beside the chat";
   EXPECT_TRUE(Has(rml, "id=\"pane-chat\""));
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
+}
+
+// Contacts and Settings in the wide layout (design step 3): the list is the left column, and with nothing picked the
+// right column says what to do, as the Chats one does. Picking something replaces it.
+TEST(ShellLayoutRmlTest, AWideContactsAndSettingsPageSayWhatToDoUntilSomethingIsPicked) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  for (const NavTab tab : {NavTab::Contacts, NavTab::Me}) {
+    ShellState state;
+    state.layout_mode = LayoutMode::Expanded;
+    state.nav_tab = tab;
+    const std::string empty = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(empty, "shell-nav-content-mount")) << "the list column";
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"pane-body-contacts\"" : "id=\"pane-body-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "id=\"shell-empty-contacts\"" : "id=\"shell-empty-settings\""));
+    EXPECT_TRUE(Has(empty, tab == NavTab::Contacts ? "Choose a contact" : "Choose a setting"));
+
+    state.panes.push_back({.spec = {.key = tab == NavTab::Contacts ? "contact_detail" : "settings_detail",
+                                    .rml_path = "views/contact_detail.rml"},
+                           .id = 1});
+    state.primary_pane_key = state.panes.back().spec.key.c_str();
+    const std::string picked = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_FALSE(Has(picked, "shell-empty-state"));
+  }
+}
+
+// The wide layout's left rail keeps AI, Chats, Contacts and Settings: no scan entry (scanning is on the Contacts page and
+// in Add contact, where the phone has it).
+TEST(ShellLayoutRmlTest, TheRailHasTheFourSectionsAndNoScanEntry) {
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  for (const char* tab :
+       {"select_nav_tab('home')", "select_nav_tab('sessions')", "select_nav_tab('contacts')", "select_nav_tab('me')"}) {
+    EXPECT_TRUE(Has(rail, tab)) << tab;
+  }
+  EXPECT_FALSE(Has(rail, "open_scan_qr")) << "the rail has no scan entry";
+  EXPECT_FALSE(Has(rail, "qr-code.svg"));
+  EXPECT_FALSE(Has(rail, "scan.title"));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts_wide.rml"), "open_scan_qr()")) << "the Contacts page keeps its scan button";
+  EXPECT_TRUE(Has(ReadAsset("views/sidebar.rml"), "open_scan_qr()")) << "the phone's Chats bar is untouched";
 }
 
 TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndSettingsIsItsThirdSegment) {
@@ -284,6 +336,27 @@ TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
   }
 }
 
+// The send-preview tray (wide.rcss): its layer is a scrim with the page's own class (so the whole-window scrim can be
+// left clear), and a frame ShellHost can find by id to put over the conversation column; frosted only while
+// Transparency is on.
+TEST(ShellLayoutRmlTest, TheWideSendPreviewLayerHasItsOwnScrimClassAFrameIdAndFrostOnlyWithTransparency) {
+  ShellState state = WithChatPane(LayoutMode::Expanded);
+  OverlayEntry layer;
+  layer.id = 9;
+  layer.key = "picture_send";
+  layer.full_screen = true;
+  state.overlay_stack.push_back(layer);
+  state.compact_chrome_frost = true;
+  state.reduce_transparency = false;
+  std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-scrim shell-scrim--picture_send\""));
+  EXPECT_TRUE(Has(rml, "class=\"shell-frame shell-frame--picture_send shell-frame--frost\" id=\"shell-frame-9\""));
+  state.reduce_transparency = true;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-frame shell-frame--picture_send\" id=\"shell-frame-9\"")) << "solid";
+  EXPECT_FALSE(Has(rml, "shell-frame--frost"));
+}
+
 // Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half and --small also lighten the
 // scrim, full has none), and its X is a 44dp button around a small grey disc.
 TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
@@ -333,6 +406,34 @@ TEST(ShellLayoutRmlTest, AFullScreenLayerHasNoScrimFrameOrCloseButtonOnPhones) {
   EXPECT_FALSE(Has(rml, "shell-layer-full-screen"));
   EXPECT_TRUE(Has(rml, "shell-frame"));
   EXPECT_TRUE(Has(rml, "close_layer(9)"));
+}
+
+// A desktop computer's scanner is edge to edge too, in any window width and with its own class (the phone's rules do
+// not apply); an iPad's expanded layout keeps the framed panel, and another full-screen page (a photo) keeps its frame
+// on a computer.
+TEST(ShellLayoutRmlTest, TheScannerFillsTheWindowOnADesktopComputerOnly) {
+  ShellState state = WithChatPane(LayoutMode::Expanded);
+  OverlayEntry scan;
+  scan.id = 9;
+  scan.key = "qr_scan";
+  scan.full_screen = true;
+  state.overlay_stack.push_back(scan);
+  state.desktop_computer = true;
+  for (const LayoutMode mode : {LayoutMode::Expanded, LayoutMode::Compact}) {
+    state.layout_mode = mode;
+    const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+    EXPECT_TRUE(Has(rml, "shell-layer-full-screen\" id=\"shell-full-screen-9\""));
+    EXPECT_TRUE(Has(rml, "<div class=\"shell-overlay-body shell-layer-computer\" id=\"overlay-body-9\">"));
+    EXPECT_FALSE(Has(rml, "close_layer(9)"));
+  }
+  state.overlay_stack.back().key = "avatar_view";
+  state.layout_mode = LayoutMode::Expanded;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-layer-full-screen"));
+  state.overlay_stack.back().key = "qr_scan";
+  state.desktop_computer = false; // an iPad
+  const std::string ipad = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(ipad, "shell-layer-full-screen"));
+  EXPECT_TRUE(Has(ipad, "close_layer(9)"));
 }
 
 TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {

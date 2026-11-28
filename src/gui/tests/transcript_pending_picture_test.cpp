@@ -355,6 +355,27 @@ PendingUpload FileItem(const PendingUploadState state, const std::string& title,
   return item;
 }
 
+// The send preview paints its type badges by these families (the label is what FileTypeTileLabel gives).
+TEST(TranscriptPendingFileTest, TheTypeBadgeColourFamilyFollowsTheLabel) {
+  for (const char* label : {"TXT", "MD", "LOG", "RTF"}) {
+    EXPECT_EQ(FileTypeTileKind(label), "txt") << label;
+  }
+  EXPECT_EQ(FileTypeTileKind("PDF"), "pdf");
+  for (const char* label : {"ZIP", "RAR", "7Z", "TAR", "GZ", "TGZ", "BZ2", "XZ"}) {
+    EXPECT_EQ(FileTypeTileKind(label), "zip") << label;
+  }
+  for (const char* label : {"DOC", "DOCX", "ODT"}) {
+    EXPECT_EQ(FileTypeTileKind(label), "doc") << label;
+  }
+  for (const char* label : {"XLS", "XLSX", "CSV", "ODS"}) {
+    EXPECT_EQ(FileTypeTileKind(label), "xls") << label;
+  }
+  EXPECT_EQ(FileTypeTileKind("PPTX"), "other");
+  EXPECT_EQ(FileTypeTileKind("MP3"), "other");
+  EXPECT_EQ(FileTypeTileKind(""), "other") << "no label: the generic icon on a neutral badge";
+  EXPECT_EQ(FileTypeTileKind(FileTypeTileLabel("Report.PDF")), "pdf");
+}
+
 TEST(TranscriptPendingFileTest, TheTypeTileShowsTheExtensionInCapitalsUpToFourLetters) {
   EXPECT_EQ(FileTypeTileLabel("report.pdf"), "PDF");
   EXPECT_EQ(FileTypeTileLabel("archive.tar.gz"), "GZ");

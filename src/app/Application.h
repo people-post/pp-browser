@@ -77,6 +77,8 @@ public:
   void ShutdownMessaging();
   /** Wipe active profile data dir and reinitialize secrets + hub (app-owned lifecycle). */
   Roe<void> ResetActiveProfile();
+  /** The desktop title strip: `PP · <nickname>` while an account with a name is open, `PP` otherwise. */
+  void RefreshWindowTitle();
   /**
    * Wipe the active profile's chat data ({profile}/threads/: chats, outbox, peer sessions) and
    * reinitialize the hub; the account, keys, contacts and settings stay, and the vault stays open.

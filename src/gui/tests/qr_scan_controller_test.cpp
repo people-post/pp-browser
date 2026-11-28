@@ -77,6 +77,14 @@ protected:
   std::vector<std::string> pills;
 };
 
+// A phone lists no camera until the camera is allowed: Scan stays offered there, or the permission is never asked.
+TEST(QrScanOfferedTest, APhoneAlwaysOffersScanAndADesktopFollowsTheCameraList) {
+  EXPECT_TRUE(QrScanController::ScanOffered(/*desktop=*/false, /*camera_listed=*/false));
+  EXPECT_TRUE(QrScanController::ScanOffered(false, true));
+  EXPECT_TRUE(QrScanController::ScanOffered(/*desktop=*/true, /*camera_listed=*/true));
+  EXPECT_FALSE(QrScanController::ScanOffered(true, false)) << "a computer with no camera listed";
+}
+
 TEST_F(QrScanPermissionTest, NotAskedYetAsksFirstThenAllowOpensThePageExactlyOnce) {
   Open();
   EXPECT_EQ(camera.requests, 1);

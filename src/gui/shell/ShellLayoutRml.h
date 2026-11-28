@@ -30,6 +30,12 @@ public:
   std::string AiDrawer() const;
   /** The phone hold-to-talk bubble (a child of the chat overlay, on the "chat" model); tests mount it on its own. */
   static std::string VoiceBubbleRml();
+  /**
+   * The hint over the chat while files are dragged onto it (desktop; step C of DEV/PLAN-desktop-drop-paste.md): a tint
+   * and a card with `drop_hint_text` on the "window" model, shown while `drop_hint_visible`. A child of the chat pane in
+   * the wide layout and of the chat overlay in the narrow one; it never takes a click.
+   */
+  static std::string DropHintRml();
   /** True when a Cancel + OK pair would not fit side by side in the phone alert card: the buttons stack instead. */
   static bool DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label);
   /** The PIN gate's field (field mode), focused when the gate is mounted. */

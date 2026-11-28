@@ -63,6 +63,10 @@ public:
   virtual void RememberEmoji(const std::string& emoji) = 0;
   virtual void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) = 0;
   virtual void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) = 0;
+  /** "Forward": opens "Forward to" for this one message. */
+  virtual void BeginForward(const std::string& message_id) = 0;
+  /** "Select": starts choosing messages to forward in the open chat, `message_id` ticked. */
+  virtual void BeginSelect(const std::string& message_id) = 0;
   /** "Edit" is offered for this message now: our own text, sent at most 15 minutes ago (DEV/PLAN-message-edit.md). */
   virtual bool CanEditMessage(const std::string& message_id) = 0;
   /** "Edit": the message's words go into the composer under an "Edit message" bar. */
@@ -110,6 +114,12 @@ void AppendAttachmentExitActions(std::vector<ContextMenuAction>& actions, const 
  */
 void RemoveActionsWhileEditing(std::vector<ContextMenuAction>& actions);
 
+/** The wide layout's hover bar on a message: reply and react are items of the message menu (ForRequest) run straight
+ *  away, More opens that whole menu. Nothing else, so the bar and the long-press / right-click menu never disagree. */
+enum class MessageBarAction { Reply, Forward, React, More };
+/** The id of the ForRequest item a bar button runs; empty for More (it opens the menu itself). */
+const char* MessageBarActionId(MessageBarAction action);
+
 /**
  * The chat screen's menus: the long-press / right-click menu (a chats-list row, a message, an item
  * the user can pass on), the header's "new", thread-actions and call menus, the emoji and reaction
@@ -137,6 +147,9 @@ public:
   void RunSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
   /** Asks for a new name for an AI conversation and stores it as its local title (empty = the automatic title). */
   void RenameAiThread(const std::string& thread_id);
+
+  /** A button of a message's hover bar (the wide layout): `ev` is its click. */
+  void RunMessageBarAction(ui::Event& ev, MessageBarAction action);
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);

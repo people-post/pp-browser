@@ -1,0 +1,96 @@
+<!-- The send-preview page for the wide layout (picture_send.rml's page for a computer / an iPad window): a tray that
+     rises from the composer's own place at the bottom of the conversation column, the chat still showing above it under
+     a light dim. Top: who it goes to (a chip) and a quiet x; the current item (a file's soft tile, or the picture with
+     round corners); the strip of small ones; the bottom row where the composer sits: the "original" chip, the pill text
+     field with the round Send button at its right end; a quiet Cancel under it. Same data model and events as
+     picture_send.rml (PictureSendController); Enter in the text sends, Shift+Enter is a new line, Esc closes.
+     Styles: assets/themes/wide.rcss (placement and the tray), components.rcss (.picture-send--desktop). -->
+<div class="picture-send picture-send--wide" data-model="picture_send" data-class-picture-send--desktop="ps_desktop">
+  <div class="ps-top">
+    <!-- Computers only (ps_desktop): who this goes to. Hidden, never absent, on a phone. -->
+    <div class="ps-recipient" data-if="ps_desktop">
+      <span class="ps-chip-avatar">{{ps_recipient_initial}}</span>
+      <div class="ps-chip-text"><span class="ps-chip-prefix">{{ps_recipient_prefix}}</span><span class="ps-chip-name">{{ps_recipient_name}}</span><span class="ps-chip-suffix">{{ps_recipient_suffix}}</span></div>
+    </div>
+    <p class="ps-title" data-if="ps_show_strip">{{ps_title}}</p>
+    <div class="ps-top-fill"></div>
+    <button class="ps-x" type="button" data-event-click="ps_back()" title="{{i18n:common.cancel}}">
+      <svg src="../icons/v2/close.svg" width="12" height="12"></svg>
+    </button>
+  </div>
+  <div class="ps-stage" id="ps-stage" data-class-ps-stage--tile="ps_desktop && ps_current_is_file && !ps_show_strip"
+       data-event-mousedown="ps_press()" data-event-mouseup="ps_release()">
+    <div class="ps-image-clip" data-if="ps_current_ready" data-style-width="ps_image_w" data-style-height="ps_image_h">
+      <img class="ps-image" data-attr-src="ps_current_src" data-style-width="ps_image_w" data-style-height="ps_image_h"/>
+    </div>
+    <div class="ps-play" data-if="ps_current_video">
+      <!-- A tap plays the picked video in the system's player over this page (the same one a chat video opens in). -->
+      <button class="ps-play-btn" type="button" data-event-click="ps_play()" title="{{i18n:chat.voice.play}}">
+        <svg src="../icons/v2/play-fill.svg" width="32" height="32"></svg>
+      </button>
+    </div>
+    <p class="ps-stage-note" data-if="ps_current_preparing">{{i18n:chat.attach.preparing}}</p>
+    <p class="ps-flag ps-flag--stage" data-if="ps_current_too_large">{{i18n:picture_send.too_large}}</p>
+    <!-- A file has no picture: its soft tile (coloured type badge, name, size). Computers only. -->
+    <div class="ps-file" data-if="ps_desktop && ps_current_is_file">
+      <div class="ps-file-tile" data-class-ps-kind--txt="ps_current_kind == 'txt'" data-class-ps-kind--pdf="ps_current_kind == 'pdf'"
+           data-class-ps-kind--zip="ps_current_kind == 'zip'" data-class-ps-kind--doc="ps_current_kind == 'doc'"
+           data-class-ps-kind--xls="ps_current_kind == 'xls'" data-class-ps-kind--other="ps_current_kind == 'other'">
+        <span class="ps-file-ext" data-if="ps_current_ext != ''">{{ps_current_ext}}</span>
+        <svg class="ps-file-icon" data-if="ps_current_ext == ''" src="../icons/v2/file.svg" width="30" height="30"></svg>
+      </div>
+      <div class="ps-file-text">
+        <p class="ps-file-name">{{ps_current_name}}</p>
+        <p class="ps-file-size">{{ps_current_size}}</p>
+      </div>
+    </div>
+  </div>
+  <div class="ps-strip" data-if="ps_show_strip">
+    <div data-for="cell : ps_cells" class="ps-cell" data-class-ps-cell--current="cell.current"
+         data-event-click="ps_select(cell.index)">
+      <div class="ps-cell-clip">
+        <img class="ps-cell-image" data-if="cell.ready" data-attr-src="cell.thumb_src"
+             data-style-width="cell.iw" data-style-height="cell.ih"
+             data-style-margin-left="cell.ml" data-style-margin-top="cell.mt"/>
+        <div class="ps-cell-file" data-if="ps_desktop && cell.is_file" data-class-ps-kind--txt="cell.kind == 'txt'"
+             data-class-ps-kind--pdf="cell.kind == 'pdf'" data-class-ps-kind--zip="cell.kind == 'zip'"
+             data-class-ps-kind--doc="cell.kind == 'doc'" data-class-ps-kind--xls="cell.kind == 'xls'"
+             data-class-ps-kind--other="cell.kind == 'other'">
+          <span class="ps-cell-ext" data-if="cell.ext != ''">{{cell.ext}}</span>
+          <svg class="ps-cell-icon" data-if="cell.ext == ''" src="../icons/v2/file.svg" width="24" height="24"></svg>
+        </div>
+        <p class="ps-flag ps-flag--cell" data-if="cell.too_large">{{i18n:picture_send.too_large}}</p>
+      </div>
+      <!-- Only the selected thumbnail carries the remove badge: a 44dp target around a small round badge. -->
+      <button class="ps-badge" type="button" data-if="cell.current" data-event-click="ps_remove()"
+              title="{{i18n:common.remove}}">
+        <span class="ps-badge-dot"><svg src="../icons/v2/close.svg" width="10" height="10"></svg></span>
+      </button>
+    </div>
+  </div>
+  <div class="ps-bottom">
+    <!-- Only where there is a picture to send as it is; a phone keeps the row as it always was. -->
+    <button class="ps-original" type="button" data-if="ps_show_original || !ps_desktop" data-class-ps-original--on="ps_original"
+            data-event-click="ps_toggle_original()">
+      <!-- A round check: a ring when empty, a filled disc with a tick when chosen; empty each time the page opens. -->
+      <div class="ps-original-check" data-class-ps-original-check--on="ps_original">
+        <div class="ps-original-hole" data-if="!ps_original"></div>
+        <svg class="ps-original-tick" data-if="ps_original" src="../icons/check.svg" width="10" height="10"></svg>
+      </div>
+      <span class="ps-original-label">{{i18n:picture_send.original}}</span>
+      <span class="ps-original-size" data-if="ps_original">{{ps_size_label}}</span>
+    </button>
+    <div class="ps-field">
+      <textarea id="ps-text" class="ps-input" rows="1" max-rows="5" maxlength="65536" data-value="ps_text"></textarea>
+      <!-- The engine draws no placeholder, so a label sits over the empty input. -->
+      <p class="ps-placeholder" data-if="ps_text == ''">{{i18n:picture_send.placeholder}}</p>
+      <button class="ps-send-round" type="button" data-event-click="ps_send()" data-attrif-disabled="!ps_can_send"
+              data-class-ps-send-round--off="!ps_can_send" title="{{ps_send_label}}">
+        <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
+      </button>
+    </div>
+  </div>
+  <button class="ps-cancel" type="button" data-event-click="ps_back()">{{i18n:common.cancel}}</button>
+  <!-- The bottom safe area, in the page's own colour (ShellHost gives it the height). -->
+  <div class="ps-safe-bottom" id="ps-safe-bottom"></div>
+</div>

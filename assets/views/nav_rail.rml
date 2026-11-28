@@ -65,32 +65,22 @@
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
     <button class="shell-nav-tab" type="button"
-            data-if="layout_mode == 'expanded'"
-            data-event-click="open_scan_qr()" title="{{i18n:scan.title}}">
-      <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/v2/qr-code.svg" width="24" height="24"></svg>
-      </div>
-      <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:scan.title}}</p>
-      <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
-    </button>
-    <button class="shell-nav-tab" type="button"
             data-class-shell-nav-tab--active="nav_tab == 'me'"
             data-event-click="select_nav_tab('me')">
       <div class="shell-nav-tab-icon-wrap">
         <svg src="../icons/v2/tab-me.svg" width="24" height="24"></svg>
-        <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.me}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
     <div class="shell-nav-spacer" data-if="layout_mode == 'expanded'"></div>
     <button class="shell-nav-tab shell-nav-collapse" type="button"
-            data-if="layout_mode == 'expanded' && nav_tab != 'home' && !sidebar_collapsed"
+            data-if="layout_mode == 'expanded' && !sidebar_collapsed"
             data-event-click="toggle_sidebar()" title="{{i18n:shell.sidebar.collapse}}">
       <svg src="../icons/chevrons-left.svg" width="12" height="12" crop-to-content="true"></svg>
     </button>
     <button class="shell-nav-tab shell-nav-collapse" type="button"
-            data-if="layout_mode == 'expanded' && nav_tab != 'home' && sidebar_collapsed"
+            data-if="layout_mode == 'expanded' && sidebar_collapsed"
             data-event-click="toggle_sidebar()" title="{{i18n:shell.sidebar.expand}}">
       <svg src="../icons/chevrons-right.svg" width="12" height="12" crop-to-content="true"></svg>
     </button>

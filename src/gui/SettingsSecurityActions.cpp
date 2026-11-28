@@ -5,16 +5,19 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/PinRules.h"
 #include "foundation/error/AppError.h"
+#include "gui/AccountInvite.h"
 #include "gui/LinkDeviceText.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/PlatformShare.h"
 #include "foundation/product/DevTools.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
 #include "lib/ui/DataEvent.h"
@@ -57,12 +60,17 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("link_scan_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/true); }));
   ctor.BindEventCallback("link_paste_offer", DataEvent<>([this]() { LinkDevice(/*scan=*/false); }));
   ctor.BindEventCallback("copy_link_reply", DataEvent<>([this]() { CopyLinkReply(); }));
+  ctor.BindEventCallback("send_link_reply",
+                         DataEventAt([this](ui::Event& ev) { SendLinkReply(ShareAnchorFromEvent(ev)); }));
   ctor.BindEventCallback("clear_link_reply", DataEvent<>([this]() { ClearLinkReply(); }));
   SetTransferLabels();
   ctor.Bind("link_reply_shown", &link_reply_shown_);
   ctor.Bind("link_reply_qr_rml", &link_reply_qr_rml_);
+  link_qr_side_ = "280dp";
+  ctor.Bind("link_qr_side", &link_qr_side_);
   ctor.Bind("link_can_scan", &link_can_scan_);
-  ctor.Bind("move_lead_label", &move_lead_label_);
+  link_can_share_ = PlatformCanShareText(); // "Send…" only where the system has a text share sheet (macOS, iOS)
+  ctor.Bind("link_can_share", &link_can_share_);
   ctor.Bind("move_valid_label", &move_valid_label_);
   ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
   if (auto word = ctor.RegisterStruct<RecoveryWord>()) {
@@ -250,7 +258,15 @@ void SettingsSecurityActions::ToggleBiometric() {
       });
 }
 
+namespace {
+logging::Logger& LinkLog() {
+  static logging::Logger log = logging::getLogger("Gui.Settings.Link");
+  return log;
+}
+} // namespace
+
 void SettingsSecurityActions::LinkDevice(const bool scan) {
+  LinkLog().info << "Link a new device pressed (" << (scan ? "scan" : "paste") << ")";
   EnsureUnlocked(Tr("settings.security.link_device.not_ready"), [this, scan]() {
     if (!commands_.link_offer_code || !commands_.seal_link_reply) {
       host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
@@ -277,6 +293,7 @@ void SettingsSecurityActions::LinkDevice(const bool scan) {
 void SettingsSecurityActions::ReadLinkOffer(const bool scan) {
   if (scan) {
     if (!commands_.scan_link_offer) {
+      LinkLog().warning << "Scan ignored: no scan port";
       return;
     }
     const uint64_t request = link_request_;
@@ -342,10 +359,12 @@ void SettingsSecurityActions::SealLinkReply(std::string offer) {
           return;
         }
         link_reply_qr_rml_ = qr->c_str();
+        link_qr_side_ = host_.LinkQrSide().c_str();
         link_reply_text_ = LinkPayloadText(kLinkReplyTextPrefix, *reply);
         link_reply_shown_ = true;
         DataModelHost& model = DataModelHost::Instance();
         model.Dirty("settings", "link_reply_qr_rml");
+        model.Dirty("settings", "link_qr_side");
         model.Dirty("settings", "link_reply_shown");
         host_.ShowStatus("");
       });
@@ -361,6 +380,17 @@ void SettingsSecurityActions::CopyLinkReply() {
   UserFeedback::Ok(Tr("settings.security.link_device.reply_copied"));
 }
 
+void SettingsSecurityActions::SendLinkReply(const ShareAnchor anchor) {
+  if (!link_reply_shown_ || link_reply_text_.empty()) {
+    return;
+  }
+  // The system sheet first; where it cannot show, the text is copied and the person is told, as Copy does.
+  if (PlatformShareText(Backend::GetWindow(), link_reply_text_, anchor)) {
+    return;
+  }
+  CopyLinkReply();
+}
+
 void SettingsSecurityActions::ReportLinkFailure(const Error& error) {
   const std::string words = LinkErrorText(error, /*on_new_device=*/false);
   if (words.empty()) {
@@ -373,9 +403,22 @@ void SettingsSecurityActions::ReportLinkFailure(const Error& error) {
 
 void SettingsSecurityActions::SetTransferLabels() {
   const std::string minutes = std::to_string(kLinkWindowMs / 60000);
-  move_lead_label_ = Tr("settings.security.link_device.lead").c_str();
   move_valid_label_ = Tr("settings.security.link_device.copied_valid", {{"minutes", minutes}}).c_str();
-  link_can_scan_ = static_cast<bool>(commands_.scan_link_offer);
+  link_can_scan_ = static_cast<bool>(commands_.scan_link_offer); // the cameras are asked when the page opens
+}
+
+bool SettingsSecurityActions::CanScanLink() const {
+  return static_cast<bool>(commands_.scan_link_offer) &&
+         (!commands_.can_scan_link_offer || commands_.can_scan_link_offer());
+}
+
+void SettingsSecurityActions::RefreshLinkCanScan() {
+  const bool can = CanScanLink();
+  if (can == link_can_scan_) {
+    return;
+  }
+  link_can_scan_ = can;
+  DataModelHost::Instance().Dirty("settings", "link_can_scan");
 }
 
 void SettingsSecurityActions::ClearLinkReply() {
@@ -385,11 +428,11 @@ void SettingsSecurityActions::ClearLinkReply() {
   std::fill(link_reply_text_.begin(), link_reply_text_.end(), '\0');
   link_reply_text_.clear();
   SetTransferLabels();
+  link_can_scan_ = CanScanLink();
   DataModelHost& model = DataModelHost::Instance();
   model.Dirty("settings", "link_reply_shown");
   model.Dirty("settings", "link_reply_qr_rml");
   model.Dirty("settings", "link_can_scan");
-  model.Dirty("settings", "move_lead_label");
   model.Dirty("settings", "move_valid_label");
 }
 
@@ -634,12 +677,32 @@ void SettingsSecurityActions::ResetToolPermissions() {
                                      {});
 }
 
+bool SettingsSecurityActions::ThisDeviceIsLinkedNotMain() const {
+  if (!commands_.own_devices) {
+    return false;
+  }
+  // The same read as the Devices page. Signed out (also the device-removed notice's "Link again") or no list yet: no note.
+  Roe<OwnDevicesView> listed = commands_.own_devices();
+  if (!listed || listed->signed_out || listed->pending != OwnListPending::None || listed->this_is_main) {
+    return false;
+  }
+  for (const OwnDeviceView& device : listed->devices) {
+    if (device.is_this_device) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void SettingsSecurityActions::ResetProfile() {
   if (!feedback_.show_confirm_with_checkbox) {
     return;
   }
-  feedback_.show_confirm_with_checkbox(Tr("settings.storage.reset_confirm_title"),
-                                       Tr("settings.storage.reset_confirm_message"),
+  std::string message = Tr("settings.storage.reset_confirm_message");
+  if (ThisDeviceIsLinkedNotMain()) {
+    message += "\n\n" + Tr("settings.storage.reset_confirm_linked_note");
+  }
+  feedback_.show_confirm_with_checkbox(Tr("settings.storage.reset_confirm_title"), message,
                                        Tr("settings.storage.reset_confirm_check"), false,
                                        [this](const bool confirmed, const bool checked) {
                                          if (!confirmed) {

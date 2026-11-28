@@ -1,0 +1,288 @@
+// The wide-screen stylesheet (assets/themes/wide.rcss, desktop foundation step 1): it can only act under the wide root
+// `.shell-body--wide`, so the phone's `.shell-body--compact` renders exactly as it did without the file; and under the
+// wide root the three columns give way as designed (rail 64, list 280..., conversation >= 420) at 768 / 900 / 1280.
+#include <ui/core/Core.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/paint/RenderInterface.h>
+#include <ui/style/ComputedValues.h>
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <fstream>
+#include <regex>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace pbr {
+namespace {
+
+class NullRender : public ui::RenderInterface {
+public:
+  ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
+  void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle) override {}
+  void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
+  ui::TextureHandle LoadTexture(ui::Vector2i&, const ui::String&) override { return 0; }
+  ui::TextureHandle GenerateTexture(ui::Span<const ui::byte>, ui::Vector2i) override { return 1; }
+  void ReleaseTexture(ui::TextureHandle) override {}
+  void EnableScissorRegion(bool) override {}
+  void SetScissorRegion(ui::Rectanglei) override {}
+};
+
+std::string ReadAll(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  std::string text = out.str();
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+  return text;
+}
+
+std::string Asset(const char* relative) {
+  return ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/" + relative);
+}
+
+/** The elements the wide sheet touches, under one root class. Ids are what the measurements are keyed by. */
+std::string Scene(const std::string& root_class, int width_dp) {
+  return "<div id=\"root\" class=\"shell-body " + root_class +
+         "\" style=\"position: absolute; top: 0; left: 0; width: " + std::to_string(width_dp) +
+         "dp; height: 700dp;\">"
+         "<div class=\"shell-chrome\"><div id=\"stack\" class=\"shell-toast-stack\"><div id=\"toast\" "
+         "class=\"shell-toast\">"
+         "<p class=\"shell-toast-text\">Copied</p></div></div></div>"
+         "<div class=\"shell-layer shell-layer-base\"><div id=\"row\" class=\"shell-pane-row\">"
+         "<div id=\"rail\" class=\"shell-nav-rail\"></div>"
+         "<div id=\"list\" class=\"shell-pane shell-pane-secondary\" style=\"flex: 0 1 320dp;\"></div>"
+         "<div id=\"conv\" class=\"shell-pane shell-pane-primary\">"
+         "<div id=\"row1\" class=\"sidebar-session\"></div><div id=\"set1\" class=\"settings-row\"></div>"
+         "<div id=\"card1\" class=\"card\"></div><div id=\"bub1\" class=\"bubble bubble-peer\"></div>"
+         "<div id=\"pill1\" class=\"prompt-composer-pill\"></div>"
+         "<input id=\"field1\" class=\"field\" type=\"text\"/>"
+         "<div id=\"gap\" class=\"w-gap-8 w-type-small w-target\" style=\"display: "
+         "flex;\"><span>a</span><span>b</span></div>"
+         "</div></div></div>"
+         "<div id=\"layer\" class=\"context-menu-layer\"><div id=\"context-menu-panel\" class=\"context-menu-panel\" "
+         "style=\"left: 40px; top: 40px;\"><button id=\"item\" class=\"context-menu-item\" type=\"button\">"
+         "<span class=\"context-menu-item-label\">Reply</span></button></div></div>"
+         "</div>";
+}
+
+const char* const kIds[] = {"rail", "list", "conv", "gap",   "stack", "toast", "context-menu-panel",
+                            "item", "row1", "set1", "card1", "bub1",  "pill1", "field1"};
+
+class WideStylesheetTest : public testing::Test {
+protected:
+  void SetUp() override {
+    ui::SetRenderInterface(&renderer);
+    initialized = ui::Initialise();
+    ASSERT_TRUE(initialized);
+    ASSERT_TRUE(
+        ui::LoadFontFace(std::string(PP_BROWSER_ASSETS_DIR) + "/fonts/Inter-Regular.ttf", /*fallback_face=*/true));
+    ASSERT_TRUE(ui::LoadFontFace(std::string(PP_BROWSER_ASSETS_DIR) + "/fonts/LatoLatin-Regular.ttf"));
+    context = ui::CreateContext("wide-stylesheet-test", {1280, 800});
+    ASSERT_NE(context, nullptr);
+  }
+  void TearDown() override {
+    if (context) {
+      ui::RemoveContext("wide-stylesheet-test");
+    }
+    if (initialized) {
+      ui::Shutdown();
+    }
+    ui::SetRenderInterface(nullptr);
+  }
+
+  /** "id left top width height display font-size" for every scene element, laid out with the real sheets. */
+  std::string Measure(const std::string& root_class, int width_dp, bool with_wide) {
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            (with_wide ? Asset("themes/wide.rcss") : std::string()) +
+                            Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" +
+                            Scene(root_class, width_dp) + "</body></rml>";
+    ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
+    EXPECT_NE(document, nullptr);
+    if (!document) {
+      return {};
+    }
+    document->Show();
+    context->Update();
+    context->Update();
+    std::ostringstream out;
+    for (const char* id : kIds) {
+      ui::Element* element = document->GetElementById(id);
+      if (!element) {
+        out << id << " missing\n";
+        continue;
+      }
+      const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+      const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+      out << id << ' ' << at.x << ' ' << at.y << ' ' << size.x << ' ' << size.y;
+      for (const char* property :
+           {"display", "font-size", "padding-left", "border-top-left-radius", "min-height", "min-width", "gap"}) {
+        const ui::Property* value = element->GetProperty(property);
+        out << ' ' << (value ? value->ToString() : ui::String("-"));
+      }
+      const auto& cv = element->GetComputedValues();
+      out << ' ' << cv.border_top_width() << ' ' << cv.border_right_width() << ' ' << cv.border_top_left_radius();
+      out << '\n';
+    }
+    measured_width_ = {};
+    for (const char* id : {"rail", "list", "conv"}) {
+      measured_width_.push_back(document->GetElementById(id)->GetBox().GetSize(ui::BoxArea::Border).x);
+    }
+    document->Close();
+    context->Update();
+    return out.str();
+  }
+
+  /** Border width and corner radius (dp, density 1) of `id` in a wide-root scene 1280 wide. */
+  struct Look {
+    float top_width = -1, right_width = -1, radius = -1;
+  };
+  Look LookOf(const char* id, float dp_ratio = 1.f) {
+    context->SetDensityIndependentPixelRatio(dp_ratio);
+    const std::string rml = "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+                            Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+                            "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">" +
+                            Scene("shell-body--wide", 1280) + "</body></rml>";
+    ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
+    Look look;
+    if (!document) {
+      return look;
+    }
+    document->Show();
+    context->Update();
+    context->Update();
+    if (ui::Element* element = document->GetElementById(id)) {
+      const auto& cv = element->GetComputedValues();
+      look = {cv.border_top_width(), cv.border_right_width(), cv.border_top_left_radius()};
+    }
+    document->Close();
+    context->Update();
+    return look;
+  }
+
+  NullRender renderer;
+  bool initialized = false;
+  ui::Context* context = nullptr;
+  std::vector<float> measured_width_;
+};
+
+TEST(WideStylesheetSelectorsTest, EverySelectorIsRootedAtTheWideRoot) {
+  std::string css = Asset("themes/wide.rcss");
+  ASSERT_FALSE(css.empty());
+  css = std::regex_replace(css, std::regex("/\\*[\\s\\S]*?\\*/"), "");
+  int rules = 0;
+  std::regex rule("([^{}]+)\\{([^{}]*)\\}");
+  for (std::sregex_iterator it(css.begin(), css.end(), rule), end; it != end; ++it) {
+    std::stringstream selectors((*it)[1].str());
+    std::string one;
+    while (std::getline(selectors, one, ',')) {
+      const size_t first = one.find_first_not_of(" \n\t");
+      ASSERT_NE(first, std::string::npos);
+      EXPECT_EQ(one.compare(first, 17, ".shell-body--wide"), 0) << "not wide-rooted: " << one;
+      ++rules;
+    }
+    EXPECT_EQ((*it)[2].str().find('#'), std::string::npos) << "a colour in wide.rcss: " << (*it)[1].str();
+  }
+  EXPECT_GT(rules, 20);
+}
+
+TEST_F(WideStylesheetTest, UnderThePhonesRootTheWideSheetChangesNothing) {
+  for (const int width : {375, 393}) {
+    const std::string without = Measure("shell-body--compact", width, /*with_wide=*/false);
+    const std::string with = Measure("shell-body--compact", width, /*with_wide=*/true);
+    ASSERT_FALSE(without.empty());
+    EXPECT_EQ(with, without) << "the wide sheet leaked into the compact root at " << width;
+  }
+}
+
+TEST_F(WideStylesheetTest, UnderTheWideRootTheSheetDoesApply) {
+  // The control for the test above: the same scene with the wide root does differ.
+  const std::string compact = Measure("shell-body--compact", 1280, /*with_wide=*/true);
+  const std::string wide = Measure("shell-body--wide", 1280, /*with_wide=*/true);
+  EXPECT_NE(wide, compact);
+  EXPECT_FLOAT_EQ(measured_width_[0], 64.f) << "the icon rail is 64dp wide";
+}
+
+TEST_F(WideStylesheetTest, TheColumnsGiveWayAt768And900And1280) {
+  for (const int width : {768, 900, 1280}) {
+    Measure("shell-body--wide", width, /*with_wide=*/true);
+    const float rail = measured_width_[0];
+    const float list = measured_width_[1];
+    const float conv = measured_width_[2];
+    EXPECT_FLOAT_EQ(rail, 64.f) << width;
+    EXPECT_GE(list, 280.f) << "list floor at " << width;
+    EXPECT_GE(conv, 420.f) << "conversation floor at " << width;
+    EXPECT_NEAR(rail + list + conv, static_cast<float>(width), 1.f) << "the three columns fill " << width;
+    EXPECT_LE(list, 320.f) << width;
+  }
+  Measure("shell-body--wide", 900, true);
+  EXPECT_FLOAT_EQ(measured_width_[1], 320.f) << "at 900 the list keeps its default 320";
+  Measure("shell-body--wide", 768, true);
+  EXPECT_LT(measured_width_[1], 320.f) << "at 768 the list is the one that gives way";
+}
+
+TEST_F(WideStylesheetTest, TheBaseLookIsSoftSurfacesLargeCornersAndHairlines) {
+  // The mockup's scale: rows 10, cards 14, bubbles 18, the input pill 21; a box is a fill (no border), a line is 0.5.
+  EXPECT_EQ(LookOf("row1").top_width, 0.f);
+  EXPECT_EQ(LookOf("row1").radius, 10.f);
+  EXPECT_EQ(LookOf("set1").top_width, 0.f);
+  EXPECT_EQ(LookOf("set1").radius, 10.f);
+  EXPECT_EQ(LookOf("card1").top_width, 0.f);
+  EXPECT_EQ(LookOf("card1").radius, 14.f);
+  EXPECT_EQ(LookOf("bub1").top_width, 0.f);
+  EXPECT_EQ(LookOf("bub1").radius, 18.f);
+  EXPECT_EQ(LookOf("pill1").radius, 21.f);
+  // A hairline is 0.5dp: RmlUi lays borders out in whole device pixels, so on a 2x screen it is 1 pixel (a 1dp line
+  // is 2), and on a 1x screen it stays the 1 pixel it was.
+  EXPECT_FLOAT_EQ(LookOf("pill1", 2.f).top_width, 1.f);
+  EXPECT_FLOAT_EQ(LookOf("rail", 2.f).right_width, 1.f) << "the column divider is a hairline";
+  EXPECT_EQ(LookOf("field1").radius, 10.f);
+}
+
+// The profile-problem page and the start-over confirm are the PIN gate's card (markup: ShellLayoutRml::PinGate); under
+// the wide root it stays one centred card of 360dp at most with its full-width buttons of at least 44dp.
+TEST_F(WideStylesheetTest, TheProfileProblemCardStaysCentredWithFullWidthButtonsOnTheWideWindow) {
+  for (const int width : {768, 1280}) {
+    const std::string rml =
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+        Asset("themes/wide.rcss") + Asset("themes/colors-light.rcss") +
+        "</style></head><body style=\"padding: 0; font-family: Inter; font-size: 15dp;\">"
+        "<div class=\"shell-body shell-body--wide\" style=\"position: absolute; top: 0; left: 0; width: " +
+        std::to_string(width) +
+        "dp; height: 700dp;\"><div class=\"shell-layer shell-layer-dialog\" style=\"position: absolute; top: 0; left: "
+        "0; right: 0; bottom: 0;\"><div class=\"shell-dialog shell-pin-gate\" id=\"card\">"
+        "<h2 class=\"heading-2 shell-dialog-title\">Title</h2><p class=\"text shell-dialog-message\">Message</p>"
+        "<div class=\"shell-pin-gate-chooser shell-pin-gate-problem\">"
+        "<button id=\"b1\" class=\"btn btn-primary\">Start over</button>"
+        "<button id=\"b2\" class=\"btn btn-secondary\">Quit</button></div></div></div></div></body></rml>";
+    ui::ElementDocument* document = context->LoadDocumentFromMemory(rml);
+    ASSERT_NE(document, nullptr);
+    document->Show();
+    context->Update();
+    context->Update();
+    auto box = [&](const char* id) {
+      ui::Element* element = document->GetElementById(id);
+      const ui::Vector2f at = element->GetAbsoluteOffset(ui::BoxArea::Border);
+      const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
+      return std::vector<float>{at.x, at.y, size.x, size.y};
+    };
+    const std::vector<float> card = box("card");
+    EXPECT_LE(card[2], 360.f) << width;
+    // Anchored at the window's middle; the card's translate(-50%, -50%) (not part of the engine's offsets) centres it.
+    EXPECT_NEAR(static_cast<double>(card[0]), width / 2.0, 1.0) << "centred at " << width;
+    for (const char* id : {"b1", "b2"}) {
+      const std::vector<float> button = box(id);
+      EXPECT_GE(button[3], 44.f) << id;
+      EXPECT_GE(button[0], card[0]);
+      EXPECT_LE(button[0] + button[2], card[0] + card[2] + 0.5f);
+    }
+    document->Close();
+    context->Update();
+  }
+}
+
+} // namespace
+} // namespace pbr

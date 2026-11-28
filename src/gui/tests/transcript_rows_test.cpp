@@ -276,6 +276,37 @@ TranscriptFacts NamedFacts() {
 }
 } // namespace phone_rows
 
+// Forwarding asks the row, not the store: a row says whether its message can go (CanForwardMessage on the message it was
+// built from), so choosing messages and the desktop hover bar read nothing per row.
+TEST(TranscriptRmlTest, ARowSaysWhetherItsMessageCanBeForwarded) {
+  using namespace phone_rows;
+  TranscriptRow text = TextRow("1", "account:a", kNoon);
+  TranscriptRow picture = TextRow("2", "account:a", kNoon + kMinute);
+  picture.message.content_type = ChatContentType::Attachment;
+  TranscriptRow notice = TextRow("3", "account:a", kNoon + 2 * kMinute);
+  notice.message.content_type = ChatContentType::System;
+  const auto rows = RenderTranscript({text, picture, notice}, NamedFacts());
+  ASSERT_EQ(rows.size(), 3u);
+  EXPECT_TRUE(rows[0].forwardable);
+  EXPECT_FALSE(rows[1].forwardable);
+  EXPECT_FALSE(rows[2].forwardable);
+}
+
+// The desktop hover bar's Forward is the row's own answer: a forwardable plain message has it, an attachment row with
+// no readable fields (and a notice) does not, and no facts hook (no store) is involved. A real picture, file or voice
+// row has it: WideAttachmentRowsHaveCheckboxesInSelectionMode.
+TEST(TranscriptRmlTest, TheHoverBarOffersForwardOnlyOnAForwardableRow) {
+  using namespace phone_rows;
+  TranscriptRow text = TextRow("1", "account:a", kNoon);
+  TranscriptRow picture = TextRow("2", "account:a", kNoon + kMinute);
+  picture.message.content_type = ChatContentType::Attachment;
+  const auto rows = RenderTranscript({text, picture}, NamedFacts());
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_TRUE(rows[0].has_actions);
+  EXPECT_TRUE(rows[0].bar_forward);
+  EXPECT_FALSE(rows[1].bar_forward);
+}
+
 TEST(TranscriptRmlTest, ADateStripSitsOnlyWhereTheDayChanges) {
   using namespace phone_rows;
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
@@ -352,6 +383,24 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   }
   EXPECT_TRUE(direct[0].run_start);
   EXPECT_FALSE(direct[1].run_start);
+}
+
+// The hover bar's reaction row and Reply are drawn from what the menu offers for the message (TranscriptFacts::bar_offer);
+// with nothing set, neither (a row with no actions never has them whatever the offer says).
+TEST(TranscriptRmlTest, TheBarsReactionRowAndReplyFollowTheMenusOffer) {
+  using namespace phone_rows;
+  TranscriptFacts facts = NamedFacts();
+  const std::vector<TranscriptRow> entries{TextRow("1", "account:a", kNoon)};
+  EXPECT_FALSE(RenderTranscript(entries, facts)[0].bar_react) << "no offer set: nothing";
+  facts.bar_offer = [](const std::string&) { return TranscriptFacts::MessageBarOffer{.react = true, .reply = true}; };
+  const auto direct = RenderTranscript(entries, facts);
+  EXPECT_TRUE(direct[0].has_actions);
+  EXPECT_TRUE(direct[0].bar_react);
+  EXPECT_TRUE(direct[0].bar_reply);
+  facts.bar_offer = [](const std::string&) { return TranscriptFacts::MessageBarOffer{.react = false, .reply = true}; };
+  const auto ai = RenderTranscript(entries, facts);
+  EXPECT_FALSE(ai[0].bar_react) << "an AI conversation: no reactions";
+  EXPECT_TRUE(ai[0].bar_reply);
 }
 
 TEST(TranscriptRmlTest, TheTimeSitsInsideTheBubble) {

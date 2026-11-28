@@ -25,6 +25,9 @@ struct LocalRenderContext {
 /** The question for `ask.question_key` (set_reduce_transparency etc. name the setting itself). */
 std::string RenderLocalAsk(const LocalAsk& ask);
 
+/** A plain statement that asks nothing (LocalStatement). */
+std::string RenderLocalStatement(const LocalStatement& statement);
+
 /**
  * `result_json` is the tool's JSON result. A failure ({"success": false, …}; a Roe error is passed that way) never
  * shows the tool's own text: {"blocked": true} (the user's tool permissions) → ai.blocked_by_permissions, anything

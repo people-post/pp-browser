@@ -1,7 +1,10 @@
 #pragma once
 
+#include "gui/contacts/PeoplePickerChoose.h"
+
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -28,6 +31,16 @@ struct PeoplePickerNotifyPorts {
    * contact id or an account id): the owner gets the "Group admin" card on it.
    */
   std::function<void(const std::string& thread_id, const std::string& sender)> offer_group_admin;
+  /**
+   * Choose and return (the forward's "Forward to"): the picker lists `options.list()`, `done` gets the ticked ones once it
+   * has closed, `cancel` runs when the user closes it without choosing.
+   */
+  std::function<void(PeoplePickerChooseOptions options, PeoplePickerChooseDone done, std::function<void()> cancel)>
+      open_choose_targets;
+  /** Closes the choose picker if it is open, without running `done` or `cancel` (lock, sign-out, the chat gone). */
+  std::function<void()> close_choose_targets;
+  /** The open choose picker's strip gets its items again, with the thumbnails made after it opened. */
+  std::function<void(std::vector<ChoosePreviewItem> items)> update_choose_preview;
 };
 
 } // namespace pbr

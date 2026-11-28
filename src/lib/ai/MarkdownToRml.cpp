@@ -16,6 +16,7 @@ namespace {
 constexpr size_t kMaxListDepth = 6;
 constexpr size_t kMaxOpenInline = 32; // open emphasis/bracket markers at once (bounds output nesting)
 constexpr size_t kMaxUrl = 2048;
+constexpr size_t kMaxTitle = 256; // a link title (never shown; only `pp:news` means anything)
 
 using sv = std::string_view;
 
@@ -70,16 +71,21 @@ sv Trim(sv s) {
 // ---------------------------------------------------------------------------------------------
 
 struct InlineContext {
-  std::vector<std::string>& links;
+  std::vector<MarkdownLink>& links;
+  const MarkdownOptions& options;
   std::unordered_map<std::string, size_t> link_index;
+  size_t news_count = 0;
 
-  size_t Intern(const std::string& url) {
-    auto it = link_index.find(url);
+  // A news item and a plain link to the same URL are two entries: one opens the reader, the other the browser.
+  size_t Intern(const std::string& url, const bool news = false, std::string label = {}) {
+    const std::string key = (news ? "n" : "p") + url;
+    auto it = link_index.find(key);
     if (it != link_index.end()) {
       return it->second;
     }
-    links.push_back(url);
-    link_index.emplace(url, links.size() - 1);
+    MarkdownLink link{url, news, news ? std::move(label) : std::string(), news ? news_count++ : 0};
+    links.push_back(std::move(link));
+    link_index.emplace(key, links.size() - 1);
     return links.size() - 1;
   }
 };
@@ -99,9 +105,10 @@ bool IsSafeHttpsUrl(sv url) {
 struct Tok {
   enum Kind { Text, Delim, Bracket, Code, LinkOpen, LinkClose, Br };
   Kind kind = Text;
-  std::string text; // Text/Code: content; Delim/Bracket: literal source; LinkClose: url for non-https
-  int role = 0;     // Delim: 0 literal, 1 open, 2 close
-  long link = -1;   // LinkOpen/LinkClose: index into links, or -1 for a non-https "link"
+  std::string text;  // Text/Code: content; Delim/Bracket: literal source; LinkClose: url for non-https
+  int role = 0;      // Delim: 0 literal, 1 open, 2 close
+  long link = -1;    // LinkOpen/LinkClose: index into links, or -1 for a non-https "link"
+  bool news = false; // LinkOpen: a news item
 };
 
 struct BracketEntry {
@@ -139,8 +146,8 @@ public:
           break;
         case Tok::LinkOpen:
           if (t.link >= 0) {
-            out += "<span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " +
-                   std::to_string(t.link) + ")\">";
+            out += std::string("<span class=\"chat-link") + (t.news ? " " + std::string(kNewsLinkClass) : "") +
+                   "\" data-event-click=\"open_chat_link('__ENTRY__', " + std::to_string(t.link) + ")\">";
           }
           break;
         case Tok::LinkClose:
@@ -326,23 +333,61 @@ private:
     return j;
   }
 
-  // Parses `(dest)` starting at s_[open] == '('; returns index of the closing ')' or npos.
-  size_t FindDestEnd(size_t open) const {
+  struct Dest {
+    size_t end = sv::npos; // the closing ')'; npos: not a link destination
+    size_t dest_end = 0;   // one past the destination
+    std::string title;     // unescaped; empty when there is none
+  };
+
+  // Parses `(dest)` or `(dest "title")` / `(dest 'title')` starting at s_[open] == '('.
+  Dest ParseDest(size_t open) const {
     int depth = 1;
-    const size_t limit = std::min(s_.size(), open + kMaxUrl + 2);
-    for (size_t k = open + 1; k < limit; ++k) {
+    const size_t limit = std::min(s_.size(), open + kMaxUrl + kMaxTitle + 8);
+    size_t k = open + 1;
+    for (; k < limit && k < open + kMaxUrl + 2; ++k) {
       const char c = s_[k];
       if (c == '\\' && k + 1 < s_.size() && IsAsciiPunct(s_[k + 1])) {
         ++k;
       } else if (IsWs(c)) {
-        return sv::npos;
+        break;
       } else if (c == '(') {
         ++depth;
       } else if (c == ')' && --depth == 0) {
-        return k;
+        return {k, k, {}};
       }
     }
-    return sv::npos;
+    if (k >= limit || !IsWs(s_[k]) || depth != 1 || k == open + 1) {
+      return {};
+    }
+    Dest dest;
+    dest.dest_end = k;
+    while (k < limit && IsWs(s_[k])) {
+      ++k;
+    }
+    if (k < limit && s_[k] == ')') {
+      dest.end = k;
+      return dest;
+    }
+    if (k >= limit || (s_[k] != '"' && s_[k] != '\'')) {
+      return {};
+    }
+    const char quote = s_[k];
+    for (++k; k < limit && s_[k] != quote; ++k) {
+      if (s_[k] == '\\' && k + 1 < limit && IsAsciiPunct(s_[k + 1])) {
+        ++k;
+      }
+      dest.title += s_[k];
+    }
+    if (k >= limit || dest.title.size() > kMaxTitle) {
+      return {};
+    }
+    for (++k; k < limit && (s_[k] == ' ' || s_[k] == '\t'); ++k) {
+    }
+    if (k >= limit || s_[k] != ')') {
+      return {};
+    }
+    dest.end = k;
+    return dest;
   }
 
   size_t HandleCloseBracket(size_t i) {
@@ -354,10 +399,10 @@ private:
       --open_count_;
       inactive_below_ = std::min(inactive_below_, brackets_.size());
       if (active && i + 1 < s_.size() && s_[i + 1] == '(') {
-        const size_t end = FindDestEnd(i + 1);
-        if (end != sv::npos) {
-          FinishLink(b, s_.substr(i + 2, end - i - 2));
-          return end + 1;
+        const Dest dest = ParseDest(i + 1);
+        if (dest.end != sv::npos) {
+          FinishLink(b, s_.substr(i + 2, dest.dest_end - i - 2), dest.title);
+          return dest.end + 1;
         }
       }
     }
@@ -365,7 +410,22 @@ private:
     return i + 1;
   }
 
-  void FinishLink(const BracketEntry& b, sv raw_dest) {
+  // The link's text as shown, for a news item's title in the reader.
+  std::string PlainLabel(size_t from) const {
+    std::string label;
+    for (size_t k = from; k < toks_.size(); ++k) {
+      const Tok& t = toks_[k];
+      if (t.kind == Tok::Br) {
+        label += ' ';
+      } else if (t.kind == Tok::Text || t.kind == Tok::Code || t.kind == Tok::Bracket ||
+                 (t.kind == Tok::Delim && t.role == 0)) {
+        label += t.text;
+      }
+    }
+    return std::string(Trim(label));
+  }
+
+  void FinishLink(const BracketEntry& b, sv raw_dest, const std::string& title) {
     DemoteAbove(b.tok);
     if (b.image) {
       // Only the alt text survives; nothing that could load a remote resource is emitted.
@@ -410,10 +470,15 @@ private:
       }
       url += raw_dest[k];
     }
+    if (!ctx_.options.links) {
+      url.clear(); // shown as its text only: not tappable, and no address after it
+    }
     const bool https = IsSafeHttpsUrl(url);
-    const long index = https ? static_cast<long>(ctx_.Intern(url)) : -1;
+    const bool news = https && ctx_.options.news_links && title == kNewsLinkTitle;
+    const long index = https ? static_cast<long>(ctx_.Intern(url, news, news ? PlainLabel(b.tok + 1) : "")) : -1;
     toks_[b.tok].kind = Tok::LinkOpen;
     toks_[b.tok].link = index;
+    toks_[b.tok].news = news;
     Tok close{Tok::LinkClose, https ? "" : std::move(url)};
     close.link = index;
     toks_.push_back(std::move(close));
@@ -424,7 +489,8 @@ private:
 
   // Not inside an open `[`: it may still become a link, and links cannot nest.
   bool TryAutolink(size_t i) {
-    if (!brackets_.empty() || !MatchCi(s_, i, "https://") || (i > 0 && IsAsciiAlnum(s_[i - 1]))) {
+    if (!ctx_.options.links || !brackets_.empty() || !MatchCi(s_, i, "https://") ||
+        (i > 0 && IsAsciiAlnum(s_[i - 1]))) {
       return false;
     }
     if (i >= 2 && s_[i - 1] == '(' && s_[i - 2] == ']') {
@@ -793,9 +859,9 @@ std::string DefuseForbiddenText(const std::string& in) {
 
 } // namespace
 
-MarkdownRml MarkdownToRml(std::string_view markdown) {
+MarkdownRml MarkdownToRml(std::string_view markdown, const MarkdownOptions& options) {
   MarkdownRml result;
-  InlineContext ctx{result.links, {}};
+  InlineContext ctx{result.links, options, {}};
   const Lines lines = SplitLines(markdown);
   std::string out;
 

@@ -1,12 +1,14 @@
 #pragma once
 
 #include "foundation/platform/ScreenKeyboardGeometry.h"
+#include "lib/ui/NameWords.h"
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
 #include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellHomeMascot.h"
 #include "gui/shell/NotificationTapCover.h"
+#include "gui/shell/SafeAreaSettle.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -160,6 +162,20 @@ public:
    */
   void OpenAiDrawer();
   void CloseAiDrawer();
+  /** Closes every overlay layer (dialogs excluded), top first: a reset of the profile leaves none of the old account's. */
+  void CloseAllLayers();
+  /** The desktop title strip's text (WindowTitleFor); no effect on a platform without the strip. */
+  void SetWindowTitle(const std::string& title);
+  /**
+   * The drop hint over the chat pane: `text` shows it, empty hides it. `words` (the same sentence cut at the name) is
+   * given only when dropping would send: the hint then has its "can drop" form (badge, the name in bold, the limit line);
+   * without it it is a refusal's line. Dirties only on change.
+   */
+  void SetDropHint(const std::string& text, const std::optional<NameWords>& words = std::nullopt);
+  /** How long until the drop hint should hide itself (empty = no wake needed); NotifyFrameEnd arms the idle wake from it. */
+  void BindDropHintWake(std::function<std::optional<int64_t>()> ms_until_hide) {
+    drop_hint_wake_ = std::move(ms_until_hide);
+  }
   /** The drawer's rows have their swipe listeners (only while it is mounted). */
   bool AiDrawerRowSwipesAttached() const { return drawer_session_swipe_.Attached(); }
   /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */
@@ -422,6 +438,7 @@ private:
   /** SyncLayout rebuilt the DOM: put every MountOverlayBody body back into its (now empty) mount. */
   void RemountOverlayBodiesNow();
   void FlushRemountPinGateChrome();
+  void ResizeComputerLinkPage(ui::Context* context);
   /** The AI drawer's host (#shell-ai-drawer-host): deferred (safe from a click), or now (SyncLayout). */
   void RemountAiDrawer();
   void FlushRemountAiDrawer();
@@ -491,6 +508,7 @@ private:
   ShellConfig config_;
   int safe_area_top_from_prefs_dp_ = 0;
   int safe_area_bottom_from_prefs_dp_ = 0;
+  SafeAreaSettle safe_area_settle_;             // iPad: keeps frames coming while the window controls' inset settles
   int logged_keyboard_dp_ = -1;                 // the keyboard lift last written to the log (RefreshSafeAreaInsets)
   int keyboard_lift_applied_win_ = 0;           // the keyboard lift in the layout now (window units)
   const ui::Element* keyboard_field_ = nullptr; // iPad: the non-bar field the decision below is for (compared only)
@@ -619,6 +637,7 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
+  std::function<std::optional<int64_t>()> drop_hint_wake_;
   ShellAiDot ai_dot_{state_};
   ShellHomeMascot home_mascot_;
   /** The look pref (`auto`, `a`-`d`) and when `auto` was last resolved to state_.ai_dot_look (a day can turn over). */

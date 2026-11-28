@@ -54,6 +54,7 @@ LocalAsk MakeAsk(const std::string& tool, const std::string& key) {
   LocalAsk ask;
   ask.tool = tool;
   ask.question_key = key;
+  ask.args = {{"list", "English, Français"}};
   return ask;
 }
 
@@ -80,6 +81,18 @@ TEST_P(LocalActionRenderTest, EveryQuestionKeyHasText) {
     const std::string text = RenderLocalAsk(ask);
     EXPECT_FALSE(text.empty()) << ask.question_key;
     EXPECT_NE(text, ask.question_key) << ask.tool;
+    EXPECT_FALSE(HasUnfilled(text)) << text;
+  }
+}
+
+TEST_P(LocalActionRenderTest, LanguageStatementsFillTheirPlaceholders) {
+  const std::string offered = RenderLocalAsk(MakeAsk("set_language", "settings.ask.language"));
+  EXPECT_NE(offered.find("Français"), std::string::npos) << offered;
+  for (const LocalStatement& statement :
+       {LocalStatement{"settings.language.only_one", {{"language", "English"}}},
+        LocalStatement{"settings.language.not_offered", {{"list", "English, Français"}}}}) {
+    const std::string text = RenderLocalStatement(statement);
+    EXPECT_NE(text, statement.key);
     EXPECT_FALSE(HasUnfilled(text)) << text;
   }
 }

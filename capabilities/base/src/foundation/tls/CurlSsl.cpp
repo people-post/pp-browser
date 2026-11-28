@@ -2,6 +2,8 @@
 
 #include "foundation/tls/OsTlsPlatformCurl.h"
 
+#include <atomic>
+
 #if defined(PP_BROWSER_DEV_CA_BUNDLE)
 #include <cstdlib>
 #include <string>
@@ -25,7 +27,13 @@ const std::string& CaBundleOverride() {
 }
 #endif
 
+std::atomic<bool> g_ignore_env_proxy_for_test{false};
+
 } // namespace
+
+void SetCurlIgnoreEnvProxyForTest(const bool ignore) {
+  g_ignore_env_proxy_for_test.store(ignore);
+}
 
 bool DevCaBundleActive() {
 #if defined(PP_BROWSER_DEV_CA_BUNDLE)
@@ -40,6 +48,10 @@ void ApplyCurlSslDefaults(CURL* curl) {
     return;
   }
   os::ApplyPlatformCurlSsl(curl);
+  if (g_ignore_env_proxy_for_test.load()) {
+    curl_easy_setopt(curl, CURLOPT_PROXY, "");
+    curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+  }
 #if defined(PP_BROWSER_DEV_CA_BUNDLE)
   if (const std::string& bundle = CaBundleOverride(); !bundle.empty()) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, bundle.c_str());

@@ -16,7 +16,11 @@ struct QrDetection {
   /** Normalized bounds of a detected QR, even when its payload is not yet readable. */
   std::optional<QrRegion> region;
 };
-QrDetection InspectQr(const VideoFrameRgba& frame);
+/** The longest edge the decoder looks at: a bigger frame is sampled down to it. Phones keep the 1280 they were measured at. */
+constexpr int kQrMobileDecodeEdge = 1280;
+/** The desktop's 1080p capture stays whole, so the dense link codes keep their pixels per module. */
+constexpr int kQrDesktopDecodeEdge = 1920;
+QrDetection InspectQr(const VideoFrameRgba& frame, int max_edge = kQrMobileDecodeEdge);
 /** First readable QR payload, as raw bytes in a string; never interprets or executes it. */
-std::optional<std::string> DecodeQr(const VideoFrameRgba& frame);
+std::optional<std::string> DecodeQr(const VideoFrameRgba& frame, int max_edge = kQrMobileDecodeEdge);
 } // namespace pbr

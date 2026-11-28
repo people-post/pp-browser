@@ -511,6 +511,8 @@ public:
                              std::shared_ptr<const std::atomic<bool>> cancelled = {});
   /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** The same list, or none when it cannot be told (locked, no profile, the folder or a record unreadable). Read-only. */
+  std::optional<std::vector<OutgoingAttachmentRecord>> PendingOutgoingAttachmentsChecked(const std::string& thread_id);
   /** Drop a staged attachment (the person gave up on it). */
   void DiscardOutgoingAttachment(const std::string& record_id);
   /** At start: staged sends older than a day and half-finished downloads go. */

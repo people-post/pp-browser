@@ -94,8 +94,6 @@ struct SettingsCommands {
   /** Runtime Amp listen multiaddr (empty when mesh is down). */
   std::function<std::string()> amp_listen_multiaddr;
   std::function<SettingsReachabilityView()> load_reachability;
-  /** Refresh Me / Network attention dots after reachability nudge ack. */
-  std::function<void()> refresh_nav_badges;
 
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
@@ -130,6 +128,8 @@ struct SettingsCommands {
   std::function<Roe<std::vector<uint8_t>>(const std::string& offer)> seal_link_reply;
   /** The in-app camera reads the new device's code: `done(text)` once, on the UI thread (nothing when cancelled). */
   std::function<void(std::function<void(std::string text)> done)> scan_link_offer;
+  /** A camera is listed, so "Scan" can work (nothing is opened to find out). Unset: assumed yes. */
+  std::function<bool()> can_scan_link_offer;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
   /** Whether `pin` opens the vault again (linking a device asks it first); works on accounts without a phrase. */

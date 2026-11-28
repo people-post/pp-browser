@@ -14,8 +14,6 @@ struct BadgeUnreadInputs {
   int sessions_unread = 0;
   /** Reserved for contacts-tab queues; fed from ContactsShellBridge when present. */
   int contacts_unread = 0;
-  /** Me-tab attention (reachability nudge, etc.). */
-  bool me_attention = false;
   /** The number for the app's icon; empty: leave the icon alone (messaging not initialized, e.g. still locked). */
   std::optional<int> app_icon_count;
 };
@@ -48,7 +46,6 @@ struct BadgeSourceFacts {
   bool sessions_tab_active = false;
   int open_chat_unread = 0;
   int contacts_unread = 0;
-  bool me_attention = false;
 };
 
 /** The nav badges deduct the open chat on the Chats tab; the icon number never does. */
