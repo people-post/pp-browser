@@ -80,7 +80,7 @@ The node's version comes from the tag (passed as `PP_BROWSER_RELEASE_VERSION`); 
 
 - **iOS dev build:** Actions → **ios-testflight** → Run workflow on any branch or tag. It uploads to TestFlight for internal testers and tags the commit `internal/<build number>`. Never promoted: only candidates are ([RC008](../../projects/release-compatibility/DECISIONS.md#rc008--app-builds-climb-one-ladder-only-release-candidates-are-promoted)). Runs one at a time (a newer waiting run cancels an older waiting one, a candidate's upload included: re-run it).
 - **Internal pp-node build:** Actions → **release-pp-node** → Run workflow with a ref on main (refused otherwise). It builds `0.0.0-dev.<sha>`, pushes that image, runs the L0 smoke, and tags the commit `node-internal/<YYYY-MM-DD>.<n>` (UTC date, `n` the next free that day). No GitHub Release.
-- **Android and desktop test builds:** there is no by-hand workflow yet. [build.yml](../../.github/workflows/build.yml) keeps a debug APK and a Linux tarball of each main push as Actions artifacts (CI builds, not tagged).
+- **Android and desktop test builds:** there is no by-hand workflow yet. [build.yml](../../.github/workflows/build.yml) keeps a Linux tarball of each main push and a debug APK of each nightly build of main as Actions artifacts (CI builds, not tagged).
 
 ### App workflow (`v*`)
 
