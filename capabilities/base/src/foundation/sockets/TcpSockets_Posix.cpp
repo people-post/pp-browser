@@ -33,6 +33,24 @@ int Fd(const Socket socket) {
   return static_cast<int>(socket);
 }
 
+/** Close-on-exec, and no SIGPIPE on a write to a closed peer where the socket can say so (macOS: no MSG_NOSIGNAL). */
+void Prepare(const int fd) {
+  ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+#if defined(SO_NOSIGPIPE)
+  const int yes = 1;
+  ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+}
+
+/** A TCP socket of `family`, prepared; < 0 on error. */
+int NewSocket(const int family) {
+  const int fd = ::socket(family, SOCK_STREAM, 0);
+  if (fd >= 0) {
+    Prepare(fd);
+  }
+  return fd;
+}
+
 } // namespace
 
 Roe<Listener> Listen(const std::string& host, const uint16_t port, const int backlog) {
@@ -44,7 +62,7 @@ Roe<Listener> Listen(const std::string& host, const uint16_t port, const int bac
   if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &found) != 0 || !found) {
     return Error("not a numeric address: " + host);
   }
-  const int fd = ::socket(found->ai_family, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  const int fd = NewSocket(found->ai_family);
   if (fd < 0) {
     freeaddrinfo(found);
     return Error("socket: " + LastErrorText());
@@ -78,7 +96,7 @@ Roe<Listener> Listen(const std::string& host, const uint16_t port, const int bac
 }
 
 Roe<Socket> ConnectLoopback(const uint16_t port) {
-  const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  const int fd = NewSocket(AF_INET);
   if (fd < 0) {
     return Error("socket: " + LastErrorText());
   }
@@ -99,7 +117,7 @@ Socket Accept(const Socket listener) {
   if (fd < 0) {
     return kInvalid;
   }
-  ::fcntl(fd, F_SETFD, FD_CLOEXEC);
+  Prepare(fd);
   return fd;
 }
 
