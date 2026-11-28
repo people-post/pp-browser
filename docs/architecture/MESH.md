@@ -114,7 +114,7 @@ Hard lab: hard-w5 Phase-11 FLIP (peer-a changes address mid-call → reconnected
 Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See [NETWORKING.md](NETWORKING.md) and [pp-cpp-amp STACK.md](https://github.com/people-post/pp-cpp-amp/blob/main/docs/STACK.md).
 
 **Ledger role** (pp-ledger platform-integration pi4): with `--ledger-role relay|miner`, pp-node runs
-one pp-ledger role on its mesh runtime (`domain/node/NodeLedgerRole`, over pp-ledger's
+one pp-ledger role on its mesh runtime (`domain/ledger/LedgerRole`, capabilities/ledger, over pp-ledger's
 `RoleRunner`): the node's identity and address, pp-ledger's handlers bound on the runtime, and the
 ledger's protocols advertised through `MeshHost::SetAppProtocols` only while they are bound — the
 mesh refuses opens for protocols nothing serves. It stops (stop → join) before `MeshHost::Stop`.

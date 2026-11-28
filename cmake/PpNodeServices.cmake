@@ -8,15 +8,15 @@
 # Every service a node can be built with, in the capability order. For each: its library, what it needs, and what
 # tells its code apart in a symbol listing (a mangled-name fragment).
 set(PP_NODE_KNOWN_SERVICES ledger relay)
-set(PP_NODE_SERVICE_LIB_ledger pp_domain_node_ledger) # the ledger role (pp-ledger relay / miner), PP_BROWSER_HAS_LEDGER
+set(PP_NODE_SERVICE_LIB_ledger pp_domain_ledger) # the ledger role (capabilities/ledger), PP_NODE_HAS_LEDGER
 set(PP_NODE_SERVICE_NEEDS_ledger "")
-set(PP_NODE_SERVICE_SYMBOL_ledger "14NodeLedgerRole")
+set(PP_NODE_SERVICE_SYMBOL_ledger "3pbr6ledger")
 set(PP_NODE_SERVICE_LIB_relay pp_domain_relay) # the message relay (capabilities/relay), PP_NODE_HAS_RELAY
 set(PP_NODE_SERVICE_NEEDS_relay "")
 set(PP_NODE_SERVICE_SYMBOL_relay "3pbr5relay")
 
 # The two sets we provide. The ledger is core, but only where it builds (PP_BROWSER_WITH_LEDGER; not on mobile).
-if(TARGET pp_domain_node_ledger)
+if(TARGET pp_domain_ledger)
   set(PP_NODE_PRESET_node ledger)
 else()
   set(PP_NODE_PRESET_node "")

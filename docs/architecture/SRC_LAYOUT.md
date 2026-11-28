@@ -85,7 +85,8 @@ base (common, foundation) ─► people ─┬─► net ─────┬─�
 base ─► media (devices, codecs, the engine)
                              people, net ─► node, relay     app (shell, GUI, AI): anything
 product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
-                                                            (pp-node-plus: and the add-ons)
+                                                            (and the node services: ledger;
+                                                             pp-node-plus also the add-ons)
 ```
 
 | Capability | Paths |
@@ -101,6 +102,7 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | broadcast | `lib/broadcast`, `feature/broadcast` |
 | node | `domain/node` |
 | relay | `domain/relay` — the message relay, an add-on only pp-node-plus links (node-relay NR001) |
+| ledger | `domain/ledger` — pp-node's ledger role, a node service both pp-node presets link (CR027) |
 | node_app | `app/node` — pp-node, an app (CR017), and pp-node-plus (pp-node with the add-ons); in its own folder, `apps/node/src/` (CR028) |
 | product | `foundation/data`, `foundation/platform`, `foundation/i18n`, `foundation/product` — config, paths, platform hooks, text (CR015); its headless part both apps use is `capabilities/product` (CR028) |
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |

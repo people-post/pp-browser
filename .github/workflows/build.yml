@@ -164,11 +164,15 @@ jobs:
             relay: &relay
               - *net
               - 'capabilities/relay/**'
+            ledger: &ledger
+              - *capability_base
+              - 'capabilities/ledger/**'
             # pp-node and pp-node-plus: the capabilities they link, the node app, the product's base it reads, and how
             # they are packaged and checked.
             node_editions:
               - *node
               - *relay
+              - *ledger
               - 'capabilities/product/**'
               - 'apps/node/**'
               - 'cmake/PpCapabilitiesRoot.cmake'
@@ -387,7 +391,7 @@ jobs:
           fi
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in base product people net social delivery pricing media messaging calls broadcast node relay; do
+            for capability in base product people net social delivery pricing media messaging calls broadcast node relay ledger; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

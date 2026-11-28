@@ -78,6 +78,8 @@ GROUPS: dict[str, list[str]] = {
     "node": ["domain/node"],
     # The message relay, an add-on only pp-node-plus links (node-relay NR001).
     "relay": ["domain/relay"],
+    # pp-node's ledger role, a node service only pp-node links (CR027).
+    "ledger": ["domain/ledger"],
     # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node, and
     # pp-node-plus the add-ons (relay) too.
     "node_app": ["app/node"],
@@ -100,9 +102,10 @@ ALLOWED: dict[str, set[str]] = {
     "broadcast": {"base", "people", "net", "delivery", "pricing", "media", "calls"},
     "node": {"base", "people", "net"},
     "relay": {"base", "people", "net"},
+    "ledger": {"base"},
     "product": {"base"},
     # pp-node-plus is built from the same sources; the default pp-node links no add-on (apps/node/).
-    "node_app": {"base", "product", "people", "net", "node", "relay"},
+    "node_app": {"base", "product", "people", "net", "node", "relay", "ledger"},
     "app": set(GROUPS),
 }
 

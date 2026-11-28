@@ -684,7 +684,8 @@ Cut where changes rarely cross: what changes rarely sits low, what changes often
 | **pp-node** (the repo) | the pp-node app (both builds, its packaging and release) and the add-on services only pp-node-plus links (relay; files later) | its own two builds |
 
 `node` goes low because the desktop app runs node services too (its mesh as a node); the add-ons go with their only
-user. Everything else (social, delivery, pricing, media, messaging, calls, broadcast, the GUI) stays in pp-browser
+user, and so does the ledger role (2026-11-27, Hongwei): its own capability, `ledger`, in the pp-node repo, so
+pp-cpp-core needs no pp-ledger. Everything else (social, delivery, pricing, media, messaging, calls, broadcast, the GUI) stays in pp-browser
 until a second app needs some of it; realtime (calls and broadcast) then leaves as one repo (CR003).
 
 **Consequences:** pp-browser and the pp-node repo each pin pp-cpp-core, one pin more than one repo would cost; a change

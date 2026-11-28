@@ -19,6 +19,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capa
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/broadcast ${CMAKE_BINARY_DIR}/capabilities/broadcast)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/relay ${CMAKE_BINARY_DIR}/capabilities/relay)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/ledger ${CMAKE_BINARY_DIR}/capabilities/ledger)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules, the base's and the product's (not Amp — Amp is FetchContent lib).

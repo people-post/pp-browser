@@ -26,8 +26,8 @@
 #include "lib/net/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
 #include "mesh/reachability/Reachability.h"
-#if defined(PP_BROWSER_HAS_LEDGER)
-#include "domain/node/NodeLedgerRole.h"
+#if defined(PP_NODE_HAS_LEDGER)
+#include "domain/ledger/LedgerRole.h"
 #endif
 #if defined(PP_NODE_HAS_RELAY)
 #include "domain/relay/RelayService.h"
@@ -186,8 +186,8 @@ public:
     if (role.empty()) {
       return {};
     }
-#if defined(PP_BROWSER_HAS_LEDGER)
-    role_ = pbr::NodeLedgerRole::RoleNamed(role);
+#if defined(PP_NODE_HAS_LEDGER)
+    role_ = pbr::ledger::LedgerRole::RoleNamed(role);
     if (!role_) {
       return pbr::Error("--ledger-role must be relay or miner (a beacon runs standalone only)");
     }
@@ -200,11 +200,11 @@ public:
   }
 
   pbr::Roe<void> Start(pbr::NodeBootstrapResult& boot) {
-#if defined(PP_BROWSER_HAS_LEDGER)
+#if defined(PP_NODE_HAS_LEDGER)
     if (!role_) {
       return {};
     }
-    pbr::NodeLedgerRole::Options options;
+    pbr::ledger::LedgerRole::Options options;
     options.role = *role_;
     options.work_dir = dir_.empty() ? boot.profile_data_dir + "/ledger" : dir_;
     return ledger_.Start(*boot.mesh, std::move(options));
@@ -216,7 +216,7 @@ public:
 
   /** Why the role ended on its own; none while it runs (or when there is none). */
   std::optional<std::string> Failure() const {
-#if defined(PP_BROWSER_HAS_LEDGER)
+#if defined(PP_NODE_HAS_LEDGER)
     return ledger_.Failure();
 #else
     return std::nullopt;
@@ -225,16 +225,16 @@ public:
 
   /** Before the mesh stops. */
   void Stop() {
-#if defined(PP_BROWSER_HAS_LEDGER)
+#if defined(PP_NODE_HAS_LEDGER)
     ledger_.Stop();
 #endif
   }
 
 private:
-#if defined(PP_BROWSER_HAS_LEDGER)
-  std::optional<pbr::NodeLedgerRole::Role> role_;
+#if defined(PP_NODE_HAS_LEDGER)
+  std::optional<pbr::ledger::LedgerRole::Role> role_;
   std::string dir_;
-  pbr::NodeLedgerRole ledger_;
+  pbr::ledger::LedgerRole ledger_;
 #endif
 };
 

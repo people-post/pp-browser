@@ -9,7 +9,11 @@
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
-namespace pbr {
+/**
+ * The ledger capability (capability-repos CR027, node-relay NR001): a node service pp-node links (in both presets) and
+ * the desktop app never does. Its code is in pbr::ledger, which the node builds' symbol checks look for.
+ */
+namespace pbr::ledger {
 
 /**
  * pp-node's ledger role (pp-ledger platform-integration pi4): one pp-ledger relay or miner, run on
@@ -20,7 +24,7 @@ namespace pbr {
  *
  * Lifecycle: Start once the mesh is up; Stop (stop → join) before MeshHost::Stop.
  */
-class NodeLedgerRole {
+class LedgerRole {
 public:
   enum class Role { Relay, Miner };
   /** "relay" / "miner"; anything else (a beacon is standalone only) is none. */
@@ -32,10 +36,10 @@ public:
     std::string work_dir;
   };
 
-  NodeLedgerRole();
-  ~NodeLedgerRole(); // Stop
-  NodeLedgerRole(const NodeLedgerRole&) = delete;
-  NodeLedgerRole& operator=(const NodeLedgerRole&) = delete;
+  LedgerRole();
+  ~LedgerRole(); // Stop
+  LedgerRole(const LedgerRole&) = delete;
+  LedgerRole& operator=(const LedgerRole&) = delete;
 
   /** Runs the role on `mesh`'s runtime. The mesh must be started and outlive Stop. */
   Roe<void> Start(mesh::MeshHost& mesh, Options options);
@@ -52,4 +56,4 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-} // namespace pbr
+} // namespace pbr::ledger

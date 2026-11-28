@@ -37,6 +37,7 @@ CAPABILITY_TAGS = {
     "calls": "calls, 1:1 and group",
     "broadcast": "live broadcast",
     "node": "pp-node, which the lab's seeds run (hop, hop2): parks, circuits, hosting group calls",
+    "ledger": "pp-node's ledger role (capabilities/ledger): a pp-ledger relay or miner on the node's mesh",
     "relay": "relays: the org's (pp-relay-apis) and, from node-relay NR5, the message relay on pp-node-plus "
     "(capabilities/relay): mailboxes, the directory, lockers, two relays",
 }
@@ -66,6 +67,7 @@ BELOW = {
     "broadcast": ("calls",),
     "node": ("net",),
     "relay": ("net",),
+    "ledger": (),
 }
 
 ALL = "all"

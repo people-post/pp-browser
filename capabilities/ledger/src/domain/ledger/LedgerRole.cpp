@@ -1,4 +1,4 @@
-#include "domain/node/NodeLedgerRole.h"
+#include "domain/ledger/LedgerRole.h"
 
 #include "ledger/network/AmpLedgerServer.h"
 #include "ledger/server/RoleRunner.h"
@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-namespace pbr {
+namespace pbr::ledger {
 
-struct NodeLedgerRole::Impl {
+struct LedgerRole::Impl {
   std::unique_ptr<pp::RoleRunner> runner;
   std::thread thread;
   std::atomic<bool> listening{false};
@@ -20,7 +20,7 @@ struct NodeLedgerRole::Impl {
   std::optional<std::string> failure;
 };
 
-std::optional<NodeLedgerRole::Role> NodeLedgerRole::RoleNamed(const std::string& name) {
+std::optional<LedgerRole::Role> LedgerRole::RoleNamed(const std::string& name) {
   if (name == "relay") {
     return Role::Relay;
   }
@@ -30,13 +30,13 @@ std::optional<NodeLedgerRole::Role> NodeLedgerRole::RoleNamed(const std::string&
   return std::nullopt;
 }
 
-NodeLedgerRole::NodeLedgerRole() : impl_(std::make_unique<Impl>()) {}
+LedgerRole::LedgerRole() : impl_(std::make_unique<Impl>()) {}
 
-NodeLedgerRole::~NodeLedgerRole() {
+LedgerRole::~LedgerRole() {
   Stop();
 }
 
-Roe<void> NodeLedgerRole::Start(mesh::MeshHost& mesh, Options options) {
+Roe<void> LedgerRole::Start(mesh::MeshHost& mesh, Options options) {
   if (impl_->runner) {
     return Error("ledger role already started");
   }
@@ -72,7 +72,7 @@ Roe<void> NodeLedgerRole::Start(mesh::MeshHost& mesh, Options options) {
   return {};
 }
 
-void NodeLedgerRole::Stop() {
+void LedgerRole::Stop() {
   if (!impl_->runner) {
     return;
   }
@@ -83,13 +83,13 @@ void NodeLedgerRole::Stop() {
   impl_->runner.reset();
 }
 
-bool NodeLedgerRole::Listening() const {
+bool LedgerRole::Listening() const {
   return impl_->listening;
 }
 
-std::optional<std::string> NodeLedgerRole::Failure() const {
+std::optional<std::string> LedgerRole::Failure() const {
   std::lock_guard lock(impl_->mu);
   return impl_->failure;
 }
 
-} // namespace pbr
+} // namespace pbr::ledger

@@ -196,7 +196,12 @@
      `pp_foundation_platform_core`; 2d pp-node in a folder of its own, `apps/node/` (its include root never `src/`),
      which also configures on its own (`cmake -S apps/node`, the capabilities from `capabilities/` through
      `cmake/PpCapabilitiesRoot.cmake`), with a step in CI's `node-editions` job. The app's probes moved to `src/app/probes`.
-5. P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
+5. **P4 (CR027), agreed 2026-11-27 (Hongwei):**
+   - The ledger role leaves `node` for its own capability, `ledger` (in review), so pp-cpp-core needs no pp-ledger.
+   - **pp-cpp-core**, created after that: base, product, people, net, node, with their history (`git filter-repo`);
+     the vendored curl, zlib and asio move there (CR012's shared home); reviewers as pp-browser's (Hongwei, Kenneth,
+     Leo); tag v0.1.0; pp-browser pins it and drops its copies; pp-ledger-apps pins it for the operator app.
+   - Before that note: P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
    node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
    the add-ons, its packaging and release) rather than moving code still being built.
 
