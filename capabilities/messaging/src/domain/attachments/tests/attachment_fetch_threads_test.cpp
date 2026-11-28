@@ -120,8 +120,9 @@ private:
 struct OnAnswerThread {
   bool returned_in_time = false;
   bool ui_task_posted = false;
-  int changed_before = 0;
-  int changed_after = 0;
+  /** Posts to the UI mailbox (counted by the UI wake hook) before the answer and when it returned. */
+  int ui_posts_before = 0;
+  int ui_posts_after = 0;
 };
 
 class FetchThreadsTest : public ::testing::Test {
@@ -161,6 +162,7 @@ protected:
     ASSERT_TRUE(workflow_.SetDek(ByteVector(kDataEncryptionKeySize, 0x41)));
     workflow_.SetDiskUsageProvider([] { return uint64_t{0}; });
     workflow_.SetOnChanged([this]() { ++changed_; });
+    AppRuntime::SetUIWakeCallback([this]() { ++ui_posts_; }); // called by every PostUI that is not dropped
 
     server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
       std::shared_future<void> hold;
@@ -183,6 +185,7 @@ protected:
     for (int i = 0; i < 100 && AppRuntime::HasPendingUITasks(); ++i) {
       AppRuntime::RunUITasks();
     }
+    AppRuntime::SetUIWakeCallback(nullptr);
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }
@@ -240,13 +243,13 @@ protected:
   OnAnswerThread AnswerOnOwnThread(PeerAnswer answer, Roe<Bytes> value, const std::function<void()>& unblock = {}) {
     AppRuntime::RunUITasks();
     OnAnswerThread seen;
-    seen.changed_before = changed_.load();
+    seen.ui_posts_before = ui_posts_.load();
     std::atomic<bool> ui_task_posted{false};
-    std::atomic<int> changed_after{0};
+    std::atomic<int> ui_posts_after{0};
     auto done = std::async(std::launch::async, [&, answer = std::move(answer), value = std::move(value)]() mutable {
       answer(std::move(value));
+      ui_posts_after = ui_posts_.load();
       ui_task_posted = AppRuntime::HasPendingUITasks();
-      changed_after = changed_.load();
     });
     seen.returned_in_time = done.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
     if (!seen.returned_in_time && unblock) {
@@ -254,7 +257,7 @@ protected:
     }
     done.wait();
     seen.ui_task_posted = ui_task_posted.load();
-    seen.changed_after = changed_after.load();
+    seen.ui_posts_after = ui_posts_after.load();
     return seen;
   }
 
@@ -270,6 +273,7 @@ protected:
   std::shared_ptr<CasStore> content_;
   HeldPeer peer_;
   std::atomic<int> changed_{0};
+  std::atomic<int> ui_posts_{0};
   AttachmentFetchWorkflow workflow_;
 };
 
@@ -290,7 +294,7 @@ TEST_F(FetchThreadsTest, APeerFailureReturnsAtOnceAndTheServerDownloadRunsOnAWor
   });
   EXPECT_TRUE(seen.returned_in_time) << "the answer's thread ran the server download";
   EXPECT_FALSE(seen.ui_task_posted) << "the answer's thread posted to the UI";
-  EXPECT_EQ(seen.changed_after, seen.changed_before);
+  EXPECT_EQ(seen.ui_posts_after, seen.ui_posts_before) << "posts to the UI mailbox while the answer ran";
   if (!released) {
     EXPECT_TRUE(WaitFor([&] { return Gets("pic") == 1u; })) << "the server download started on a worker";
     EXPECT_EQ(StateOf(fields), State::Downloading) << "and is still waiting for the server";
@@ -316,7 +320,7 @@ TEST_F(FetchThreadsTest, APeerSuccessIsDecryptedOnAWorkerNotOnTheAnswersThread) 
   const OnAnswerThread seen = AnswerOnOwnThread(std::move(answer), cipher);
   EXPECT_TRUE(seen.returned_in_time);
   EXPECT_FALSE(seen.ui_task_posted);
-  EXPECT_EQ(seen.changed_after, seen.changed_before);
+  EXPECT_EQ(seen.ui_posts_after, seen.ui_posts_before) << "posts to the UI mailbox while the answer ran";
   EXPECT_TRUE(AttachmentPendingCiphertextExists(dir_.string(), "t1", fields.content_hash))
       << "the answer's thread did the fetch's file work (and so its decrypt)";
   EXPECT_EQ(StateOf(fields), State::Downloading) << "not ready before a worker has run";
@@ -339,11 +343,18 @@ TEST_F(FetchThreadsTest, APeerAnswerAfterTheRuntimeStoppedFailsAsNotReadyAndSpen
   ASSERT_TRUE(answer);
   AppRuntime::Shutdown();
 
-  (void)AnswerOnOwnThread(std::move(answer), Error("amp link manager: dial timeout"));
+  const OnAnswerThread seen = AnswerOnOwnThread(std::move(answer), Error("amp link manager: dial timeout"));
   EXPECT_EQ(Gets("pic"), 0u) << "no request reached the server";
   EXPECT_EQ(StateOf(fields), State::Failed);
   EXPECT_FALSE(suppression_->IsSuppressed("t1", fields.content_hash)) << "not held back as a spent download";
-  EXPECT_TRUE(HasLine(FetchMetrics().Take(), " source=peer ", " result=not_ready "));
+  // The answering thread is the mesh pump at start-up or quit: no UI post (it wakes the event loop) and no metric.
+  EXPECT_EQ(seen.ui_posts_after, seen.ui_posts_before) << "posted to the UI from the answering thread";
+  EXPECT_FALSE(AppRuntime::HasPendingUITasks());
+  EXPECT_TRUE(FetchMetrics().Take().empty()) << "a metric line from the answering thread";
+
+  AppRuntime::Initialize(); // the next run's look (the backfill) queues it again
+  workflow_.EnqueueFromMessage("t1", message);
+  EXPECT_TRUE(peer_.TakeAnswer()) << "queued again: the peer is asked again";
 }
 
 // The fetch itself, without a workflow: with no runtime the answer is "not ready", which reached no server; with the

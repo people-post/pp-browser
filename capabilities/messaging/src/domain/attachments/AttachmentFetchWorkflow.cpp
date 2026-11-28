@@ -829,16 +829,24 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
       fields, context,
       [this, key, job = std::move(job), on_done = std::move(on_done), started_ms, declared_bytes, background,
        source = context.source](Roe<std::vector<uint8_t>> plaintext) mutable {
+        // No runtime (start-up, quit): it finishes right here, which may be the thread the peer answered on (the
+        // mesh pump): the job is still recorded (failed, so a later look queues it again) but no metric is written.
+        const bool running = AppRuntime::IsRunning();
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
                            plaintext = std::move(plaintext), started_ms, declared_bytes,
-                           background = std::move(background), source = std::move(source)]() mutable {
+                           background = std::move(background), source = std::move(source),
+                           emit_metrics = running]() mutable {
           // Reported at the end, after the bytes are stored, so the peak covers the whole receive.
           const auto report = [&](const bool ok) {
-            EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
+            if (emit_metrics) {
+              EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
+            }
           };
           const auto fetch_metric = [&](const ShareWord result) {
-            EmitAttachmentFetchMetric(source->load(), util::NowUnixMs() - started_ms, declared_bytes, result,
-                                      job.queued_behind, job.sender == kLocalSelfContactId);
+            if (emit_metrics) {
+              EmitAttachmentFetchMetric(source->load(), util::NowUnixMs() - started_ms, declared_bytes, result,
+                                        job.queued_behind, job.sender == kLocalSelfContactId);
+            }
           };
           // First: a message deleted (or history cleared) meanwhile cancelled this job, and a cancelled transfer
           // that came back as an error is not a failure to show; its percent is gone with the job.
@@ -935,7 +943,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
         };
         // Amp blob completions may arrive off-worker; keep SQLite/DEK work on Normal.
-        if (AppRuntime::IsRunning()) {
+        if (running) {
           AppRuntime::PostWorkerNormal(std::move(finish_job));
         } else {
           finish_job();
@@ -1024,7 +1032,9 @@ void AttachmentFetchWorkflow::MarkPending(const std::string& key) {
 }
 
 void AttachmentFetchWorkflow::NotifyChanged() {
-  if (!on_changed_) {
+  // No runtime (start-up, quit): no post. The caller may be the mesh pump with the mesh's io lock (a peer answer's
+  // "not ready" end), and a post wakes the UI event loop (B248's lock class). The flag is left alone.
+  if (!on_changed_ || !AppRuntime::IsRunning()) {
     return;
   }
   {

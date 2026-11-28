@@ -247,8 +247,9 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
             rest();
             return;
           }
-          // A post now would be dropped without a word (start-up, quit): end it here, having asked no server.
-          NoteSource(context, AttachmentFetchSource::Peer);
+          // A post now would be dropped without a word (start-up, quit): end it here, having asked no server. Peer
+          // bytes that did arrive are dropped with `rest` on purpose: nothing can be decrypted and stored safely now,
+          // so a later look may spend one more of the relay file's downloads to get them again.
           finish(AttachmentFetchNotReadyError());
         });
     return;
