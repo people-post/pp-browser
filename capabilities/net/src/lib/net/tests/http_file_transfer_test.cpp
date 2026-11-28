@@ -1,15 +1,10 @@
 #include "lib/net/HttpClient.h"
 
-#include <asio/buffer.hpp>
-#include <asio/io_context.hpp>
-#include <asio/ip/address_v4.hpp>
-#include <asio/ip/tcp.hpp>
-#include <asio/read.hpp>
-#include <asio/read_until.hpp>
-#include <asio/streambuf.hpp>
-#include <asio/write.hpp>
+#include "foundation/sockets/TcpSockets.h"
+
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -24,17 +19,21 @@ namespace {
 /** A tiny blocking HTTP server for one request at a time: PUT bodies are counted, GET answers are scripted. */
 class FileTransferServer {
 public:
-  FileTransferServer() : acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::address_v4::loopback(), 0)) {
-    port_ = acceptor_.local_endpoint().port();
+  FileTransferServer() {
+    auto listener = sockets::Listen("127.0.0.1", 0);
+    EXPECT_TRUE(static_cast<bool>(listener));
+    if (listener) {
+      listener_.Reset(listener->socket);
+      port_ = listener->port;
+    }
     thread_ = std::thread([this] { Serve(); });
   }
   ~FileTransferServer() {
     stopping_.store(true);
-    std::error_code ignored;
-    acceptor_.close(ignored);
     // Wake a blocking accept.
-    asio::ip::tcp::socket wake(io_);
-    wake.connect(asio::ip::tcp::endpoint(asio::ip::address_v4::loopback(), port_), ignored);
+    if (auto wake = sockets::ConnectLoopback(port_)) {
+      sockets::Close(*wake);
+    }
     if (thread_.joinable()) {
       thread_.join();
     }
@@ -54,27 +53,23 @@ public:
 private:
   void Serve() {
     while (!stopping_.load()) {
-      asio::ip::tcp::socket socket(io_);
-      std::error_code ec;
-      acceptor_.accept(socket, ec);
-      if (ec || stopping_.load()) {
+      sockets::OwnedSocket socket(sockets::Accept(listener_.Get()));
+      if (!socket.Valid() || stopping_.load()) {
         return;
       }
-      Handle(socket);
+      Handle(socket.Get());
     }
   }
 
-  void Handle(asio::ip::tcp::socket& socket) {
-    asio::streambuf buf;
-    std::error_code ec;
-    const size_t head_size = asio::read_until(socket, buf, "\r\n\r\n", ec);
-    if (ec) {
+  void Handle(const sockets::Socket socket) {
+    std::string buf;
+    if (!sockets::RecvUntil(socket, buf, "\r\n\r\n")) {
       return;
     }
-    std::string head(asio::buffers_begin(buf.data()),
-                     asio::buffers_begin(buf.data()) + static_cast<std::ptrdiff_t>(head_size));
-    buf.consume(head_size);
+    const size_t head_size = buf.find("\r\n\r\n") + 4;
+    const std::string head = buf.substr(0, head_size);
     const bool is_put = head.rfind("PUT ", 0) == 0;
+    bool ok = true;
     if (is_put) {
       uint64_t length = 0;
       const auto at = head.find("Content-Length: ");
@@ -82,44 +77,41 @@ private:
         length = std::stoull(head.substr(at + 16));
       }
       put_declared = length;
-      uint64_t received = buf.size();
-      buf.consume(buf.size());
+      uint64_t received = buf.size() - head_size;
       std::string chunk(64 * 1024, '\0');
       while (received < length) {
-        const size_t n = socket.read_some(asio::buffer(chunk), ec);
-        if (ec) {
+        const long n = sockets::Recv(socket, chunk.data(), chunk.size());
+        if (n <= 0) {
           break;
         }
-        received += n;
+        received += static_cast<uint64_t>(n);
       }
       put_received = received;
-      const std::string reply =
-          "HTTP/1.1 " + std::to_string(put_status) + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-      asio::write(socket, asio::buffer(reply), ec);
+      sockets::SendAll(
+          socket, "HTTP/1.1 " + std::to_string(put_status) + " X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     } else {
       std::string reply = "HTTP/1.1 " + std::to_string(get_status) + " X\r\nConnection: close\r\n";
       if (get_send_content_length) {
         reply += "Content-Length: " + std::to_string(get_body_bytes) + "\r\n";
       }
       reply += "\r\n";
-      asio::write(socket, asio::buffer(reply), ec);
+      ok = sockets::SendAll(socket, reply);
       std::string chunk(64 * 1024, 'x');
       uint64_t left = get_body_bytes;
-      while (left > 0 && !ec) {
+      while (left > 0 && ok) {
         size_t n = static_cast<size_t>(std::min<uint64_t>(left, chunk.size()));
         if (get_drip_ms > 0) {
           n = std::min<size_t>(n, 10);
           std::this_thread::sleep_for(std::chrono::milliseconds(get_drip_ms));
         }
-        asio::write(socket, asio::buffer(chunk.data(), n), ec);
+        ok = sockets::SendAll(socket, chunk.substr(0, n));
         left -= n;
       }
     }
-    socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+    sockets::ShutdownBoth(socket);
   }
 
-  asio::io_context io_;
-  asio::ip::tcp::acceptor acceptor_;
+  sockets::OwnedSocket listener_;
   std::thread thread_;
   std::atomic<bool> stopping_{false};
   unsigned short port_ = 0;

@@ -1,10 +1,5 @@
 #include "app/node/StatusHttpServer.h"
-
-#include <asio/connect.hpp>
-#include <asio/io_context.hpp>
-#include <asio/ip/tcp.hpp>
-#include <asio/read.hpp>
-#include <asio/write.hpp>
+#include "foundation/sockets/TcpSockets.h"
 
 #include <gtest/gtest.h>
 
@@ -15,8 +10,6 @@
 
 namespace pbr {
 namespace {
-
-using tcp = asio::ip::tcp;
 
 class StatusHttpServerTest : public ::testing::Test {
 protected:
@@ -31,29 +24,27 @@ protected:
   }
   void TearDown() override { server_.Stop(); }
 
-  std::unique_ptr<tcp::socket> Connect() {
-    auto socket = std::make_unique<tcp::socket>(io_);
-    socket->connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), port_));
-    return socket;
+  sockets::OwnedSocket Connect() {
+    auto socket = sockets::ConnectLoopback(port_);
+    EXPECT_TRUE(static_cast<bool>(socket)) << (socket ? "" : socket.error().message);
+    return sockets::OwnedSocket(socket ? *socket : sockets::kInvalid);
   }
 
-  /** True when the server closed the connection (read hits EOF / reset) within `within`. */
-  static bool ClosedWithin(tcp::socket& socket, std::chrono::milliseconds within) {
-    socket.non_blocking(true);
+  /** True when the server closed the connection (a read hits its end or a reset) within `within`. */
+  static bool ClosedWithin(const sockets::OwnedSocket& socket, std::chrono::milliseconds within) {
+    sockets::SetNonBlocking(socket.Get(), true);
     const auto until = std::chrono::steady_clock::now() + within;
     while (std::chrono::steady_clock::now() < until) {
       char byte = 0;
-      std::error_code ec;
-      socket.read_some(asio::buffer(&byte, 1), ec);
-      if (ec && ec != asio::error::would_block) {
-        return true; // eof / reset: closed
+      const long n = sockets::Recv(socket.Get(), &byte, 1);
+      if (n == 0 || (n < 0 && !sockets::WouldBlock())) {
+        return true; // its end / reset: closed
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     return false;
   }
 
-  asio::io_context io_;
   StatusHttpServer server_;
   uint16_t port_ = 0;
 };
@@ -61,31 +52,55 @@ protected:
 // PB-027: a connection that sends no request is closed after the deadline, not held forever.
 TEST_F(StatusHttpServerTest, AConnectionThatSendsNothingIsClosedAfterTheDeadline) {
   auto idle = Connect();
-  EXPECT_FALSE(ClosedWithin(*idle, std::chrono::milliseconds(1000))) << "not before the deadline";
-  EXPECT_TRUE(ClosedWithin(*idle, std::chrono::seconds(6)));
+  EXPECT_FALSE(ClosedWithin(idle, std::chrono::milliseconds(1000))) << "not before the deadline";
+  EXPECT_TRUE(ClosedWithin(idle, std::chrono::seconds(6)));
 }
 
 // PB-027: idle connections cannot take every descriptor: past the cap a new one is refused at once,
 // and once they go the server answers again.
 TEST_F(StatusHttpServerTest, PastTheCapANewConnectionIsRefusedAndTheServerRecovers) {
-  std::vector<std::unique_ptr<tcp::socket>> held;
+  std::vector<sockets::OwnedSocket> held;
   for (int i = 0; i < 64; ++i) {
     held.push_back(Connect());
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(200)); // the server has accepted them
   auto over = Connect();
-  EXPECT_TRUE(ClosedWithin(*over, std::chrono::milliseconds(1000)));
+  EXPECT_TRUE(ClosedWithin(over, std::chrono::milliseconds(1000)));
 
   held.clear();
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   auto client = Connect();
-  const std::string request = "GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
-  asio::write(*client, asio::buffer(request));
-  std::string response(64, '\0');
-  std::error_code ec;
-  const size_t n = client->read_some(asio::buffer(response), ec);
-  ASSERT_GT(n, 0u) << ec.message();
-  EXPECT_EQ(response.rfind("HTTP/1.1 200", 0), 0u) << response.substr(0, n);
+  ASSERT_TRUE(sockets::SendAll(client.Get(), "GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"));
+  std::string response;
+  ASSERT_TRUE(sockets::RecvUntil(client.Get(), response, "\r\n"));
+  EXPECT_EQ(response.rfind("HTTP/1.1 200", 0), 0u) << response;
+}
+
+// The answer is written in full and the connection closed, the body after the head.
+TEST_F(StatusHttpServerTest, AnAnswerIsWrittenWholeThenTheConnectionCloses) {
+  auto client = Connect();
+  ASSERT_TRUE(sockets::SendAll(client.Get(), "GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"));
+  std::string response;
+  char buf[4096];
+  long n;
+  while ((n = sockets::Recv(client.Get(), buf, sizeof(buf))) > 0) {
+    response.append(buf, static_cast<size_t>(n));
+  }
+  EXPECT_EQ(n, 0) << "closed after the answer";
+  EXPECT_EQ(response.rfind("HTTP/1.1 200", 0), 0u);
+  const size_t body_at = response.find("\r\n\r\n");
+  ASSERT_NE(body_at, std::string::npos);
+  EXPECT_EQ(response.substr(body_at + 4, 1), "{");
+}
+
+TEST(StatusHttpServerBindTest, ANonNumericHostIsRefused) {
+  StatusHttpServer server;
+  StatusHttpBind bind;
+  bind.host = "localhost";
+  bind.port = 0;
+  auto started = server.Start(bind, StatusHttpAuthConfig{}, []() { return StatusHttpSnapshot{}; });
+  ASSERT_FALSE(static_cast<bool>(started));
+  EXPECT_EQ(started.error().message, "invalid status HTTP bind host: localhost");
 }
 
 } // namespace

@@ -20,12 +20,11 @@ googletest from [`cmake/PpBrowserTesting.cmake`](../cmake/PpBrowserTesting.cmake
 | `qrcodegen/` | [nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator) `v1.8.0` (C++ only) | 1.8.0 | MIT | Invite QR codes |
 | `quirc/` | [dlbeer/quirc](https://github.com/dlbeer/quirc) `v1.2` (`lib/` only) | 1.2 | ISC | QR scanning (`src/lib/scan`) |
 | `zlib/` | [qdrvm/zlib](https://github.com/qdrvm/zlib) `v1.3.0-p1` | 1.3.0-p1 | Zlib | curl, diagnostics archives; pp-cpp-ui's FreeType reuses it |
-| `asio/` | [chriskohlhoff/asio](https://github.com/chriskohlhoff/asio) `asio-1-34-0` (headers only) | 1.34.0 | BSL-1.0 | pp-node's status HTTP server; test HTTP servers |
 | `googletest/` | [google/googletest](https://github.com/google/googletest) `v1.14.0` | 1.14.0 | BSD-3-Clause | Unit tests (`PP_BROWSER_BUILD_TESTS`) |
 
 Imported by [`scripts/vendor/vendor_import.sh`](../scripts/vendor/vendor_import.sh) (curl, SQLite, Opus,
 qrcodegen), [`libp2p_vendor_import.sh`](../scripts/vendor/libp2p_vendor_import.sh) (zlib, googletest) and
-[`quirc_import.sh`](../scripts/vendor/quirc_import.sh); Asio by hand (`asio/UPSTREAM.txt`). The scripts refresh an
+[`quirc_import.sh`](../scripts/vendor/quirc_import.sh). The scripts refresh an
 entry's upstream fields in the manifest and keep the rest; bump its `version` with the tag.
 
 ## Elsewhere in this repo

@@ -73,10 +73,4 @@ endif()
 # --- BoringSSL (pp-cpp-crypto's; curl's TLS on Linux, Android and iOS; Windows uses Schannel, macOS SecureTransport) ---
 pp_browser_alias_boringssl()
 
-# --- standalone Asio (pp-node StatusHttpServer) ---
-pp_libp2p_add_vendored(asio)
-if(NOT TARGET Asio::asio)
-  message(FATAL_ERROR "Asio::asio target not found")
-endif()
-
 pp_configure_status("libp2p third_party dependencies ready")

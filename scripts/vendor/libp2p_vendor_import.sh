@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refresh the shared vendored trees in third_party/ (named after the retired libp2p fork, A017):
-# zlib, googletest. Asio is a standalone tree; curl, SQLite and Opus come from vendor_import.sh;
+# zlib, googletest. curl, SQLite and Opus come from vendor_import.sh;
 # BoringSSL is pp-cpp-crypto's. Safe to re-run when bumping versions.
 set -euo pipefail
 

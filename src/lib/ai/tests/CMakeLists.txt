@@ -6,4 +6,4 @@ pp_browser_add_lib_folder_tests(
     PP_BROWSER_SOURCE_ROOT="${PROJECT_SOURCE_DIR}"
   LINK_LIBS
     CURL::libcurl
-    Asio::asio)
+    pp_foundation_sockets)

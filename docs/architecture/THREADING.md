@@ -396,7 +396,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Library | Model | Policy |
 |---------|-------|--------|
-| asio (`pp-node` status HTTP) | `io_context` | Status server only (not mesh) |
+| `pp-node` status HTTP | its own thread, a poll loop (`foundation/sockets`) | Status server only (not mesh) |
 | libcurl | Sync on caller | General WorkerPool only |
 | SQLite | Caller + mutex | Pool for long writes |
 | SDL3 | Internal audio/camera | Unchanged |

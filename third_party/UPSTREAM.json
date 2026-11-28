@@ -51,14 +51,6 @@
     "tag": "v1.3.0-p1",
     "import": "scripts/vendor/libp2p_vendor_import.sh"
   },
-  "asio": {
-    "path": "third_party/asio",
-    "version": "1.34.0",
-    "license": "BSL-1.0",
-    "repository": "https://github.com/chriskohlhoff/asio.git",
-    "tag": "asio-1-34-0",
-    "import": "by hand: asio/include only (third_party/asio/UPSTREAM.txt)"
-  },
   "googletest": {
     "path": "third_party/googletest",
     "version": "1.14.0",
