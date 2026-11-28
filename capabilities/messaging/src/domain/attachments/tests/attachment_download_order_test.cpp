@@ -263,7 +263,8 @@ TEST_F(DownloadOrderTest, ThirtyFilesFromAnotherPersonStillThrottleAsBefore) {
   ASSERT_TRUE(WaitFor([&] { return CountIn(names, State::Ready) == 10u; }));
   now_ms_ += 120'000;
   workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::Smart); // kicks the drain
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // The drain and its downloads run on the Normal lane (no lane in this fixture): wait for them, not a time.
+  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::seconds(5)));
   EXPECT_EQ(CountIn(names, State::Pending), 20u);
   EXPECT_EQ(server_.Requests().size(), 10u);
   EXPECT_EQ(Wakes(), 0u);
@@ -273,7 +274,8 @@ TEST_F(DownloadOrderTest, AFullStoreStillStopsOwnDeviceFiles) {
   disk_bytes_ = 2'000'000'000;
   workflow_.EnqueueFromMessage("t1", File("s1", kOwn));
   EXPECT_EQ(StateOf("s1"), State::Pending) << "a Download row, as from anyone";
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // The drain and its downloads run on the Normal lane (no lane in this fixture): wait for them, not a time.
+  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::seconds(5)));
   EXPECT_EQ(server_.Requests().size(), 0u);
   EXPECT_EQ(Wakes(), 0u) << "a full store does not empty itself in a minute";
 }
@@ -284,7 +286,8 @@ TEST_F(DownloadOrderTest, TheNetworkStillGatesALargeOwnDeviceFile) {
   const size_t large = static_cast<size_t>(kMaxDirectAttachmentBytes) + 1'000;
   workflow_.EnqueueFromMessage("t1", File("big", kOwn, large));
   EXPECT_EQ(StateOf("big"), State::Pending);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // The drain and its downloads run on the Normal lane (no lane in this fixture): wait for them, not a time.
+  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::seconds(5)));
   EXPECT_EQ(server_.Requests().size(), 0u);
 }
 
