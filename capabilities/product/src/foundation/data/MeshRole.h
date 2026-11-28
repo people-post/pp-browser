@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 #include "common/MultiaddrPeerId.h"
 #include "common/DialWorthyMultiaddrs.h"
 #include "common/MeshAlias.h"

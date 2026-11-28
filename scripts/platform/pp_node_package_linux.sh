@@ -93,7 +93,7 @@ do_build() {
   need_cmd strip
   [[ -f "${BUILD_DIR}/build.ninja" || -f "${BUILD_DIR}/CMakeCache.txt" ]] \
     || die "not configured; run configure first"
-  # The post-build symbol checks (src/app/node/CMakeLists.txt) run on the unstripped binary, before the strip below.
+  # The post-build symbol checks (apps/node/CMakeLists.txt) run on the unstripped binary, before the strip below.
   cmake --build "${BUILD_DIR}" --target "${NAME}" -j "${JOBS}"
   local bin="${BUILD_DIR}/src/app/node/${NAME}"
   [[ -x "${bin}" ]] || die "${NAME} binary missing: ${bin}"

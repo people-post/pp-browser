@@ -699,7 +699,7 @@ own CI (DESIGN rule 4).
 taken (CURRENT_STATE)
 
 **Context:** The capabilities pp-node links (base, people, net, node, relay) include nothing from the product's base.
-All of pp-node's ties to pp-browser are in `src/app/node/`, measured 2026-11-27:
+All of pp-node's ties to pp-browser were in its folder (`src/app/node/` then, `apps/node/` since), measured 2026-11-27:
 
 - **Config:** it loads the desktop app's whole `AppConfig` (theme, LLM, MCP, search, …) and reads only `mesh`,
   `registration`, `data_dir`, `relay.content_sha256` and `node`.

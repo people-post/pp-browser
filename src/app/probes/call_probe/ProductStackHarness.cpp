@@ -1,4 +1,4 @@
-#include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "app/probes/call_probe/ProductStackHarness.h"
 #include "lib/storage/ProfileStorage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"
@@ -19,6 +19,7 @@
 #include "mesh/types/DirectoryTypes.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"

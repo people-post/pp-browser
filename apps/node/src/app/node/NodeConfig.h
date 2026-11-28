@@ -14,8 +14,8 @@ namespace pbr {
  * `relay.content_sha256` and `node`, the same keys the desktop app's file has, so a deployed `config.json` and every
  * `PP_NODE_*` variable keep working. The node never sees the desktop's `AppConfig`.
  *
- * Today it is loaded through the app's config loader and projected (LoadNodeConfig); a loader of its own, reading only
- * these keys, comes with `capabilities/product` (CR028 step 2).
+ * pp-node's own loader reads it (LoadNodeConfig, NodeConfigLoad.h) with the app's rules, from the sections both apps'
+ * files share (ConfigSectionsJson.h); node_config_test holds it to the app's loader.
  */
 struct NodeConfig {
   MeshConfig mesh;

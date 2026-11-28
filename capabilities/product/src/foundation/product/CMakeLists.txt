@@ -1,6 +1,7 @@
-# The product's identity (CR015 product base, CR023 step 3): its name and slug (ProductBranding.h), the
-# build's version (AppVersion.h) and the commit and tag it was built from (BuildInfo.h). The apps read it and hand
-# capabilities and the base values (CrashIdentity, the text layer's {product}); capabilities never include it.
+# The build's identity (CR015 product base, CR023 step 3; capabilities/product since CR028): its version
+# (AppVersion.h), the commit and tag it was built from (BuildInfo.h) and the dev-tool switches (DevTools.h). The apps
+# read it and hand capabilities and the base values (CrashIdentity, the text layer's {product}); capabilities never
+# include it. The product's name and slug (ProductBranding.h) are the desktop app's, in src/foundation/product.
 
 # A tag the build was given (the release workflow or a script passes it, e.g. internal/141). Empty: the
 # PP_BUILD_TAG environment variable at build time, then a build tag on a clean HEAD; none: About shows only the commit.
@@ -14,7 +15,7 @@ set(PP_BUILD_COMMIT "" CACHE STRING "Commit shown in About (hex hash); empty = P
 set(PP_BUILD_INFO_GENERATED "${CMAKE_CURRENT_BINARY_DIR}/BuildInfoGenerated.cpp")
 add_custom_target(pp_build_info_generate
   COMMAND ${CMAKE_COMMAND}
-    "-DSOURCE_DIR=${CMAKE_SOURCE_DIR}"
+    "-DSOURCE_DIR=${PP_BROWSER_ROOT}"
     "-DOUTPUT=${PP_BUILD_INFO_GENERATED}"
     "-DBUILD_TAG=${PP_BUILD_TAG}"
     "-DBUILD_COMMIT=${PP_BUILD_COMMIT}"
@@ -28,7 +29,6 @@ pp_browser_add_foundation_library(pp_foundation_product
     BuildInfo.cpp
     "${PP_BUILD_INFO_GENERATED}")
 add_dependencies(pp_foundation_product pp_build_info_generate)
-target_include_directories(pp_foundation_product PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(pp_foundation_product PUBLIC
   "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
   "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")

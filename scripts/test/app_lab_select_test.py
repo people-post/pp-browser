@@ -29,7 +29,7 @@ class CapabilityOrderTest(unittest.TestCase):
         self.assertEqual(S.above("media"), {"media", "messaging", "calls", "broadcast"})
         self.assertEqual(S.above("calls"), {"calls", "broadcast"})
         self.assertEqual(S.above("messaging"), {"messaging"})
-        self.assertEqual(S.above("people"), set(S.CAPABILITY_TAGS) - {"media"})
+        self.assertEqual(S.above("people"), set(S.CAPABILITY_TAGS) - {"media", "product"})
         self.assertEqual(S.above("net"), {"net", "delivery", "pricing", "messaging", "calls", "broadcast", "node", "relay"})
 
     def test_every_capability_folder_has_a_tag(self):
@@ -86,13 +86,13 @@ class PathTableTest(unittest.TestCase):
     def test_the_app_stack_and_the_lab_pick_everything(self):
         for path in ("src/feature/product/ProductMesh.cpp", "src/feature/presenters/CallPresenter.cpp",
                      "src/foundation/data/Paths.cpp", "src/lib/storage/SqliteThreadStore.cpp", "src/app/Bootstrap.cpp",
-                     "src/app/node/tools/app_probe/main.cpp", "scripts/test/pp_app_lab.py",
+                     "src/app/probes/app_probe/main.cpp", "scripts/test/pp_app_lab.py",
                      "packaging/pp-node/docker-compose.app-lab.yml", "packaging/pp-node/app-lab-tls/proxy.js",
                      "somewhere/new.txt"):
             self.assertEqual(self.tags(path), EVERYTHING, path)
 
     def test_seeds_gateways_and_workflows(self):
-        self.assertEqual(self.tags("src/app/node/NodeBootstrap.cpp"), {"node"})
+        self.assertEqual(self.tags("apps/node/src/app/node/NodeBootstrap.cpp"), {"node"})
         self.assertEqual(self.tags("packaging/pp-node/Dockerfile"), {"node"})
         self.assertEqual(self.tags("packaging/pp-node/Dockerfile.hard-gw"), {"mesh"})
         self.assertEqual(self.tags(".github/workflows/lab-smoke.yml"), {"smoke"})

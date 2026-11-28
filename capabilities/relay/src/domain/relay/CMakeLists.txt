@@ -11,7 +11,7 @@ pp_browser_add_domain_library(pp_domain_relay
     pp_mesh
   PRIVATE_LIBS
     SQLite::SQLite3)
-# Whichever node build links the service starts it (src/app/node/main.cpp), as PP_BROWSER_HAS_LEDGER does the ledger's.
+# Whichever node build links the service starts it (apps/node/src/app/node/main.cpp), as PP_BROWSER_HAS_LEDGER does the ledger's.
 target_compile_definitions(pp_domain_relay PUBLIC PP_NODE_HAS_RELAY)
 
 if(PP_BROWSER_BUILD_TESTS)

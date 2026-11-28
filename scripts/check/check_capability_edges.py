@@ -10,7 +10,7 @@ Links count too (CR016): every pp-browser target a src/ CMakeLists.txt names (PU
 target_link_libraries) is a link from that folder's capability to the target's, held to the same order;
 the allowlist names those as "link from -> to count".
 
-The standalone build's table (capabilities/CMakeLists.txt, CR023 step 4: what each capability builds on) must match
+The standalone build's table (cmake/PpCapabilitiesRoot.cmake, CR023 step 4: what each capability builds on) must match
 the order here.
 
 Usage: scripts/check/check_capability_edges.py [--list | --lib-edges]
@@ -32,11 +32,18 @@ SRC = ROOT / "src"
 # Capabilities moved out of src/ (CR022): capabilities/<name>/src mirrors the tree, so paths under it read as
 # they did under src/.
 CAPABILITIES = ROOT / "capabilities"
+# Apps with a folder of their own (pp-node, CR028): apps/<name>/src mirrors the tree too, outside every capability.
+APPS = ROOT / "apps"
 
 
 def source_roots() -> list[tuple[Path, str | None]]:
-    """(root, the capability its folder is) for src/ and every capabilities/<name>/src."""
+    """(root, the capability its folder is) for src/, every apps/<name>/src (an app of its own, CR028) and every
+    capabilities/<name>/src."""
     roots: list[tuple[Path, str | None]] = [(SRC, None)]
+    if APPS.is_dir():
+        for folder in sorted(APPS.iterdir()):
+            if (folder / "src").is_dir():
+                roots.append((folder / "src", None))
     if CAPABILITIES.is_dir():
         for folder in sorted(CAPABILITIES.iterdir()):
             if (folder / "src").is_dir():
@@ -94,7 +101,7 @@ ALLOWED: dict[str, set[str]] = {
     "node": {"base", "people", "net"},
     "relay": {"base", "people", "net"},
     "product": {"base"},
-    # pp-node-plus is built from the same sources; the default pp-node links no add-on (src/app/node).
+    # pp-node-plus is built from the same sources; the default pp-node links no add-on (apps/node/).
     "node_app": {"base", "product", "people", "net", "node", "relay"},
     "app": set(GROUPS),
 }
@@ -281,7 +288,7 @@ def allowed_lib_edges() -> list[str]:
     return pairs
 
 
-STANDALONE = CAPABILITIES / "CMakeLists.txt"
+STANDALONE = ROOT / "cmake" / "PpCapabilitiesRoot.cmake"  # what capabilities/CMakeLists.txt and apps/node include
 STANDALONE_BELOW = re.compile(r"^set\(PP_CAPABILITY_BELOW_(\w+)([^)]*)\)", re.M)
 
 

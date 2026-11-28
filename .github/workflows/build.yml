@@ -124,6 +124,10 @@ jobs:
               - 'CMakeLists.txt'
               - 'third_party/**'
               - '.github/workflows/build.yml'
+            # The headless product base both apps use (CR028); no capability builds on it.
+            product:
+              - *capability_base
+              - 'capabilities/product/**'
             people: &people
               - *capability_base
               - 'capabilities/people/**'
@@ -165,7 +169,9 @@ jobs:
             node_editions:
               - *node
               - *relay
-              - 'src/app/node/**'
+              - 'capabilities/product/**'
+              - 'apps/node/**'
+              - 'cmake/PpCapabilitiesRoot.cmake'
               - 'src/foundation/**'
               - 'src/common/**'
               - 'packaging/pp-node/**'
@@ -176,6 +182,7 @@ jobs:
             calls_standalone:
               - *calls
               - 'capabilities/CMakeLists.txt'
+              - 'cmake/PpCapabilitiesRoot.cmake'
 
   lint:
     needs: changes
@@ -380,7 +387,7 @@ jobs:
           fi
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in base people net social delivery pricing media messaging calls broadcast node relay; do
+            for capability in base product people net social delivery pricing media messaging calls broadcast node relay; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;
@@ -760,10 +767,12 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.node_editions == 'true'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_COMPRESSLEVEL: 5
+      # Paths relative to the checkout, so the standalone build below hits what the packaged one compiled.
+      CCACHE_BASEDIR: ${{ github.workspace }}
       PP_NODE_BUILD_DIR: ${{ github.workspace }}/build-pp-node
     steps:
       - uses: actions/checkout@v7
@@ -847,6 +856,15 @@ jobs:
             echo "::endgroup::"
           done
           cmake -B "$PP_NODE_BUILD_DIR" -DPP_NODE_SERVICES=ledger >/dev/null
+
+      # pp-node builds without src/ (capability-repos CR028 step 3): apps/node is a root of its own, the capabilities it
+      # links from capabilities/. Its tests (the node's and every capability below it) run there.
+      - name: pp-node on its own (apps/node, without src/)
+        run: |
+          set -euo pipefail
+          cmake -S apps/node -B build-node-standalone -G Ninja -DCMAKE_BUILD_TYPE=Release -DPP_BROWSER_COMPILER_CACHE=ON
+          cmake --build build-node-standalone -j "$(nproc)"
+          ctest --test-dir build-node-standalone -j "$(nproc)" --output-on-failure
 
       - name: ccache stats
         if: always()

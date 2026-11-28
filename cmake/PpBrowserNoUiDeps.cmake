@@ -139,7 +139,10 @@ endfunction()
 # service outside its set.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_app_node$"
-  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|product|runtime_core|tls)$"
+  "^pp_foundation_(crypto|error|identity|product|runtime_core|tls)$"
+  # The product base both apps use (capabilities/product, capability-repos CR028); not the desktop's own config,
+  # text or platform (pp_foundation_data / _i18n / _platform_core).
+  "^pp_product_(data|platform)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
   "^pp_people_common$"
@@ -221,7 +224,7 @@ function(pp_browser_add_symbol_check target)
       "-DPP_SYMBOLS_FORBID=${_forbid}"
       "-DPP_SYMBOLS_REQUIRE=${_require}"
       "-DPP_SYMBOLS_WHY=${ARG_WHY}"
-      -P ${CMAKE_SOURCE_DIR}/cmake/CheckSymbols.cmake
+      -P ${PP_BROWSER_ROOT}/cmake/CheckSymbols.cmake
     COMMENT "Checking ${target}'s symbols"
     VERBATIM)
 endfunction()
@@ -266,7 +269,7 @@ function(pp_browser_add_no_ui_link_check target)
       -DPP_BROWSER_NO_UI_SYMTOOL=${_pp_symtool}
       -DPP_BROWSER_NO_UI_SYMTOOL_KIND=${_pp_symtool_kind}
       -DPP_BROWSER_NO_UI_LABEL=${target}
-      -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoUiSymbols.cmake
+      -P ${PP_BROWSER_ROOT}/cmake/CheckNoUiSymbols.cmake
     COMMENT "Checking ${target} for UI/SDL symbols"
     VERBATIM)
 endfunction()

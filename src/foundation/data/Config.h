@@ -10,6 +10,7 @@
 #include "foundation/product/DevTools.h"
 #include "common/ServiceEndpoints.h"
 #include "common/Value.h"
+#include "foundation/data/ConfigSectionsJson.h"
 
 #include <cstdint>
 #include <string>
@@ -120,7 +121,7 @@ class Config : public Module {
 public:
   static Config& Instance();
 
-  static constexpr int kConfigVersion = 1;
+  static constexpr int kConfigVersion = kConfigFileVersion;
 
   /** The config file when neither `--config` nor PP_BROWSER_CONFIG names one. */
   enum class Fallback {

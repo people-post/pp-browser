@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
+#include "foundation/data/ConfigSectionsJson.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Value.h"
 
@@ -23,21 +24,6 @@ void ContextBudgetFromObject(const pp::common::Object& object, ContextBudget& bu
 pp::common::Object SearchConfigToObject(const SearchConfig& config);
 void SearchConfigFromObject(const pp::common::Object& object, SearchConfig& config);
 
-pp::common::Object ServiceEndpointToObject(const ServiceEndpointConfig& endpoint);
-void ServiceEndpointFromObject(const pp::common::Object& object, ServiceEndpointConfig& endpoint);
-
-pp::common::Object DirectoryConfigToObject(const DirectoryConfig& config);
-void DirectoryConfigFromObject(const pp::common::Object& object, DirectoryConfig& config);
-
-pp::common::Object MeshCapabilitiesToObject(const mesh::MeshCapabilities& caps);
-void MeshCapabilitiesFromObject(const pp::common::Object& object, mesh::MeshCapabilities& caps);
-
-pp::common::Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config);
-void MeshDhtConfigFromObject(const pp::common::Object& object, mesh::MeshDhtConfig& config);
-
-pp::common::Object MeshConfigToObject(const MeshConfig& config);
-void MeshConfigFromObject(const pp::common::Object& object, MeshConfig& config);
-
 pp::common::Object McpConfigToObject(const McpConfig& config);
 void McpConfigFromObject(const pp::common::Object& object, McpConfig& config);
 
@@ -49,13 +35,6 @@ void MachinePrefsFromObject(const pp::common::Object& object, MachinePreferences
 
 pp::common::Object ProfilePrefsToObject(const ProfilePreferences& prefs);
 void ProfilePrefsFromObject(const pp::common::Object& object, ProfilePreferences& prefs);
-
-/**
- * The services a custom backend's file names, read straight from the file's object before any default is merged: the
- * `relay`, `registration` and `directory` keys, `relay.extra_base_urls` (the seed relays) and `backend.services`. What the
- * file does not name stays empty (profile-model PM002: never a default of another backend).
- */
-CustomServices CustomServicesFromObject(const pp::common::Object& root);
 
 AppConfig MergeConfig(const AppConfig& defaults, const pp::common::Object& overlay);
 
