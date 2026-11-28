@@ -10,7 +10,7 @@ Links count too (CR016): every pp-browser target a src/ CMakeLists.txt names (PU
 target_link_libraries) is a link from that folder's capability to the target's, held to the same order;
 the allowlist names those as "link from -> to count".
 
-The standalone build's table (capabilities/CMakeLists.txt, CR023 step 4: what each capability builds on) must match
+The standalone build's table (cmake/PpCapabilitiesRoot.cmake, CR023 step 4: what each capability builds on) must match
 the order here.
 
 Usage: scripts/check/check_capability_edges.py [--list | --lib-edges]
@@ -32,11 +32,18 @@ SRC = ROOT / "src"
 # Capabilities moved out of src/ (CR022): capabilities/<name>/src mirrors the tree, so paths under it read as
 # they did under src/.
 CAPABILITIES = ROOT / "capabilities"
+# Apps with a folder of their own (pp-node, CR028): apps/<name>/src mirrors the tree too, outside every capability.
+APPS = ROOT / "apps"
 
 
 def source_roots() -> list[tuple[Path, str | None]]:
-    """(root, the capability its folder is) for src/ and every capabilities/<name>/src."""
+    """(root, the capability its folder is) for src/, every apps/<name>/src (an app of its own, CR028) and every
+    capabilities/<name>/src."""
     roots: list[tuple[Path, str | None]] = [(SRC, None)]
+    if APPS.is_dir():
+        for folder in sorted(APPS.iterdir()):
+            if (folder / "src").is_dir():
+                roots.append((folder / "src", None))
     if CAPABILITIES.is_dir():
         for folder in sorted(CAPABILITIES.iterdir()):
             if (folder / "src").is_dir():
@@ -69,7 +76,12 @@ GROUPS: dict[str, list[str]] = {
     "calls": ["lib/calls", "lib/call_audio", "common/media", "domain/call_media", "feature/calls"],
     "broadcast": ["lib/broadcast", "feature/broadcast"],
     "node": ["domain/node"],
-    # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node.
+    # The message relay, an add-on only pp-node-plus links (node-relay NR001).
+    "relay": ["domain/relay"],
+    # pp-node's ledger role, a node service only pp-node links (CR027).
+    "ledger": ["domain/ledger"],
+    # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node, and
+    # pp-node-plus the add-ons (relay) too.
     "node_app": ["app/node"],
     # The app: shell, GUI, composition — and AI, the shell's planner rather than a capability (CR007).
     "app": ["app", "gui", "feature/product", "feature/presenters", "feature/settings", "lib/ui", "lib/ai", "lib/storage", "lib/scan", "feature/ai", "common/ui"],
@@ -89,8 +101,11 @@ ALLOWED: dict[str, set[str]] = {
     "calls": {"base", "people", "net", "delivery", "pricing", "media"},
     "broadcast": {"base", "people", "net", "delivery", "pricing", "media", "calls"},
     "node": {"base", "people", "net"},
+    "relay": {"base", "people", "net"},
+    "ledger": {"base"},
     "product": {"base"},
-    "node_app": {"base", "product", "people", "net", "node"},
+    # pp-node-plus is built from the same sources; the default pp-node links no add-on (apps/node/).
+    "node_app": {"base", "product", "people", "net", "node", "relay", "ledger"},
     "app": set(GROUPS),
 }
 
@@ -276,7 +291,7 @@ def allowed_lib_edges() -> list[str]:
     return pairs
 
 
-STANDALONE = CAPABILITIES / "CMakeLists.txt"
+STANDALONE = ROOT / "cmake" / "PpCapabilitiesRoot.cmake"  # what capabilities/CMakeLists.txt and apps/node include
 STANDALONE_BELOW = re.compile(r"^set\(PP_CAPABILITY_BELOW_(\w+)([^)]*)\)", re.M)
 
 

@@ -30,18 +30,20 @@ arrives twice is dropped by its id (`RelayReceivePipeline`, `BenignDuplicate`).
 ```
                          the relay protocol (pp-specs): each call's signed bytes, objects, refusal codes
                          ├── HTTPS binding (today, unchanged) ── the org's relay on AWS; every app; background work
-                         └── Amp binding  /pp/rpc/relay/1.0.0 ── pp-node-relay (and later the org's relay too)
+                         └── Amp binding  /pp/rpc/relay/1.0.0 ── pp-node-plus (and later the org's relay too)
 
- pp-node (default)  = mesh, DHT, directory, circuits, media hop                      (unchanged, stays small)
- pp-node-relay      = the same  + relay-services (mailbox first; lockers, cards, files later) + a small store
+ pp-node (default)  = mesh, DHT, directory, circuits, media hop, the ledger role when asked   (stays small)
+ pp-node-plus       = the same  + the add-ons: the message relay (mailbox first; then lockers, cards, directory),
+                      later files (NR010) — each a capability with its own switch and its own small store
 ```
 
-### 1. A second build, not a plugin (NR001)
+### 1. Two tiers: a second build, not a plugin (NR001)
 
-`pp-node-relay` is built from the same commit, at the same version (pp-node's line, RC016), with its own image. It adds
-the `relay-services` capability; the default `pp-node` does not link it, and CI checks both that and the default
-image's size. No runtime plugin (C++ has no stable binary interface) and no separate repo (pin skew, hook drift, release
-lag): the edition lives where pp-node lives, in this repository today and in pp-node's own once capability-repos' P4
+`pp-node-plus` is built from the same commit, at the same version (pp-node's line, RC016), with its own image. It adds
+the add-on capabilities, the services that keep data or act for accounts; the message relay is the first. The default
+`pp-node` links none of them, and CI checks both that and the default image's size. The ledger role stays in the core,
+off unless asked. No runtime plugin (C++ has no stable binary interface) and no separate repo (pin skew, hook drift, release
+lag): the edition lives where pp-node lives, in this repository today and in its own repo, pp-node, once capability-repos' P4 (CR027, CR028)
 moves it.
 
 ### 2. One protocol, two bindings (NR002)

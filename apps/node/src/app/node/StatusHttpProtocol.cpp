@@ -1,0 +1,406 @@
+#include "app/node/StatusHttpProtocol.h"
+
+#include "common/metrics/MetricsRegistry.h"
+
+#include "common/ValueJson.h"
+
+#include <algorithm>
+#include <cctype>
+#include <charconv>
+#include <sstream>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+constexpr size_t kMaxBodyBytes = 1024;
+
+std::string ToLowerAscii(std::string_view in) {
+  std::string out;
+  out.reserve(in.size());
+  for (unsigned char c : in) {
+    out.push_back(static_cast<char>(std::tolower(c)));
+  }
+  return out;
+}
+
+std::string_view Trim(std::string_view s) {
+  while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) {
+    s.remove_prefix(1);
+  }
+  while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
+    s.remove_suffix(1);
+  }
+  return s;
+}
+
+bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Constant-time (for equal-length inputs) — avoids leaking the token via a timing side channel. */
+bool ConstantTimeEquals(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  unsigned char diff = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  }
+  return diff == 0;
+}
+
+bool AuthOk(const StatusHttpAuthConfig& auth, std::string_view authorization) {
+  if (auth.bearer_token.empty()) {
+    return true;
+  }
+  const std::string prefix = "Bearer ";
+  if (authorization.size() < prefix.size() || !EqualsIgnoreCase(authorization.substr(0, prefix.size()), prefix)) {
+    return false;
+  }
+  return ConstantTimeEquals(authorization.substr(prefix.size()), auth.bearer_token);
+}
+
+StatusHttpResponse JsonResponse(int code, const Object& body) {
+  StatusHttpResponse r;
+  r.status_code = code;
+  r.content_type = "application/json";
+  r.body = DumpJson(body);
+  return r;
+}
+
+StatusHttpResponse Unauthorized() {
+  Object body;
+  body.set("error", "unauthorized");
+  return JsonResponse(401, body);
+}
+
+StatusHttpResponse NotFound() {
+  Object body;
+  body.set("error", "not_found");
+  return JsonResponse(404, body);
+}
+
+StatusHttpResponse MethodNotAllowed() {
+  Object body;
+  body.set("error", "method_not_allowed");
+  return JsonResponse(405, body);
+}
+
+bool IsJsonContentType(std::string_view value) {
+  const auto semi = value.find(';');
+  return EqualsIgnoreCase(Trim(value.substr(0, semi)), "application/json");
+}
+
+/** Host header naming loopback (any port); rejects DNS-rebound names. */
+bool IsLoopbackHostHeader(std::string_view host) {
+  if (host.empty()) {
+    return false;
+  }
+  const auto colon = host.front() == '[' ? host.find(':', host.find(']')) : host.rfind(':');
+  return IsLoopbackStatusBindHost(host.substr(0, colon)) || EqualsIgnoreCase(host.substr(0, colon), "[::1]");
+}
+
+StatusHttpResponse Forbidden() {
+  Object body;
+  body.set("error", "forbidden");
+  return JsonResponse(403, body);
+}
+
+const char* StatusReason(int code) {
+  switch (code) {
+    case 200:
+      return "OK";
+    case 202:
+      return "Accepted";
+    case 400:
+      return "Bad Request";
+    case 401:
+      return "Unauthorized";
+    case 403:
+      return "Forbidden";
+    case 404:
+      return "Not Found";
+    case 405:
+      return "Method Not Allowed";
+    case 409:
+      return "Conflict";
+    case 415:
+      return "Unsupported Media Type";
+    case 500:
+      return "Internal Server Error";
+    default:
+      return "Error";
+  }
+}
+
+} // namespace
+
+StatusHttpResponse StatusHttpInternalError() {
+  Object body;
+  body.set("error", "internal_error");
+  return JsonResponse(500, body);
+}
+
+std::optional<StatusHttpBind> ParseStatusHttpBind(std::string_view spec) {
+  const auto trimmed = Trim(spec);
+  if (trimmed.empty()) {
+    return std::nullopt;
+  }
+
+  StatusHttpBind bind;
+  std::string_view host_port = trimmed;
+
+  if (!host_port.empty() && host_port.front() == '[') {
+    const auto close = host_port.find(']');
+    if (close == std::string_view::npos) {
+      return std::nullopt;
+    }
+    bind.host = std::string(host_port.substr(1, close - 1));
+    host_port.remove_prefix(close + 1);
+    if (host_port.empty() || host_port.front() != ':') {
+      return std::nullopt;
+    }
+    host_port.remove_prefix(1);
+  } else {
+    const auto colon = host_port.rfind(':');
+    if (colon == std::string_view::npos) {
+      // Bare port
+      uint16_t port = 0;
+      const auto* begin = host_port.data();
+      const auto* end = host_port.data() + host_port.size();
+      if (std::from_chars(begin, end, port).ec != std::errc{} || port == 0) {
+        return std::nullopt;
+      }
+      bind.host = kDefaultStatusHttpBindHost;
+      bind.port = port;
+      return bind;
+    }
+    bind.host = std::string(host_port.substr(0, colon));
+    host_port.remove_prefix(colon + 1);
+  }
+
+  if (bind.host.empty() || host_port.empty()) {
+    return std::nullopt;
+  }
+  uint16_t port = 0;
+  const auto* begin = host_port.data();
+  const auto* end = host_port.data() + host_port.size();
+  if (std::from_chars(begin, end, port).ec != std::errc{} || port == 0) {
+    return std::nullopt;
+  }
+  bind.port = port;
+  return bind;
+}
+
+bool IsLoopbackStatusBindHost(std::string_view host) {
+  const std::string lower = ToLowerAscii(Trim(host));
+  return lower == "127.0.0.1" || lower == "::1" || lower == "localhost";
+}
+
+std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw) {
+  const auto header_end = raw.find("\r\n\r\n");
+  if (header_end == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::string_view headers = raw.substr(0, header_end);
+  const std::string_view after_headers = raw.substr(header_end + 4);
+  const auto line_end = headers.find("\r\n");
+  const std::string_view request_line = line_end == std::string_view::npos ? headers : headers.substr(0, line_end);
+
+  const auto sp1 = request_line.find(' ');
+  if (sp1 == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const auto sp2 = request_line.find(' ', sp1 + 1);
+  if (sp2 == std::string_view::npos) {
+    return std::nullopt;
+  }
+
+  StatusHttpRequest req;
+  req.method = std::string(request_line.substr(0, sp1));
+  req.path = std::string(request_line.substr(sp1 + 1, sp2 - sp1 - 1));
+  // The query string apart from the path.
+  if (const auto q = req.path.find('?'); q != std::string::npos) {
+    req.query = req.path.substr(q + 1);
+    req.path.resize(q);
+  }
+
+  size_t content_length = 0;
+  if (line_end != std::string_view::npos) {
+    std::string_view rest = headers.substr(line_end + 2);
+    while (!rest.empty()) {
+      const auto nl = rest.find("\r\n");
+      const std::string_view line = nl == std::string_view::npos ? rest : rest.substr(0, nl);
+      const auto colon = line.find(':');
+      if (colon != std::string_view::npos) {
+        const auto name = Trim(line.substr(0, colon));
+        const auto value = Trim(line.substr(colon + 1));
+        if (EqualsIgnoreCase(name, "Authorization")) {
+          req.authorization = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Content-Type")) {
+          req.content_type = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Host")) {
+          req.host = std::string(value);
+        } else if (EqualsIgnoreCase(name, "Origin")) {
+          req.has_origin = true;
+        } else if (EqualsIgnoreCase(name, "Content-Length")) {
+          if (std::from_chars(value.data(), value.data() + value.size(), content_length).ec != std::errc{} ||
+              content_length > kMaxBodyBytes) {
+            return std::nullopt;
+          }
+        }
+      }
+      if (nl == std::string_view::npos) {
+        break;
+      }
+      rest.remove_prefix(nl + 2);
+    }
+  }
+  if (after_headers.size() < content_length) {
+    return std::nullopt;
+  }
+  req.body = std::string(after_headers.substr(0, content_length));
+  return req;
+}
+
+StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, const StatusHttpAuthConfig& auth,
+                                           const StatusHttpSnapshot& snap, const StatusHttpActions& actions) {
+  if (!AuthOk(auth, request.authorization)) {
+    return Unauthorized();
+  }
+  if (request.method == "POST" && request.path == "/control/state" && actions.set_state) {
+    // A browser can fire a simple cross-site POST or rebind DNS to us: refuse anything not from a local client.
+    if (request.has_origin || !IsLoopbackHostHeader(request.host)) {
+      return Forbidden();
+    }
+    if (!IsJsonContentType(request.content_type)) {
+      Object body;
+      body.set("error", "content_type_must_be_application_json");
+      return JsonResponse(415, body);
+    }
+    const auto parsed = TryParseObject(request.body);
+    const auto state = parsed ? parsed->getString("state") : std::nullopt;
+    if (!state || (*state != "active" && *state != "draining" && *state != "retiring")) {
+      Object body;
+      body.set("error", "state must be active, draining or retiring");
+      return JsonResponse(400, body);
+    }
+    Object body;
+    if (!actions.set_state(*state)) {
+      body.set("error", "state_change_refused");
+      return JsonResponse(409, body);
+    }
+    body.set("state", *state);
+    return JsonResponse(200, body);
+  }
+  if (request.method != "GET" && request.method != "HEAD") {
+    return MethodNotAllowed();
+  }
+
+  if (request.path == "/metrics") {
+    // Operator scrape (node-monitoring): Prometheus text, names in NODE_METRICS.md.
+    StatusHttpResponse r;
+    r.status_code = 200;
+    r.content_type = "text/plain; version=0.0.4; charset=utf-8";
+    try {
+      r.body = MetricsRegistry::Global().RenderPrometheus(); // runs every collector
+    } catch (...) {
+      return StatusHttpInternalError(); // a failed scrape must not take the node down
+    }
+    return r;
+  }
+
+  if (request.path == "/healthz") {
+    Object body;
+    body.set("ok", snap.host_running);
+    body.set("host_running", snap.host_running);
+    return JsonResponse(200, body);
+  }
+
+  if (request.path == "/status") {
+    Object reach;
+    if (!snap.reachability_json.empty()) {
+      if (auto parsed = TryParseObject(snap.reachability_json)) {
+        reach = std::move(*parsed);
+      }
+    }
+    reach.set("host_running", snap.host_running);
+    if (!snap.edition.empty()) {
+      reach.set("edition", snap.edition);
+      std::vector<Value> services;
+      for (const std::string& name : snap.services) {
+        services.push_back(Value(name));
+      }
+      reach.set("services", ArrayValue(std::move(services)));
+      std::vector<Value> dormant;
+      for (const std::string& name : snap.dormant) {
+        dormant.push_back(Value(name));
+      }
+      reach.set("dormant", ArrayValue(std::move(dormant)));
+    }
+    if (!snap.listen_multiaddr.empty()) {
+      reach.set("listen", snap.listen_multiaddr);
+    }
+    if (!snap.listen_multiaddrs.empty()) {
+      std::vector<Value> addrs;
+      addrs.reserve(snap.listen_multiaddrs.size());
+      for (const std::string& ma : snap.listen_multiaddrs) {
+        addrs.push_back(Value(ma));
+      }
+      reach.set("listen_addrs", ArrayValue(std::move(addrs)));
+    }
+    if (!snap.peer_id.empty()) {
+      reach.set("peer_id", snap.peer_id);
+    }
+    reach.set("circuit_relay", snap.circuit_relay);
+    reach.set("media_relay", snap.media_relay);
+    reach.set("dht", snap.dht);
+    if (!snap.dht_json.empty()) {
+      if (auto dht = TryParseObject(snap.dht_json)) {
+        reach.set("dht_stats", *dht);
+      }
+    }
+    return JsonResponse(200, reach);
+  }
+
+  constexpr std::string_view kPeerIdParam = "peer_id=";
+  if (actions.dht_find && request.path == "/dht/find") {
+    const std::string peer_id =
+        request.query.rfind(kPeerIdParam, 0) == 0 ? request.query.substr(kPeerIdParam.size()) : std::string();
+    constexpr std::string_view kBase58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    if (peer_id.empty() || peer_id.size() > 128 || peer_id.find_first_not_of(kBase58) != std::string::npos) {
+      Object body;
+      body.set("error", "peer_id must be a base58 PeerId");
+      return JsonResponse(400, body);
+    }
+    Object body;
+    body.set("started", actions.dht_find(peer_id));
+    body.set("peer_id", peer_id);
+    return JsonResponse(202, body);
+  }
+
+  return NotFound();
+}
+
+std::string FormatStatusHttpResponse(const StatusHttpResponse& response) {
+  std::ostringstream out;
+  out << "HTTP/1.1 " << response.status_code << ' ' << StatusReason(response.status_code) << "\r\n"
+      << "Content-Type: " << response.content_type << "\r\n"
+      << "Content-Length: " << response.body.size() << "\r\n"
+      << "Connection: close\r\n"
+      << "Cache-Control: no-store\r\n"
+      << "\r\n"
+      << response.body;
+  return out.str();
+}
+
+} // namespace pbr

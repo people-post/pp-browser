@@ -1,13 +1,13 @@
 // The libraries' frozen vector files, as pp-specs holds them (docs/contracts/SIGNED_EXTENSIONS.md § Vector files):
-// pp-specs' ext_area_vectors.json and alg_id_vectors.json are the same bytes as pp-cpp-common's and pp-cpp-crypto's
-// at their pinned tags, while the libraries still keep their own. After a library bump, PP_WRITE_EXT_AREA_VECTORS=<path>
-// / PP_WRITE_ALG_ID_VECTORS=<path> write the pinned tag's file there, for a pp-specs pull request.
+// pp-specs' alg_id_vectors.json is the same bytes as pp-cpp-crypto's at its pinned tag, while that library still keeps
+// its own. After a bump, PP_WRITE_ALG_ID_VECTORS=<path> writes the pinned tag's file there, for a pp-specs pull request.
+// pp-cpp-common keeps no copy since v1.5.2 (it reads ext_area from pp-specs too), so its half is gone; this file goes
+// when pp-cpp-crypto's pin reaches a release without its copy.
 
 #include "common/tests/VectorFile.h"
 
 #include <gtest/gtest.h>
 
-#include <utility>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -17,7 +17,6 @@ namespace {
 
 using test::VectorFile;
 
-const VectorFile kExtArea{PP_EXT_AREA_VECTORS_PATH, "PP_WRITE_EXT_AREA_VECTORS"};
 const VectorFile kAlgId{PP_ALG_ID_VECTORS_PATH, "PP_WRITE_ALG_ID_VECTORS"};
 
 std::string Upstream(const std::string& path) {
@@ -27,23 +26,13 @@ std::string Upstream(const std::string& path) {
 }
 
 TEST(LibraryVectorCopiesTest, WriteFreshCopiesWhenAsked) {
-  bool wrote = false;
-  for (const auto& [file, upstream] :
-       {std::pair{&kExtArea, PP_EXT_AREA_VECTORS_UPSTREAM}, std::pair{&kAlgId, PP_ALG_ID_VECTORS_UPSTREAM}}) {
-    if (file->WriteRequested()) {
-      ASSERT_TRUE(file->WriteText(Upstream(upstream)));
-      wrote = true;
-    }
+  if (!kAlgId.WriteRequested()) {
+    GTEST_SKIP() << kAlgId.SkipReason();
   }
-  if (!wrote) {
-    GTEST_SKIP() << kExtArea.SkipReason() << "; " << kAlgId.SkipReason();
-  }
+  ASSERT_TRUE(kAlgId.WriteText(Upstream(PP_ALG_ID_VECTORS_UPSTREAM)));
 }
 
-// RC020-VEC: the copies are the pinned tags' bytes.
-TEST(LibraryVectorCopiesTest, TheExtAreaCopyIsPpCppCommonsFile) {
-  EXPECT_EQ(kExtArea.ReadText(), Upstream(PP_EXT_AREA_VECTORS_UPSTREAM)) << kExtArea.RegenerateHint();
-}
+// RC020-VEC: the copy is the pinned tag's bytes.
 
 TEST(LibraryVectorCopiesTest, TheAlgIdCopyIsPpCppCryptosFile) {
   EXPECT_EQ(kAlgId.ReadText(), Upstream(PP_ALG_ID_VECTORS_UPSTREAM)) << kAlgId.RegenerateHint();

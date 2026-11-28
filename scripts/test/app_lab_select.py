@@ -26,6 +26,7 @@ import subprocess
 # One tag per capability folder (capabilities/<name>/, CTest label capability:<name>, build.yml's `changes`
 # filters). The base (capabilities/base) is below all of them and has no tag: a change there picks everything.
 CAPABILITY_TAGS = {
+    "product": "the product base both apps use (capabilities/product): backends, paths, profiles, the build's identity",
     "people": "identity, contacts, account cards and keys, the directory",
     "net": "the relay client and registration",
     "social": "posts and content",
@@ -36,10 +37,12 @@ CAPABILITY_TAGS = {
     "calls": "calls, 1:1 and group",
     "broadcast": "live broadcast",
     "node": "pp-node, which the lab's seeds run (hop, hop2): parks, circuits, hosting group calls",
+    "ledger": "pp-node's ledger role (capabilities/ledger): a pp-ledger relay or miner on the node's mesh",
+    "relay": "relays: the org's (pp-relay-apis) and, from node-relay NR5, the message relay on pp-node-plus "
+    "(capabilities/relay): mailboxes, the directory, lockers, two relays",
 }
 # Tags across capabilities, for the questions a capability does not answer.
 LAB_TAGS = {
-    "relay": "the relay service itself (pp-relay-apis): mailboxes, the directory, lockers, two relays",
     "mesh": "reach between users: seeds, parking, circuits, NATs, a network that drops or changes",
     "groups": "group chats and group calls",
     "devices": "one account on several devices: linking, signing out, restoring, the recovery phrase",
@@ -52,6 +55,7 @@ VOCABULARY = {**CAPABILITY_TAGS, **LAB_TAGS}
 # filters, where each capability's filter is the ones below it plus its folder; app_lab_select_test.py checks the
 # two agree.
 BELOW = {
+    "product": (),
     "people": (),
     "net": ("people",),
     "social": ("people",),
@@ -62,6 +66,8 @@ BELOW = {
     "calls": ("pricing", "media"),
     "broadcast": ("calls",),
     "node": ("net",),
+    "relay": ("net",),
+    "ledger": (),
 }
 
 ALL = "all"
@@ -91,7 +97,7 @@ PATH_RULES = [
     # The lab itself: its driver, its stack and its probe.
     (("scripts/test/pp_app_lab.py", "scripts/test/app_lab_select.py", "scripts/test/pp_local_test.sh",
       "packaging/pp-node/docker-compose.app-lab*", "packaging/pp-node/app-lab-*",
-      "src/app/node/tools/app_probe/*"), ALL, "the app lab and its probe"),
+      "src/app/probes/app_probe/*"), ALL, "the app lab and its probe"),
     ((".github/workflows/lab-run.yml", ".github/workflows/lab-smoke.yml", ".github/workflows/lab-nightly.yml"),
      ("smoke",), "the lab's workflows"),
     (("docs/*", "projects/*", "design/*", "reports/*", "*.md", "LICENSE*"), NONE, "docs"),
@@ -101,12 +107,13 @@ PATH_RULES = [
     (("android/*", "ios/*", "packaging/ios/*", "packaging/macos/*", "scripts/*", ".github/*", ".cursor/*",
       ".vscode/*", ".clang-format", ".gitignore", ".git-blame-ignore-revs", "config.json.example",
       ".exmaple-config.json"), NONE, "other platforms, tooling and CI (not on the lab's Linux build)"),
-    (("capabilities/base/*", "cmake/*", "CMakeLists.txt", "src/CMakeLists.txt", "third_party/*"), ALL,
+    (("capabilities/base/*", "capabilities/product/*", "cmake/*", "CMakeLists.txt", "src/CMakeLists.txt", "third_party/*"), ALL,
      "the base, the build and the pinned libraries (pp-cpp-*)"),
     (("capabilities/*",), "capability", "a capability folder: it and the capabilities above it"),
     (("src/feature/*", "src/foundation/*", "src/lib/storage/*", "src/domain/*", "src/app/Bootstrap.*"), ALL,
      "the app stack pp-app-probe runs (ProductStack, presenters, storage, config)"),
-    (("src/app/node/*", "packaging/pp-node/Dockerfile", "packaging/pp-node/config.json.example"), ("node",),
+    (("apps/node/*", "src/app/probes/call_probe/*", "packaging/pp-node/Dockerfile",
+      "packaging/pp-node/config.json.example"), ("node",),
      "pp-node, the lab's seeds"),
     (("packaging/pp-node/Dockerfile.hard-*", "packaging/pp-node/hard-gw-*"), ("mesh",),
      "the NAT gateways (--suite app-nat)"),

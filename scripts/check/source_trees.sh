@@ -1,8 +1,8 @@
-# Sourced by the include checks. capabilities/<name>/src mirrors src/ (projects/capability-repos CR022), so a
-# path a check names under src/ may sit in any capability folder as well.
+# Sourced by the include checks. capabilities/<name>/src and apps/<name>/src mirror src/ (projects/capability-repos
+# CR022, CR028), so a path a check names under src/ may sit in any capability or app folder as well.
 #
-# src_trees PATH: PATH under $ROOT, plus capabilities/*/src/<rest> when PATH is src or src/<rest>; only the
-# paths that exist, absolute, one per line.
+# src_trees PATH: PATH under $ROOT, plus capabilities/*/src/<rest> and apps/*/src/<rest> when PATH is src or
+# src/<rest>; only the paths that exist, absolute, one per line.
 src_trees() {
   local path="$1"
   local rest=""
@@ -15,7 +15,7 @@ src_trees() {
       ;;
   esac
   local tree
-  for tree in "$ROOT/src" "$ROOT"/capabilities/*/src; do
+  for tree in "$ROOT/src" "$ROOT"/capabilities/*/src "$ROOT"/apps/*/src; do
     [[ -e "$tree$rest" ]] && echo "$tree$rest"
   done
   return 0

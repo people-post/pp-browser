@@ -19,8 +19,8 @@ endfunction()
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
 # curl is required for headless too (pp-node mesh directory publish — N027).
 pp_require_vendored(curl)
+pp_require_vendored(sqlite) # headless too: pp-node-plus's relay store (projects/node-relay)
 if(NOT PP_BROWSER_HEADLESS)
-  pp_require_vendored(sqlite)
   pp_require_vendored(opus)
 endif()
 
@@ -84,18 +84,19 @@ endif()
 add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
                  "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 
+# SQLite amalgamation: the app's chat storage (lib/storage) and, headless too, the relay's store (capabilities/relay).
+# EXCLUDE_FROM_ALL: built only for what links it, so the default pp-node never does.
+add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
+                 "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
+
 if(PP_BROWSER_HEADLESS)
-  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p, curl); skipping GUI third_party")
+  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p, curl, sqlite); skipping GUI third_party")
   return()
 endif()
 
 # --- GUI / full-app third_party below ---
 
 # FreeType / HarfBuzz / LunaSVG (+ zlib/libpng for CBDT) come from pp-cpp-ui.
-
-# SQLite amalgamation (chat-storage SqliteThreadStore — pp_base, not libp2p fork)
-add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
-                 "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
 
 # QR Code generator (invite QR codes)
 add_subdirectory("${PP_THIRD_PARTY_DIR}/qrcodegen"

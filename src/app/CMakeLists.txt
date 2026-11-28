@@ -1,7 +1,8 @@
 if(PP_BROWSER_HEADLESS)
   pp_configure_status("Headless configure complete (pp-node only)")
   if(NOT PP_BROWSER_IS_MOBILE)
-    add_subdirectory(node)
+    # pp-node's own folder (CR028), built where it always was (build/src/app/node).
+    add_subdirectory(${PP_BROWSER_ROOT}/apps/node ${CMAKE_BINARY_DIR}/src/app/node)
   endif()
   return()
 endif()
@@ -140,5 +141,7 @@ if(ANDROID AND NOT TARGET pp-browser)
 endif()
 
 if(NOT PP_BROWSER_IS_MOBILE)
-  add_subdirectory(node)
+  # pp-node's own folder (CR028), built where it always was (build/src/app/node); the app's probes beside it.
+  add_subdirectory(${PP_BROWSER_ROOT}/apps/node ${CMAKE_BINARY_DIR}/src/app/node)
+  add_subdirectory(probes)
 endif()

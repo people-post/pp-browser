@@ -1,6 +1,6 @@
 # Add people-post/pp-ledger for pp-node's ledger role (pp-ledger projects/platform-integration pi4):
 # one relay or miner per node, on the node's mesh runtime. Target: pp_server (pp::server, with
-# RoleRunner); only pp_domain_node_ledger links it, privately.
+# RoleRunner); only pp_domain_ledger (capabilities/ledger) links it, privately.
 #
 # At its pin (cmake/PpPins.cmake; PP_LEDGER_GIT_TAG: a pp-ledger release `vX.Y.Z` or, on main, a candidate
 # `vX.Y.Z-rc.N`, RC023; the `release/vX.Y.Z` tags before 2.0.0 were development pins), a local checkout (PP_LEDGER_SOURCE_DIR) or a sibling (PP_SIBLINGS_DIR). Include after pp-cpp-common,

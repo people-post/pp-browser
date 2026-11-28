@@ -1,0 +1,105 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+/** Loopback ops admin bind (default). Not the libp2p listen port. */
+inline constexpr const char* kDefaultStatusHttpBindHost = "127.0.0.1";
+inline constexpr uint16_t kDefaultStatusHttpBindPort = 18518;
+
+struct StatusHttpBind {
+  std::string host = kDefaultStatusHttpBindHost;
+  uint16_t port = kDefaultStatusHttpBindPort;
+};
+
+/**
+ * Parse `host:port` (IPv4 or hostname). Empty string → disabled (nullopt).
+ * Bare port (`18518`) means 127.0.0.1:port. `[::1]:port` supported for IPv6 loopback.
+ */
+std::optional<StatusHttpBind> ParseStatusHttpBind(std::string_view spec);
+
+/** True for 127.0.0.1, ::1, localhost (case-insensitive). */
+bool IsLoopbackStatusBindHost(std::string_view host);
+
+struct StatusHttpAuthConfig {
+  /** Empty = no auth required. */
+  std::string bearer_token;
+};
+
+struct StatusHttpSnapshot {
+  /**
+   * Which build answers (projects/node-relay NR001): "node", "plus" or "custom". Empty: not said. For operators only:
+   * clients find a service by what the node advertises, never by its build.
+   */
+  std::string edition;
+  /** The services built in (with edition). */
+  std::vector<std::string> services;
+  /** Services this build lacks whose data is in the profile: kept, not served. */
+  std::vector<std::string> dormant;
+  bool host_running = false;
+  std::string listen_multiaddr;
+  /** Ranked advertised listen MAs (global /ip6 first when present). */
+  std::vector<std::string> listen_multiaddrs;
+  std::string peer_id;
+  bool circuit_relay = false;
+  bool media_relay = false;
+  bool dht = false;
+  /** Object JSON from ReachabilityEngine::FormatOpsStatusJson() (or "{}"). */
+  std::string reachability_json = "{}";
+  /** Object JSON from AmpDhtProtocol::FormatOpsStatusJson() when DHT is up. */
+  std::string dht_json;
+};
+
+/**
+ * Lab-only actions (off unless set). `dht_find`: start a DHT lookup of `peer_id` (answered at once;
+ * a found record shows in `/status` → `dht_stats.records`). pp-node sets it only with
+ * PP_NODE_LAB_DHT_FIND=1 — a reachable status port must not let anyone start lookups.
+ */
+struct StatusHttpActions {
+  std::function<bool(const std::string& peer_id)> dht_find;
+  /**
+   * `POST /control/state` {"state":"active|draining|retiring"}: true = applied, false = refused (409).
+   * Unset (the route answers 404) unless the status bind is loopback — a reachable port must not steer the node.
+   */
+  std::function<bool(const std::string& state)> set_state;
+};
+
+struct StatusHttpResponse {
+  int status_code = 200;
+  std::string content_type = "application/json";
+  std::string body;
+};
+
+/** Parse request-line + headers blob (up to and including header terminator). */
+struct StatusHttpRequest {
+  std::string method;
+  std::string path;
+  /** After `?`, as sent (empty when none). */
+  std::string query;
+  std::string authorization;
+  std::string content_type;
+  std::string host;
+  bool has_origin = false;
+  /** Present only when Content-Length said so; the parse waits for all of it. */
+  std::string body;
+};
+
+/** Returns nullopt if the buffer (headers, and the body Content-Length announces) is incomplete or malformed. */
+std::optional<StatusHttpRequest> TryParseStatusHttpRequest(std::string_view raw);
+
+StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request, const StatusHttpAuthConfig& auth,
+                                           const StatusHttpSnapshot& snap, const StatusHttpActions& actions = {});
+
+/** Serialize a complete HTTP/1.1 response. */
+std::string FormatStatusHttpResponse(const StatusHttpResponse& response);
+/** 500 with a JSON error body (a handler threw). */
+StatusHttpResponse StatusHttpInternalError();
+
+} // namespace pbr

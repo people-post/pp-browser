@@ -1,12 +1,13 @@
 # Capability repos — current state
 
-**Updated:** 2026-11-23  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest)
+**Updated:** 2026-11-27  
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest); P4's shape is layered repos (CR027), pp-node repo-ready in place next (CR028)
 
 ## Done
 
 - Measured sizes, capability edges and base usage ([DESIGN § Where we are](DESIGN.md#where-we-are-measured-2026-10-30-develop-at-0d77a6a35)).
-- Direction revised (CR005–CR012): move only for a second app, into one capabilities repo; AI stays in the
+- Direction revised (CR005–CR012): move only for a second app, into one capabilities repo (since CR027, 2026-11-27:
+  layered repos, each born on demand; pp-cpp-core and pp-node first); AI stays in the
   app; identity is people, net its own, pricing inside messaging; posts + content are "social"; contracts and
   vectors in their own repo.
 - **P0:** `scripts/check/check_capability_edges.py` in CI's lint job, starting from 11 edges / 67 include
@@ -162,6 +163,10 @@
 
 ## Defaults taken (owners may revisit)
 
+- **The shared product base goes into pp-cpp-core** (CR028, 2026-11-27), not left with pp-browser: both apps need it
+  identical (one data layout, one profile model, the same backends), and the pp-node repo could not otherwise build without
+  pp-browser. The desktop's `AppConfig`, i18n and GUI platform stay with pp-browser (Hongwei).
+
 - **pp-cpp-ui's implicit `../pp-cpp-ui` is gone** (CR012): a developer who built a checkout beside the repo without
   asking now builds the pinned tag, and configure says so once. Pass `-DPP_SIBLINGS_DIR=..` or `-DPP_CPP_UI_SOURCE_DIR=…`
   (Kenneth: the UI engine's main user of it).
@@ -178,9 +183,27 @@
 2. P3's namespaces when a second app needs a capability.
 3. The same standalone build for the next capability a second app asks for (net and base for the operator app,
    below): `-DPP_CAPABILITIES=net` configures today; a CI job of its own when it leaves.
-4. P4 after node-relay's mailbox works (2026-11-27): node-relay builds `pp-node-relay` and its `relay-services`
-   capability in this repository, where pp-node is; P4 then moves pp-node with both editions (and the operator app's
-   relay certificate code) rather than moving code still being built.
+4. **pp-node repo-ready in place (CR028), now:** its own config type over the same keys; `capabilities/product`, the
+   headless product base both apps use; a standalone pp-node build with its CI job. It moves nothing.
+   - **Stage 1, in review (#809):** pp-node works on `NodeConfig` (`mesh`, `registration`, `data_dir`,
+     `relay.content_sha256`, `node`); `apps/node/src/app/node/NodeConfigLoad` is the one place it meets `AppConfig`, loading with
+     the app's loader. `node_config_test` pins what the node reads, for stage 2's loader of its own. pp-node now warns
+     when a built-in backend ignores the file's `registration`.
+   - **Stage 2, in review (one PR, a commit per step):** 2a the config file's shared sections out of the desktop's
+     `ConfigJson` (`ConfigSectionsJson`), `MeshRole.h` off `Config.h`; 2b pp-node's own loader (`LoadNodeConfig`), held
+     to the app's by `node_config_test` (21 files × 4 builds); 2c `capabilities/product` (`pp_foundation_product`,
+     `pp_product_platform`, `pp_product_data`), which pp-node links instead of the desktop's `pp_foundation_data` and
+     `pp_foundation_platform_core`; 2d pp-node in a folder of its own, `apps/node/` (its include root never `src/`),
+     which also configures on its own (`cmake -S apps/node`, the capabilities from `capabilities/` through
+     `cmake/PpCapabilitiesRoot.cmake`), with a step in CI's `node-editions` job. The app's probes moved to `src/app/probes`.
+5. **P4 (CR027), agreed 2026-11-27 (Hongwei):**
+   - The ledger role leaves `node` for its own capability, `ledger` (in review), so pp-cpp-core needs no pp-ledger.
+   - **pp-cpp-core**, created after that: base, product, people, net, node, with their history (`git filter-repo`);
+     the vendored curl, zlib and asio move there (CR012's shared home); reviewers as pp-browser's (Hongwei, Kenneth,
+     Leo); tag v0.1.0; pp-browser pins it and drops its copies; pp-ledger-apps pins it for the operator app.
+   - Before that note: P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
+   node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
+   the add-ons, its packaging and release) rather than moving code still being built.
 
 ## A second app is waiting (2026-11-22)
 

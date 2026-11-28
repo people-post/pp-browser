@@ -47,7 +47,7 @@
 | Shared runtime | `base/mesh/NodeRuntime` — host start/stop, listen candidates, bootstrap, tick |
 | Shared mesh host | `base/mesh/MeshHost` — owns NodeRuntime + dial-back + circuit/media relay + reachability; used by `ConversationsHub` and `pp-node` (`NodeBootstrap`) |
 | Busy-port | `ListenBusyPolicy::FailLoud` (pp-node default) vs `DesktopFallback` (GUI) |
-| Binary | `pp-node` (`src/app/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
+| Binary | `pp-node` (`apps/node/`) — PIN unlock, force Node, signal wait; does **not** use ConversationsHub / inbox / calls |
 | Dial-back | `/pp-mesh/reach/1.0.0` (`DialBackService`) — seed probes client listen addrs |
 | Packaging | Dual trains: app `v*` + `pp-node/v*` from `main`, the only integration line; L0/L1 smoke ([IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md); L2 deferred) |
 | Tests | FailLoud candidates; two-host dial-back LAN probe |
@@ -138,7 +138,7 @@
 |------|-------|
 | Call consumer (a4) | Soft-migrate + V024 shared policy — [p2p-av-calls](../p2p-av-calls/) |
 | **media_relay attach SM (N026)** | **s3a+s3b landed** — inbound + client `AcceptAndAttach` phases + Detach abort; circuit compose loopbacks green — [MEDIA_RELAY_ATTACH.md](MEDIA_RELAY_ATTACH.md) |
-| Peer message_relay | Deferred (N017); HTTP Brief remains. Taken up as relays on pp-node — `pp-node-relay`, the relay protocol over Amp: [node-relay](../node-relay/README.md) (2026-11-27) |
+| Peer message_relay | Deferred (N017); HTTP Brief remains. Taken up as relays on pp-node — the message relay of `pp-node-plus`, the relay protocol over Amp: [node-relay](../node-relay/README.md) (2026-11-27) |
 | Open public / paid settle UI | **N020 mid** — pricing regulates; not revenue-first |
 | Bonds / reputation / anti-capture | **N020 long** |
 | Mesh directory consumer | **n-dir** — wired — [DISCOVERY_ROADMAP.md](DISCOVERY_ROADMAP.md) |

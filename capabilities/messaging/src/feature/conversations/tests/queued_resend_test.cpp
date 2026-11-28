@@ -1020,5 +1020,108 @@ TEST_F(MirrorTest, AGroupMessageIsMirroredOnceAMemberGotIt) {
   EXPECT_EQ(mirrored_.front().second.group_id, "g1");
 }
 
+// --- #777: the control lane obeys the signed-out rule as chat sends do (M021 d4) ---------------------------------
+
+/**
+ * (No direct link is wired into this fixture — amp_links is null — so a control send can only reach the relay fake;
+ * the "nothing sent" checks below are not vacuous because a listed device's send shows up after the same Drain.)
+ * Alice's device as the account's newest list leaves it out: a restored device of her account issued a fresh list. */
+class SignedOutControlTest : public StoredResendTest {
+protected:
+  /** This device hears the account's fresh list, issued by another device of the account that lists only itself. */
+  void SignOut() {
+    ASSERT_TRUE(mesh_->OwnAccountCards().Card(util::NowUnixMs())) << "this device keeps its own list first";
+    const LocalIdentity mine = *identity_.Get();
+    const std::filesystem::path other_dir = dir_ / "restored";
+    std::filesystem::create_directories(other_dir);
+    IdentityStore other_identity(other_dir.string(), "restored");
+    ASSERT_TRUE(other_identity.SetDek(TestDek(3)));
+    ASSERT_TRUE(other_identity.LoadOrCreate());
+    LocalIdentity restored = *other_identity.Get();
+    restored.account_id = mine.account_id;
+    restored.account_signing_public_key_b64 = mine.account_signing_public_key_b64;
+    restored.account_signing_private_key_b64 = mine.account_signing_private_key_b64;
+    restored.kem_public_key_b64 = mine.kem_public_key_b64;
+    restored.kem_private_key_b64 = mine.kem_private_key_b64;
+    restored.card_intent = kCardIntentFresh;
+    ASSERT_TRUE(other_identity.Update(restored));
+    PeerSigningKeyStore signing;
+    PeerKemKeyStore kem;
+    InMemoryPeerCardStore rows;
+    PeerCards cards(rows);
+    AccountKeyResolver keys(signing, kem, cards, directory_);
+    OwnCards other(other_identity, keys);
+    auto fresh = other.Card(util::NowUnixMs() + 10);
+    ASSERT_TRUE(fresh) << fresh.error().message;
+    ASSERT_TRUE(mesh_->OwnAccountCards().Learn(*fresh, util::NowUnixMs() + 20));
+    ASSERT_TRUE(mesh_->OwnAccountCards().SignedOut());
+  }
+
+  /** A call invite as the call stack builds it: an identified system message. */
+  static ThreadMessage Invite() {
+    ThreadMessage control;
+    control.id = util::GenerateUuid();
+    control.text = "call_invite";
+    control.content_type = ChatContentType::System;
+    control.timestamp = util::NowUnixMs();
+    return control;
+  }
+
+  static void ExpectSignedOut(const Error& error) {
+    EXPECT_EQ(error.message, SignedOutSendError().message);
+    EXPECT_EQ(error.code, SignedOutSendError().code);
+  }
+};
+
+TEST_F(SignedOutControlTest, ASignedOutDevicesCallInviteIsRefusedLikeItsTextAndNothingGoesOut) {
+  SignOut();
+  auto text = mesh_->SendUserMessage(chat_.id, "hello");
+  ASSERT_FALSE(text);
+  auto sent = mesh_->SendControl(bob_.account_id, Invite(), /*urgent=*/true);
+  ASSERT_FALSE(sent);
+  ExpectSignedOut(sent.error());
+  EXPECT_EQ(sent.error().message, text.error().message);
+  Drain();
+  EXPECT_TRUE(relay_->Sent().empty());
+}
+
+TEST_F(SignedOutControlTest, ASignedOutDeviceSendsNoControlToManyAndEachResultSaysWhy) {
+  SignOut();
+  std::vector<ControlSend> sends;
+  sends.push_back(ControlSend{.peer_identity = bob_.account_id, .control = Invite()});
+  sends.push_back(ControlSend{.peer_identity = "account:carol", .control = Invite()});
+  std::vector<ControlSendResult> got;
+  bool done = false;
+  mesh_->SendControlToMany(std::move(sends), [&](std::vector<ControlSendResult> results) {
+    got = std::move(results);
+    done = true;
+  });
+  Drain();
+  ASSERT_TRUE(done) << "the caller is always told";
+  ASSERT_EQ(got.size(), 2u);
+  EXPECT_EQ(got[0].peer_identity, bob_.account_id);
+  EXPECT_EQ(got[1].peer_identity, "account:carol");
+  for (const ControlSendResult& result : got) {
+    ASSERT_FALSE(result.queued);
+    ExpectSignedOut(result.queued.error());
+  }
+  EXPECT_TRUE(relay_->Sent().empty());
+}
+
+TEST_F(SignedOutControlTest, ADeviceOnTheListStillSendsItsControl) {
+  ASSERT_FALSE(mesh_->OwnAccountCards().SignedOut());
+  auto sent = mesh_->SendControl(bob_.account_id, Invite(), /*urgent=*/true);
+  ASSERT_TRUE(sent) << sent.error().message;
+  Drain(); // with no wait on the relay fake: Drain alone carries the outbox worker through, so "nothing sent" is real
+  EXPECT_EQ(relay_->Sent().size(), 1u);
+  std::vector<ControlSendResult> got;
+  mesh_->SendControlToMany({ControlSend{.peer_identity = bob_.account_id, .control = Invite()}},
+                           [&](std::vector<ControlSendResult> results) { got = std::move(results); });
+  Drain();
+  ASSERT_EQ(got.size(), 1u);
+  EXPECT_TRUE(got[0].queued);
+  EXPECT_EQ(relay_->Sent().size(), 2u);
+}
+
 } // namespace
 } // namespace pbr

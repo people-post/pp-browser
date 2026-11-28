@@ -228,7 +228,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 
 ### App lab (`--suite app`)
 
-The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/node/tools/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade, `CallUiBackend` and `CallPresenter` (what the call surface shows and what its buttons do: the probe's `call` / `accept` / `leave` … are the GUI's buttons, and its `surface` / `state` report the GUI's `CallScreen`, incl. the status line) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
+The other probes drive the call stack around the product's messaging; the app lab drives the app. [`pp-app-probe`](../../src/app/probes/app_probe/main.cpp) is the app with no GUI — the same `Bootstrap`, `ProductStack`, facade, `CallUiBackend` and `CallPresenter` (what the call surface shows and what its buttons do: the probe's `call` / `accept` / `leave` … are the GUI's buttons, and its `surface` / `state` report the GUI's `CallScreen`, incl. the status line) — one scripted user per process, its own profile dir, line-JSON commands on stdin (`register`, `open_chat`, `call`, `accept`, `leave`, `crash`, …). [`pp_app_lab.py`](../../scripts/test/pp_app_lab.py) runs the scenarios people hit when a call will not get through — first contact, both calling at once (and both answering), calling back while it rings, a redial storm, a restart while ringing, the caller's app dying mid-call and coming back, a peer vanishing mid-call, decline then call back — and checks the outcome: nobody stuck, one history entry per call, audio both ways, and times (ring, answer → audio, Reconnecting, failed).
 
 **Chats list.** The probe also drives `ChatPresenter` (feature/presenters: the chats list's decisions — order, unread count and hand-set dot, pin, mute, archive — and its buttons; `ChatController` renders it): `threads` reports the list as the user sees it (`listed`, `position`, `unread`, `unread_dot`, `pinned`, `muted`, `active`, `archived_count`), and `show_chat` / `home` / `pin` / `mute` / `archive` / `mark_unread` / `mark_read` / `show_archived` are its buttons; a message's buttons are `react` / `delete_for_me` / `delete_for_everyone` / `quote`, the composer's Send is `compose_send` (validated, the quote added, routed by the message router like the GUI's), and `transcript` reports the open chat as drawn (reactions folded onto their messages). `close_plan` / `close_chat` are closing a chat (delete; a group's leave, local dismiss, or an owner's hand-over to a reachable member), and `group_sheet` is a group's side of the chat header's sheet (whether this device owns the group; the unreachable members its owner may remove). Scenarios: `chat_list_settings`, `chat_message_actions`, `chat_quote_reply`, `group_owner_hands_over`.
 
@@ -280,8 +280,8 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 
 | Tag | What the scenarios check |
 |-----|--------------------------|
-| `people` `net` `social` `delivery` `pricing` `media` `messaging` `calls` `broadcast` `node` | one per capability folder (`capabilities/<name>/`, CTest label `capability:<name>`; [SRC_LAYOUT § Capabilities](../architecture/SRC_LAYOUT.md#capabilities-across-layers)). No scenario has `social`, `pricing` or `broadcast` yet |
-| `relay` | the relay service itself (pp-relay-apis): mailboxes, the directory, lockers, two relays |
+| `product` `people` `net` `social` `delivery` `pricing` `media` `messaging` `calls` `broadcast` `node` `relay` `ledger` | one per capability folder (`capabilities/<name>/`, CTest label `capability:<name>`; [SRC_LAYOUT § Capabilities](../architecture/SRC_LAYOUT.md#capabilities-across-layers)). No scenario has `social`, `pricing` or `broadcast` yet |
+| `relay` | also a capability tag: relays, the org's (pp-relay-apis) and, from node-relay NR5, the message relay on pp-node-plus (`capabilities/relay/`): mailboxes, the directory, lockers, two relays |
 | `mesh` | reach between users: seeds, parking, circuits, NATs, a network that drops or changes |
 | `groups` | group chats and group calls |
 | `devices` | one account on several devices: linking, signing out, restoring, the recovery phrase |
@@ -301,7 +301,7 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 
 | Paths | Tags |
 |-------|------|
-| the lab: `pp_app_lab.py`, `app_lab_select.py`, `pp_local_test.sh`, `docker-compose.app-lab*`, `app-lab-*`, `src/app/node/tools/app_probe/` | all |
+| the lab: `pp_app_lab.py`, `app_lab_select.py`, `pp_local_test.sh`, `docker-compose.app-lab*`, `app-lab-*`, `src/app/probes/app_probe/` | all |
 | `lab-run.yml`, `lab-smoke.yml`, `lab-nightly.yml` | `smoke` |
 | docs: `docs/`, `projects/`, `design/`, `reports/`, `*.md` | none |
 | unit tests and other suites: `*/tests/*`, `*/testing/*`, other `scripts/test/` | none |
@@ -310,7 +310,7 @@ Every app-lab scenario is declared with its tags in `SCENARIOS` ([`pp_app_lab.py
 | `capabilities/base/`, `cmake/`, `CMakeLists.txt`, `src/CMakeLists.txt`, `third_party/` (the base, the build, the pinned pp-cpp-*) | all |
 | `capabilities/<x>/` | x and the capabilities above it, as CI's capability filters (`build.yml` `changes`): `calls` → calls, broadcast; `media` → media, messaging, calls, broadcast; `people` → all but media |
 | the app stack the probe runs: `src/feature/`, `src/foundation/`, `src/lib/storage/`, `src/domain/`, `src/app/Bootstrap.*` | all |
-| `src/app/node/`, `packaging/pp-node/Dockerfile`, its `config.json.example` (the seeds) | `node` |
+| `apps/node/`, `packaging/pp-node/Dockerfile`, its `config.json.example` (the seeds) | `node` |
 | `packaging/pp-node/Dockerfile.hard-*`, `hard-gw-*` (the NAT gateways) | `mesh` |
 | the rest of `src/app/` (the desktop shell), the rest of `packaging/pp-node/` | none |
 
@@ -349,7 +349,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | ID | Status | Primary evidence |
 |----|--------|------------------|
 | N-SMOKE | **Covered** | [`scripts/test/pp_node_image_smoke.sh`](../../scripts/test/pp_node_image_smoke.sh); release CI L0 |
-| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/tools/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
+| N-REACH | **Covered** | [`pp-node-probe`](../../apps/node/src/app/node/tools/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
 | N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/test/pp_node_fanout_smoke.sh`](../../scripts/test/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
 | N-ADMIT | **Partial** | gtests (contacts-only / call-scoped); no deploy-profile stranger probe |
 | N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/test/pp_node_cap_smoke.sh`](../../scripts/test/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |

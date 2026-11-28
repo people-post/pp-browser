@@ -8,7 +8,7 @@ source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 # The domain modules, in their order: a module may include only the ones before it.
-ORDER=(registration node call_media peers attachments delivery)
+ORDER=(registration node relay ledger call_media peers attachments delivery)
 
 check_absent() {
   local label="$1"

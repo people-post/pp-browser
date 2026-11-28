@@ -29,6 +29,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 ```
 {config_dir}/config.json
 {data_dir}/profiles.json              # schema_version 2: profiles [{id, label}], active {backend id → profile id} (§ Per-backend profiles)
+{data_dir}/pp-node.lock               # pp-node only: held (flock / LockFileEx) while a node runs on this data root, so a second process exits; its pid inside is informational; the OS drops the lock when the process ends
 {data_dir}/machine.json               # device-wide: show_tester_options (optional bool, absent = off: Me → Help's five taps; the device's, not a profile's — profile-model PM006), window, safe area, display; collect_run_logs, collect_crash_logs (optional bools, absent = off: "Collect run logs", "Collect crash logs"); update_card_version, update_card_dismissals, update_card_dismissed_ms (optional string / integer / integer, absent = never tapped: "Later" on the Chats page's new-version card, for that latest_client_version; no schema bump; an older build does not understand them and drops them the next time it saves the file, which is harmless: the card simply shows again)
 {data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .N = previous launches: 7 days / 50 MB with collect_run_logs on, else only .1; .1 is always kept) — ops/CONFIGURATION.md § Log file; leaves the device only by Send run logs (test phase, contracts/DIAGNOSTICS.md)
 {data_dir}/logs/metrics.log            # Metrics channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
@@ -42,6 +43,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # brief_llm_api_key, brief_llm_token_expires_at, brief_llm_guest_api_key); an identity.enc that still holds them gives them up at its next save
     account_locker.json     # (below) moved here from the profile's top level at the first start after P3
     client_compat.json      # (below) likewise
+  relay/                    # pp-node with the message relay on (node-relay NR007; 0700): relay.db, its store (SQLite, user_version 1; 0600): every account's mailbox, metadata plain, bodies sealed end to end; a newer user_version is refused untouched, and what is past its time is deleted on open
   mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 2; optional amp_wire / node_version / features, N032); per profile;
                             # optional source = the primary directory's address it came from (pp-cpp-mesh 10.2.0): a list saved from another
                             # directory is not loaded (written over at the next good refresh); one without a source (saved before) is loaded as before

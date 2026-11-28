@@ -67,10 +67,13 @@ PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 # Caps intentionally off:
 ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
 
+# Which build answers (/status "edition"): node (pp-node) or plus (pp-node-plus, projects/node-relay)
+./scripts/test/pp_node_image_smoke.sh --expect-edition plus --expect-services ledger,relay
+
 Org / production seed images should keep **circuit + media on** (`--expect-circuit=1 --expect-media=1` or defaults from compose). `NodeBootstrap` sets an explicit **Public|Org** serve mask so stranger dialers are admitted without relying on an empty contact set.
 ```
 
-Asserts: `ok`/`host_running`, non-empty `peer_id` + Amp ADP `listen` (`/udp/…/adp/…`), expected boolean caps. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.
+Asserts: `ok`/`host_running`, non-empty `peer_id` + Amp ADP `listen` (`/udp/…/adp/…`), expected boolean caps, and the edition when asked. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.
 
 Does **not** open Amp sessions or relay channels.
 
@@ -81,7 +84,7 @@ Does **not** open Amp sessions or relay channels.
 ./scripts/test/pp_node_relay_smoke.sh --l0-only
 ```
 
-`pp-node-probe` (under `src/app/node/tools/probe/`), default `--mode l1`:
+`pp-node-probe` (under `apps/node/src/app/node/tools/probe/`), default `--mode l1`:
 
 1. Builds hop multiaddr from `/status` (`0.0.0.0` → `127.0.0.1`)
 2. Starts ephemeral client + bridge-target hosts on loopback

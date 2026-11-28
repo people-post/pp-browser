@@ -1202,11 +1202,28 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
 
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
                                                 const bool urgent, const bool with_card) {
+  // M021 d4 (#777): a device the account's newest list leaves out does not speak for it, on the lane as in a chat.
+  // Every caller here (calls, group invite-link and membership / roster controls) speaks for the account; the card,
+  // copy and device-list asks a signed-out device still needs go to control_lane_ directly, not through here.
+  if (own_cards_.SignedOut()) {
+    return SignedOutSendError();
+  }
   return control_lane_.Send(peer_identity, control, urgent, with_card);
 }
 
 void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,
                                                  const WorkerLane lane) {
+  if (own_cards_.SignedOut()) { // as SendControl: each caller is told, nothing is sealed or queued
+    std::vector<ControlSendResult> results;
+    results.reserve(sends.size());
+    for (const ControlSend& send : sends) {
+      results.push_back(ControlSendResult{.peer_identity = send.peer_identity, .queued = SignedOutSendError()});
+    }
+    if (done) {
+      done(std::move(results));
+    }
+    return;
+  }
   control_lane_.SendToMany(std::move(sends), std::move(done), lane);
 }
 

@@ -83,8 +83,10 @@ every capability, and a capability's DTOs under `common/<capability>/` belong to
 base (common, foundation) ─► people ─┬─► net ─────┬─► delivery ─► pricing ─┬─► messaging (+ social, media)
                                      └─► social ──┘                         └─► calls ─► broadcast (+ media)
 base ─► media (devices, codecs, the engine)
-                             people, net ─► node            app (shell, GUI, AI): anything
+                             people, net ─► node, relay     app (shell, GUI, AI): anything
 product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
+                                                            (and the node services: ledger;
+                                                             pp-node-plus also the add-ons)
 ```
 
 | Capability | Paths |
@@ -99,8 +101,10 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | calls | `lib/calls`, `lib/call_audio`, `common/media`, `domain/call_media`, `feature/calls` |
 | broadcast | `lib/broadcast`, `feature/broadcast` |
 | node | `domain/node` |
-| node_app | `app/node` — pp-node, an app (CR017) |
-| product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
+| relay | `domain/relay` — the message relay, an add-on only pp-node-plus links (node-relay NR001) |
+| ledger | `domain/ledger` — pp-node's ledger role, a node service both pp-node presets link (CR027) |
+| node_app | `app/node` — pp-node, an app (CR017), and pp-node-plus (pp-node with the add-ons); in its own folder, `apps/node/src/` (CR028) |
+| product | `foundation/data`, `foundation/platform`, `foundation/i18n`, `foundation/product` — config, paths, platform hooks, text (CR015); its headless part both apps use is `capabilities/product` (CR028) |
 | app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |
 
 A capability includes and links only those before it in the order (tests included: they move with it). The
@@ -117,8 +121,10 @@ A capability moves out of `src/` into its own folder, `capabilities/<name>/`, be
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
 Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`), and so does the base:
 `capabilities/base/src/` holds `common` and foundation's runtime, TLS, errors, diagnostics, crypto and identity
-(CR023 step 3). `src/` keeps the product's base (`foundation/data`, `platform`, `i18n`, `product` — config, paths,
-platform hooks, catalogs, the product's name and version) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
+(CR023 step 3). pp-node has a folder of its own outside `src/`, `apps/node/` (its include root `apps/node/src/`, never
+`src/`; it also configures on its own, CR028). The headless product base both apps use is `capabilities/product/src/` (`foundation/product`,
+`platform`, `data`: the build's identity, backends, paths, profiles; CR028). `src/` keeps the desktop's own product
+base (`foundation/data`, `platform`, `i18n`, `product` — its config, platform hooks, catalogs, the product's name) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
 `lib/storage`, `lib/scan`, the app's `feature/` modules). The
 `common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`,
 media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus itself, so a split of media carries those.
@@ -144,7 +150,7 @@ media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus its
   capability builds on is the gate's order (the gate checks it). CI's **capabilities** job builds and tests calls so.
   A capability reaches its host only through values and ports: calls' host contract is in
   [capabilities/calls/README.md](../../capabilities/calls/README.md).
-- A later split into the capabilities repo is a `git subtree split` of the folder.
+- A later split into a capability repo (capability-repos CR027: pp-cpp-core, pp-node, each on demand) is a `git subtree split` of the folder.
 - A capability ships ideas, not a database ([CR024](../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)):
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest
@@ -253,7 +259,7 @@ Module map and rules: [`src/domain/README.md`](../../src/domain/README.md). Orde
 | `domain/attachments/` | Chat attachments (`pp_domain_attachments`): blob request + mesh transport, CDN upload / fetch, background fetch + decrypt, content-store binding |
 | `domain/delivery/` | Delivery (`pp_domain_delivery`, CR020): the mesh transport for direct chat, account cards over the mesh, the send path (routes, outbox and retries, the control lane). Chat history and the transport bundle (`PeerTransports`) are `feature/conversations`' |
 
-The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
+The **headless** ones build in `PP_BROWSER_HEADLESS` configures; pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `apps/node/` stays thin (main, bootstrap, env overlay, status HTTP); the node's lab tools (`pp-node-probe`, `pp-node-load`) live in `apps/node/src/app/node/tools/`, the app's probes (`pp-app-probe`, `pp-call-probe`) in `src/app/probes/`.
 
 ## Feature subfolders
 

@@ -49,7 +49,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [qr-scanning](qr-scanning/) | In-app friend QR scanning and reusable scan entry |
 | [chat-storage-and-memory](chat-storage-and-memory/) | SQLite threads, relay/history, memory/compaction |
 | [multi-relay](multi-relay/) | Users on several relays: inboxes by Account ID, the relay list in the account card, cross-relay delivery |
-| [node-relay](node-relay/) | Relays anyone runs on a pp-node: `pp-node-relay`, a second build with the `relay-services` capability (mailbox first); the relay protocol over Amp as well as HTTPS; the default pp-node unchanged |
+| [node-relay](node-relay/) | Relays anyone runs on a pp-node: the message relay (mailbox first), the first add-on of `pp-node-plus`, the build of pp-node with every add-on service; the relay protocol over Amp as well as HTTPS; the default pp-node unchanged |
 | [platform-safety-limits](platform-safety-limits/) | Non-chat limits (LLM HTTP, profile JSON, MCP, parsers) |
 | [e2e-message-crypto](e2e-message-crypto/) | Message AEAD / key UX residuals (contracts promoted) |
 | [push-notifications](push-notifications/) | FCM wake + local alerts |
@@ -59,7 +59,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
 | [audio-resilience](audio-resilience/) | Test the class of OS / hardware audio failures: disruptions × moments × session owner against five invariants (hearing measured, an emulated phone audio system); planned, starts after the ongoing projects |
-| [capability-repos](capability-repos/) | Capability boundaries in the tree (gated); one capabilities repo when a second app picks them |
+| [capability-repos](capability-repos/) | Capability boundaries in the tree (gated); layered repos, each born when a second app needs it (pp-cpp-core, pp-node first) |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [social-posts](social-posts/) | Public posts: signed hash-chained author logs, claimed → witnessed → anchored time |
 | [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |

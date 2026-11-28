@@ -3,6 +3,8 @@
 # (capabilities name what they link; check_capability_edges.py, CR016).
 # The base (capabilities/base, CR023 step 3), then the app's own common layer and the product's base.
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/base ${CMAKE_BINARY_DIR}/capabilities/base)
+# The headless product base both apps use (CR028); the app's own on top of it in foundation/.
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/product ${CMAKE_BINARY_DIR}/capabilities/product)
 add_subdirectory(common/ui)
 add_subdirectory(foundation)
 # Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.
@@ -16,6 +18,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/messaging ${CMAKE_BINARY_DIR}/
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capabilities/calls)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/broadcast ${CMAKE_BINARY_DIR}/capabilities/broadcast)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/relay ${CMAKE_BINARY_DIR}/capabilities/relay)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/ledger ${CMAKE_BINARY_DIR}/capabilities/ledger)
 add_subdirectory(lib)
 
 # Convenience INTERFACE: all foundation modules, the base's and the product's (not Amp — Amp is FetchContent lib).

@@ -132,25 +132,34 @@ function(pp_browser_assert_no_ui_dependencies root_target)
 endfunction()
 
 # pp-node's first-party closure: foundation (headless *_core), common, the node's lib peers
-# (people / net), pp-cpp-mesh (not its test harness), headless domain modules, the Amp / common /
-# crypto siblings and pp-ledger (the ledger role). Any other pp_* target reachable from root_target
-# fails configure — widening the node is a deliberate edit here.
+# (people / net), pp-cpp-mesh (not its test harness), headless domain modules, the node app's own
+# sources, the Amp / common / crypto siblings and pp-ledger (the ledger role). Any other pp_* target
+# reachable from root_target fails configure — widening the node is a deliberate edit here.
+# Each node binary passes its services' libraries as EXTRA (cmake/PpNodeServices.cmake): a binary cannot link a
+# service outside its set.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
-  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|product|runtime_core|tls)$"
+  "^pp_app_node$"
+  "^pp_foundation_(crypto|error|identity|product|runtime_core|tls)$"
+  # The product base both apps use (capabilities/product, capability-repos CR028); not the desktop's own config,
+  # text or platform (pp_foundation_data / _i18n / _platform_core).
+  "^pp_product_(data|platform)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_lib_(people|net)$"
   "^pp_people_common$"
-  "^pp_domain_(registration|node|node_ledger)$"
+  "^pp_domain_(registration|node)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"
   "^pp_amp_"
-  # pp-ledger, behind pp_domain_node_ledger (PP_BROWSER_WITH_LEDGER)
+  # pp-ledger, behind pp_domain_ledger (capabilities/ledger, PP_BROWSER_WITH_LEDGER)
   "^pp_(server|client|network|ledger|ledger_common|ledger_amp|consensus|chain|chain_types|operation)$")
 
+# pp_browser_assert_node_link_allowlist(<target> [EXTRA <regex>...]): EXTRA widens the allowlist for this target only.
 function(pp_browser_assert_node_link_allowlist root_target)
   if(NOT TARGET ${root_target})
     message(FATAL_ERROR "pp_browser_assert_node_link_allowlist: not a target: ${root_target}")
   endif()
+  cmake_parse_arguments(ARG "" "" "EXTRA" ${ARGN})
+  set(_allow ${PP_BROWSER_NODE_LINK_ALLOWLIST} ${ARG_EXTRA})
 
   _pp_browser_collect_link_edges(${root_target} _edges)
   set(_hits "")
@@ -161,7 +170,7 @@ function(pp_browser_assert_node_link_allowlist root_target)
       continue()
     endif()
     set(_ok FALSE)
-    foreach(_re IN LISTS PP_BROWSER_NODE_LINK_ALLOWLIST)
+    foreach(_re IN LISTS _allow)
       if(_name MATCHES "${_re}")
         set(_ok TRUE)
         break()
@@ -178,9 +187,46 @@ function(pp_browser_assert_node_link_allowlist root_target)
       "${root_target} links first-party targets outside the node allowlist.\n"
       "Link edges:\n  ${_hit_text}\n"
       "The node may link foundation *_core, common, pp_lib_{people,net}, "
-      "pp_domain_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger. See PP_BROWSER_NODE_LINK_ALLOWLIST in "
+      "pp_domain_{registration,node}, Amp, pp-cpp-mesh and pp-ledger, and its services' libraries "
+      "(PP_NODE_SERVICES). See PP_BROWSER_NODE_LINK_ALLOWLIST in "
       "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()
+endfunction()
+
+# Post-link scan for an edition's code (projects/node-relay NR001): FORBID fails the build when any pattern is in the
+# binary's symbols, REQUIRE when one is missing — so pp-node-plus's own REQUIRE proves the scan sees what pp-node's
+# FORBID looks for. Runs before the package script strips the binary. nm only: an MSVC binary keeps its symbols in
+# the PDB, so dumpbin would see none and every REQUIRE would fail (the link allowlist still holds there).
+#   pp_browser_add_symbol_check(<target> [FORBID <pattern>...] [REQUIRE <pattern>...] [WHY <text>])
+function(pp_browser_add_symbol_check target)
+  cmake_parse_arguments(ARG "" "WHY" "FORBID;REQUIRE" ${ARGN})
+  if(NOT TARGET ${target})
+    message(FATAL_ERROR "pp_browser_add_symbol_check: not a target: ${target}")
+  endif()
+  if(CMAKE_CROSSCOMPILING)
+    return()
+  endif()
+  if(MSVC)
+    return()
+  endif()
+  find_program(_pp_nm NAMES llvm-nm nm)
+  if(NOT _pp_nm)
+    message(STATUS "pp-browser: nm not found; skipping the post-link symbol check for ${target}")
+    return()
+  endif()
+  string(JOIN "," _forbid ${ARG_FORBID})
+  string(JOIN "," _require ${ARG_REQUIRE})
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+      -DPP_SYMBOLS_BINARY=$<TARGET_FILE:${target}>
+      -DPP_SYMBOLS_NM=${_pp_nm}
+      -DPP_SYMBOLS_LABEL=${target}
+      "-DPP_SYMBOLS_FORBID=${_forbid}"
+      "-DPP_SYMBOLS_REQUIRE=${_require}"
+      "-DPP_SYMBOLS_WHY=${ARG_WHY}"
+      -P ${PP_BROWSER_ROOT}/cmake/CheckSymbols.cmake
+    COMMENT "Checking ${target}'s symbols"
+    VERBATIM)
 endfunction()
 
 # Post-link scan: fails if UI entrypoints landed in the binary despite CMake edges.
@@ -223,7 +269,7 @@ function(pp_browser_add_no_ui_link_check target)
       -DPP_BROWSER_NO_UI_SYMTOOL=${_pp_symtool}
       -DPP_BROWSER_NO_UI_SYMTOOL_KIND=${_pp_symtool_kind}
       -DPP_BROWSER_NO_UI_LABEL=${target}
-      -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoUiSymbols.cmake
+      -P ${PP_BROWSER_ROOT}/cmake/CheckNoUiSymbols.cmake
     COMMENT "Checking ${target} for UI/SDL symbols"
     VERBATIM)
 endfunction()

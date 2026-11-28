@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 
 list(APPEND CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+# This app's root: its assets, its relays' certificates, its commit (capabilities/product reads them; CR027).
+set(PP_APP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 include(CompilerCache)
 pp_browser_configure_compiler_cache()
 

@@ -10,7 +10,7 @@
 #                  recorded for objects that compiled, so build pp-node first.
 #   --since REF    Diff base (default: newest pp-node/v* tag).
 #   --list         Print every closure file, not just the per-module counts.
-#   --target NAME  Ninja target (default: src/app/node/pp-node).
+#   --target NAME  Ninja target (default: src/app/node/pp-node, the build dir apps/node builds into).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
