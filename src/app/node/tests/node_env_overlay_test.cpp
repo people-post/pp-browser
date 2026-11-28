@@ -65,7 +65,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EnvGuard g9("PP_NODE_REGISTRATION_BASE_URL");
   EnvGuard g10("PP_NODE_DHT_K");
 
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   config.data_dir = "/old";
   config.mesh.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/2/p2p/x"};
   config.mesh.amp_udp_port = 0;
@@ -109,7 +109,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
 // turns it on (privacy P011).
 TEST(NodeEnvOverlayTest, TheHeartbeatIsTheOperatorsChoice) {
   EnvGuard heartbeat("PP_NODE_MESH_HEARTBEAT");
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   pbr::ApplyPpNodeConfigEnvOverlays(config);
   EXPECT_FALSE(config.mesh.mesh_heartbeat);
   SetEnv("PP_NODE_MESH_HEARTBEAT", "1");
@@ -120,7 +120,7 @@ TEST(NodeEnvOverlayTest, TheHeartbeatIsTheOperatorsChoice) {
 // relay.content_sha256 is off unless config or the environment turns it on; an unparsable value keeps the config's.
 TEST(NodeEnvOverlayTest, RelayContentSha256ComesFromTheEnvironment) {
   EnvGuard guard("PP_NODE_RELAY_CONTENT_SHA256");
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   pbr::ApplyPpNodeConfigEnvOverlays(config);
   EXPECT_FALSE(config.relay_content_sha256);
   SetEnv("PP_NODE_RELAY_CONTENT_SHA256", "true");
@@ -140,7 +140,7 @@ TEST(NodeEnvOverlayTest, CapacitiesComeFromTheEnvironment) {
   EnvGuard reservations("PP_NODE_CAPACITY_RESERVATIONS");
   EnvGuard bridges("PP_NODE_CAPACITY_BRIDGES");
   EnvGuard calls("PP_NODE_CAPACITY_GROUP_CALLS");
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   config.mesh.capacity.bridges = 100;
   SetEnv("PP_NODE_CAPACITY_LINKS", "20000");
   SetEnv("PP_NODE_CAPACITY_RESERVATIONS", "40");
@@ -163,7 +163,7 @@ TEST(NodeEnvOverlayTest, TheRegistrationRelaysIdComesFromItsAddress) {
   EnvGuard url("PP_NODE_REGISTRATION_BASE_URL");
   EnvGuard relay_id("PP_NODE_REGISTRATION_RELAY_ID");
   const std::string prod = "https://backend.example.test/api/relay";
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   config.registration.base_url = prod;
   config.registration.relay_id = kProdRelayId;
   SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://qa.example.test/api/relay");

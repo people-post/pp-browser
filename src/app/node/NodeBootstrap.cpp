@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeConfigLoad.h"
 
 #include "foundation/product/AppVersion.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
@@ -41,7 +42,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto log = logging::getLogger("pp-node");
 
   // Only a file named for it (--config / PP_BROWSER_CONFIG): never the desktop app's of the same user.
-  auto config = Config::Load(options.argc, options.argv, Config::Fallback::None);
+  auto config = LoadNodeConfig(options.argc, options.argv);
   if (!config) {
     return config.error();
   }
@@ -183,7 +184,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;
   result.profile_id = registry->ActiveProfileId();
-  result.config_path = Config::DiscoverConfigPath(options.argc, options.argv, Config::Fallback::None);
+  result.config_path = NodeConfigPath(options.argc, options.argv);
   result.secrets = std::move(secrets);
   result.identity = std::move(identity);
   result.mesh = std::move(mesh);

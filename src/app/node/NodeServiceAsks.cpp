@@ -23,7 +23,7 @@ std::string Join(const std::vector<std::string>& names) {
 
 } // namespace
 
-void ApplyPpNodeServiceEnvOverlays(AppConfig& config, const std::vector<std::string>& known) {
+void ApplyPpNodeServiceEnvOverlays(NodeConfig& config, const std::vector<std::string>& known) {
   for (const std::string& service : known) {
     if (service == "ledger") {
       continue;
@@ -48,7 +48,7 @@ void ApplyPpNodeServiceEnvOverlays(AppConfig& config, const std::vector<std::str
   }
 }
 
-Roe<std::vector<std::string>> CheckPpNodeServiceAsks(const AppConfig& config, const std::vector<std::string>& built,
+Roe<std::vector<std::string>> CheckPpNodeServiceAsks(const NodeConfig& config, const std::vector<std::string>& built,
                                                      const std::vector<std::string>& known) {
   std::vector<std::string> ignored;
   for (const std::string& service : known) {

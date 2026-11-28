@@ -547,7 +547,7 @@ int main(int argc, char** argv) {
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[++i];
     } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
-      ++i; // Config::Load reads --config from argv
+      ++i; // LoadNodeConfig reads --config from argv
     } else {
       std::cerr << "Unknown argument: " << argv[i] << "\n";
       PrintUsage(argv[0]);

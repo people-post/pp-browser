@@ -146,7 +146,7 @@ void DefaultNodeRegistrationRelayId(ServiceEndpointConfig& registration, const s
   }
 }
 
-void ApplyPpNodeConfigEnvOverlays(AppConfig& config) {
+void ApplyPpNodeConfigEnvOverlays(NodeConfig& config) {
   if (const char* data_dir = EnvOrNull("PP_NODE_DATA_DIR")) {
     config.data_dir = data_dir;
   }
