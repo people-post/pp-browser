@@ -56,6 +56,9 @@ std::vector<std::function<void()>> Snapshot(const std::vector<Listener>& listene
   return out;
 }
 
+/** Each return from the background; a posted run of the foreground listeners that is no longer the newest does nothing. */
+std::atomic<uint64_t> g_foreground_generation{0};
+
 /** Set whenever the user's attention goes (background, minimized, focus lost); cleared by the notice that it is back. */
 std::atomic<bool> g_attention_lost{false};
 
@@ -297,11 +300,23 @@ void AppLifecycle::OnDidEnterForeground() {
   if (!was_background) {
     return;
   }
-  for (const auto& listener : Snapshot(g_foreground_listeners)) {
-    listener();
-  }
-  logger().info << "Entering foreground";
-  NotifyAttentive();
+  // #816: on iOS and Android this runs inside SDL's event watch (AppLifecycleWatch), holding SDL's watch lock. The
+  // listeners reach into the mesh (the UDP socket check, warming the open chat's link), which waits for the mesh's io
+  // lock, while the mesh pump, holding that lock, may be posting to the UI, which needs SDL's watch lock: a deadlock the
+  // watchdog ends. So they run on the next UI turn, outside SDL's lock. Nothing in them must happen before this returns.
+  // A return to the background before then skips them; the next foreground runs them again.
+  const uint64_t generation = g_foreground_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+  AppRuntime::PostUI([generation]() {
+    if (g_foreground_generation.load(std::memory_order_acquire) != generation ||
+        g_state.load() != AppLifecycleState::Foreground) {
+      return;
+    }
+    for (const auto& listener : Snapshot(g_foreground_listeners)) {
+      listener();
+    }
+    logger().info << "Entering foreground";
+    NotifyAttentive();
+  });
 }
 
 void AppLifecycle::OnLowMemory() {

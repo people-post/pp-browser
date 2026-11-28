@@ -75,10 +75,16 @@ public:
   static void OnWillEnterBackground();
   /** Mobile: the app went to the background proper (not just an overlay): IsVisible() turns false. */
   static void OnDidEnterBackground();
+  /**
+   * Back from the background: the state and IsVisible() change at once; the foreground listeners (and the attentive
+   * notice) run on the next UI turn, never inside the platform's lifecycle callback (#816).
+   */
   static void OnDidEnterForeground();
   static void OnLowMemory();
 
+  /** Called synchronously, inside the platform's lifecycle callback: only quick work that takes no mesh lock (#816). */
   static ListenerId AddBackgroundListener(std::function<void()> listener);
+  /** Called on the UI thread on the turn after a return from the background (OnDidEnterForeground). */
   static ListenerId AddForegroundListener(std::function<void()> listener);
   /**
    * The user may be looking at the app again: the phone came to the foreground, a desktop window was restored or
