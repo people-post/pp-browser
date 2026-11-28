@@ -1,7 +1,7 @@
 // The relay half of a locker write (multi-device M023 s3): what the relay verifies.
 #include "lib/net/HttpLockerClient.h"
 
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include "lib/net/testing/FakeRelaySigner.h"

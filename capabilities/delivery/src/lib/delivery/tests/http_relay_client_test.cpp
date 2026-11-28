@@ -2,7 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "common/chat/MessagingJson.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/testing/TypedBlobFakes.h"
 #include "lib/net/testing/FakeRelaySigner.h"

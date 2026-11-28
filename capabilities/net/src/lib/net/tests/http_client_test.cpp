@@ -1,5 +1,5 @@
 #include "common/PlatformLimits.h"
-#include "common/tests/LocalHttpServer.h"
+#include "foundation/sockets/testing/LocalHttpServer.h"
 #include "lib/net/HttpClient.h"
 
 #include <gtest/gtest.h>

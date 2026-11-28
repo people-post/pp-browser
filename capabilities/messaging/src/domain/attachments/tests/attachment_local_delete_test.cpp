@@ -4,7 +4,7 @@
 
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "common/tests/TeardownLikeTheApp.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/delivery/ChatPayloadCodec.h"

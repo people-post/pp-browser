@@ -1,7 +1,7 @@
 #include "lib/delivery/BackendClientSet.h"
 
 #include "common/ValueJson.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "lib/net/testing/TestRelayCertificates.h"
 
 #include "lib/net/testing/FakeRelaySigner.h"

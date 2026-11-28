@@ -1,7 +1,7 @@
 // This device's push binding on one relay (multi-relay MR007 item 5): an unregister names the binding the last register
 // made, so a late one leaves a newer binding alone.
 #include "common/ValueJson.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/RelayAudience.h"

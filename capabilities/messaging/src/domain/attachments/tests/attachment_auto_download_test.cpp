@@ -6,7 +6,7 @@
 #include "common/Utilities.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/runtime/AppRuntime.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/AttachmentCache.h"

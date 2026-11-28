@@ -3,7 +3,7 @@
 #include "domain/attachments/LargeTransferLane.h"
 
 #include "common/chat/MessagingLimits.h"
-#include "common/tests/LocalHttpServer.h"
+#include "foundation/sockets/testing/LocalHttpServer.h"
 #include "common/Utilities.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/runtime/AppRuntime.h"

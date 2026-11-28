@@ -1,4 +1,4 @@
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "lib/net/HttpClient.h"
 
