@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/data/Config.h"
+#include "app/node/NodeConfig.h"
 
 #include <optional>
 #include <string>
@@ -35,7 +35,7 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   (PP_NODE_IDENTITY_SEED is applied in NodeBootstrap, not here)
  * NodeBootstrap then defaults the registration relay's id (DefaultNodeRegistrationRelayId).
  */
-void ApplyPpNodeConfigEnvOverlays(AppConfig& config);
+void ApplyPpNodeConfigEnvOverlays(NodeConfig& config);
 
 /**
  * The relay the node registers at is expected to prove `registration.relay_id` (MR008, SIGNED_FORMATS § 3.3); empty

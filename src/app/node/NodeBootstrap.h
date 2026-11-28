@@ -3,7 +3,7 @@
 #include "common/Secret.h"
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "foundation/data/Config.h"
+#include "app/node/NodeConfig.h"
 #include "foundation/platform/os/OsDirLock.h"
 #include "lib/people/IdentityStore.h"
 #include "common/runtime/AppRuntime.h"
@@ -30,7 +30,7 @@ struct NodeBootstrapResult {
    * First, so it is released last.
    */
   std::unique_ptr<os::OsDirLock> data_lock;
-  AppConfig config;
+  NodeConfig config;
   std::string data_dir;
   std::string profile_data_dir;
   std::string profile_id;

@@ -29,8 +29,8 @@ struct EnvGuard {
   ~EnvGuard() { UnsetEnv(name.c_str()); }
 };
 
-pbr::AppConfig WithRelay(const bool enabled) {
-  pbr::AppConfig config;
+pbr::NodeConfig WithRelay(const bool enabled) {
+  pbr::NodeConfig config;
   pbr::Object relay;
   relay.set("enabled", enabled);
   relay.set("retention_days", int64_t{3});
@@ -63,7 +63,7 @@ TEST(NodeServiceAsksTest, ABuildWithTheServiceHasNothingToCheck) {
 
 TEST(NodeServiceAsksTest, TheEnvironmentAsksToo) {
   EnvGuard guard("PP_NODE_RELAY_ENABLED");
-  pbr::AppConfig config = WithRelay(false);
+  pbr::NodeConfig config = WithRelay(false);
   SetEnv("PP_NODE_RELAY_ENABLED", "yes");
   pbr::ApplyPpNodeServiceEnvOverlays(config, kKnown);
   const pbr::Object* relay = config.node.getObject("relay");
@@ -73,7 +73,7 @@ TEST(NodeServiceAsksTest, TheEnvironmentAsksToo) {
   EXPECT_FALSE(static_cast<bool>(pbr::CheckPpNodeServiceAsks(config, {"ledger"}, kKnown)));
 
   SetEnv("PP_NODE_RELAY_ENABLED", "maybe");
-  pbr::AppConfig untouched = WithRelay(false);
+  pbr::NodeConfig untouched = WithRelay(false);
   pbr::ApplyPpNodeServiceEnvOverlays(untouched, kKnown);
   EXPECT_FALSE(untouched.node.getObject("relay")->getIf<bool>("enabled").value_or(true)) << "unparsable: left";
 }
@@ -81,7 +81,7 @@ TEST(NodeServiceAsksTest, TheEnvironmentAsksToo) {
 TEST(NodeServiceAsksTest, TheLedgerIsAskedOnlyByItsRole) {
   EnvGuard guard("PP_NODE_LEDGER_ENABLED");
   SetEnv("PP_NODE_LEDGER_ENABLED", "1");
-  pbr::AppConfig config;
+  pbr::NodeConfig config;
   pbr::ApplyPpNodeServiceEnvOverlays(config, kKnown);
   EXPECT_EQ(config.node.getObject("ledger"), nullptr);
   pbr::Object ledger;

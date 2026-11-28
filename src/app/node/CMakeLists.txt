@@ -9,6 +9,7 @@ include(PpBrowserNoUiDeps)
 add_library(pp_app_node STATIC
   NodeBootstrap.cpp
   NodeCompatFloor.cpp
+  NodeConfigLoad.cpp
   NodeEnvOverlay.cpp
   NodeServiceAsks.cpp
   NodeHeartbeat.cpp
@@ -60,6 +61,7 @@ add_subdirectory(tools)
 if(PP_BROWSER_BUILD_TESTS)
   add_executable(pp_browser_pp_node_test
     tests/status_http_protocol_test.cpp
+    tests/node_config_test.cpp
     tests/node_env_overlay_test.cpp
     tests/node_service_asks_test.cpp
     tests/node_heartbeat_test.cpp
@@ -71,6 +73,7 @@ if(PP_BROWSER_BUILD_TESTS)
     NodeUpgradeNotice.cpp
     StatusHttpProtocol.cpp
     StatusHttpServer.cpp
+    NodeConfigLoad.cpp
     NodeEnvOverlay.cpp
     NodeServiceAsks.cpp
   )
@@ -80,6 +83,7 @@ if(PP_BROWSER_BUILD_TESTS)
   target_link_libraries(pp_browser_pp_node_test PRIVATE
     GTest::gtest
     GTest::gtest_main
+    pp_foundation_data
     pp_pbr_common
     pp_foundation_tls
     pp_lib_net

@@ -14,7 +14,7 @@
 
 namespace pbr {
 
-Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& identity, const std::string& nickname,
+Roe<bool> PublishOrRenewMeshNodeListing(const NodeConfig& config, IdentityStore& identity, const std::string& nickname,
                                         std::shared_ptr<IRelayAudience> audience) {
   if (!config.mesh.mesh_publish) {
     return false;
