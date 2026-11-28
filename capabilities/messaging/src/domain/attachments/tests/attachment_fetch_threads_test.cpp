@@ -140,6 +140,10 @@ protected:
   void TearDown() override {
     AppRuntime::ResumeWorkers();
     AppRuntime::Shutdown();
+    // The UI mailbox outlives the runtime and the test: run what this fixture's workflow posted while it is alive.
+    for (int i = 0; i < 100 && AppRuntime::HasPendingUITasks(); ++i) {
+      AppRuntime::RunUITasks();
+    }
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }

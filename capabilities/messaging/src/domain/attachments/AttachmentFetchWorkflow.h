@@ -77,6 +77,11 @@ public:
   void SetStoreScanForTest(std::function<uint64_t()> scan);
   /** Time source for the per-sender window (ms); tests only. */
   void SetClockForTest(std::function<int64_t()> now_ms);
+  /**
+   * Tests only: replaces the coordinator timer that wakes the drain when jobs from the account's other devices wait
+   * for the automatic limits (`wake` after `delay_ms`).
+   */
+  void SetBudgetWakeForTest(std::function<void(int64_t delay_ms, std::function<void()> wake)> schedule);
   /** Tests only: let a download use a plain-http loopback url. */
   void SetAllowLocalCdnForTest(bool allow) { allow_local_cdn_for_test_ = allow; }
   /** Tests only: with no runtime running, a peer's answer goes on inline (AttachmentFetchContext). */
@@ -252,7 +257,11 @@ private:
     bool network_dependent = false;
     /** The automatic limits were charged for it (given back when it does not start after all). */
     bool charged = false;
+    /** From another of the account's devices, over the minute's limits when queued: charged right before it starts. */
+    bool awaits_budget = false;
   };
+  /** What the automatic limits say to one more download by itself. */
+  enum class BudgetVerdict { Admitted, DiskFull, OverPace };
 
   /** Whether an attachment starts by itself now (the one rule for queueing and for StateFor). */
   enum class AutoVerdict {
@@ -298,7 +307,15 @@ private:
   /** `count` workers just claimed, each a RunGridThumbnails on the previews' own threads. */
   void PostGridWorkers(size_t count);
   /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
-  bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
+  BudgetVerdict AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length,
+                              bool all_auto_pace);
+  /** TryAutoDownloadBudget's answer with its reason. */
+  BudgetVerdict AdmitAutoDownload(const std::string& sender, uint64_t byte_length);
+  /** 1 tapped, 2 from someone else, 3 from another of the account's devices (DrainQueue starts the lowest first). */
+  int TierLocked(const Job& job) const;
+  bool IsForced(const std::string& key) const;
+  /** One wake of the drain when the automatic limits' window has moved on (own devices' jobs waiting for it). */
+  void ScheduleBudgetWake();
   ByteVector CopyDekUnlocked() const;
   /** The workflow's clock (ms): SetClockForTest's, else a steady clock. The test clock must not take mutex_. */
   int64_t NowMsLocked() const;
@@ -374,6 +391,12 @@ private:
   int64_t scanned_at_ms_ = 0;
   uint64_t started_since_scan_bytes_ = 0;
   bool draining_ = false;
+  /** Under mutex_: others' jobs started since the last one from the account's other devices (the floor). */
+  int others_since_own_ = 0;
+  /** Under mutex_: a budget wake is set (one at a time); its coordinator timer (0: none, or the test's). */
+  bool budget_wake_pending_ = false;
+  uint64_t budget_wake_timer_ = 0;
+  std::function<void(int64_t, std::function<void()>)> budget_wake_for_test_;
   /** Under mutex_: hex of the hashes a DeleteLocalAttachments is deleting. */
   std::unordered_set<std::string> deleting_;
   /** Under mutex_: downloads asked for while their hash was being deleted, run once it is done. */

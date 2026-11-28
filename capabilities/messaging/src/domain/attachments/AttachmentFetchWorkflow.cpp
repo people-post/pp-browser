@@ -16,6 +16,7 @@
 #include "lib/voice/AudioFileTags.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/thread/ThreadRecordTypes.h"
 #include "common/ImageMetadata.h"
 
 #include <sodium.h>
@@ -24,6 +25,7 @@
 #include <chrono>
 #include <filesystem>
 #include <unordered_set>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -32,6 +34,10 @@ namespace {
 constexpr size_t kMaxGridThumbnailJobs = 2;
 /** Progress notifications (each redraws the chat) at least this far apart; state changes are not held back. */
 constexpr int64_t kProgressNotifyGapMs = 250;
+/** Of the others' files started, at most this many in a row while one from the account's other devices waits. */
+constexpr int kOthersBeforeOwnFloor = 3;
+/** AutoDownloadBudget's window (AttachmentLimits.cpp): a start counts against its sender for this long. */
+constexpr int64_t kAutoDownloadBudgetWindowMs = 60 * 1000;
 
 /** Content hashes a message refers to (attachment, AI image). */
 std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
@@ -47,6 +53,7 @@ namespace pbr {
 
 AttachmentFetchWorkflow::~AttachmentFetchWorkflow() {
   std::unique_ptr<WorkerPool> pool;
+  uint64_t budget_timer = 0;
   {
     std::unique_lock lock(mutex_);
     previews_stopped_ = true; // a worker's loop ends before its next job; nothing more is claimed
@@ -56,6 +63,10 @@ AttachmentFetchWorkflow::~AttachmentFetchWorkflow() {
     // not started yet still starts and ends at once. Only the workers' own threads touch this workflow from here.
     delete_cv_.wait(lock, [this] { return grid_running_ == 0; });
     pool = std::move(preview_pool_);
+    budget_timer = std::exchange(budget_wake_timer_, 0);
+  }
+  if (budget_timer != 0) {
+    AppRuntime::CancelCoordinatorTimer(budget_timer);
   }
   if (pool) {
     pool->Shutdown(); // every task has returned: the idle threads are joined
@@ -172,8 +183,10 @@ uint64_t ScanAttachmentStoreBytes(const std::string& profile_dir, const CasStore
 
 } // namespace
 
-bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender,
-                                            const uint64_t byte_length, const bool all_auto_pace) {
+AttachmentFetchWorkflow::BudgetVerdict AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget,
+                                                                              const std::string& sender,
+                                                                              const uint64_t byte_length,
+                                                                              const bool all_auto_pace) {
   AttachmentLimits limits;
   std::function<uint64_t()> provider;
   std::function<int64_t()> clock;
@@ -214,19 +227,20 @@ bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const st
   const uint64_t disk_cap = byte_length > kMaxDirectAttachmentBytes ? limits.auto_download_disk_cap_bytes
                                                                     : limits.auto_download_small_disk_cap_bytes;
   if (used >= disk_cap) {
-    return false;
+    return BudgetVerdict::DiskFull;
   }
   const uint64_t max_bytes =
       all_auto_pace ? limits.auto_download_all_max_bytes_per_minute : limits.auto_download_max_bytes_per_minute;
   if (!budget.TryAcquire(sender, byte_length, now_ms, limits.auto_download_max_count_per_minute, max_bytes)) {
-    return false;
+    return BudgetVerdict::OverPace;
   }
   std::lock_guard lock(mutex_);
   started_since_scan_bytes_ += byte_length;
-  return true;
+  return BudgetVerdict::Admitted;
 }
 
-bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, const uint64_t byte_length) {
+AttachmentFetchWorkflow::BudgetVerdict AttachmentFetchWorkflow::AdmitAutoDownload(const std::string& sender,
+                                                                                  const uint64_t byte_length) {
   bool all_auto_pace = false;
   {
     std::lock_guard lock(mutex_);
@@ -235,8 +249,12 @@ bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, c
   return AdmitByBudget(budget_, sender, byte_length, all_auto_pace);
 }
 
+bool AttachmentFetchWorkflow::TryAutoDownloadBudget(const std::string& sender, const uint64_t byte_length) {
+  return AdmitAutoDownload(sender, byte_length) == BudgetVerdict::Admitted;
+}
+
 bool AttachmentFetchWorkflow::TryAcceptDirectPush(const std::string& sender, const uint64_t ciphertext_bytes) {
-  return AdmitByBudget(push_budget_, sender, ciphertext_bytes, /*all_auto_pace=*/false);
+  return AdmitByBudget(push_budget_, sender, ciphertext_bytes, /*all_auto_pace=*/false) == BudgetVerdict::Admitted;
 }
 
 void AttachmentFetchWorkflow::RefundBudget(const Job& job) {
@@ -436,6 +454,7 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
   }
   job.network_dependent = false;
   job.charged = false;
+  job.awaits_budget = false;
   if (!force) {
     const AutoVerdict verdict = AutoVerdictFor(job.fields);
     if (verdict == AutoVerdict::No) {
@@ -466,9 +485,16 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
       already_throttled = throttled_.contains(key);
     }
     // A sender over the automatic limits (or a full store) leaves the file as a "Download" row. A job waiting for
-    // the network to be known is charged when it is judged, right before it starts.
-    if (already_throttled ||
-        (verdict != AutoVerdict::NetworkUnknown && !TryAutoDownloadBudget(job.sender, job.fields.byte_length))) {
+    // the network to be known is charged when it is judged, right before it starts. A file from another of the
+    // account's devices over the minute's limits waits queued instead and is charged when the minute allows (B248:
+    // downloaded slowly in the background, after the others' files); a full store stops it as any other.
+    BudgetVerdict admit = BudgetVerdict::Admitted;
+    if (!already_throttled && verdict != AutoVerdict::NetworkUnknown) {
+      admit = AdmitAutoDownload(job.sender, job.fields.byte_length);
+    }
+    if (admit == BudgetVerdict::OverPace && !already_throttled && job.sender == kLocalSelfContactId) {
+      job.awaits_budget = true;
+    } else if (already_throttled || admit != BudgetVerdict::Admitted) {
       {
         std::lock_guard lock(mutex_);
         throttled_.insert(key);
@@ -476,7 +502,7 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
       MarkPending(key);
       return;
     }
-    job.charged = verdict != AutoVerdict::NetworkUnknown;
+    job.charged = verdict != AutoVerdict::NetworkUnknown && !job.awaits_budget;
   }
 
   bool should_start = false;
@@ -511,91 +537,153 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
   }
 }
 
+int AttachmentFetchWorkflow::TierLocked(const Job& job) const {
+  if (forced_.contains(JobKey(job))) {
+    return 1; // tapped
+  }
+  return job.sender == kLocalSelfContactId ? 3 : 2; // from another of the account's devices : from someone else
+}
+
 void AttachmentFetchWorkflow::DrainQueue() {
-  std::optional<Job> next;
-  bool next_rejudged = false;
-  std::vector<Job> held_back;
-  {
-    std::lock_guard lock(mutex_);
-    // The first job that may start now. One that depends on the network is judged again here (unless a tap forced
-    // it): the network may have changed since it was queued; one waiting for the network to be known stays queued.
-    for (auto it = queue_.begin(); it != queue_.end();) {
-      const AutoVerdict verdict = RejudgeLocked(*it) ? AutoVerdictLocked(it->fields) : AutoVerdict::Yes;
-      if (verdict == AutoVerdict::NetworkUnknown) {
+  // This pass: jobs from the account's other devices that wait for the automatic limits are skipped (the minute's
+  // count or bytes are spent); a wake is set for when the window has moved on.
+  bool own_over_budget = false;
+  for (;;) {
+    std::optional<Job> candidate;
+    bool candidate_rejudged = false;
+    std::vector<Job> held_back;
+    {
+      std::lock_guard lock(mutex_);
+      // Every queued job that depends on the network is judged again here (unless a tap forced it): the network may
+      // have changed since it was queued. One that may not start now becomes a Download row; one waiting for the
+      // network to be known stays queued, not judged.
+      std::optional<size_t> first_of_tier[4];
+      for (auto it = queue_.begin(); it != queue_.end();) {
+        const AutoVerdict verdict = RejudgeLocked(*it) ? AutoVerdictLocked(it->fields) : AutoVerdict::Yes;
+        if (verdict == AutoVerdict::NetworkUnknown) {
+          ++it;
+          continue;
+        }
+        if (verdict != AutoVerdict::Yes && verdict != AutoVerdict::YesOnThisNetwork) {
+          held_back.push_back(*it);
+          HoldBackLocked(std::move(*it), verdict);
+          it = queue_.erase(it);
+          continue;
+        }
+        const int tier = TierLocked(*it);
+        // A tier-3 job not charged yet needs the limits when it starts: skipped while they are spent this pass.
+        if (!(own_over_budget && tier == 3 && !it->charged) && !first_of_tier[tier]) {
+          first_of_tier[tier] = static_cast<size_t>(it - queue_.begin());
+        }
         ++it;
+      }
+      // Tapped first; then others' files, first come first served; the own devices' after them, but one of theirs
+      // after every kOthersBeforeOwnFloor of the others' so they are never starved; back to back when no other waits.
+      std::optional<size_t> pick = first_of_tier[1];
+      if (!pick && first_of_tier[3] && others_since_own_ >= kOthersBeforeOwnFloor) {
+        pick = first_of_tier[3];
+      }
+      if (!pick) {
+        pick = first_of_tier[2] ? first_of_tier[2] : first_of_tier[3];
+      }
+      if (pick) {
+        candidate = queue_[*pick]; // stays queued until it starts: a repeat look sees it, a cancel removes it
+        candidate_rejudged = RejudgeLocked(*candidate);
+      } else {
+        draining_ = false;
+      }
+    }
+    for (const Job& job : held_back) {
+      RefundBudget(job);
+    }
+    if (!held_back.empty()) {
+      NotifyChanged();
+    }
+    if (!candidate) {
+      if (own_over_budget) {
+        ScheduleBudgetWake();
+      }
+      return;
+    }
+    Job job = std::move(*candidate);
+    const std::string key = JobKey(job);
+    bool charged_now = false;
+    if (!job.charged && (candidate_rejudged || (job.awaits_budget && !IsForced(key)))) {
+      // Queued before any network was known (judged only now), or from another of the account's devices while its
+      // minute was spent: the automatic limits apply now.
+      const BudgetVerdict admit = AdmitAutoDownload(job.sender, job.fields.byte_length);
+      if (admit == BudgetVerdict::OverPace && job.sender == kLocalSelfContactId) {
+        own_over_budget = true; // it waits queued (not a Download row): started when the minute allows
         continue;
       }
-      if (verdict == AutoVerdict::Yes || verdict == AutoVerdict::YesOnThisNetwork) {
-        next = std::move(*it);
-        queue_.erase(it);
-        break;
+      if (admit != BudgetVerdict::Admitted) {
+        {
+          std::lock_guard lock(mutex_);
+          std::erase_if(queue_, [&](const Job& queued) { return JobKey(queued) == key; });
+          throttled_.insert(key);
+        }
+        MarkPending(key);
+        continue;
       }
-      held_back.push_back(*it);
-      HoldBackLocked(std::move(*it), verdict);
-      it = queue_.erase(it);
+      job.charged = true;
+      job.awaits_budget = false;
+      charged_now = true;
     }
-    if (next) {
-      active_.insert(JobKey(*next));
-      next_rejudged = RejudgeLocked(*next);
-    } else {
-      draining_ = false;
-    }
-  }
-  for (const Job& job : held_back) {
-    RefundBudget(job);
-  }
-  if (!held_back.empty()) {
-    NotifyChanged();
-  }
-  if (!next) {
-    return;
-  }
-  Job job = std::move(*next);
-  if (next_rejudged && !job.charged) {
-    // Queued before any network was known, judged only now: the automatic limits apply now.
-    if (!TryAutoDownloadBudget(job.sender, job.fields.byte_length)) {
-      const std::string key = JobKey(job);
-      {
-        std::lock_guard lock(mutex_);
-        active_.erase(key);
-        throttled_.insert(key);
+    bool started = false;
+    {
+      std::lock_guard lock(mutex_);
+      const auto queued =
+          std::find_if(queue_.begin(), queue_.end(), [&](const Job& item) { return JobKey(item) == key; });
+      if (queued != queue_.end()) {
+        queue_.erase(queued);
+        active_.insert(key);
+        started = true;
+        const int tier = TierLocked(job);
+        if (tier == 2) {
+          ++others_since_own_;
+        } else if (tier == 3) {
+          others_since_own_ = 0;
+        }
       }
-      MarkPending(key);
+    }
+    if (!started) {
+      if (charged_now) {
+        RefundBudget(job); // cancelled (message deleted) while the limits were asked
+      }
+      continue;
+    }
+    if (lane_ && job.fields.byte_length > kMaxDirectAttachmentBytes) {
+      // A large download goes to its own lane (one at a time) and the drain goes on with the small ones: the
+      // queue is not held for minutes by one big file.
+      lane_->Post(LargeTransferLane::Direction::Download, [this, job = std::move(job)]() mutable {
+        // It may have waited behind another large file: judged again now, unless a tap forced it meanwhile (a running
+        // one is never stopped).
+        bool start = true;
+        {
+          std::lock_guard lock(mutex_);
+          const std::string key = JobKey(job);
+          if (active_.contains(key) && RejudgeLocked(job)) {
+            const AutoVerdict verdict = AutoVerdictLocked(job.fields);
+            if (verdict != AutoVerdict::Yes && verdict != AutoVerdict::YesOnThisNetwork) {
+              start = false;
+              active_.erase(key);
+              HoldBackLocked(job, verdict);
+            }
+          }
+        }
+        if (!start) {
+          RefundBudget(job);
+          NotifyChanged();
+          return;
+        }
+        RunJobAsync(std::move(job), []() {});
+      });
       ContinueDrainOnWorker();
       return;
     }
-    job.charged = true;
-  }
-  if (lane_ && job.fields.byte_length > kMaxDirectAttachmentBytes) {
-    // A large download goes to its own lane (one at a time) and the drain goes on with the small ones: the
-    // queue is not held for minutes by one big file.
-    lane_->Post(LargeTransferLane::Direction::Download, [this, job = std::move(job)]() mutable {
-      // It may have waited behind another large file: judged again now, unless a tap forced it meanwhile (a running
-      // one is never stopped).
-      bool start = true;
-      {
-        std::lock_guard lock(mutex_);
-        const std::string key = JobKey(job);
-        if (active_.contains(key) && RejudgeLocked(job)) {
-          const AutoVerdict verdict = AutoVerdictLocked(job.fields);
-          if (verdict != AutoVerdict::Yes && verdict != AutoVerdict::YesOnThisNetwork) {
-            start = false;
-            active_.erase(key);
-            HoldBackLocked(job, verdict);
-          }
-        }
-      }
-      if (!start) {
-        RefundBudget(job);
-        NotifyChanged();
-        return;
-      }
-      RunJobAsync(std::move(job), []() {});
-    });
-    ContinueDrainOnWorker();
+    RunJobAsync(std::move(job), [this]() { ContinueDrainOnWorker(); });
     return;
   }
-  RunJobAsync(std::move(job), [this]() { ContinueDrainOnWorker(); });
 }
 
 void AttachmentFetchWorkflow::ContinueDrainOnWorker() {
@@ -607,6 +695,50 @@ void AttachmentFetchWorkflow::ContinueDrainOnWorker() {
   // and the next job's server download would run on it. The queue starts again with the next enqueue or kick.
   std::lock_guard lock(mutex_);
   draining_ = false;
+}
+
+bool AttachmentFetchWorkflow::IsForced(const std::string& key) const {
+  std::lock_guard lock(mutex_);
+  return forced_.contains(key);
+}
+
+void AttachmentFetchWorkflow::ScheduleBudgetWake() {
+  std::function<void(int64_t, std::function<void()>)> schedule;
+  {
+    std::lock_guard lock(mutex_);
+    if (budget_wake_pending_) {
+      return;
+    }
+    budget_wake_pending_ = true;
+    schedule = budget_wake_for_test_;
+  }
+  // The automatic limits count one minute back from now: a minute on, at least the oldest start has left the window.
+  auto wake = [this]() {
+    {
+      std::lock_guard lock(mutex_);
+      budget_wake_pending_ = false;
+      budget_wake_timer_ = 0;
+    }
+    KickDrain();
+  };
+  if (schedule) {
+    schedule(kAutoDownloadBudgetWindowMs, std::move(wake));
+    return;
+  }
+  const uint64_t timer =
+      AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kAutoDownloadBudgetWindowMs), std::move(wake));
+  std::lock_guard lock(mutex_);
+  if (timer == 0) {
+    budget_wake_pending_ = false; // no runtime: none was set (the next enqueue or kick drains again)
+    return;
+  }
+  budget_wake_timer_ = timer;
+}
+
+void AttachmentFetchWorkflow::SetBudgetWakeForTest(
+    std::function<void(int64_t delay_ms, std::function<void()> wake)> schedule) {
+  std::lock_guard lock(mutex_);
+  budget_wake_for_test_ = std::move(schedule);
 }
 
 void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done) {

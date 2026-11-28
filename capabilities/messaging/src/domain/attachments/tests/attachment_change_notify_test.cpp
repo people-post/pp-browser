@@ -38,7 +38,6 @@ class ChangeNotifyTest : public ::testing::Test {
 protected:
   void SetUp() override {
     AppRuntime::Initialize();
-    AppRuntime::RunUITasks();
     dir_ = std::filesystem::temp_directory_path() / ("pp_change_notify_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     workflow_.SetProfileDataDir(dir_.string());
@@ -56,6 +55,10 @@ protected:
   void TearDown() override {
     AppRuntime::ResumeWorkers();
     AppRuntime::Shutdown();
+    // The UI mailbox outlives the runtime and the test: run what this fixture's workflow posted while it is alive.
+    for (int i = 0; i < 100 && AppRuntime::HasPendingUITasks(); ++i) {
+      AppRuntime::RunUITasks();
+    }
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }
@@ -136,10 +139,13 @@ TEST_F(ChangeNotifyTest, AHundredProgressStepsInOneSecondAreFourNotificationsPlu
   EXPECT_EQ(workflow_.ProgressPercent("t1", fields.content_hash), 100) << "a refresh shows the latest percent";
 
   AppRuntime::ResumeWorkers();
+  // The state turns Ready a moment before its notification is posted: wait for the notification itself.
   ASSERT_TRUE(WaitFor([&] {
     RunUI();
-    return workflow_.StateFor("t1", fields) == State::Ready;
+    return changed_.load() >= 5;
   }));
+  EXPECT_EQ(workflow_.StateFor("t1", fields), State::Ready);
+  AppRuntime::Shutdown(); // nothing else can post
   RunUI();
   EXPECT_EQ(changed_.load(), 5);
 }
