@@ -125,8 +125,11 @@ struct MessagingShellPortsDeps {
   std::function<MeshTrafficTotals()> traffic_totals;
 };
 
-/** Mesh traffic totals from a (possibly null) mesh host. */
-MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh);
+/**
+ * Mesh traffic totals from a (possibly null) mesh host; `links` is the link count the io lane published
+ * (ConversationsHub::MeshLinkCount). Takes no io lock: the status bar may call it inside SDL's event watch (#816).
+ */
+MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh, size_t links);
 
 /** Collect circuit + media relay serving stats from a (possibly null) mesh host. */
 mesh::RelayRuntimeStats CollectRelayRuntimeStats(mesh::MeshHost* mesh);

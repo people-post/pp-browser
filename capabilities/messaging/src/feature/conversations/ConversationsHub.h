@@ -606,6 +606,12 @@ public:
   mesh::MeshHost* Mesh() { return mesh_; }
   const mesh::MeshHost* Mesh() const { return mesh_; }
   /**
+   * The mesh's link count as the io lane last published it (once a second, desktop: the status bar's traffic popover).
+   * Never takes the io lock: the status bar is drawn inside SDL's event watch during a live resize, where waiting for
+   * it can deadlock against the pump posting to the UI (#816). 0 before the mesh is up.
+   */
+  size_t MeshLinkCount() const { return mesh_link_count_->load(std::memory_order_relaxed); }
+  /**
    * Who builds the mesh for the profile's role and frees it (ProductStack's ProductMesh); set before
    * Initialize, outlives the hub's Shutdown. None: no mesh, relay messaging only.
    */
@@ -1127,6 +1133,12 @@ private:
   uint64_t lifecycle_foreground_id_ = 0;
   bool mesh_ready_ = false;
   std::atomic<bool> mesh_bringup_scheduled_{false};
+  /** MeshLinkCount(): written by an io tick on the lane (StartMeshLinkCountTick), read from any thread. */
+  std::shared_ptr<std::atomic<size_t>> mesh_link_count_ = std::make_shared<std::atomic<size_t>>(0);
+  /** That tick's id on the running mesh's runtime (0: none). */
+  std::atomic<uint64_t> mesh_link_count_tick_{0};
+  void StartMeshLinkCountTick();
+  void StopMeshLinkCountTick();
   std::atomic<bool> shutdown_requested_{false};
   /** What a restore brought back, until messaging is up to apply it. */
   struct PendingRestore {

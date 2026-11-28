@@ -1061,7 +1061,30 @@ void ConversationsHub::SyncStayReachable() {
   }
 }
 
+void ConversationsHub::StartMeshLinkCountTick() {
+  // Desktop only: the status bar is the one reader, and a phone's idle pump should not wake once a second for it.
+  if (host_.mobile || !mesh_ || !mesh_->Amp() || mesh_link_count_tick_.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+  auto& runtime = mesh_->Amp()->Runtime();
+  // Runs on the lane (the io lock is held there): the count is published, never read under the lock from the UI.
+  const uint64_t id = runtime.AddIoDueTick([&runtime, count = mesh_link_count_]() {
+    count->store(runtime.Links().CountLinks(), std::memory_order_relaxed);
+    return std::chrono::milliseconds(1000);
+  });
+  mesh_link_count_tick_.store(id, std::memory_order_release);
+}
+
+void ConversationsHub::StopMeshLinkCountTick() {
+  const uint64_t id = mesh_link_count_tick_.exchange(0, std::memory_order_acq_rel);
+  if (id != 0 && mesh_ && mesh_->Amp()) {
+    mesh_->Amp()->Runtime().RemoveIoTick(id);
+  }
+  mesh_link_count_->store(0, std::memory_order_relaxed);
+}
+
 void ConversationsHub::StopMesh() {
+  StopMeshLinkCountTick(); // before the runtime goes with the mesh
   if (mesh_owner_) {
     mesh_owner_->StayReachable(false);
   }
@@ -1975,6 +1998,7 @@ void ConversationsHub::ScheduleMeshBringUp() {
       log().warning << "async mesh host start failed: " << mesh_start.error().message
                     << " (direct P2P unavailable; relay messaging may still work)";
     }
+    StartMeshLinkCountTick();
     if (shutdown_requested_.load(std::memory_order_acquire)) {
       return;
     }
