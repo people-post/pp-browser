@@ -30,6 +30,8 @@ namespace {
 
 /** Storage-grid thumbnails and chat previews made at once (one limit for both). */
 constexpr size_t kMaxGridThumbnailJobs = 2;
+/** Progress notifications (each redraws the chat) at least this far apart; state changes are not held back. */
+constexpr int64_t kProgressNotifyGapMs = 250;
 
 /** Content hashes a message refers to (attachment, AI image). */
 std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
@@ -749,15 +751,30 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
       });
 }
 
+int64_t AttachmentFetchWorkflow::NowMsLocked() const {
+  return clock_ ? clock_() : SteadyNowMs();
+}
+
 void AttachmentFetchWorkflow::SetProgress(const std::string& key, const int percent) {
   {
     std::lock_guard lock(mutex_);
-    // Every change redraws the chat; a large download would ask for a hundred. Five points at a time, and the end.
-    auto& shown = progress_[key];
-    if (shown == percent || (percent < 100 && percent - shown < 5)) {
+    auto& progress = progress_[key];
+    if (progress.latest == percent) {
       return;
     }
-    shown = percent;
+    progress.latest = percent; // a refresh for any reason shows it
+    // Every notification redraws the whole chat: one only at least five points on from the last told (the end at
+    // once), and progress of all downloads together at most every kProgressNotifyGapMs. A step held back is told by
+    // the next one after the gap; the last one by the end's state change, which is never held back.
+    if (percent < 100 && percent - progress.told < 5) {
+      return;
+    }
+    const int64_t now_ms = NowMsLocked();
+    if (last_progress_notify_ms_ && now_ms - *last_progress_notify_ms_ < kProgressNotifyGapMs) {
+      return;
+    }
+    last_progress_notify_ms_ = now_ms;
+    progress.told = percent;
   }
   NotifyChanged();
 }
@@ -766,7 +783,7 @@ int AttachmentFetchWorkflow::ProgressPercent(const std::string& thread_id,
                                              const std::vector<uint8_t>& content_hash) const {
   std::lock_guard lock(mutex_);
   const auto found = progress_.find(JobKey(thread_id, content_hash));
-  return found == progress_.end() ? -1 : found->second;
+  return found == progress_.end() ? -1 : found->second.latest;
 }
 
 void AttachmentFetchWorkflow::MarkFailed(const std::string& key) {
@@ -818,7 +835,12 @@ void AttachmentFetchWorkflow::NotifyChanged() {
   if (!on_changed_) {
     return;
   }
-  AppRuntime::PostUI([cb = on_changed_]() {
+  // One waits on the UI thread already: it reads the state when it runs, this change included.
+  if (change_posted_->exchange(true)) {
+    return;
+  }
+  AppRuntime::PostUI([cb = on_changed_, posted = change_posted_]() {
+    posted->store(false); // first: a change while the callback reads the state posts one more
     if (cb) {
       cb();
     }

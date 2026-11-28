@@ -18,6 +18,7 @@
 #include "common/Error.h"
 #include "common/WorkerPool.h"
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -299,6 +300,8 @@ private:
   /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
   bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
   ByteVector CopyDekUnlocked() const;
+  /** The workflow's clock (ms): SetClockForTest's, else a steady clock. The test clock must not take mutex_. */
+  int64_t NowMsLocked() const;
   struct GridThumbnailJob {
     std::string thread_id;
     std::vector<uint8_t> content_hash;
@@ -343,7 +346,21 @@ private:
   std::unordered_map<std::string, Job> waiting_for_network_;
   /** Jobs a tap asked for (queued, in the lane or running): started whatever the network; gone when they finish. */
   std::unordered_set<std::string> forced_;
-  std::unordered_map<std::string, int> progress_;
+  struct Progress {
+    /** What a refresh shows. */
+    int latest = 0;
+    /** The percent the last progress notification was for. */
+    int told = 0;
+  };
+  std::unordered_map<std::string, Progress> progress_;
+  /** Under mutex_: when the last progress notification was posted (the workflow's clock); none yet. */
+  std::optional<int64_t> last_progress_notify_ms_;
+  /**
+   * A change notification is waiting on the UI thread: set when one is posted, cleared when that task starts (before
+   * the callback reads the state), so a burst is one refresh and a change during the refresh brings one more. Shared
+   * with the posted task, which may run after the workflow is gone.
+   */
+  std::shared_ptr<std::atomic<bool>> change_posted_ = std::make_shared<std::atomic<bool>>(false);
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;
   bool run_peer_answer_inline_for_test_ = false;
