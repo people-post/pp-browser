@@ -132,8 +132,8 @@ Full GUI is the wrong default stress vehicle. Prefer thin clients / in-process c
 | Gate | Contents |
 |------|----------|
 | **Every PR** | Tier A + stable Tier B compose set (below) + pp-node L0 if image/packaging touched; a capability folder's unit tests (`capability:<name>`) only when the PR touches it or what is below it ([SRC_LAYOUT § Capability folders](../architecture/SRC_LAYOUT.md#capability-folders)) |
-| **Every merge to main** | Lab smoke — the app lab's `smoke` scenarios on a CodeBuild runner, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
-| **Nightly** | The app lab — `--suite app` and `--suite app-nat` on main ([§ Lab nightly](#lab-nightly)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
+| **Every merge to main** | Build CI's lint, the Ubuntu build with every test and the Linux package (`build.yml`; the other platforms wait for the nightly); lab smoke — the app lab's `smoke` scenarios on a CodeBuild runner, after the merge; blocks nothing ([§ Lab smoke](#lab-smoke)) |
+| **Nightly** | Build CI on main, every platform: Windows, macOS, iOS, Android, calls alone, the node editions (`build.yml`'s schedule, 09:41 UTC, skipped when main has not moved since the last nightly that passed; a failure opens or updates the issue "Nightly build fails on main", the next pass closes it). The app lab — `--suite app` and `--suite app-nat` on main ([§ Lab nightly](#lab-nightly)); later: heavier soak, L1, L2 `N-FANOUT` when stable, modest capacity (small N), `--suite mix` |
 | **Weekly / pre-release** | `N-SOAK`, `N-CHAOS`, larger `N-CAP-*`, `B-CALL-HOP` on compose |
 | **Manual dogfood** | Real phones, NAT, UPnP — never the only gate |
 

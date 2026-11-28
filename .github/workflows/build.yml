@@ -23,8 +23,13 @@ on:
     # batches; the integration branch's push builds each batch once (CI time is short).
     branches: [main, 'release/**']
   # The backport bot (backport.yml) runs this on its backport/* branch: a PR it opens with the workflow token starts
-  # no pull_request run. A dispatch runs everything, as a push does.
+  # no pull_request run. A dispatch runs everything, as a release branch's push does.
   workflow_dispatch:
+  # Every platform on main once a night (Hongwei 2026-11-28): a push to main builds Ubuntu only, the slow platforms
+  # (Windows, macOS, the phones, the node editions, calls alone) run here — skipped when main has not moved since the
+  # last nightly that passed. A failing nightly opens an issue (nightly-report, at the end).
+  schedule:
+    - cron: '41 9 * * *' # 09:41 UTC, past 1 a.m. in California; the lab nightly is 07:17
 
 # PB-060: read only. paths-filter lists a PR's files through the API; nothing here writes.
 permissions:
@@ -36,13 +41,44 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Which jobs a PR needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
-  # Drafts run nothing; marking "ready for review" runs the set below. Pushes, dispatches and PRs to a release branch
-  # run everything.
-  changes:
+  # The nightly run builds main unless it is where the last nightly that passed built it.
+  nightly:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: read
     outputs:
+      run: ${{ steps.moved.outputs.run }}
+    steps:
+      - name: Has main moved?
+        id: moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build.yml/runs?event=schedule&branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // ""')
+          if [ "$last" = "$GITHUB_SHA" ]; then
+            echo "::notice::main is at ${GITHUB_SHA::9}, where the last nightly that passed built it: nothing to build"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Which jobs a run needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
+  # Drafts run nothing; marking "ready for review" runs the set below. A push to main builds Ubuntu (with lint and the
+  # Linux package); the nightly, dispatches, release branches' pushes and PRs to them run everything.
+  changes:
+    needs: nightly
+    runs-on: ubuntu-24.04
+    if: >-
+      !cancelled() && (github.event_name != 'schedule' || needs.nightly.outputs.run == 'true') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    outputs:
+      # False on a push to main: Windows, macOS, iOS, Android, calls alone and the node editions wait for the nightly.
+      platforms: ${{ steps.plan.outputs.platforms }}
+      # The build job's matrix: Ubuntu alone on a push to main, else every desktop.
+      build_os: ${{ steps.plan.outputs.build_os }}
       # Anything but docs changed (the push trigger's paths-ignore list); false skips every job on a docs-only PR.
       code: ${{ steps.code.outputs.code }}
       src: ${{ steps.filter.outputs.src }}
@@ -55,11 +91,26 @@ jobs:
       # The filters that matched, as a JSON list: the Test step reads the capability folders' from it.
       changes: ${{ steps.filter.outputs.changes }}
     steps:
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            echo "platforms=false" >> "$GITHUB_OUTPUT"
+            echo 'build_os=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "platforms=true" >> "$GITHUB_OUTPUT"
+            echo 'build_os=["ubuntu-24.04","windows-2022","macos"]' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+      # The filters are a PR's (and a push's): the nightly builds everything.
       - uses: dorny/paths-filter@v4
         id: code
+        if: github.event_name != 'schedule'
         with:
           # A file counts as code when it matches every pattern, i.e. none of the docs paths.
           predicate-quantifier: every
@@ -75,6 +126,7 @@ jobs:
               - '!LICENSE'
       - uses: dorny/paths-filter@v4
         id: filter
+        if: github.event_name != 'schedule'
         with:
           filters: |
             src:
@@ -234,7 +286,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos]
+        os: ${{ fromJSON(needs.changes.outputs.build_os) }}
 
     # macOS runs on the self-hosted Mac (CI_MAC_BUILD_LABELS; hosted macos-15 when unset), except a fork PR's: its code
     # would run on that Mac as its user.
@@ -419,9 +471,9 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
-      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      # Only main saves (its pushes and the nightly), one cache per commit; PRs and other branches read main's latest.
       - name: Save ccache
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' && env.PP_RUN_PLATFORM == 'true' }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' && env.PP_RUN_PLATFORM == 'true' }}
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -516,7 +568,7 @@ jobs:
   ios:
     needs: changes
     # Fork PRs never reach the self-hosted Mac: their code would run on it.
-    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.apple == 'true') && github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.changes.outputs.platforms == 'true' && (github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.apple == 'true') && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ${{ fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') }}
     timeout-minutes: 90
     env:
@@ -581,9 +633,9 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
-      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      # Only main saves (its pushes and the nightly), one cache per commit; PRs and other branches read main's latest.
       - name: Save ccache
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
         uses: actions/cache/save@v6
         with:
           path: .cache/ccache
@@ -591,7 +643,7 @@ jobs:
 
   android:
     needs: changes
-    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.android == 'true'))
+    if: needs.changes.outputs.platforms == 'true' && (github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.android == 'true')))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -700,9 +752,9 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
-      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      # Only main saves (its pushes and the nightly), one cache per commit; PRs and other branches read main's latest.
       - name: Save Android ccache
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
         uses: actions/cache/save@v6
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -716,13 +768,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           # PR builds keep the shared name and expire fast; pushes get a per-branch name to prune.
-          name: ${{ github.event_name == 'push' && format('android-debug-apk-{0}', env.PP_REF_SLUG) || 'android-debug-apk' }}
+          name: ${{ github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch' && format('android-debug-apk-{0}', env.PP_REF_SLUG) || 'android-debug-apk' }}
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'pull_request' && 3 || github.ref_name == 'main' && 90 || 14 }}
 
       - name: Prune old APKs
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
           KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
@@ -738,7 +790,7 @@ jobs:
   # saved here) serves most objects.
   capabilities:
     needs: changes
-    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.calls_standalone == 'true'))
+    if: needs.changes.outputs.platforms == 'true' && (github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.calls_standalone == 'true')))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -794,7 +846,7 @@ jobs:
   # Then the default node's size budget (binary and image), and each image's L0 smoke. Images are built here, not pushed.
   node-editions:
     needs: changes
-    if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.node_editions == 'true'))
+    if: needs.changes.outputs.platforms == 'true' && (github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.node_editions == 'true')))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -913,3 +965,38 @@ jobs:
         run: |
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           echo "$RESULTS" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")' >/dev/null
+
+  # The nightly's word reaches a person: a failing nightly opens the issue "Nightly build fails on main" (or comments
+  # on the open one) with the jobs that failed; the next nightly that passes closes it.
+  nightly-report:
+    needs: [nightly, required]
+    if: always() && github.event_name == 'schedule' && needs.nightly.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.required.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly build fails on main"
+          open=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ "$RESULT" = success ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" -R "$GITHUB_REPOSITORY" --comment "Passes again at ${GITHUB_SHA::9}: $RUN_URL"
+            fi
+            exit 0
+          fi
+          failed=$(gh run view "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" --json jobs \
+            --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .name] | join(", ")')
+          body="The nightly build of main (every platform) fails at ${GITHUB_SHA::9}: ${failed:-see the run}. $RUN_URL"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" -R "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
