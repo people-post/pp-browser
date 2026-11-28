@@ -84,11 +84,46 @@ TEST_F(AppLifecycleAttentiveTest, ARestoreWhenFocusCameFirstFiresOnTheRestore) {
 
 TEST_F(AppLifecycleAttentiveTest, ForegroundFiresOnlyWhenComingFromTheBackground) {
   AppLifecycle::OnDidEnterForeground(); // was already in front
+  AppRuntime::RunUITasks();
   EXPECT_EQ(fired_, 0);
   AppLifecycle::OnWillEnterBackground();
   EXPECT_EQ(fired_, 0);
   AppLifecycle::OnDidEnterForeground();
+  EXPECT_EQ(fired_, 0) << "not inside the platform's lifecycle callback (#816)";
+  AppRuntime::RunUITasks();
   EXPECT_EQ(fired_, 1);
+}
+
+// #816: the foreground event comes inside SDL's event watch (its lock held). Its listeners reach into the mesh, whose io
+// lock the mesh pump may hold while it posts to the UI (SDL's lock): they run on the next UI turn instead.
+TEST(AppLifecycleForegroundTest, ListenersRunOnTheNextUiTurnNotInsideTheLifecycleCallback) {
+  int fired = 0;
+  const AppLifecycle::ListenerId id = AppLifecycle::AddForegroundListener([&fired]() { ++fired; });
+  AppLifecycle::OnWillEnterBackground();
+  AppLifecycle::OnDidEnterForeground();
+  EXPECT_TRUE(AppLifecycle::IsForeground()) << "the state changes at once";
+  EXPECT_EQ(fired, 0);
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(fired, 1);
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(fired, 1) << "once per return";
+  AppLifecycle::RemoveListener(id);
+}
+
+TEST(AppLifecycleForegroundTest, ABackgroundBeforeTheTurnSkipsThemAndTheNextReturnRunsThemOnce) {
+  int fired = 0;
+  const AppLifecycle::ListenerId id = AppLifecycle::AddForegroundListener([&fired]() { ++fired; });
+  AppLifecycle::OnWillEnterBackground();
+  AppLifecycle::OnDidEnterForeground();
+  AppLifecycle::OnWillEnterBackground(); // gone again before the UI turn
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(fired, 0) << "not run for an app that is back in the background";
+  AppLifecycle::OnDidEnterForeground();
+  AppLifecycle::OnWillEnterBackground();
+  AppLifecycle::OnDidEnterForeground(); // two returns before one turn: the newest only
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(fired, 1);
+  AppLifecycle::RemoveListener(id);
 }
 
 TEST_F(AppLifecycleAttentiveTest, ARemovedListenerIsNotCalled) {
