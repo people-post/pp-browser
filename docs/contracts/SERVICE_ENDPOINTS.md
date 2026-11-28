@@ -84,7 +84,7 @@ second hot **signing key**, which signs nothing in release 1); the relay's own k
 |------|------|
 | Operator set | `u8 threshold ‖ u8 n ‖ n × LenBytes(typed ML-DSA-65 key)`, keys sorted by their bytes, distinct, `1 ≤ threshold ≤ n ≤ 8` |
 | **Relay id** | `BLAKE2b-256("pp-browser:relay-id" 00 ‖ u8 1 ‖ founding operator set)`, written `relay:` + base64url-unpadded (49 characters; `RelayId`, `foundation/crypto/RelayId.h`). It never changes for the relay: an operator-set change keeps it |
-| Relay certificate | `u8 1 ‖ LenBytes body ‖ u8 m ‖ m × (u8 signer_index ‖ LenBytes typed signature)`; signed bytes `"pp-browser:relay-certificate" 00 ‖ u8 1 ‖ body`; body = `LenBytes founding set ‖ u64 k ‖ k × LenBytes set change ‖ u64 sequence ‖ i64 issued_at ‖ i64 expires_at ‖ u64 o ‖ o × LenUtf8 origin ‖ LenBytes transport key ‖ LenBytes signing key ‖ ext area` (`RelayCertificate`, `lib/net/RelayCertificate.h`) |
+| Relay certificate | `u8 1 ‖ LenBytes body ‖ u8 m ‖ m × (u8 signer_index ‖ LenBytes typed signature)`; signed bytes `"pp-browser:relay-certificate" 00 ‖ u8 1 ‖ body`; body = `LenBytes founding set ‖ u64 k ‖ k × LenBytes set change ‖ u64 sequence ‖ i64 issued_at ‖ i64 expires_at ‖ u64 o ‖ o × LenUtf8 origin ‖ LenBytes transport key ‖ LenBytes signing key ‖ ext area` (`RelayCertificate`, `lib/net/certificate/RelayCertificate.h`) |
 | Operator-set change | `u8 1 ‖ LenBytes body ‖ u8 m ‖ signatures`; signed bytes `"pp-browser:relay-operator-set-change" 00 ‖ u8 1 ‖ relay id (32) ‖ body`; body = `u64 set_generation ‖ LenBytes new set ‖ ext area`, signed by the set it replaces |
 
 **A relay address is its origin and its relay id** (MR008 as § 3.3 amends it; `RelayAddress`). Its written form, the

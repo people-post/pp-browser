@@ -10,7 +10,7 @@
 #include "gui/BadgeAggregator.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/PskFingerprint.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"

@@ -1,6 +1,6 @@
 #include "lib/delivery/RelayHealth.h"
 
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 
 #include <algorithm>
 

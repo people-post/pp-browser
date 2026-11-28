@@ -2,7 +2,7 @@
 
 #include "common/directory/KeyCard.h"
 #include "foundation/tls/CurlSsl.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/people/ContactIdentity.h"

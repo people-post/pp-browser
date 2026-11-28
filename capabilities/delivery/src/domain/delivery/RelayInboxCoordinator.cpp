@@ -3,7 +3,7 @@
 #include "common/Diag.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/net/RelayAudience.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 
 #include <algorithm>
 #include <chrono>

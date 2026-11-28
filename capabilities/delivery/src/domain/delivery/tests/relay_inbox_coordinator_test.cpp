@@ -2,7 +2,7 @@
 
 #include "foundation/error/AppError.h"
 #include "lib/net/RelayInboxCursor.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 
 #include <gtest/gtest.h>
 

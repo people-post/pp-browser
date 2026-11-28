@@ -3,7 +3,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/net/OrgBackendClientsImpl.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/people/AccountCard.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
