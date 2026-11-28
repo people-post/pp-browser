@@ -4,6 +4,7 @@ pp_browser_add_foundation_library(pp_foundation_data
     BackendProfile.cpp
     Config.cpp
     ConfigJson.cpp
+    ConfigSectionsJson.cpp
     ConfigSecretsStore.cpp
     MeshRole.cpp
     LlmPreset.cpp

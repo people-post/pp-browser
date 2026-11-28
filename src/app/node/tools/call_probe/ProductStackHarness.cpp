@@ -19,6 +19,7 @@
 #include "mesh/types/DirectoryTypes.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
