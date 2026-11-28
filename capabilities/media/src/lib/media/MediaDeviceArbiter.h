@@ -153,7 +153,8 @@ public:
                                                     const std::function<bool()>& still_wanted, std::string* error) = 0;
   /**
    * The OS lists at least one camera. Only asks the OS for its list (never opens a camera, no permission prompt), so
-   * the UI can hide "Scan" on a machine that has none. Any thread.
+   * the UI can hide "Scan" on a machine that has none. UI thread (the SDL backend may initialize the camera
+   * subsystem on first call).
    */
   virtual bool HasCamera() const { return false; }
   /** A camera lease is refused without a device. */
