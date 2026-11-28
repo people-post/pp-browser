@@ -67,6 +67,8 @@ void EmitAttachmentFetchMetric(const AttachmentFetchSource source, const int64_t
 constexpr size_t kMaxGridThumbnailJobs = 2;
 /** Progress notifications (each redraws the chat) at least this far apart; state changes are not held back. */
 constexpr int64_t kProgressNotifyGapMs = 250;
+/** A change notification not run on the UI thread this long after it was posted is taken as dropped by the gate. */
+constexpr int64_t kChangePostStaleMs = 2000;
 /** Of the others' files started, at most this many in a row while one from the account's other devices waits. */
 constexpr int kOthersBeforeOwnFloor = 3;
 /** AutoDownloadBudget's window (AttachmentLimits.cpp): a start counts against its sender for this long. */
@@ -301,6 +303,7 @@ void AttachmentFetchWorkflow::RefundBudget(const Job& job) {
 
 void AttachmentFetchWorkflow::SetOnChanged(ChangedCallback callback) {
   on_changed_ = std::move(callback);
+  change_post_->posted.store(false); // a rewire (after a reset): a post dropped before it is not waited for
 }
 
 void AttachmentFetchWorkflow::SetOnGridThumbnailReady(GridThumbnailCallback callback) {
@@ -1012,12 +1015,19 @@ void AttachmentFetchWorkflow::NotifyChanged() {
   if (!on_changed_) {
     return;
   }
-  // One waits on the UI thread already: it reads the state when it runs, this change included.
-  if (change_posted_->exchange(true)) {
-    return;
+  {
+    std::lock_guard lock(mutex_);
+    const int64_t now_ms = NowMsLocked();
+    // One waits on the UI thread already: it reads the state when it runs, this change included. Unless it has waited
+    // longer than any UI task does: then the gate dropped it, and this change posts again.
+    if (change_post_->posted.load() && now_ms - change_post_->at_ms < kChangePostStaleMs) {
+      return;
+    }
+    change_post_->posted.store(true);
+    change_post_->at_ms = now_ms;
   }
-  AppRuntime::PostUI([cb = on_changed_, posted = change_posted_]() {
-    posted->store(false); // first: a change while the callback reads the state posts one more
+  AppRuntime::PostUI([cb = on_changed_, post = change_post_]() {
+    post->posted.store(false); // first: a change while the callback reads the state posts one more
     if (cb) {
       cb();
     }

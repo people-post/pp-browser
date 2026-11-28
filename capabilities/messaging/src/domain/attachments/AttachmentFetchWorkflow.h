@@ -375,11 +375,18 @@ private:
   /** Under mutex_: when the last progress notification was posted (the workflow's clock); none yet. */
   std::optional<int64_t> last_progress_notify_ms_;
   /**
-   * A change notification is waiting on the UI thread: set when one is posted, cleared when that task starts (before
-   * the callback reads the state), so a burst is one refresh and a change during the refresh brings one more. Shared
-   * with the posted task, which may run after the workflow is gone.
+   * A change notification waiting on the UI thread: `posted` is set when one is posted (with the workflow's clock in
+   * `at_ms`, under mutex_) and cleared when that task starts (before the callback reads the state), so a burst is one
+   * refresh and a change during the refresh brings one more. Shared with the posted task, which may run after the
+   * workflow is gone. The runtime's gate can drop the post (a reset or quit under way, or a task queued before a reset
+   * and skipped after it) and the workflow outlives a reset: a flag older than kChangePostStaleMs is taken as lost, and
+   * SetOnChanged (every rewire) clears it.
    */
-  std::shared_ptr<std::atomic<bool>> change_posted_ = std::make_shared<std::atomic<bool>>(false);
+  struct ChangePost {
+    std::atomic<bool> posted{false};
+    int64_t at_ms = 0;
+  };
+  std::shared_ptr<ChangePost> change_post_ = std::make_shared<ChangePost>();
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;
   bool run_peer_answer_inline_for_test_ = false;

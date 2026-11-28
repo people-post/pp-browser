@@ -195,5 +195,33 @@ TEST_F(ChangeNotifyTest, AChangeWhileTheUiCallbackRunsBringsOneMoreRefresh) {
   EXPECT_EQ(changed_.load(), 2);
 }
 
+// A post the runtime's gate drops (a profile reset or quit under way; also a task queued before a reset, skipped after
+// it) never clears the "one is waiting" flag. The workflow outlives a reset, so that flag must not silence it for
+// good: one set longer than a UI task ever waits is taken as lost.
+TEST_F(ChangeNotifyTest, APostDroppedByTheTeardownGateDoesNotSilenceLaterChanges) {
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::OnDemand);
+  ASSERT_TRUE(AppRuntime::QuiesceForTeardown(std::chrono::seconds(2))); // the gate is closed: a post is dropped
+  workflow_.EnqueueFromMessage("t1", DownloadRowPicture("during", 30));
+  AppRuntime::ReopenAfterTeardown();
+  RunUI();
+  EXPECT_EQ(changed_.load(), 0) << "dropped";
+  now_ms_ += 3'000;
+  workflow_.EnqueueFromMessage("t1", DownloadRowPicture("after", 31));
+  RunUI();
+  EXPECT_EQ(changed_.load(), 1) << "a later change is told";
+}
+
+// The hub sets the callback again at every rewire (after a reset): that clears a flag stuck by a dropped post.
+TEST_F(ChangeNotifyTest, ARewireClearsAStuckChangeFlag) {
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::OnDemand);
+  ASSERT_TRUE(AppRuntime::QuiesceForTeardown(std::chrono::seconds(2)));
+  workflow_.EnqueueFromMessage("t1", DownloadRowPicture("during", 32));
+  AppRuntime::ReopenAfterTeardown();
+  workflow_.SetOnChanged([this]() { ++changed_; }); // the rewire; the clock has not moved
+  workflow_.EnqueueFromMessage("t1", DownloadRowPicture("after", 33));
+  RunUI();
+  EXPECT_EQ(changed_.load(), 1);
+}
+
 } // namespace
 } // namespace pbr
