@@ -1,6 +1,6 @@
 // The row a relay keeps for an account, looked up unauthenticated (multi-relay R2 step 2 / R3): a contact's relay is
 // held to a public host, as the relays its messages go to (docs/contracts/ACCOUNT_CARD.md § Public-relay policy).
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "lib/net/OrgBackendClientsImpl.h"
 
 #include <gtest/gtest.h>

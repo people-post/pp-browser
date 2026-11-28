@@ -16,7 +16,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/RelayStreamKey.h"
 #include "common/directory/DirectoryJson.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "common/tests/VectorFile.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/HybridKem.h"

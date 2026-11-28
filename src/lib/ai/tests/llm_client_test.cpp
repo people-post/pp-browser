@@ -2,7 +2,7 @@
 
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
-#include "common/tests/LocalHttpServer.h"
+#include "foundation/sockets/testing/LocalHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 

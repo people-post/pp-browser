@@ -1,4 +1,4 @@
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/tls/ContentSha256Policy.h"
 #include "lib/net/HttpClient.h"
 

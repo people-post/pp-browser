@@ -1,7 +1,7 @@
 #include "lib/delivery/RelaySendCoordinator.h"
 
 #include "common/ValueJson.h"
-#include "common/tests/ScriptedHttpServer.h"
+#include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/HttpRelayClient.h"
 #include "lib/net/RelayOrigins.h"

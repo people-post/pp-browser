@@ -4,7 +4,7 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 #include "common/Utilities.h"
-#include "common/tests/LocalHttpServer.h"
+#include "foundation/sockets/testing/LocalHttpServer.h"
 
 #include <filesystem>
 #include <fstream>

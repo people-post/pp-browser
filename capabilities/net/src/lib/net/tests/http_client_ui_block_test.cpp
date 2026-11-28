@@ -3,7 +3,7 @@
 // the host, the query, a later segment or an id. No probe (node tools, tests) or a probe that says "not the UI": no line.
 #include "common/Diag.h"
 #include "common/Metrics.h"
-#include "common/tests/LocalHttpServer.h"
+#include "foundation/sockets/testing/LocalHttpServer.h"
 #include "lib/net/HttpClient.h"
 
 #include <gtest/gtest.h>
