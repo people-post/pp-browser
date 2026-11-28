@@ -44,8 +44,8 @@ std::vector<ThreadSearchEntry> BuildSearchIndex(const std::vector<ThreadMessage>
   std::vector<ThreadSearchEntry> index;
   index.reserve(messages.size());
   for (const ThreadMessage& message : messages) {
-    if (message.content_type != ChatContentType::Text) {
-      continue;
+    if (message.content_type != ChatContentType::Text || IsHiddenNewsMessage(message)) {
+      continue; // a news read's request and digest are never drawn in the chat, so search never lands on them
     }
     std::string folded = FoldForSearch(PlainTextOf(message));
     if (folded.empty()) {

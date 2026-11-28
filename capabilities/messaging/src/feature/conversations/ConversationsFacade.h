@@ -164,6 +164,9 @@ public:
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
+  /** The rows of `thread_id` whose `generation` is one of `generations`, oldest first (IThreadTranscript). */
+  Roe<std::vector<ThreadMessage>> GetMessagesByGeneration(const std::string& thread_id,
+                                                          const std::vector<std::string>& generations);
   /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   /** Edit our message (ConversationsHub::EditMessage); `tapped_at_ms`: when Send was tapped. */
@@ -284,6 +287,8 @@ public:
   Roe<PublicKeyScope> GetPublicKeyScope(const std::string& thread_id);
   Roe<bool> CanLockPublicToThisDevice(const std::string& thread_id);
   void SetSupportAccountId(std::string account_id);
+  /** The PP support account's id as last set (empty: none); read-only, for what must keep that chat out (forward targets). */
+  std::string SupportAccountId();
   void RegisterContactDirectEndpoints(const Contact& contact);
   /** The keys a directory entry carries for its account, each kept only when it proves to be the account's. */
   void RegisterPeerKeysFromDirectory(const mesh::DirectoryHit& hit);
@@ -464,6 +469,8 @@ public:
                              std::function<bool(uint64_t done, uint64_t total)> progress = {},
                              std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
+  /** The same list, or none when it cannot be told (locked, no profile, a folder or record unreadable). */
+  std::optional<std::vector<OutgoingAttachmentRecord>> PendingOutgoingAttachmentsChecked(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();
   /** The one source of every attachment size / pace / warning number (today the defaults). */
@@ -483,6 +490,16 @@ public:
   /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                            bool* made_view = nullptr);
+  /**
+   * The size on disk of this device's stored copy of an attachment's bytes (encrypted, as held here); 0 when it has none
+   * (never downloaded, cleaned away). A stat of the content store: nothing is read or decrypted.
+   */
+  uint64_t AttachmentStoredBytes(const std::vector<uint8_t>& content_hash);
+  /**
+   * The whole plaintext of a stored attachment, decrypted into memory (not written anywhere); fails when it is not
+   * stored, cannot be read, or the profile is locked. For sending the same bytes on (a forward).
+   */
+  Roe<ByteVector> StoredAttachmentPlaintext(const std::vector<uint8_t>& content_hash);
   /** The same file under the sender's name (AttachmentNamedOpenPath): what the system viewer is handed. */
   std::optional<std::string> AttachmentOpenPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                           bool* made_view = nullptr);

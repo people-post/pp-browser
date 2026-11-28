@@ -26,8 +26,21 @@ public:
   static void SetLayout(float titlebar_height_dp, float controls_width_dp, float edge_margin_dp = 5.f,
                         bool controls_leading = false);
 
-  /** Re-apply platform window appearance (e.g. macOS corner radius). */
+  /** Re-apply platform window appearance (e.g. macOS corner radius, Windows 11's rounded corners). */
   static void RefreshAppearance();
+
+  /**
+   * Tell the window which theme is active. On macOS the window's outline is drawn by the system layer that clips the
+   * corners and takes its colour from this (light / dark, equal to the shell's `.shell-body--framed` border); nowhere
+   * else does it do anything. Safe before Install.
+   */
+  static void SetFrameDark(bool dark);
+
+  /**
+   * True once the system took the request to round the window's corners (Windows 11's small radius, about 8px; set by
+   * Install / RefreshAppearance). The shell's 1dp outline follows it (`.shell-body--round-small`).
+   */
+  static bool SystemRoundsCorners();
 
   static void Minimize();
   static void ToggleMaximize();

@@ -95,7 +95,6 @@
 #include "feature/settings/MyRelays.h"
 #include "feature/settings/OwnDevices.h"
 #include "feature/settings/CasLibraryCommands.h"
-#include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
 #include "gui/UiFrameStats.h"
@@ -123,6 +122,7 @@
 #include "gui/SupportDiscoveryPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/shell/DeferredStartup.h"
+#include "gui/shell/WindowTitle.h"
 #include "gui/FlowCoordinator.h"
 #include "gui/PinGateController.h"
 #include "gui/UnlockEnsurePorts.h"
@@ -340,7 +340,7 @@ bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_
   if (!g_input_coordinator) {
     return true;
   }
-  return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority);
+  return g_input_coordinator->ProcessKeyDown(context, key, key_modifier, priority, KeyDownIsRepeat());
 }
 
 void ApplyUiDocumentLanguage(ui::Context* context) {
@@ -628,14 +628,33 @@ Roe<void> Application::ResetActiveProfile() {
   contacts_->Refresh();
   // A clean slate behind the first-run page, as a fresh install's first frame has it: the home tab with nothing open
   // over it, and nothing of the old account on the Me card (the lists read the empty stores above).
+  // The old account's Me card, open contact and unsaved edits go first, so leaving the Me tab below flushes nothing of
+  // them into the new profile (the desktop's name field is edited in place).
+  settings_->OnProfileReset();
+  contacts_->OnProfileReset();
   shell_->SelectNavTab(NavTab::Home);
   shell_->ClearTabContext();
-  settings_->OnProfileReset();
+  shell_->CloseAllLayers();
+  RefreshWindowTitle(); // no account any more: plain PP until the new one has a name
   // No account any more: the "I'm new / I already have an account" page comes up now, over every screen the old account
   // left, as on a fresh install's first frame — not at the next relaunch or the next action that needs messaging (that
   // decision, BeginDeferredUnlockAfterFirstPresent, runs once per process).
   unlock_gate_->EnsureUnlocked(nullptr);
   return {};
+}
+
+void Application::RefreshWindowTitle() {
+  if (!shell_) {
+    return;
+  }
+  std::string nickname;
+  if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
+    const ProfileIdentityView view = messaging_facade_->LoadProfileIdentityView();
+    if (view.ready) {
+      nickname = view.nickname;
+    }
+  }
+  shell_->SetWindowTitle(WindowTitleFor(Tr("app.name"), nickname));
 }
 
 Roe<void> Application::ResetChatData() {
@@ -970,6 +989,11 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
       .on_sync_system_theme = [](ui::Context* ctx) { Theme::SyncSystemTheme(ctx); },
       .on_context_pointer = [](ui::Context* ctx, int x,
                                int y) { return ContextMenuHost::Instance().OnContextPointer(ctx, x, y); },
+      .on_drop_hover = [this](std::optional<DropUiPoint> point) { chat_->OnDropHover(point); },
+      .on_files_dropped =
+          [this](std::vector<std::string> paths, std::optional<DropUiPoint> position) {
+            chat_->OnFilesDropped(std::move(paths), position);
+          },
   });
   SdlAppEvents::Install();
   InstallStayConnectedService(); // P011: Android's foreground service follows the setting
@@ -982,8 +1006,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   ConversationsFacade& facade = *messaging_facade_;
   SettingsCommands settings_commands;
   settings_commands.load_profile_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
-  settings_commands.save_profile_nickname = [&facade](const std::string& nickname) {
-    return facade.SaveProfileNickname(nickname);
+  settings_commands.save_profile_nickname = [this, &facade](const std::string& nickname) {
+    auto saved = facade.SaveProfileNickname(nickname);
+    if (saved) {
+      RefreshWindowTitle();
+    }
+    return saved;
   };
   settings_commands.pick_profile_icon_image = [](std::function<void(std::vector<std::string> paths)> on_picked) {
     // iOS: a large photo takes seconds to copy out of the library; the pill says so until the crop page is opened
@@ -1217,11 +1245,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.help_kind = mesh::ReachabilityHelpKey(snap.status);
     return view;
   };
-  settings_commands.refresh_nav_badges = [this]() {
-    if (badges_) {
-      badges_->Refresh();
-    }
-  };
   settings_commands.load_pin_protection = [this]() {
     PinProtectionView view;
     ProfileSecretsEngine& secrets = *secrets_;
@@ -1249,6 +1272,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.scan_link_offer = [this](std::function<void(std::string)> done) {
     qr_scan_->Open(std::move(done)); // the in-app scan (SCANNING.md): binary, as the code shows it
   };
+  settings_commands.can_scan_link_offer = [this]() { return qr_scan_->CanScan(); };
   // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
   settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
   settings_commands.set_grace_minutes = [this](const int minutes) {
@@ -1571,6 +1595,9 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
   });
   chat_->BindShellSetup(MakeShellSetupPorts(shell));
+  chat_->BindDropHint(
+      [this](const std::string& text, const std::optional<NameWords>& words) { shell_->SetDropHint(text, words); });
+  shell.BindDropHintWake([]() { return SdlAppEvents::MsUntilDropHintHide(); });
   chat_->BindConversationsFacade(messaging_facade_.get());
   chat_->BindRegisterMessagingTools([this, settings_tool_ports](ToolRegistry& tools) {
     RegisterMessagingTools(tools, *messaging_facade_);
@@ -1724,12 +1751,6 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     if (contacts_shell_bridge_) {
       facts.contacts_unread = contacts_shell_bridge_->LastSurface().contacts_unread;
     }
-    if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
-      const mesh::ReachabilitySnapshot snap = facade.Reachability();
-      const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
-      facts.me_attention =
-          ReachabilityNudgeActive(true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
-    }
     return ComputeBadgeInputs(facts);
   });
   {
@@ -1847,6 +1868,7 @@ void Application::WireUnlockPinAndFlow() {
     gate_complete.scan_link_reply = [this](std::function<void(std::string)> done, std::function<void()> closed) {
       qr_scan_->Open(std::move(done), std::move(closed));
     };
+    gate_complete.can_scan_link_reply = [this]() { return qr_scan_->CanScan(); };
     gate_complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase,
                                                    const bool set_default_pin,
                                                    const std::vector<std::string>& saved_copies) {
@@ -2099,6 +2121,9 @@ void Application::WireUnlockPinAndFlow() {
       if (result && chat_) {
         chat_->ReloadAgentConfig();
       }
+      if (result) {
+        RefreshWindowTitle();
+      }
       return result;
     };
     onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
@@ -2185,24 +2210,7 @@ void Application::WireUnlockPinAndFlow() {
     shell_->BindShellMessaging(std::move(shell_messaging));
   }
   {
-    PinGateActionPorts pin_actions;
-    pin_actions.on_submit = [this]() { pin_gate_->OnSubmit(); };
-    pin_actions.on_cancel = [this]() { pin_gate_->OnCancel(); };
-    pin_actions.on_set_pin = [this]() { pin_gate_->OnSetPin(); };
-    pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
-    pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
-    pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
-    pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
-    pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
-    pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
-    pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
-    pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
-    pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
-    pin_actions.on_keypad_ok = [this]() { pin_gate_->OnKeypadOk(); };
-    pin_actions.on_use_text = [this]() { pin_gate_->OnUseText(); };
-    pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
-    pin_actions.on_biometric = [this]() { pin_gate_->OnBiometric(); };
-    pin_actions.on_use_pin = [this]() { pin_gate_->OnUsePin(); };
+    PinGateActionPorts pin_actions = MakePinGateActionPorts(*pin_gate_);
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
@@ -2212,6 +2220,7 @@ void Application::WireUnlockPinAndFlow() {
     };
     flow_ports.end_modal = [this]() { flow_->EndModal(); };
     flow_ports.handle_dismiss = [this]() { return flow_->HandleDismiss(); };
+    flow_ports.is_modal_active = [this]() { return flow_->IsActive(); };
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
@@ -2470,6 +2479,14 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   chat_people_picker_notify.offer_group_admin = [this](const std::string& thread_id, const std::string& sender) {
     people_picker_->OfferGroupAdmin(thread_id, sender);
+  };
+  chat_people_picker_notify.open_choose_targets = [this](PeoplePickerChooseOptions options, PeoplePickerChooseDone done,
+                                                         std::function<void()> cancel) {
+    people_picker_->OpenForResult(std::move(options), std::move(done), std::move(cancel));
+  };
+  chat_people_picker_notify.close_choose_targets = [this]() { people_picker_->CloseChooseTargets(); };
+  chat_people_picker_notify.update_choose_preview = [this](std::vector<ChoosePreviewItem> items) {
+    people_picker_->UpdateChoosePreviewItems(items);
   };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
@@ -2774,6 +2791,7 @@ void Application::WireHubCallbacks() {
       call_->OnMessagingReady();
     }
     contacts_->Refresh();
+    RefreshWindowTitle(); // an account was opened (start, new account, link, restore): its name is in the title strip
     // A chat database too old to upgrade was reset when it opened (D105): say so once.
     if (TakeChatStoreResetNotice(store_.Snapshot().profile_data_dir)) {
       UserFeedback::Note(Tr("settings.storage.chats_reset_too_old"));
@@ -2932,6 +2950,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
 
   shell_->SetSafeAreaInsetsFromPrefs(bootstrap.machine_prefs.safe_area.top, bootstrap.machine_prefs.safe_area.bottom);
   shell_->RefreshSafeAreaInsets(context);
+  RefreshWindowTitle(); // plain PP until an account with a name is open
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
   shell_->SetSidebarPrefs(bootstrap.profile_prefs.sidebar_width_dp, bootstrap.profile_prefs.sidebar_collapsed);
@@ -3099,6 +3118,7 @@ void Application::Run() {
     }
     qr_scan_->Tick();
     avatar_crop_->Tick();
+    SdlAppEvents::TickDrop(); // the drop hint's one second
     {
       UiCostTimer timer(&UiCostCounters::AddChatUpdateUs);
       chat_->Update();

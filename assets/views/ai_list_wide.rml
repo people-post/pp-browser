@@ -1,0 +1,75 @@
+<!-- The AI conversation list of the wide layout (desktop, wide iPad): the phone's "Conversation history" drawer
+     (ai_drawer.rml) as the AI section's list column. The same rows (colour tile with the title's first character, title,
+     date, last message, pin), the same search and archive entry, and the count line at the foot; a click opens the
+     conversation in the right column, where the AI home (the mascot) shows until one is picked. The phone's swipes (More,
+     Archive, Delete, Pin, Rename) are the row's right-click menu here (the Chats list's own menu, ChatMenus); the
+     plus is the phone's "new conversation" button of an AI chat's bar. -->
+<div class="sidebar-panel ai-list-panel" data-model="shell">
+  <div class="sidebar-header ai-list-header row">
+    <p class="sidebar-header-title">{{i18n:ai_drawer.title}}</p>
+    <div class="sidebar-header-actions row">
+      <button class="sidebar-new-chat" type="button" data-event-click="new_chat()">
+        <svg src="../icons/plus.svg" width="14" height="14" crop-to-content="true"></svg>
+      </button>
+    </div>
+  </div>
+  <div class="chat-search ai-list-search">
+    <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+    <input class="chat-search-input" type="text" data-value="ai_sessions_query"
+           data-event-change="ai_sessions_search_changed()"/>
+    <p class="chat-search-label" data-if="ai_sessions_query == ''">{{i18n:ai_drawer.search_placeholder}}</p>
+  </div>
+  <div class="sidebar-sessions ai-list-sessions root-scroll" id="ai-list-sessions" data-event-scroll="ai_sessions_scroll()">
+    <!-- This device was taken off its account (DeviceRemovedNotice): the Chats list's card, here too, since the AI section
+         is the desktop's Home; the same words and the same two buttons. -->
+    <div class="sidebar-tip" data-if="device_removed_notice &amp;&amp; ai_sessions_query == '' &amp;&amp; !showing_archived_ai">
+      <p class="sidebar-tip-body">{{i18n:device_removed.body}}</p>
+      <div class="sidebar-tip-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="device_removed_relink()">{{i18n:device_removed.relink}}</button>
+        <button class="btn btn-ghost sidebar-tip-later" type="button" data-event-click="device_removed_ok()">{{i18n:device_removed.ok}}</button>
+      </div>
+    </div>
+    <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
+      <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
+      <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
+      <p class="sidebar-archived-label">{{archived_entry_label_ai}}</p>
+    </div>
+    <div data-for="session : ai_sessions" class="sidebar-session sidebar-session--ai"
+         data-attr-session-id="session.id"
+         data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"
+         data-class-sidebar-session--pinned="session.pinned"
+         data-class-sidebar-session--empty="session.preview_empty"
+         data-class-sidebar-session-active="session.active"
+         data-event-click="select_thread(session.id)">
+      <!-- Each AI conversation shows its title's first character in a per-conversation colour (like chats),
+           so they are distinguishable rather than all the same icon (Kenneth 2026-11-05). -->
+      <div class="chat-row-avatar"
+           data-class-avatar-tone-0="session.avatar_tone == 0"
+           data-class-avatar-tone-1="session.avatar_tone == 1"
+           data-class-avatar-tone-2="session.avatar_tone == 2"
+           data-class-avatar-tone-3="session.avatar_tone == 3"
+           data-class-avatar-tone-4="session.avatar_tone == 4"
+           data-class-avatar-tone-5="session.avatar_tone == 5"
+           data-class-avatar-tone-6="session.avatar_tone == 6"
+           data-class-avatar-tone-7="session.avatar_tone == 7">
+        <p class="chat-row-avatar-letter">{{session.avatar_letter}}</p>
+      </div>
+      <div class="sidebar-session-body">
+        <div class="sidebar-session-line">
+          <p class="sidebar-session-title">{{session.title}}</p>
+          <svg class="sidebar-session-flag sidebar-session-flag--pin" src="../icons/pin.svg" width="12" height="12" crop-to-content="true" data-if="session.pinned"></svg>
+          <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
+        </div>
+        <div class="sidebar-session-line">
+          <p class="sidebar-session-preview">{{session.preview}}</p>
+          <span class="badge-count sidebar-unread" data-if="session.unread_count &gt; 0">{{session.unread_display}}</span>
+          <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
+        </div>
+      </div>
+    </div>
+    <p class="text muted sidebar-empty" data-if="ai_sessions.size == 0 &amp;&amp; ai_sessions_query != ''">{{i18n:sidebar.empty}}</p>
+  </div>
+  <div class="ai-list-count" data-if="ai_sessions_count_label != ''">
+    <p class="ai-drawer-count-text">{{ai_sessions_count_label}}</p>
+  </div>
+</div>

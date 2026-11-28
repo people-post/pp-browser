@@ -659,7 +659,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto sidebar_width = ReadI64(object, "sidebar_width_dp")) {
     prefs.sidebar_width_dp = static_cast<int>(*sidebar_width);
   } else {
-    prefs.sidebar_width_dp = 240;
+    prefs.sidebar_width_dp = 320;
   }
   if (auto sidebar_collapsed = object.getIf<bool>("sidebar_collapsed")) {
     prefs.sidebar_collapsed = *sidebar_collapsed;

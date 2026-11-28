@@ -14,6 +14,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
+#include "foundation/crypto/LinkHandshake.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformShare.h"
 #include "foundation/platform/ScreenKeyboard.h"
@@ -28,6 +29,7 @@
 #include "gui/CallActionsPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
+#include "gui/QrDisplay.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/shell/MascotFigure.h"
 #include "gui/shell/MascotLook.h"
@@ -86,6 +88,10 @@ NavTab NavTabFromString(const ui::String& value) {
 
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = ShellLayout::kImeLatchMinDp;
+/** Wide layout: the icon rail's width (wide.rcss .shell-nav-rail) and the result pill's distance above the status bar. */
+constexpr float kWideRailDp = 64.f;
+constexpr float kWideToastBottomDp = 96.f;
+
 /** Page push / back slide (DESIGN-pp-ui §7); keep equal to the 0.3s in components.rcss. */
 constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
@@ -102,6 +108,7 @@ constexpr bool kSystemBackLeavesSettingsHome = true;
 
 ShellHost::ShellHost() {
   redirectLogger("ShellHost");
+  state_.desktop_computer = Platform::IsDesktop();
 }
 
 void ShellHost::BindShellMessaging(MessagingShellPorts ports) {
@@ -150,6 +157,13 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
+    ctor.Bind("drop_hint_visible", &host.state_.drop_hint_visible);
+    ctor.Bind("drop_hint_text", &host.state_.drop_hint_text);
+    ctor.Bind("drop_hint_can", &host.state_.drop_hint_can);
+    ctor.Bind("drop_hint_prefix", &host.state_.drop_hint_prefix);
+    ctor.Bind("drop_hint_name", &host.state_.drop_hint_name);
+    ctor.Bind("drop_hint_suffix", &host.state_.drop_hint_suffix);
+    ctor.Bind("window_title", &host.state_.window_title);
     ctor.Bind("toasts", &host.state_.toasts);
     ctor.Bind("dialog_active", &host.state_.dialog.active);
     ctor.Bind("dialog_title", &host.state_.dialog.title);
@@ -173,6 +187,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_link_offer_qr_rml", &host.state_.pin_gate.link_offer_qr);
     ctor.Bind("pin_gate_link_offer_code", &host.state_.pin_gate.link_offer_code);
     ctor.Bind("pin_gate_link_can_scan", &host.state_.pin_gate.link_can_scan);
+    ctor.Bind("pin_gate_link_valid", &host.state_.pin_gate.link_valid);
+    ctor.Bind("pin_gate_link_qr_side", &host.state_.pin_gate.link_qr_side);
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -328,6 +344,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
+    ctor.Bind("window_corners_small", &host.state_.window_corners_small);
     ctor.Bind("fonts_ready", &host.state_.fonts_ready);
     ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
     ctor.Bind("startup_cover_visible", &host.state_.startup_cover_visible);
@@ -340,7 +357,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
       badge_handle.RegisterMember("contacts_unread", &NavBadgeState::contacts_unread);
-      badge_handle.RegisterMember("me_attention", &NavBadgeState::me_attention);
       badge_handle.RegisterMember("sessions_unread_display", &NavBadgeState::sessions_unread_display);
       badge_handle.RegisterMember("contacts_unread_display", &NavBadgeState::contacts_unread_display);
     }
@@ -349,7 +365,6 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     // on nested struct members (Android needed remount/tab switches). Mirror the fields as scalars.
     ctor.Bind("nav_sessions_unread", &host.state_.nav_badges.sessions_unread);
     ctor.Bind("nav_contacts_unread", &host.state_.nav_badges.contacts_unread);
-    ctor.Bind("nav_me_attention", &host.state_.nav_badges.me_attention);
     ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
     ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
@@ -509,6 +524,7 @@ void ShellHost::Initialize(ui::Context* context) {
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
   state_.titlebar_visible = DesktopWindowChrome::Enabled();
+  state_.window_title = Tr("app.name").c_str();
   state_.titlebar_traffic_lights = DesktopWindowChrome::ControlsLeading();
   state_.window_maximized = DesktopWindowChrome::IsMaximized();
   ShellLayout::SyncLayoutModeString(state_);
@@ -550,6 +566,7 @@ void ShellHost::Initialize(ui::Context* context) {
     DesktopWindowChrome::Install();
     DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp, 5.f,
                                    state_.titlebar_traffic_lights);
+    state_.window_corners_small = DesktopWindowChrome::SystemRoundsCorners(); // Install asked (Windows 11)
   }
 }
 
@@ -670,12 +687,16 @@ void ShellHost::SelectNavTab(NavTab tab) {
     // The new root page opens at its top, large title showing.
     SetLargeTitleCollapsed(false);
   }
+  // The wide layout's AI tab with a conversation open: picking AI again goes back to the AI home (the phone's second tap
+  // on AI opens its conversation drawer; here the list is always beside the page, so the tap leaves the conversation).
+  const bool back_to_ai_home = !tab_changed && tab == NavTab::Home && state_.layout_mode == LayoutMode::Expanded &&
+                               !state_.primary_pane_key.empty() && state_.primary_pane_key != "home";
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
   // The tab bar highlights the tab a hidden tab's page (Settings) was entered from.
   state_.nav_bar_tab_str = ShellLayout::NavTabString(tab == NavTab::Contacts ? tab_before_hidden_ : tab);
   DataModelHost::Instance().Dirty("window", "nav_bar_tab");
-  if (tab_changed && on_nav_tab_changed_) {
+  if ((tab_changed || back_to_ai_home) && on_nav_tab_changed_) {
     on_nav_tab_changed_(tab);
   }
   if (chat_shown_again && on_compact_chat_shown_again_) {
@@ -957,7 +978,7 @@ void ShellHost::NotifySidebarChanged() {
 }
 
 void ShellHost::ToggleSidebarCollapsed() {
-  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::TabHasSecondary(state_.nav_tab)) {
+  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::ExpandedTabHasSecondary(state_.nav_tab)) {
     return;
   }
   state_.sidebar_collapsed = !state_.sidebar_collapsed;
@@ -1009,6 +1030,7 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.page_sheet = spec.page_sheet;
   entry.full_screen = spec.full_screen;
   entry.sheet_detent = spec.sheet_detent;
+  entry.modal = spec.modal;
   if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
     sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
   }
@@ -1017,6 +1039,13 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
     saved_focus_id_ = spec.return_focus_id.c_str();
   } else {
     SaveFocus();
+  }
+  if (spec.modal && context_) {
+    // A modal panel takes the keyboard: whatever was typing behind it (the composer) stops receiving keys. The focus
+    // saved above comes back when the layer closes.
+    if (ui::Element* focus = context_->GetFocusElement()) {
+      focus->Blur();
+    }
   }
   RequestSyncLayout();
   return state_.overlay_stack.back().id;
@@ -1070,6 +1099,41 @@ void ShellHost::CloseLayer(int layer_id) {
     }
   }
   RequestSyncLayout(true);
+}
+
+void ShellHost::SetWindowTitle(const std::string& title) {
+  if (state_.window_title == title.c_str()) {
+    return;
+  }
+  state_.window_title = title.c_str();
+  DataModelHost::Instance().Dirty("window", "window_title");
+}
+
+void ShellHost::SetDropHint(const std::string& text, const std::optional<NameWords>& words) {
+  const bool visible = !text.empty();
+  const bool can = visible && words.has_value();
+  const NameWords parts = can ? *words : NameWords{};
+  if (state_.drop_hint_visible == visible && state_.drop_hint_text == text.c_str() && state_.drop_hint_can == can &&
+      state_.drop_hint_prefix == parts.prefix.c_str() && state_.drop_hint_name == parts.name.c_str() &&
+      state_.drop_hint_suffix == parts.suffix.c_str()) {
+    return;
+  }
+  state_.drop_hint_visible = visible;
+  state_.drop_hint_text = text.c_str();
+  state_.drop_hint_can = can;
+  state_.drop_hint_prefix = parts.prefix.c_str();
+  state_.drop_hint_name = parts.name.c_str();
+  state_.drop_hint_suffix = parts.suffix.c_str();
+  for (const char* field : {"drop_hint_visible", "drop_hint_text", "drop_hint_can", "drop_hint_prefix",
+                            "drop_hint_name", "drop_hint_suffix"}) {
+    DataModelHost::Instance().Dirty("window", field);
+  }
+}
+
+void ShellHost::CloseAllLayers() {
+  while (!state_.overlay_stack.empty()) {
+    CloseLayer(-1);
+  }
 }
 
 void ShellHost::WatchLayerClosed(const int layer_id, std::function<void()> closed) {
@@ -1362,7 +1426,6 @@ void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "nav_badges");
   DataModelHost::Instance().Dirty("window", "nav_sessions_unread");
   DataModelHost::Instance().Dirty("window", "nav_contacts_unread");
-  DataModelHost::Instance().Dirty("window", "nav_me_attention");
   DataModelHost::Instance().Dirty("window", "nav_sessions_unread_display");
   DataModelHost::Instance().Dirty("window", "nav_contacts_unread_display");
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
@@ -1400,6 +1463,8 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_qr_rml");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_offer_code");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_can_scan");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_valid");
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
@@ -1684,7 +1749,37 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
 
 void ShellHost::ApplyPinGateState(const PinGateState& state) {
   state_.pin_gate = state;
+  if (state.link_paste_mode && state_.desktop_computer) {
+    // A desktop computer's link page is sized from the window's height and width (QrDisplay.h LinkComputerLayoutFor).
+    const LinkComputerLayout layout = LinkComputerLayoutFor(context_);
+    state_.link_two_columns = layout.two_columns;
+    state_.pin_gate.link_qr_side = (std::to_string(layout.side_dp) + "dp").c_str();
+  } else if (state.link_paste_mode) {
+    state_.pin_gate.link_qr_side = LinkQrDisplayFor(state_.layout_mode == LayoutMode::Compact, context_).css.c_str();
+  }
   ReconcileStartupCover();
+}
+
+// A window resized under the link page: the code's side follows the new height and width, and a window that crossed
+// the two-column width gets the other markup. (The page is mounted once; nothing else would redo it.)
+void ShellHost::ResizeComputerLinkPage(ui::Context* context) {
+  if (!state_.desktop_computer || !state_.pin_gate.active || !state_.pin_gate.link_paste_mode ||
+      state_.pin_gate.phrase_flow) {
+    return;
+  }
+  const LinkComputerLayout layout = LinkComputerLayoutFor(context);
+  const ui::String side = (std::to_string(layout.side_dp) + "dp").c_str();
+  const bool columns_changed = layout.two_columns != state_.link_two_columns;
+  if (!columns_changed && side == state_.pin_gate.link_qr_side) {
+    return;
+  }
+  state_.link_two_columns = layout.two_columns;
+  state_.pin_gate.link_qr_side = side;
+  if (columns_changed) {
+    RemountPinGateChrome();
+  } else {
+    DataModelHost::Instance().Dirty("window", "pin_gate_link_qr_side");
+  }
 }
 
 void ShellHost::ReconcileStartupCover() {
@@ -2133,6 +2228,11 @@ void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
     }
   }
 
+  if (IsIpadDevice() &&
+      safe_area_settle_.Observe(std::chrono::steady_clock::now(), sdl.window_w, sdl.window_h, sdl.top_dp)) {
+    // The window controls' inset settles after the first frames and raises no event: read it again on the next frame.
+    Backend::RequestForceFrame();
+  }
   const int effective_top = std::max(sdl.top_dp, safe_area_top_from_prefs_dp_);
   int effective_bottom = std::max(sdl.bottom_dp, safe_area_bottom_from_prefs_dp_);
   if (bottom_chrome_open_) {
@@ -2223,8 +2323,11 @@ void ShellHost::ApplySafeAreaLayout() {
                      : state_.compact_chat_open ? CompactBottomSurface::Composer
                                                 : CompactBottomSurface::TabBar;
   }
-  const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
+  CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    ShellLayout::ExtendExpandedToWindowBottom(layout, layout_bottom);
+  }
   ui::ElementDocument* doc = context_->GetDocument(0);
   // The layers under a full-screen phone call page: from the call page now, every time the shell is synced or the call
   // remounted (never toggled on events).
@@ -2250,10 +2353,15 @@ void ShellHost::ApplySafeAreaLayout() {
   // The AI Home does not follow the keyboard / emoji sheet (TODO #204): it stays where it is and they just cover its
   // lower part (the chips); see HomeDockLift. Every other page keeps the full lift.
   const bool home_keeps_place = state_.layout_mode == LayoutMode::Compact && HomeDockApplies();
-  set_dp(doc->GetElementById("shell-root"), "bottom",
-         statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp));
+  const float root_bottom_dp =
+      statusbar_dp + (home_keeps_place ? 0.f : bottom_chrome_dp + layout.content_bottom_inset_dp);
+  set_dp(doc->GetElementById("shell-root"), "bottom", root_bottom_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
+  // A modal desktop panel is up: the status bar drops under its window-wide scrim (wide.rcss, .shell-body--modal).
+  doc->SetClass("shell-body--modal", state_.layout_mode == LayoutMode::Expanded &&
+                                         std::any_of(state_.overlay_stack.begin(), state_.overlay_stack.end(),
+                                                     [](const OverlayEntry& overlay) { return overlay.modal; }));
   if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
     // The strip takes the colour of the page under it, so the inset does not end in a line: the Home root's dock, the
     // grouped Me page, New chat's grouped page, Add contact's bar (one rule each, colors.rcss.tmpl). Anything else (the
@@ -2281,10 +2389,24 @@ void ShellHost::ApplySafeAreaLayout() {
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).
+      toasts->RemoveProperty("left"); // the wide layout's offset, left over after a resize across the breakpoint
       toasts->SetProperty("top", "auto");
       set_dp(toasts, "bottom", layout.toast_bottom_dp);
+    } else if (state_.layout_mode == LayoutMode::Expanded) {
+      // Wide: a centred pill at the bottom of the content area (wide.rcss), over the status bar and the composer.
+      // The columns to its left (icon rail, list) move its left edge so it centres on the conversation.
+      float left_dp = kWideRailDp;
+      if (ShellLayout::SecondaryPaneShown(state_)) {
+        ui::Element* list = doc->GetElementById("shell-nav-content-mount");
+        const float list_dp = list ? list->GetOffsetWidth() / context_->GetDensityIndependentPixelRatio() : 0.f;
+        left_dp += list_dp > 0.f ? list_dp : static_cast<float>(state_.sidebar_width_dp);
+      }
+      toasts->SetProperty("top", "auto");
+      set_dp(toasts, "left", left_dp);
+      set_dp(toasts, "bottom", statusbar_dp + kWideToastBottomDp + layout.content_bottom_inset_dp);
     } else {
       // Absolute toast stack is positioned from the chrome top edge (ignores padding).
+      toasts->RemoveProperty("left");
       toasts->RemoveProperty("bottom");
       set_dp(toasts, "top", 8.f + layout.content_top_dp);
     }
@@ -2300,6 +2422,39 @@ void ShellHost::ApplySafeAreaLayout() {
            bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
   }
 
+  if (state_.layout_mode == LayoutMode::Expanded) {
+    // The send-preview tray rises from the conversation's own bottom edge, so its layer (the dim and the tray) spans the
+    // conversation column only: the frame takes the column's left and right edges. The scrim under it still covers the
+    // window, so the rail and the lists stay out of reach while the page is open.
+    for (const OverlayEntry& overlay : state_.overlay_stack) {
+      if (overlay.modal) {
+        // A modal desktop panel covers the whole window: its scrim and the stage that centres the frame reach out of
+        // #shell-root (the engine's `fixed` is relative to the nearest positioned ancestor) over the title bar's strip
+        // and the status bar. The window buttons of the title bar sit above them (z-index).
+        for (const char* part : {"shell-modal-scrim-", "shell-modal-stage-"}) {
+          ui::Element* element = doc->GetElementById((part + std::to_string(overlay.id)).c_str());
+          set_dp(element, "top", -layout.content_top_dp);
+          set_dp(element, "bottom", -root_bottom_dp);
+        }
+      }
+      if (overlay.key != "picture_send") {
+        continue;
+      }
+      ui::Element* frame = doc->GetElementById(("shell-frame-" + std::to_string(overlay.id)).c_str());
+      ui::Element* pane = doc->GetElementById("pane-chat");
+      ui::Element* layer = frame ? frame->GetParentNode() : nullptr;
+      if (!frame || !pane || !layer) {
+        continue;
+      }
+      const float ratio = std::max(context_->GetDensityIndependentPixelRatio(), 0.5f);
+      const float layer_left = layer->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float layer_right = layer_left + layer->GetBox().GetSize(ui::BoxArea::Border).x;
+      const float pane_left = pane->GetAbsoluteOffset(ui::BoxArea::Border).x;
+      const float pane_right = pane_left + pane->GetBox().GetSize(ui::BoxArea::Border).x;
+      set_dp(frame, "left", std::max(0.f, (pane_left - layer_left) / ratio));
+      set_dp(frame, "right", std::max(0.f, (layer_right - pane_right) / ratio));
+    }
+  }
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
@@ -2647,7 +2802,8 @@ ShellLayoutRml ShellHost::Rml() const {
 }
 
 const char* ShellHost::NavContentKey() const {
-  return ShellLayout::NavContentKey(state_.nav_tab);
+  return state_.layout_mode == LayoutMode::Expanded ? ShellLayout::ExpandedNavContentKey(state_.nav_tab)
+                                                    : ShellLayout::NavContentKey(state_.nav_tab);
 }
 
 void ShellHost::MountNavRail() {
@@ -2676,7 +2832,8 @@ void ShellHost::MountNavContent() {
   if (!target) {
     return;
   }
-  const std::string body = ViewCatalog::LoadBody(key);
+  const std::string body =
+      ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
   if (!body.empty()) {
     RmlMount::MountInner(target, body);
   }
@@ -2691,9 +2848,13 @@ void ShellHost::MountComposer() {
   if (body.empty()) {
     return;
   }
+  // A pane in the wide layout gets the desktop composer; the Home landing keeps the shared one.
+  const std::string wide_body = ViewCatalog::LoadBody(ViewCatalog::KeyForLayout("composer", true));
 
   // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
-  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
+  // In the wide layout an AI conversation opened from the AI list is the primary pane; its composer is that pane's.
+  const bool wide_ai_chat_open = state_.layout_mode == LayoutMode::Expanded && state_.primary_pane_key == "chat";
+  if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open && !wide_ai_chat_open) {
     if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
     }
@@ -2715,7 +2876,7 @@ void ShellHost::MountComposer() {
   if (state_.layout_mode == LayoutMode::Expanded) {
     ui::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
     if (target) {
-      RmlMount::MountInner(target, body);
+      RmlMount::MountInner(target, wide_body);
     }
     return;
   }
@@ -2876,7 +3037,8 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       return;
     }
-    const std::string body = ViewCatalog::LoadBody(key);
+    const std::string body =
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(key, state_.layout_mode == LayoutMode::Expanded));
     if (body.empty()) {
       // Avoid silent blank panes (common when packaged asset reads fail).
       ui::Log::Message(ui::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
@@ -2939,7 +3101,10 @@ void ShellHost::MountPaneBodies() {
     if (!target) {
       continue;
     }
-    const std::string body = ViewCatalog::LoadBody(overlay.rml_path);
+    // A page with its own layout for the wide window (the send-preview and the news reader: a card centred over the
+    // conversation) has a `<key>_wide` view; same model, same events. An rml_path that is a file path has none.
+    const std::string body =
+        ViewCatalog::LoadBody(ViewCatalog::KeyForLayout(overlay.rml_path, state_.layout_mode == LayoutMode::Expanded));
     if (!body.empty()) {
       RmlMount::MountInner(target, body);
     }
@@ -3539,6 +3704,7 @@ void ShellHost::Update(ui::Context* context) {
     if (on_viewport_resized_) {
       on_viewport_resized_();
     }
+    ResizeComputerLinkPage(context);
   }
   if (previous != state_.layout_mode) {
     OnLayoutModeChanged();
@@ -3553,6 +3719,7 @@ void ShellHost::Update(ui::Context* context) {
     if (maximized != state_.window_maximized) {
       state_.window_maximized = maximized;
       DesktopWindowChrome::RefreshAppearance();
+      state_.window_corners_small = DesktopWindowChrome::SystemRoundsCorners();
       statusbar_.Dirty();
     }
   }
@@ -3638,6 +3805,13 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
     delay_sec = std::min(delay_sec, *snap_sec);
   }
 
+  // The drop hint hides itself a second after the last drag position (SdlAppEvents::TickDrop), with no event to wake on.
+  if (drop_hint_wake_) {
+    if (const std::optional<int64_t> hide_ms = drop_hint_wake_()) {
+      delay_sec = std::min(delay_sec, static_cast<double>(*hide_ms) / 1000.0);
+    }
+  }
+
   if (std::isfinite(delay_sec)) {
     // Must run after Context::Update — that call resets next_update_timeout to infinity.
     context->RequestNextUpdate(delay_sec);
@@ -3706,7 +3880,19 @@ void ShellHost::PinGatePaste() {
   }
   ui::String text;
   system->GetClipboardText(text);
-  if (text.empty()) {
+  // The link page's reply: an empty clipboard, or text holding no reply code, is said so on the page (an error line)
+  // instead of nothing happening; the paste is not kept.
+  if (state_.pin_gate.link_paste_mode && !state_.pin_gate.phrase_flow) {
+    const char* refused = text.empty() ? "pin.link_paste_empty"
+                          : FindLinkPayload(kLinkReplyTextPrefix, std::string(text.c_str(), text.size()))
+                              ? nullptr
+                              : "pin.link_err_unreadable";
+    state_.pin_gate.error = refused != nullptr ? Tr(refused).c_str() : "";
+    DataModelHost::Instance().Dirty("window", "pin_gate_error");
+    if (refused != nullptr) {
+      return;
+    }
+  } else if (text.empty()) {
     return;
   }
   // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a

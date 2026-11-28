@@ -1,0 +1,31 @@
+<!-- The Groups list for the wide window (group_list.rml's page in a centred column, as the contact page is): the large
+     title, a card of 60dp rows (avatar, name, "N members"), the empty line. A click opens the chat (group_list_open); a
+     right click gives the Chats list's own menu for the group (rows carry `session-id`). Same data model and events
+     as the phone's view (ContactsController). Styles: assets/themes/wide.rcss. -->
+<div class="blocked-page group-list-wide" data-model="contacts">
+  <div class="group-list-page group-list-column">
+    <p class="group-list-wide-title">{{i18n:groups.title}}</p>
+    <div class="cd-card blocked-list" data-if="group_list_rows.size > 0">
+      <div data-for="row : group_list_rows" class="blocked-row group-list-row"
+           data-attr-session-id="row.thread_id"
+           data-event-click="group_list_open(row.thread_id)">
+        <div class="contacts-row-avatar-frame blocked-row-avatar"
+             data-class-avatar-tone-0="row.avatar_tone == 0"
+             data-class-avatar-tone-1="row.avatar_tone == 1"
+             data-class-avatar-tone-2="row.avatar_tone == 2"
+             data-class-avatar-tone-3="row.avatar_tone == 3"
+             data-class-avatar-tone-4="row.avatar_tone == 4"
+             data-class-avatar-tone-5="row.avatar_tone == 5"
+             data-class-avatar-tone-6="row.avatar_tone == 6"
+             data-class-avatar-tone-7="row.avatar_tone == 7">
+          <p class="avatar-letter">{{row.avatar_letter}}</p>
+        </div>
+        <div class="blocked-row-right">
+          <p class="blocked-row-name">{{row.title}}</p>
+          <p class="group-list-members text muted">{{row.members}}</p>
+        </div>
+      </div>
+    </div>
+    <p class="cd-footnote blocked-empty" data-if="group_list_rows.size == 0">{{i18n:groups.empty}}</p>
+  </div>
+</div>

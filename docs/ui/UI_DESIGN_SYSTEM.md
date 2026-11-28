@@ -178,7 +178,7 @@ Three tiers reuse the same badge components; do not confuse them with semantic l
 | Class | Use |
 |-------|-----|
 | `.badge-count` | Numeric pill (`1`, `12`, `99+`) for message unread |
-| `.badge-dot` | Non-count attention (Me-tab reachability nudge; future security prompts) |
+| `.badge-dot` | Non-count attention (future security prompts; unused today — the reachability dot was removed 2026-11-27) |
 | `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
 | `.contacts-trust-badge` | **Not** a notification badge — trust label only |
 
@@ -316,9 +316,12 @@ assets/themes/
   base.rcss           # Documents entry; RML links split files directly
   foundation.rcss     # Spacing, typography structure (no theme colors)
   components.rcss     # Component layout (no theme colors)
+  wide.rcss           # Wide screens only (desktop, wide iPad): every selector under .shell-body--wide, no colours
   colors-light.rcss   # @media (theme: light) { ... }
   colors-dark.rcss    # @media (theme: dark) { ... }
 ```
+
+**Wide-screen rules** (desktop refresh, `DEV/DESIGN-desktop-ui-split-rules.md`): `window_shell.rml` sets `shell-body--wide` while `layout_mode == 'expanded'` (and `shell-body--compact` otherwise; RCSS has no `:not()`). Every rule in `wide.rcss` starts with `.shell-body--wide` (`wide_stylesheet_test` checks it and that the phone root renders identically with and without the file). Colours of wide-only rules go in `colors.rcss.tmpl` / `theme_tokens.tsv` under the same root. Scale classes: `w-gap-*`, `w-pad-*` (4/8/12/16/24/32), `w-type-*` (24/17/16/15/14/12), `w-target` (min 32dp). Columns: icon rail 64, list 280-480 (default 320), conversation >= 420.
 
 Runtime: `Theme::ApplyAppearance` activates `light` or `dark` on the RmlUi context. Default user preference: **System** (follows `SDL_GetSystemTheme`).
 

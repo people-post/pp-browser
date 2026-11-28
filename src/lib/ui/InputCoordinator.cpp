@@ -17,7 +17,7 @@ void InputCoordinator::Clear() {
 }
 
 bool InputCoordinator::ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
-                                      bool priority_phase) {
+                                      bool priority_phase, bool repeat) {
   for (const KeyBinding& binding : bindings_) {
     if (binding.priority_phase != priority_phase) {
       continue;
@@ -32,6 +32,12 @@ bool InputCoordinator::ProcessKeyDown(ui::Context* context, ui::Input::KeyIdenti
       continue;
     }
     if (binding.when && !binding.when(context)) {
+      continue;
+    }
+    if (repeat && binding.skip_repeat) {
+      if (binding.repeat_action && !binding.repeat_action()) {
+        return false;
+      }
       continue;
     }
     if (!binding.action) {

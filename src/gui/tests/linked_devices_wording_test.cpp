@@ -92,13 +92,12 @@ TEST(LinkedDevicesWordingTest, TheTitlesAndTheCodeUseTheAgreedWords) {
   const std::string en = Asset("locales/en.json");
   EXPECT_NE(zh.find("\"settings.devices.title\": \"关联的设备\""), std::string::npos);
   EXPECT_NE(zh.find("\"settings.security.transfer_row\": \"关联新设备\""), std::string::npos);
-  EXPECT_NE(zh.find("\"settings.security.link_device.scan_button\": \"扫描新设备上的码\""), std::string::npos);
+  EXPECT_NE(zh.find("\"settings.security.link_device.scan_button\": \"扫描\""), std::string::npos);
   EXPECT_NE(zh.find("\"settings.security.link_device.check_title\": \"核对数字\""), std::string::npos);
   EXPECT_NE(zh.find("\"pin.link_paste_title\": \"关联这台设备\""), std::string::npos);
   EXPECT_NE(en.find("\"settings.devices.title\": \"Linked devices\""), std::string::npos);
   EXPECT_NE(en.find("\"settings.security.transfer_row\": \"Link a new device\""), std::string::npos);
-  EXPECT_NE(en.find("\"settings.security.link_device.scan_button\": \"Scan the new device's code\""),
-            std::string::npos);
+  EXPECT_NE(en.find("\"settings.security.link_device.scan_button\": \"Scan\""), std::string::npos);
   EXPECT_NE(en.find("\"pin.link_paste_title\": \"Link this device\""), std::string::npos);
 }
 

@@ -3,6 +3,7 @@
  *
  *   foundation.rcss   — spacing, typography structure
  *   components.rcss   — component layout
+ *   wide.rcss         — wide-screen (desktop / wide iPad) structure and sizes, every rule under .shell-body--wide
  *   colors-light.rcss — @media (theme: light)
  *   colors-dark.rcss  — @media (theme: dark)
  */

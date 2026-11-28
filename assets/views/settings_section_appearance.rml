@@ -60,7 +60,7 @@
             </span>
           </button>
         </div>
-        <div class="group-card settings-phone-only">
+        <div class="group-card settings-phone-only settings-wide-too">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
               <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.ai_dot.show}}</span>
@@ -84,9 +84,9 @@
             </span>
           </div>
         </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_logo.help}}</p>
-        <p class="text group-head settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
-        <div class="group-card ai-look-picker settings-phone-only">
+        <p class="text muted settings-help group-foot settings-phone-only settings-wide-too">{{i18n:settings.home_logo.help}}</p>
+        <p class="text group-head settings-phone-only settings-wide-too">{{i18n:settings.ai_dot.look}}</p>
+        <div class="group-card ai-look-picker settings-phone-only settings-wide-too">
           <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'auto'"
                   data-event-click="set_ai_dot_look('auto')">
             <span class="ai-look-art ai-look-art--auto"><svg src="../icons/v2/sparkle.svg"></svg></span>
@@ -128,8 +128,8 @@
             <span class="ai-look-name">{{i18n:settings.ai_dot.look_g}}</span>
           </button>
         </div>
-        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.ai_dot.look_auto_help}}</p>
-        <div class="group-card settings-phone-only">
+        <p class="text muted settings-help group-foot settings-phone-only settings-wide-too">{{i18n:settings.ai_dot.look_auto_help}}</p>
+        <div class="group-card settings-phone-only settings-wide-too">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_ai_dot_size()">
             <span class="group-row-body">

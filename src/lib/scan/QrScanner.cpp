@@ -15,6 +15,15 @@
 
 namespace pbr {
 namespace {
+// Phones capture 720p and decode at most 1280 on the long edge, as they always have. The desktop (the full-window
+// preview) asks for 1080p and decodes it whole: the link handshake's codes are version 29 (141 modules with the quiet
+// zone), and filling 60% of a 720-line frame gives them barely 3 pixels per module, quirc's floor.
+constexpr int kMobileCaptureWidth = 1280;
+constexpr int kMobileCaptureHeight = 720;
+constexpr int kDesktopCaptureWidth = 1920;
+constexpr int kDesktopCaptureHeight = 1080;
+// The desktop's full-window preview: sharp enough to judge focus, 3.7 MB a frame at most.
+constexpr int kFullPreviewEdge = 1280;
 // Reference implementation: RotateRgba90Cw (VideoYuv.cpp); keep the two in sync.
 // One pass and one allocation for any multiple of 90 degrees clockwise (was one full-frame copy per turn).
 VideoFrameRgba Upright(VideoFrameRgba frame, int rotation) {
@@ -73,8 +82,12 @@ VideoFrameRgba ScanPreview(VideoFrameRgba frame, float zoom, int max_edge = 640)
 
 class ScanFrameProcessor {
 public:
-  ScanFrameProcessor(CameraDeviceLease& camera, int rotation, ScanClock::time_point scan_started)
-      : camera_(camera), rotation_(rotation) {
+  ScanFrameProcessor(CameraDeviceLease& camera, int rotation, ScanClock::time_point scan_started,
+                     bool full_frame_preview)
+      : camera_(camera),
+        rotation_(rotation),
+        full_frame_preview_(full_frame_preview),
+        decode_edge_(full_frame_preview ? kQrDesktopDecodeEdge : kQrMobileDecodeEdge) {
     policy_.Begin(scan_started);
   }
   bool DecodeDue(ScanClock::time_point now) const { return policy_.DecodeDue(now); }
@@ -91,7 +104,7 @@ public:
     detected = false;
     if (!policy_.DecodeDue(now)) {
       // Most frames only feed the preview: shrink to the preview size first, then rotate the small copy.
-      auto preview = Upright(ScanPreview(std::move(frame), software_zoom_), rotation_);
+      auto preview = Upright(PreviewOf(std::move(frame)), rotation_);
       if (preview.width < 2 || preview.height < 2) {
         return {};
       }
@@ -104,7 +117,8 @@ public:
     std::optional<std::string> text;
     {
       const auto started = ScanClock::now();
-      auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, 1280)) : InspectQr(frame);
+      auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, decode_edge_), decode_edge_)
+                                         : InspectQr(frame, decode_edge_);
       const auto finished = ScanClock::now();
       decode_ms = ElapsedMs(started);
       detected = result.region.has_value();
@@ -140,7 +154,7 @@ public:
           .Add("zoom_changes", policy_.ZoomChanges())
           .Emit();
     }
-    return {ScanPreview(std::move(frame), software_zoom_), std::move(text), {}};
+    return {PreviewOf(std::move(frame)), std::move(text), {}};
   }
   int width = 0, height = 0;
   int64_t decode_ms = 0;
@@ -148,6 +162,11 @@ public:
   float zoom = 1.f;
 
 private:
+  // What the page shows. Only the preview differs between the two modes; the decoder above takes `frame` as before.
+  VideoFrameRgba PreviewOf(VideoFrameRgba frame) const {
+    return full_frame_preview_ ? ScanPreview(std::move(frame), 1.f, kFullPreviewEdge)
+                               : ScanPreview(std::move(frame), software_zoom_);
+  }
   // A code too far away yields no candidate at all (a capstone needs about three pixels per
   // module), so nothing would ever trigger the candidate zoom. Once the zoom has settled with
   // nothing in view, QrScanPolicy lets it swing 1x <-> 2x now and then (never in a scan's first
@@ -179,6 +198,8 @@ private:
   CameraDeviceLease& camera_;
   int rotation_;
   float software_zoom_ = 1.f;
+  bool full_frame_preview_ = false;
+  int decode_edge_ = kQrMobileDecodeEdge;
   bool native_zoom_ = false;
   bool candidate_zoom_ = false;
   QrScanPolicy policy_;
@@ -226,6 +247,7 @@ struct QrScanner::State {
   bool scanning = false;
   uint64_t generation = 0;
   int rotation = 0;
+  bool full_frame_preview = false;
   Update update;
 
   bool Current(uint64_t epoch) {
@@ -244,14 +266,15 @@ struct QrScanner::State {
     }
   }
 
-  void Capture(uint64_t epoch, int display_rotation) {
+  void Capture(uint64_t epoch, int display_rotation, bool full_frame_preview) {
     const auto scan_started = ScanClock::now();
     CameraLeaseRequest request;
     request.holder = "qr-scanner";
     request.format.display_rotation_deg = display_rotation;
     request.format.fps = 30;
-    request.format.capture_width = 1280;
-    request.format.capture_height = 720;
+    // A camera without the asked size delivers the closest it has.
+    request.format.capture_width = full_frame_preview ? kDesktopCaptureWidth : kMobileCaptureWidth;
+    request.format.capture_height = full_frame_preview ? kDesktopCaptureHeight : kMobileCaptureHeight;
     request.format.prefer_front_facing = false;
     if (!Current(epoch)) {
       return;
@@ -279,7 +302,7 @@ struct QrScanner::State {
     transform.front_facing = geometry.front_facing;
     const int rotate = CameraPreviewRotateCw(transform);
     auto last_frame = std::chrono::steady_clock::now();
-    ScanFrameProcessor processor(*lease, rotate, scan_started);
+    ScanFrameProcessor processor(*lease, rotate, scan_started, full_frame_preview);
     ScanCaptureStats stats;
     // Wake on the frame cadence, not every few ms: each wake costs three locked camera calls.
     const auto frame_period = std::chrono::milliseconds(request.format.fps > 0 ? 1000 / request.format.fps : 16);
@@ -301,6 +324,7 @@ struct QrScanner::State {
         idle_wait = std::min(frame_period, std::chrono::milliseconds(16));
         auto next = processor.Process(std::move(*frame), last_frame, zoom_state);
         stats.Frame(last_frame, processor);
+        next.mirror_preview = geometry.mirror_preview;
         const bool complete = next.text.has_value();
         Publish(epoch, std::move(next), complete);
         if (complete) {
@@ -334,8 +358,9 @@ struct QrScanner::State {
       }
       const auto epoch = generation;
       const int display_rotation = rotation;
+      const bool full_preview = full_frame_preview;
       lock.unlock();
-      Capture(epoch, display_rotation);
+      Capture(epoch, display_rotation, full_preview);
     }
   }
 };
@@ -348,13 +373,18 @@ QrScanner::~QrScanner() {
   Shutdown();
 }
 
-void QrScanner::Start(int display_rotation_deg) {
+bool QrScanner::CameraAvailable() const {
+  return state_->devices.HasCamera();
+}
+
+void QrScanner::Start(int display_rotation_deg, bool full_frame_preview) {
   std::lock_guard lock(state_->mutex);
   if (state_->closing) {
     return;
   }
   ++state_->generation;
   state_->rotation = display_rotation_deg;
+  state_->full_frame_preview = full_frame_preview;
   state_->update = {};
   state_->scanning = true;
   state_->cv.notify_one();

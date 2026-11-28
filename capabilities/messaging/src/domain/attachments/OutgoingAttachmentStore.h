@@ -54,7 +54,8 @@ public:
   Roe<void> Update(const OutgoingAttachmentRecord& record, const ByteVector& dek);
   Roe<OutgoingAttachmentRecord> Load(const std::string& id, const ByteVector& dek) const;
   /** The records of a thread whose ciphertext file is still there, oldest first; unreadable ones are skipped. */
-  std::vector<OutgoingAttachmentRecord> ListForThread(const std::string& thread_id, const ByteVector& dek) const;
+  std::vector<OutgoingAttachmentRecord> ListForThread(const std::string& thread_id, const ByteVector& dek,
+                                                      bool* complete = nullptr) const;
   bool HasCipher(const std::string& id) const;
   Roe<std::vector<uint8_t>> ReadCipher(const std::string& id) const;
   void Remove(const std::string& id) const;

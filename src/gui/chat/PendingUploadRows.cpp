@@ -40,6 +40,7 @@ bool PendingUploadRows::Apply(PendingUploadStep step) {
     const std::string id = step.next.row_id;
     queue_.Add(std::move(step.next));
     drawn_percent_[id] = queue_.Find(id)->percent;
+    added_ms_[id] = util::NowUnixMs();
     return true;
   }
   if (queue_.Empty()) {
@@ -73,6 +74,7 @@ bool PendingUploadRows::AfterChange(const std::string& id, const std::optional<P
       rows_.erase(row);
     }
     drawn_percent_.erase(id);
+    added_ms_.erase(id);
     return before.has_value();
   }
   const bool changed = !before || now->state != before->state || now->thumb_path != before->thumb_path ||
@@ -102,9 +104,28 @@ std::vector<MessageDisplayRow> PendingUploadRows::Render(std::vector<TranscriptR
                                                          const std::string& thread_id, const bool at_tip) {
   std::vector<std::string> drawn_ids;
   if (at_tip) {
+    // Our attachment messages in this chat, oldest first, not yet matched to an uploading item.
+    std::vector<int64_t> sent_at;
+    for (const TranscriptRow& entry : entries) {
+      if (entry.message.sender_contact_id == kLocalSelfContactId &&
+          entry.message.content_type == ChatContentType::Attachment) {
+        sent_at.push_back(entry.message.timestamp);
+      }
+    }
+    std::sort(sent_at.begin(), sent_at.end());
     for (const PendingUpload& item : queue_.Items()) {
       if (!item.ShowsIn(thread_id)) {
         continue;
+      }
+      if (item.state == PendingUploadState::Uploading) {
+        const auto added = added_ms_.find(item.row_id);
+        const auto match = added == added_ms_.end() ? sent_at.end()
+                                                    : std::find_if(sent_at.begin(), sent_at.end(),
+                                                                   [&](int64_t at) { return at >= added->second; });
+        if (match != sent_at.end()) {
+          sent_at.erase(match);
+          continue; // its real row is already here: the bubble becomes that row, never drawn beside it
+        }
       }
       TranscriptRow pending;
       pending.message.id = item.row_id;
@@ -146,6 +167,7 @@ void PendingUploadRows::Drop() {
   }
   rows_.clear();
   drawn_percent_.clear();
+  added_ms_.clear();
 }
 
 bool PendingUploadRows::RefreshTail(std::vector<MessageDisplayRow>& messages) const {

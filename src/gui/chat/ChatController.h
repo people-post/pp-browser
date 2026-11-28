@@ -9,10 +9,12 @@
 #include "feature/presenters/DeviceRemovedNotice.h"
 #include "feature/presenters/HomeBrief.h"
 #include "feature/presenters/HomeToday.h"
+#include "feature/presenters/NewsReader.h"
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PlatformShareFile.h"
+#include "foundation/platform/ui/DropCollector.h"
 #include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
@@ -21,6 +23,7 @@
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/PendingUploadRows.h"
 #include "gui/chat/PictureSendController.h"
+#include "feature/presenters/AttachIntake.h"
 #include "feature/presenters/AttachmentPicks.h"
 #include "feature/presenters/PictureSendQueue.h"
 #include "feature/presenters/VoiceSendQueue.h"
@@ -34,6 +37,8 @@
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
 #include "gui/chat/ChatMenus.h"
+#include "gui/chat/ForwardFlow.h"
+#include "gui/chat/ForwardProgressController.h"
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
@@ -81,6 +86,7 @@
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <filesystem>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -108,9 +114,10 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
-  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
-   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
-  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Keeps `overlay`'s transcript end spacer, fade and "new messages" pill clear of its floating composer bar (the
+   *  element `mount_id` inside it), whatever the bar's height: the phone's #shell-chat-overlay, or the wide layout's
+   *  conversation column (#pane-chat, mount #pane-composer-chat). Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay, const char* mount_id = "shell-composer-mount");
   /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
   static constexpr float kComposerClearGapDp = 12.f;
   static constexpr float kJumpLatestGapDp = 16.f;
@@ -183,6 +190,19 @@ public:
   SessionStore& Store() override;
   const SessionStore& Store() const;
   void Update();
+
+  /**
+   * Files dragged onto the window (a computer's native window; DropCollector via the app event hooks, DEV/PLAN-desktop-drop-paste.md C).
+   * `OnDropHover`: the pointer's place in UI coordinates, or empty = the drag is over (hide the hint). `OnFilesDropped`:
+   * the files and where the pointer last was (empty = it never had a place: nothing is taken). Only the open chat's own
+   * pane counts; the hint and the drop use the same RefusalFor as the "+" menu. UI thread.
+   */
+  void OnDropHover(std::optional<DropUiPoint> point);
+  void OnFilesDropped(std::vector<std::string> paths, std::optional<DropUiPoint> position);
+  /** Shows the hint over the chat with `text`; empty hides it (ShellHost::SetDropHint). */
+  void BindDropHint(std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_hint) {
+    set_drop_hint_ = std::move(set_hint);
+  }
   /** Call after ui::Context::Update so follow-tail uses fresh layout heights. */
   void AfterLayout();
   /** A shell SyncLayout finished in `ms`: the one after a chat was opened completes its chat.open metric. */
@@ -280,6 +300,7 @@ public:
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) {
     picture_send_.BindFlowCoordinator(ports);
+    forward_progress_.BindFlowCoordinator(ports);
     flow_coordinator_ = std::move(ports);
   }
   // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
@@ -473,6 +494,37 @@ private:
   void OnPhotoBatchItem(uint64_t pick_serial, size_t index, size_t total, std::string path);
   /** The library has handed over every picture of the pick (or none: it was cancelled). */
   void OnPhotoBatchDone(uint64_t pick_serial);
+  /**
+   * The one way files reach the send-preview page on a computer (the "+" menu's pickers now; a drop and a paste later):
+   * AttachIntake checks the state (RefusalFor), reads the files' facts off the UI thread, checks again, and opens the
+   * page with the first PictureSendQueue::kMaxItems that can go. UI thread. `candidates` are the user's own files
+   * unless `owned`.
+   */
+  void OpenAttachPreview(std::vector<AttachCandidate> candidates, AttachSource source);
+  /**
+   * Ctrl/Cmd+V or the menu's Paste in the chat's message box (a computer only): a picture on the clipboard, with no
+   * file and no text beside it, goes to the send preview. True = handled (the text paste must not run). UI thread.
+   */
+  bool TryPasteAttachment();
+  /** Installs both paste triggers (key binding, context-menu interceptor); nothing on a phone. */
+  void InstallPasteTriggers();
+  /** `<cache>/pasted`: where pasted pictures are written (outside the profile). */
+  /** `<cache>/pasted`: shared by every running instance, never emptied or deleted from. */
+  std::filesystem::path PastedRoot() const;
+  /** This run's own folder under PastedRoot() (a random id per process): the only place this process writes and deletes. */
+  std::filesystem::path PastedDir() const;
+  /** The chat title the header shows for `thread_id` (not the open chat's live title); empty when unknown. */
+  std::string ThreadTitleFor(const std::string& thread_id);
+  /** Once per run, after the first unlock: removes other runs' stale folders under PastedRoot() (a crash or a kill leaves files there). */
+  void SweepPastedFilesOnce();
+  /** What AttachIntake decides on, read from the controller now. */
+  AttachState CurrentAttachState() const;
+  AttachIntakePorts MakeAttachIntakePorts();
+  /** The open chat's pane (the conversation column; the narrow layout's chat page) holds the point (UI coordinates). */
+  bool ChatPaneContains(DropUiPoint point) const;
+  void HideDropHint();
+  /** AttachIntake's last step: the queue and the page for `items` in `thread_id`; false when the page could not open. */
+  bool OpenAttachItems(const std::string& thread_id, std::vector<AttachPlannedItem> items);
   /** The bottom pill follows the queue: "Sending 3 of 9" while it runs. */
   void ShowPictureProgress();
   /** How the queue ended: the pill's last word, and the metrics line. */
@@ -605,6 +657,13 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) override;
   void CancelQuoteReply();
+  /** ChatMenusHost's "Forward": starts choosing messages to forward (DEV/PLAN-message-forward-text.md). */
+  void BeginForward(const std::string& message_id) override;
+  void BeginSelect(const std::string& message_id) override;
+  /** The choosing (or the picker, or a pill's cause) changed: the title bar, the Forward button and the rows' ticks follow. */
+  void OnForwardChanged();
+  /** The rows get the forward flags (and the search marks when a search is open): the scroller's decorator. */
+  void InstallRowDecorator();
   /** Editing a sent message (DEV/PLAN-message-edit.md): ChatMenusHost's "Edit", and the bar's × while editing. */
   bool CanEditMessage(const std::string& message_id) override;
   void StartEditMessage(const std::string& message_id) override;
@@ -634,8 +693,44 @@ private:
   void OpenChatLink(const std::string& entry_id, int link_index) {
     OpenChatLinkIn(ActiveThreadId(), entry_id, link_index);
   }
-  /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
-  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
+  /**
+   * Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). A news item
+   * opens the news reader when `news_reader` (the chat page); otherwise, like any link, the browser.
+   */
+  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index,
+                      bool news_reader = true);
+  /** The link table of answer `entry_id` (rebuilt from its stored text after a restart); null when there is none. */
+  const std::vector<MarkdownLink>* ChatLinksOf(const std::string& thread_id, const std::string& entry_id);
+
+  // --- the news reader (DEV/PLAN-news-inline-digest.md; view "news_reader") -----------------------------------
+  /** A tap on news item `tapped` of answer `entry_id` whose links are `links`, in AI thread `thread_id`. */
+  void OpenNewsReader(const std::string& thread_id, const std::string& entry_id, const std::vector<MarkdownLink>& links,
+                      const MarkdownLink& tapped);
+  /** Shows item `index` of the open reader's list: its stored digest, or reads it (NewsReader decides); `retry`: from
+   *  "Try again" (the metrics line says so). */
+  void ShowNewsItem(size_t index, bool retry = false);
+  /** "Try again" under the failure line: the same item read again in place (ignored just after the failure showed). */
+  void RetryNewsItem();
+  /** Previous / Next under the reader (`step` -1 / +1); ignored while it is off. */
+  void StepNewsReader(int step);
+  /** "Open original": the item's own URL in the system browser (the trusted path). */
+  void OpenNewsOriginal();
+  /** Closes the reader sheet if it is open (lock, sign-out, the chat deleted or cleared). */
+  void CloseNewsReader();
+  /** The reader's state into the data model. */
+  void ApplyNewsReader();
+  /** The news items `thread_id` has read (read once, dropped when a read ends or the chat is cleared). */
+  const NewsReads& NewsReadsOf(const std::string& thread_id);
+  /** Greys the news items already read in `rows` of `thread_id`; `news_texts`: message id -> stored text of the
+   *  answers drawn with news items. */
+  void MarkReadNewsItems(std::vector<MessageDisplayRow>& rows, const std::string& thread_id,
+                         const std::map<std::string, std::string>& news_texts);
+  /** A news read of `thread_id` ended (digest, failure, error or stop): the reader and the list show what it left. */
+  void OnNewsReadEnded(const std::string& thread_id);
+  /** The running news read of `thread_id` streamed more text: kept in memory, drawn when a redraw is due. */
+  void OnNewsReadText(const std::string& thread_id, const std::string& text_so_far) override;
+  /** Redraws the open reader with its read's streamed text when NewsStreamText says a redraw is due (per tick too). */
+  void DrawNewsStream();
   /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
    *  asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
@@ -647,6 +742,8 @@ private:
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
+  /** The hover bar's reactions follow the recently used emoji (the same row the message menu opens with). */
+  void RefreshBarEmojis();
   void ResetChatPanelState();
   std::string failed_record_id_;
   /** The picture being sent, as a temporary bubble at the end of its chat; one at a time. */
@@ -660,6 +757,11 @@ private:
   uint64_t picture_queue_serial_ = 0;
   /** The preview page of the pictures picked together (hosted here like OpenHomeEdit's layer). */
   PictureSendController picture_send_;
+  /** Made on first use (OpenAttachPreview). */
+  std::unique_ptr<AttachIntake> attach_intake_;
+  /** Made on first use (TryPasteAttachment). */
+  std::unique_ptr<PasteAttach> paste_attach_;
+  bool pasted_swept_ = false;
   /** The several-photo pick being copied out of the library (iPhone / iPad); none otherwise. */
   struct PhotoBatch {
     uint64_t pick_serial = 0;
@@ -756,6 +858,10 @@ private:
                         std::vector<TextSpan> spans);
   /** Enter / Tab choose the `@` picker's first line while it is open over the composer. */
   void RegisterMentionPickerKeys();
+  /** Tab / Shift+Tab stay inside the modal desktop news reader. */
+  void RegisterNewsReaderKeys();
+  /** Moves the focus to the next (previous) button of the reader panel; false when there is no such panel. */
+  bool CycleNewsReaderFocus(bool backwards);
   void RefreshFromMessaging();
   void OnLoadOlderHistory();
   void OnRetryPeerDial();
@@ -805,7 +911,8 @@ private:
   void AskAiLater(std::function<void()> fn) override;
   void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
-    OpenChatLinkIn(thread_id, entry_id, link_index);
+    // The panel holds one sheet at a time: a news item there opens the browser, as before.
+    OpenChatLinkIn(thread_id, entry_id, link_index, /*news_reader=*/false);
   }
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
@@ -1039,13 +1146,27 @@ private:
   std::optional<PendingReply> pending_reply_;
 
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
-  std::map<std::string, std::vector<std::string>> chat_links_;
+  std::map<std::string, std::vector<MarkdownLink>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
+  /** Forwarding text and contact cards, from the menu's Forward to the pill; made in the constructor (it needs `this`). */
+  std::unique_ptr<ForwardFlow> forward_flow_;
+  /** The "Forwarding 2/7" page of a forward with attachments; the flow opens, draws and closes it. */
+  ForwardProgressController forward_progress_;
+  /** The phone really went to the background (PlatformLifecycleEvents; focus loss is not it): a forward stops. */
+  uint64_t forward_background_id_ = 0;
+  /** What "Forward to" shows of attachments: a bubble's picture, a poster, a thumbnail made in memory. */
+  ForwardPreviewPorts MakeForwardPreviewPorts();
+  /** The thumbnail files made for the "Forward to" page (null: none yet); removed with the page. */
+  std::unique_ptr<ForwardPreviewFiles> forward_preview_files_;
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<std::string>()> ensure_support_;
   std::function<void(const std::string& section_id)> open_settings_section_;
+  std::function<void(const std::string& text, const std::optional<NameWords>& words)> set_drop_hint_;
+  /** The hint is showing; the preview page was open when it last was set (a page opening under it hides it). */
+  bool drop_hint_shown_ = false;
+  bool drop_hint_preview_open_ = false;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this,           presenter_,       chat_,
@@ -1100,10 +1221,22 @@ private:
   HomeBriefCache home_brief_;
   std::string home_brief_dir_; // the profile directory the cache was read from
   bool home_brief_fetching_ = false;
-  int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
-  int reactors_layer_ = -1;             // the reactions sheet while it is open
-  std::string reactors_message_id_;     // the message it lists
-  int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
+  int64_t home_brief_failed_ms_ = 0; // the last fetch that failed; 0 none
+  int reactors_layer_ = -1;          // the reactions sheet while it is open
+  std::string reactors_message_id_;  // the message it lists
+  /** The news reader while it is open: its chat, the list it walks (one item for a news pick) and where it is. */
+  struct NewsReaderOpen {
+    std::string thread_id;
+    std::vector<NewsItem> items;
+    size_t index = 0;
+  };
+  std::optional<NewsReaderOpen> news_reader_;
+  int news_reader_layer_ = -1;
+  std::optional<std::chrono::steady_clock::time_point> news_failed_since_; // the failure line appeared (retry guard)
+  std::map<std::string, std::string> news_reading_url_; // AI thread -> the URL its running news read reads
+  std::map<std::string, NewsReads> news_reads_;         // AI thread -> its read items (NewsReadsOf)
+  std::map<std::string, NewsStreamText> news_streams_;  // AI thread -> its running read's text so far (never stored)
+  int home_edit_layer_ = -1;                            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_;          // a second Escape within kDoubleEscapeWindowMs stops the turn

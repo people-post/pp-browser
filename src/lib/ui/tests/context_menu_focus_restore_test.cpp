@@ -1334,4 +1334,65 @@ TEST_F(DesktopMessageMenuTest, InTheMiddleTheListStillOpensUnderTheMessage) {
   EXPECT_NEAR(BoxOf(panel).top, anchor.bottom + 6.f, 1.f) << "the usual gap";
 }
 
+// The menu's Paste asks a registered interceptor first (the chat composer taking a picture from the clipboard,
+// DEV/PLAN-desktop-drop-paste.md D1). This layer only holds the callback.
+class ContextMenuPasteTest : public ContextMenuFocusRestoreTest {
+protected:
+  class CountingSystem : public ui::SystemInterface {
+  public:
+    double GetElapsedTime() override { return 0.0; }
+    void GetClipboardText(ui::String& text) override {
+      ++reads;
+      text = "pasted words";
+    }
+    int reads = 0;
+  };
+
+  void SetUp() override {
+    ContextMenuFocusRestoreTest::SetUp();
+    ui::SetSystemInterface(&system_);
+  }
+  void TearDown() override {
+    ContextMenuHost::Instance().SetPasteInterceptor({});
+    ContextMenuFocusRestoreTest::TearDown();
+    ui::SetSystemInterface(nullptr);
+  }
+  CountingSystem system_;
+};
+
+TEST_F(ContextMenuPasteTest, WithNoInterceptorThePasteReadsTheClipboardText) {
+  ContextMenuHost::Instance().PasteInto(document_->GetElementById("field"));
+  EXPECT_EQ(system_.reads, 1);
+}
+
+TEST_F(ContextMenuPasteTest, AnInterceptorThatHandlesItSpareTheTextPasteAndGetsTheEditor) {
+  ui::Element* field = document_->GetElementById("field");
+  ui::Element* seen = nullptr;
+  ContextMenuHost::Instance().SetPasteInterceptor([&seen](ui::Element* editor) {
+    seen = editor;
+    return true;
+  });
+  ContextMenuHost::Instance().PasteInto(field);
+  EXPECT_EQ(seen, field);
+  EXPECT_EQ(system_.reads, 0);
+}
+
+TEST_F(ContextMenuPasteTest, AnInterceptorThatDeclinesLeavesThePasteAsItWas) {
+  int asked = 0;
+  ContextMenuHost::Instance().SetPasteInterceptor([&asked](ui::Element*) {
+    ++asked;
+    return false;
+  });
+  ContextMenuHost::Instance().PasteInto(document_->GetElementById("field"));
+  EXPECT_EQ(asked, 1);
+  EXPECT_EQ(system_.reads, 1);
+}
+
+TEST_F(ContextMenuPasteTest, ClearingTheInterceptorRestoresThePlainPaste) {
+  ContextMenuHost::Instance().SetPasteInterceptor([](ui::Element*) { return true; });
+  ContextMenuHost::Instance().SetPasteInterceptor({});
+  ContextMenuHost::Instance().PasteInto(document_->GetElementById("field"));
+  EXPECT_EQ(system_.reads, 1);
+}
+
 } // namespace pbr

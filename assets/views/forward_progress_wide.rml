@@ -1,0 +1,27 @@
+<!-- The "Forwarding 2/7" page for the wide window (forward_progress.rml's content as a card centred in the layer). Same
+     data model and events as forward_progress.rml (ForwardProgressController); no logic here. The frame's x (the shell's) stops the forward like
+     Cancel; Esc is Cancel too, and losing focus or minimising the window does not stop the forward on a computer.
+     Styles: assets/themes/wide.rcss. -->
+<div class="forward-progress forward-progress--wide" data-model="forward_progress">
+  <div class="forward-progress-card">
+    <p class="forward-progress-title">{{fp_title}}</p>
+    <div class="forward-progress-activity">
+      <div class="forward-progress-spinner" data-if="!fp_has_percent">
+        <div class="forward-progress-spinner-arc"></div>
+        <div class="forward-progress-ring-core"></div>
+      </div>
+      <div class="forward-progress-ring" data-if="fp_has_percent">
+        <div class="forward-progress-ring-track" data-style-decorator="fp_ring_decor"></div>
+        <div class="forward-progress-ring-core"><p class="forward-progress-ring-text">{{fp_percent_text}}</p></div>
+      </div>
+    </div>
+    <p class="forward-progress-line">{{fp_line}}</p>
+    <p class="forward-progress-stay" data-if="!fp_finishing">{{i18n:chat.forward.progress_stay_desktop}}</p>
+    <div class="forward-progress-actions">
+      <button class="btn btn-secondary forward-progress-btn" type="button" data-if="!fp_finishing"
+              data-event-click="forward_progress_cancel()">{{i18n:common.cancel}}</button>
+      <button class="btn btn-secondary forward-progress-btn" type="button" data-if="fp_can_close"
+              data-event-click="forward_progress_close()">{{i18n:common.close}}</button>
+    </div>
+  </div>
+</div>

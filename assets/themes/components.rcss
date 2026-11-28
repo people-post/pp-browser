@@ -243,6 +243,92 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* Choosing messages to forward: the title bar takes the header's place. */
+.chat-forward-top {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8dp;
+}
+
+.chat-forward-title {
+  margin: 0;
+  font-size: 17dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-forward-cancel {
+  flex-shrink: 0;
+  min-width: 44dp;
+  height: 44dp;
+  padding: 0 12dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 17dp;
+  white-space: nowrap;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* The bottom: one Forward button where the composer was. */
+.chat-forward-bar {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  margin: 0 8dp 6dp 8dp;
+}
+
+.chat-forward-next {
+  display: block;
+  width: 100%;
+  min-height: 50dp;
+  line-height: 50dp;
+  text-align: center;
+}
+
+/* A row while choosing: room on the left for the tick box, and a cover that takes every tap on the row. */
+.message-row-forward-mode {
+  position: relative;
+  padding-left: 40dp;
+  /* Its own stacking context, under the composer bar (z-index 2): the cover (7) and tick (8) must not rise above the
+     Forward button, or a click on it also ticks the row beneath. */
+  z-index: 1;
+}
+
+.message-forward-check {
+  position: absolute;
+  left: 10dp;
+  top: 10dp;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+  border-radius: 12dp;
+  border-width: 2dp;
+  z-index: 8;
+  pointer-events: none;
+}
+
+.message-forward-check--on {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+/* Above everything in the row that is positioned (a bubble's tail host, a reaction row, a list item): the cover is the
+   one that takes the click, so a link, a number or a card inside a bubble only ticks the row. */
+.message-forward-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  cursor: pointer;
+}
+
 /* A search match in a message (colours in colors-*.rcss); like the mention chip, it stays inline. */
 .search-mark {
   padding: 0 1dp;
@@ -835,8 +921,8 @@ select selectbox option {
   opacity: 0.72;
 }
 
-/* The upload card (sending a picture or file): picture or type badge, name over a progress bar, red cancel disc.
-   The bar breathes (opacity only: no layout per frame) while bytes move; it stops when done or cancelled. */
+/* The upload card (sending a picture or file): picture or type badge, name over the status line, the upload ring, red
+   cancel disc. */
 .prompt-upload-card {
   flex: 1;
   min-width: 0;
@@ -875,27 +961,47 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
-.prompt-upload-bar {
-  height: 6dp;
-  border-radius: 3dp;
-  background-color: rgba(127, 127, 127, 0.28);
+/* The upload ring of the chat bubbles (.chat-pending-*) at 2/3: a 32dp disc, a 26dp ring (its unfilled track a faint
+   white; the filled part is the conic-gradient decorator TranscriptRml's PendingRingDecorator builds, bound as
+   attachment_ring_decor) and a 20dp core. Too small for the number: it stays in the status line. Unknown amount: the
+   same disc with the ring turning, the same 32dp box. */
+.prompt-upload-ring,
+.prompt-upload-spinner {
+  position: relative;
+  flex-shrink: 0;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
 }
 
-.prompt-upload-fill {
-  height: 6dp;
-  min-width: 6dp;
-  border-radius: 3dp;
-  background-color: #0a84ff;
+.prompt-upload-ring-track {
+  position: absolute;
+  top: 3dp;
+  left: 3dp;
+  width: 26dp;
+  height: 26dp;
+  border-radius: 13dp;
 }
 
-@keyframes prompt-upload-breathe {
-  0% { opacity: 1; }
-  50% { opacity: 0.55; }
-  100% { opacity: 1; }
+.prompt-upload-spinner-arc {
+  position: absolute;
+  top: 3dp;
+  left: 3dp;
+  width: 26dp;
+  height: 26dp;
+  box-sizing: border-box;
+  border-width: 3dp;
+  border-radius: 13dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
 }
 
-.prompt-upload-fill--moving {
-  animation: 1.4s sine-in-out infinite prompt-upload-breathe;
+.prompt-upload-ring-core {
+  position: absolute;
+  top: 6dp;
+  left: 6dp;
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
 }
 
 .prompt-upload-status {
@@ -1208,6 +1314,150 @@ select selectbox option {
 .chat-link {
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* The news reader sheet (news_reader.rml): the item's title, the digest, then a bar of 50dp buttons ("Open original",
+   and Previous / Next for a list). Colours: colors.rcss.tmpl. A column of its own, not .ac-page / .ac-scroll: in a
+   sheet those are the Add contact page's (.shell-layer-compact .ac-page .ac-scroll: absolutely positioned over the whole
+   page), which drew the
+   bar at the top, over the title, and let the scroll take its taps. The bar stays in the flow at the bottom (the
+   sheet's own padding keeps it above the home indicator); only the title and the digest scroll. */
+.news-reader {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.news-reader-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4dp 24dp 4dp;
+  box-sizing: border-box;
+}
+
+.news-reader-title {
+  margin: 4dp 0 12dp 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+  word-break: break-word;
+}
+
+/* "AI translation of the original": one small line under the title of a translated digest. */
+.news-reader-translated {
+  margin: -6dp 0 12dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  word-break: break-word;
+}
+
+.news-reader-loading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  margin-top: 8dp;
+}
+
+.news-reader-spin {
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+  border-width: 2dp;
+  border-radius: 9dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
+.news-reader-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 22dp;
+}
+
+.news-reader-body {
+  font-size: 16dp;
+  line-height: 25dp;
+}
+
+.news-reader-body p {
+  margin: 0 0 12dp 0;
+  word-break: break-word;
+}
+
+.news-reader-body ul,
+.news-reader-body ol {
+  margin: 4dp 0 12dp 0;
+  padding-left: 0;
+}
+
+.news-reader-body li {
+  display: block;
+  position: relative;
+  padding-left: 26dp;
+  word-break: break-word;
+}
+
+.news-reader-body .md-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.7;
+}
+
+.news-reader-body .md-item {
+  display: block;
+}
+
+.news-reader-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  padding: 8dp 0 12dp 0;
+}
+
+.news-reader-open,
+.news-reader-step {
+  height: 50dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.news-reader-open {
+  flex: 1;
+  min-width: 0;
+  font-size: 16dp;
+  font-weight: bold;
+}
+
+.news-reader-step {
+  flex-shrink: 0;
+  min-width: 88dp;
+  padding: 0 14dp;
+  font-size: 15dp;
+}
+
+.news-reader-step--off {
+  opacity: 0.35;
+}
+
+/* "Try again" under the failure line: the bar's secondary pill (50dp), as wide as its words. */
+.news-reader-retry {
+  display: inline-block;
+  height: 50dp;
+  min-width: 120dp;
+  margin-top: 14dp;
+  padding: 0 20dp;
+  border-radius: 25dp;
+  line-height: 50dp;
+  text-align: center;
+  font-size: 15dp;
+  box-sizing: border-box;
 }
 
 /* A mention / @everyone in a group message (group-chat G015): a tinted chip, bold; a member's opens them. */
@@ -1593,6 +1843,20 @@ select selectbox option {
    Hidden while maximized (edge-to-edge). */
 .shell-body--framed {
   border-width: 1dp;
+}
+
+/* The macOS window's own shape (WindowChrome_Darwin.mm kWindowCornerRadiusPt, 18): the system layer that clips the
+   corners also draws the hairline outline, so there is one edge, not two. Draw no border here (and no radius: the layer
+   cuts the corners; a second, coarsely anti-aliased curve at the same radius is what looked jagged). If that radius
+   changes, nothing here has to. Linux and Windows 10 keep their square window. */
+.shell-body--framed.shell-body--round {
+  border-width: 0dp;
+}
+
+/* Windows 11 rounds the window itself (WindowCorners_Win32.cpp, DWMWCP_ROUND: the system's small radius, 8px at 100%
+   scale): the outline follows it. Maximized, the window is square and unframed. */
+.shell-body--framed.shell-body--round-small {
+  border-radius: 8dp;
 }
 
 .shell-titlebar {
@@ -3518,7 +3782,6 @@ select selectbox option {
   padding: 0 12dp;
   box-sizing: border-box;
   border-top-width: 1dp;
-  border-top-style: solid;
   z-index: 50;
 }
 
@@ -4913,7 +5176,6 @@ select selectbox option {
   margin-top: -17dp;
   margin-left: -17dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite photo-preview-spin;
 }
@@ -7615,6 +7877,11 @@ input.checkbox {
   text-align: center;
 }
 
+/* Account setup's button stacks (account, friends): a label stays on one line, whatever the language. */
+.shell-onboarding-actions .btn {
+  white-space: nowrap;
+}
+
 .shell-pin-gate-input {
   width: 100%;
   margin-bottom: 10dp;
@@ -7625,29 +7892,252 @@ input.checkbox {
 }
 
 /* The link page (M027): the new device's offer, a dense QR code (version 29) the main device's camera reads from this
-   screen, so as large as the card allows; dark on white whatever the theme. */
-.shell-pin-gate-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6dp;
-  margin-bottom: 10dp;
+   screen, so as large as the page allows (the shell binds its side, QrDisplay.h LinkQrDisplayFor); dark on white
+   whatever the theme. The card widens for it: on a desktop to 560dp, on a phone to the whole screen, and scrolls when
+   the second step does not fit under the code. */
+.shell-dialog.shell-pin-gate--link {
+  width: 94%;
+  max-width: 560dp;
+  max-height: 96%;
+  overflow-y: auto;
+  padding: 20dp 24dp;
+}
+
+.shell-dialog.shell-pin-gate--link.shell-pin-gate--compact {
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  transform: none;
+  border-radius: 0;
+  padding: 44dp 20dp 16dp 20dp;
+}
+
+.shell-pin-gate--link .shell-dialog-title,
+.shell-pin-gate--link .shell-dialog-message {
+  text-align: center;
+}
+
+/* No reserved empty lines on this page: the room goes to the code (the error line grows when it has words). */
+.shell-pin-gate--link .shell-pin-gate-error {
+  min-height: 0;
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.shell-pin-gate--link .shell-dialog-actions {
+  margin-top: 4dp;
+}
+
+.shell-pin-gate-offer {
+  display: block;
+  margin: 8dp 0 4dp 0;
+  text-align: center;
 }
 
 .shell-pin-gate-qr {
-  width: 260dp;
-  height: 260dp;
+  display: block;
+  width: 280dp;
+  height: 280dp;
+  margin: 0 auto;
   /* The theme tints ordinary svg icons; preserve the QR's white quiet zone. */
   image-color: #ffffff;
 }
 
-.shell-pin-gate-code {
-  font-weight: bold;
+.shell-pin-gate-code-label {
+  margin: 12dp 0 0 0;
+  font-size: 13dp;
   text-align: center;
 }
 
-.shell-pin-gate-scan {
-  margin-bottom: 8dp;
+.shell-pin-gate-code {
+  margin: 0;
+  font-size: 30dp;
+  line-height: 38dp;
+  font-weight: bold;
+  letter-spacing: 6dp;
+  text-align: center;
+}
+
+.shell-pin-gate-valid {
+  margin: 0 0 4dp 0;
+  font-size: 12dp;
+  text-align: center;
+}
+
+.shell-pin-gate-copy {
+  display: block;
+  width: 100%;
+  min-height: 44dp;
+  text-align: center;
+}
+
+/* The second step, the main device's reply: its own block under the first, the main action full width. */
+.shell-pin-gate-return {
+  display: block;
+  margin: 8dp 0 4dp 0;
+}
+
+.shell-pin-gate-step {
+  margin: 0 0 8dp 0;
+}
+
+/* The computer's caption under Paste / Scan: small, grey, centred; it wraps. */
+.shell-pin-gate-computer-note {
+  margin: 10dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.shell-pin-gate-return .btn {
+  min-height: 50dp;
+  line-height: 50dp;
+  text-align: center;
+}
+
+/* The link page on a desktop computer (ShellLayoutRml::PinGate; QrDisplay.h LinkComputerLayoutFor sizes the code from the
+   window). The layer centres the card by layout instead of a transform, so the card is never taller than the window
+   and its footer (Back, Continue) is always on screen: the title and the footer keep their height, the body between
+   them scrolls only when even the 280dp code does not fit. Two columns (the class --two-columns, a wide window): the code and
+   Copy as text on the left, the steps, the 4 digits and the Paste / Scan row on the right; one column otherwise.
+   Text is a size smaller than the phone's page; buttons keep their 44dp. Kept here rather than in a wide sheet: it is
+   one page, generated in C++, and no wide stylesheet exists yet. */
+.shell-pin-gate-layer--computer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-pin-gate-layer--computer .shell-dialog.shell-pin-gate--computer {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  width: 90%;
+  max-width: 720dp;
+  max-height: 90%;
+  padding: 16dp 20dp;
+  overflow: hidden;
+}
+
+.shell-pin-gate--computer .shell-dialog-title {
+  flex-shrink: 0;
+  margin: 0 0 6dp 0;
+  font-size: 16dp;
+}
+
+/* Every button of the page stays inside its column and the card, whatever its label. */
+.shell-pin-gate--computer .btn {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-body {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shell-pin-gate--computer .shell-dialog-actions {
+  flex-shrink: 0;
+  margin-top: 8dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-error {
+  font-size: 12dp;
+  line-height: 17dp;
+}
+
+.shell-pin-gate--computer .settings-step-text {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-offer {
+  margin: 4dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code-label {
+  margin-top: 4dp;
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-code {
+  font-size: 24dp;
+  line-height: 28dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-valid {
+  font-size: 12dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return {
+  margin: 2dp 0 0 0;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-step {
+  margin-bottom: 4dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-return .btn {
+  min-height: 44dp;
+  line-height: 44dp;
+}
+
+.shell-pin-gate--computer .shell-pin-gate-computer-note {
+  margin-top: 4dp;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-cols {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-code {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* Content width, not 100%: a percentage width would make the column as wide as the whole row. */
+.shell-pin-gate--two-columns .shell-pin-gate-copy {
+  display: inline-block;
+  width: auto;
+  padding: 0 16dp;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-col-steps {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.shell-pin-gate--two-columns .link-step {
+  justify-content: flex-start;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-error,
+.shell-pin-gate--two-columns .shell-pin-gate-note,
+.shell-pin-gate--two-columns .shell-pin-gate-digits,
+.shell-pin-gate--two-columns .shell-pin-gate-code-label,
+.shell-pin-gate--two-columns .shell-pin-gate-code,
+.shell-pin-gate--two-columns .shell-pin-gate-valid,
+.shell-pin-gate--two-columns .shell-pin-gate-computer-note {
+  text-align: left;
+}
+
+.shell-pin-gate--two-columns .shell-pin-gate-code {
+  letter-spacing: 6dp;
 }
 
 /* The default-PIN line with its "?" (dialog and PIN gate): small, centred, below the content. */
@@ -8173,7 +8663,6 @@ input.checkbox {
   width: 28dp;
   height: 28dp;
   border-width: 3dp;
-  border-style: solid;
   border-radius: 17dp;
   animation: 0.9s linear infinite sync-pending-spin;
 }
@@ -9765,11 +10254,11 @@ input.checkbox {
 
 /* The switch animating is the only feedback a toggle gives (no "saved" toast). */
 .settings-switch {
-  transition: background-color 0.15s ease-in-out;
+  transition: background-color 0.15s quadratic-in-out;
 }
 
 .settings-switch-knob {
-  transition: transform 0.15s ease-in-out;
+  transition: transform 0.15s quadratic-in-out;
 }
 
 .settings-choice-row {
@@ -10204,6 +10693,86 @@ input.checkbox {
   margin: 0;
   font-size: 11dp;
   flex-shrink: 0;
+}
+
+/* Choose and return (Forward to): the chats that cannot be ticked any more are greyed; the strip says what is sent. */
+.people-picker--choose .people-picker-row--locked {
+  opacity: 0.4;
+}
+
+.people-picker-preview {
+  padding: 8dp 12dp;
+  border-radius: 10dp;
+}
+
+.people-picker-preview-text {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 18dp;
+  max-height: 36dp;
+  overflow: hidden;
+}
+
+/* Forward to: attachments in the strip, up to three tiles; grey ones have no bytes on this device. */
+.people-picker-preview-items {
+  gap: 10dp;
+  align-items: flex-start;
+}
+
+.people-picker-preview-item {
+  width: 72dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.people-picker-preview-item--grey {
+  opacity: 0.4;
+}
+
+.people-picker-preview-tile {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 8dp;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.people-picker-preview-thumb {
+  width: 56dp;
+  height: 56dp;
+}
+
+.people-picker-preview-icon {
+  width: 56dp;
+  height: 56dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.people-picker-preview-label {
+  margin: 4dp 0 0 0;
+  font-size: 12dp;
+  line-height: 14dp;
+  max-height: 28dp;
+  max-width: 72dp;
+  overflow: hidden;
+  text-align: center;
+}
+
+.people-picker-preview-note {
+  margin: 6dp 0 0 0;
+  font-size: 13dp;
+  line-height: 17dp;
+}
+
+.people-picker-refusal {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 18dp;
 }
 
 .people-picker-footer {
@@ -11161,6 +11730,78 @@ input.checkbox {
   margin-top: 8dp;
   font-size: 13dp;
   line-height: 18dp;
+}
+
+/* Desktop computer scanner (ShellLayoutRml: .shell-layer-computer, the same full-screen layer as the phone's): the camera
+   fills the window and the picture is the whole frame, aspect-fit (ElementScanPreview draws it, the dimming and the guide
+   square on it); the back is a round button at the top left, the hint (or the failure line) and Cancel / Try again sit at
+   the bottom, always inside the window. */
+.qr-scan-computer-bar {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.shell-layer-computer .qr-scan-title,
+.shell-layer-computer .qr-scan-status {
+  display: none;
+}
+
+.shell-layer-computer .qr-scan-camera {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 0;
+}
+
+.shell-layer-computer .qr-scan-back {
+  position: absolute;
+  top: 16dp;
+  left: 16dp;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-computer .qr-scan-back svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-computer .qr-scan-computer-bar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 12dp 32dp 4dp 32dp;
+  text-align: center;
+}
+
+.shell-layer-computer .qr-scan-computer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-computer .qr-scan-actions {
+  position: relative;
+  z-index: 1;
+  justify-content: center;
+  padding: 8dp 32dp 16dp 32dp;
 }
 
 /* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
@@ -14045,19 +14686,12 @@ textarea:composing ~ .prompt-composer-label,
   margin: 8dp 32dp 0 32dp;
 }
 
-/* Me > Devices & transfer > Link a new device (phones): lead line, the 50dp scan and paste buttons (the grouped-page
+/* Me > Devices & transfer > Link a new device (phones): the numbered steps, the 50dp scan and paste buttons (the grouped-page
    .btn), the framed reply box with its QR code and small "copy" button, then the numbered steps and the reset note. */
-.shell-layer-compact .settings-transfer-lead {
-  margin: 20dp 32dp 0 32dp;
-  font-size: 15dp;
-  line-height: 21dp;
-}
-
 .shell-layer-compact .settings-copied-box {
   margin: 16dp 16dp 0 16dp;
   padding: 16dp 18dp 8dp 18dp;
   border-width: 2dp;
-  border-style: solid;
   border-radius: 14dp;
   box-sizing: border-box;
 }
@@ -14086,10 +14720,17 @@ textarea:composing ~ .prompt-composer-label,
 .settings-link-reply {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6dp;
 }
 
+/* On a phone the box leaves the code (up to the page's width less 40dp) its full width: slim margin and padding. */
+.shell-layer-compact .settings-link-reply {
+  margin: 16dp 10dp 0 10dp;
+  padding: 16dp 6dp 8dp 6dp;
+}
+
+/* The code's side is bound (link_qr_side: the page's width on a phone, up to 423dp on a desktop window). */
 .settings-link-qr {
   width: 280dp;
   height: 280dp;
@@ -14102,39 +14743,124 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
 }
 
-.shell-layer-compact .settings-steps-card {
-  padding: 0 16dp 0 0;
+/* The reply's note: one grey line (two on a narrow phone) under the validity line, centred. */
+.settings-link-note {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
 }
 
-.shell-layer-compact .settings-step {
+/* Copy as text and Send… side by side, as wide as the code. */
+.link-btn-row--reply {
+  max-width: 360dp;
+  margin: 4dp 0 0 0;
+}
+
+/* The reply's two buttons: "Copy as text" quiet, "Done" the one main button; 50dp rows, as wide as the code. */
+.settings-link-btn {
+  display: block;
+  width: 100%;
+  max-width: 360dp;
+  box-sizing: border-box;
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 4dp 0 0 0;
+  text-align: center;
+}
+
+/* The link pages' Scan / Paste pair: one row, equal widths sharing the card's content width (Paste alone: all of it). */
+.link-btn-row {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
-  padding: 12dp 0;
+  gap: 10dp;
+  width: 100%;
+  margin: 10dp 0 0 0;
 }
 
-.shell-layer-compact .settings-step:first-child {
-  border-top-width: 0;
+.link-btn-row .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  display: block;
+  white-space: nowrap;
 }
 
-.shell-layer-compact .settings-step-num {
-  flex: 0 0 26dp;
-  width: 26dp;
-  height: 26dp;
-  margin: 0 12dp 0 16dp;
-  border-radius: 13dp;
-  font-size: 14dp;
-  line-height: 26dp;
+/* The link page's Scan / Paste buttons: 50dp, in the row above. */
+.settings-transfer-btn {
+  min-height: 50dp;
+  line-height: 50dp;
+  margin: 0;
+  text-align: center;
+}
+
+.settings-transfer-note {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* A numbered step: a small round marker and one short line (the link pages: the new device's two steps, the main
+   device's three, the reply's step 3). The main device's list is left-aligned; on the new device's card it is centred. */
+.link-step {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 6dp 0 0 0;
+}
+
+.settings-step-num {
+  flex: 0 0 24dp;
+  width: 24dp;
+  height: 24dp;
+  margin: 0 10dp 0 0;
+  border-radius: 12dp;
+  font-size: 13dp;
+  line-height: 24dp;
   font-weight: bold;
   text-align: center;
 }
 
-.shell-layer-compact .settings-step-text {
-  flex: 1;
+.settings-step-text {
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 16dp;
-  line-height: 22dp;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.settings-transfer-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.shell-layer-compact .settings-transfer-hint {
+  margin: 20dp 32dp 0 32dp;
+}
+
+.settings-transfer-steps {
+  margin: 12dp 0 0 0;
+}
+
+.shell-layer-compact .settings-transfer-steps {
+  margin: 12dp 32dp 0 32dp;
+}
+
+.settings-transfer-steps .link-step {
+  justify-content: flex-start;
+}
+
+/* The reply box's step 3 is its title. */
+.link-step--title {
+  justify-content: flex-start;
+  margin: 0;
+}
+
+.link-step--title .settings-copied-title {
+  font-size: 17dp;
+  line-height: 24dp;
 }
 
 /* A grey line with its "?" right after it (the link page's note, a linked phone's card). */
@@ -16747,6 +17473,198 @@ textarea:composing ~ .ps-placeholder {
   cursor: pointer;
 }
 
+/* Send-preview page on a computer (DEV/PLAN-desktop-drop-paste.md): .picture-send--desktop is on the page's root only
+   when ps_desktop is true (a computer window, the wide tray and the narrow window alike); a phone never has it, so
+   nothing below changes a phone. The soft look (a chip for the recipient, a soft tile for a file, a pill field with the
+   round Send inside it, coloured type badges) is shared by the wide tray (wide.rcss adds the tray itself) and the
+   narrow window. Colours: colors.rcss.tmpl. */
+
+/* Who it goes to: a small chip, the recipient's initial in a round avatar and the sentence with the name in bold. */
+.picture-send--desktop .ps-recipient {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  max-width: 100%;
+  height: 30dp;
+  margin: 0 0 8dp 0;
+  padding: 0 12dp 0 4dp;
+  border-radius: 15dp;
+  box-sizing: border-box;
+  font-size: 13dp;
+  line-height: 18dp;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.picture-send--desktop .ps-chip-avatar {
+  flex-shrink: 0;
+  display: block;
+  width: 22dp;
+  height: 22dp;
+  margin-right: 8dp;
+  border-radius: 11dp;
+  font-size: 13dp;
+  font-weight: bold;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.picture-send--desktop .ps-chip-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picture-send--desktop .ps-chip-name {
+  font-weight: bold;
+}
+
+/* The card of a file in the middle of the stage: a soft tile (no grey stage behind it): a coloured type badge, the
+   name (two lines at most) and the size. */
+.picture-send--desktop .ps-file {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 360dp;
+  max-width: 90%;
+  padding: 16dp;
+  border-radius: 16dp;
+  box-sizing: border-box;
+}
+
+.picture-send--desktop .ps-file-tile {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 12dp;
+}
+
+.picture-send--desktop .ps-file-ext {
+  width: 100%;
+  font-size: 15dp;
+  font-weight: bold;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.picture-send--desktop .ps-file-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 16dp;
+}
+
+.picture-send--desktop .ps-file-name {
+  margin: 0;
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 22dp;
+  max-height: 44dp;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.picture-send--desktop .ps-file-size {
+  margin: 2dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* A file's cell in the strip: its type badge (or the generic icon) in the cell's box, where a picture has its thumbnail. */
+.picture-send--desktop .ps-cell-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.picture-send--desktop .ps-cell-ext {
+  width: 100%;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* The pill text field with the round Send inside its right end, the "original" chip, in the tray and the narrow window. */
+.picture-send--desktop .ps-field,
+.picture-send--wide .ps-field {
+  min-height: 44dp;
+  padding: 0 6dp 0 16dp;
+  border: 0;
+  border-radius: 20dp;
+}
+
+.picture-send--desktop .ps-input,
+.picture-send--wide .ps-input {
+  padding: 12dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.picture-send--desktop .ps-placeholder,
+.picture-send--wide .ps-placeholder {
+  font-size: 15dp;
+}
+
+.ps-send-round {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  margin: 0 0 6dp 8dp;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  cursor: pointer;
+}
+
+.picture-send--desktop .ps-original,
+.picture-send--wide .ps-original {
+  width: auto;
+  min-height: 36dp;
+  height: 36dp;
+  padding: 0 12dp;
+  border-radius: 18dp;
+}
+
+.picture-send--desktop .ps-original {
+  align-self: flex-start;
+}
+
+.picture-send--desktop .ps-original-label,
+.picture-send--wide .ps-original-label {
+  font-size: 13dp;
+}
+
+.picture-send--desktop .ps-original-size,
+.picture-send--wide .ps-original-size {
+  margin-left: 6dp;
+  font-size: 13dp;
+}
+
+.picture-send--desktop .ps-original-check,
+.picture-send--wide .ps-original-check {
+  width: 16dp;
+  height: 16dp;
+  margin-right: 6dp;
+  border-radius: 8dp;
+}
+
+.picture-send--desktop .ps-original-hole,
+.picture-send--wide .ps-original-hole {
+  width: 12dp;
+  height: 12dp;
+  border-radius: 6dp;
+}
+
 /* The send time of an attachment bubble (phones; the desktop has the meta line). A file, music or unready card carries
    it at the bottom right inside the card like a text bubble's; a picture or video has a slim footer row under its
    media, inside the bubble (nothing is drawn over the media), "size · route icon time" at the right. Both in the text
@@ -16818,4 +17736,198 @@ textarea:composing ~ .ps-placeholder {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The "Forwarding 2/7" page (forward_progress.rml): a full-screen layer over the chat, centred, no way back but Cancel. */
+.forward-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forward-progress-body {
+  width: 100%;
+  max-width: 420dp;
+  padding: 0 32dp;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.forward-progress-title {
+  margin: 0 0 24dp 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.forward-progress-activity {
+  width: 100%;
+  height: 72dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The upload ring of the chat bubbles (.chat-pending-*) at 1.5x: a 72dp disc, a 60dp ring (its unfilled track a faint
+   white; the filled part is the conic-gradient decorator TranscriptRml's PendingRingDecorator builds, bound as
+   fp_ring_decor) and a 48dp core with the percentage in it, so 6dp of ring shows round the core. Unknown amount: the
+   same disc with the ring turning (the bubble's spinning ring), the same 72dp box, so the page never jumps. */
+.forward-progress-ring,
+.forward-progress-spinner {
+  position: relative;
+  width: 72dp;
+  height: 72dp;
+  border-radius: 36dp;
+}
+
+.forward-progress-ring-track {
+  position: absolute;
+  top: 6dp;
+  left: 6dp;
+  width: 60dp;
+  height: 60dp;
+  border-radius: 30dp;
+}
+
+@keyframes forward-progress-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.forward-progress-spinner-arc {
+  position: absolute;
+  top: 6dp;
+  left: 6dp;
+  width: 60dp;
+  height: 60dp;
+  box-sizing: border-box;
+  border-width: 4dp;
+  border-radius: 30dp;
+  animation: 0.9s linear infinite forward-progress-spin;
+}
+
+.forward-progress-ring-core {
+  position: absolute;
+  top: 12dp;
+  left: 12dp;
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forward-progress-ring-text {
+  margin: 0;
+  font-size: 14dp;
+  line-height: 20dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.forward-progress-line {
+  margin: 12dp 0 0 0;
+  min-height: 22dp;
+  font-size: 16dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.forward-progress-stay {
+  margin: 24dp 0 0 0;
+  font-size: 14dp;
+  line-height: 19dp;
+  text-align: center;
+}
+
+.forward-progress-actions {
+  margin-top: 28dp;
+  min-height: 50dp;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 12dp;
+}
+
+.forward-progress-btn {
+  min-width: 120dp;
+  min-height: 50dp;
+}
+
+/* Files dragged over the chat (ShellLayoutRml::DropHintRml; colours in colors.rcss.tmpl): a very light tint over the
+   whole chat, a soft rounded ring inset 10dp from its edges, and in the middle a round badge with the words under it
+   ("Drop to send to <name>", the name in bold) and the limit. A refusal (.drop-hint--no) has the same shape in grey. It
+   never takes a click: the drag is the OS's, and a hint that stays for a moment after it must not block the chat. No
+   backdrop blur: the layer has a z-index and children, where the engine draws none. */
+.drop-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-hint-ring {
+  position: absolute;
+  top: 10dp;
+  left: 10dp;
+  right: 10dp;
+  bottom: 10dp;
+  border-radius: 16dp;
+  pointer-events: none;
+}
+
+.drop-hint-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 80%;
+}
+
+.drop-hint-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  margin-bottom: 14dp;
+  border-radius: 28dp;
+}
+
+.drop-hint-icon {
+  flex-shrink: 0;
+  width: 26dp;
+  height: 26dp;
+}
+
+.drop-hint-label {
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.drop-hint-name {
+  font-weight: bold;
+}
+
+.drop-hint-limit {
+  margin-top: 6dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
 }

@@ -5,6 +5,7 @@
 #include "gui/CallAudioFaultToastGate.h"
 #include "feature/presenters/CallLocalHold.h"
 #include "gui/CallMetricsTracker.h"
+#include "gui/ScreenAwakeHolds.h"
 #include "gui/ScreenAwakeSync.h"
 #include "foundation/platform/ProximityScreenOff.h"
 #include "foundation/platform/ScreenAwake.h"
@@ -414,7 +415,10 @@ private:
   bool ongoing_call_on_ = false;
   /** The word the switch logs for the change in flight (SyncScreenAwake sets it just before). */
   const char* screen_awake_reason_ = "ended";
-  ScreenAwakeSync screen_awake_{[this](const bool on) { ScreenAwake::SetKeepScreenOn(on, screen_awake_reason_); }};
+  ScreenAwakeSync screen_awake_{[this](const bool on) {
+    ScreenAwakeHolds::Shared().Set(ScreenAwakeHolds::Holder::Call, on,
+                                   screen_awake_reason_); // a forward's page may hold it too
+  }};
   static constexpr int64_t kProximityRecheckMs = 500;
   bool proximity_wanted_ = false;
   int64_t proximity_next_ms_ = 0;

@@ -178,9 +178,9 @@ TEST(AttachmentUploadExit, PictureQueueEventsByIdReachTheirOwnRowBesideAFailedOn
 TEST(AttachmentUploadExit, PictureQueueOneBusyCheckHoldsTheSlotForTheQueue) {
   const std::string source = Controller();
   const std::string busy = Body(source, "bool ChatController::AttachmentBusy() const {");
-  EXPECT_NE(busy.find("return chat_.attachment_uploading || chat_.attachment_preparing || (picture_queue_ && "
-                      "picture_queue_->Active());"),
-            std::string::npos);
+  // The picture queue holds the slot, and so does a forward's upload (the run's, or one let go of that has not answered).
+  EXPECT_NE(busy.find("(picture_queue_ && picture_queue_->Active()) ||"), std::string::npos);
+  EXPECT_NE(busy.find("presenter_.ForwardUploadBusy()"), std::string::npos);
   // The former ad-hoc checks (step1.md §7: 1-4, 6-11, 13), each now the predicate.
   struct Site {
     const char* where;
@@ -260,14 +260,18 @@ TEST(AttachmentUploadExit, PictureQueueIsWiredToTheExitsAndTheOriginChat) {
   const std::string source = Controller();
   const std::string ports = Body(source, "PictureSendPorts ChatController::MakePictureSendPorts(");
   ASSERT_FALSE(ports.empty());
-  EXPECT_NE(ports.find("AppRuntime::PostUI([this, id, path, current, alive, outcome]()"), std::string::npos)
+  EXPECT_NE(ports.find("AppRuntime::PostUI([this, id, path, owned, current, alive, outcome]()"), std::string::npos)
       << "an item's end is taken in a later UI task";
   EXPECT_NE(ports.find("picture_queue_->ThreadId()"), std::string::npos) << "sent to the chat it was picked in";
   EXPECT_NE(ports.find("facade_->RouteMessage(thread_id, text, std::nullopt)"), std::string::npos);
   EXPECT_EQ(ports.find("SendUserText"), std::string::npos) << "never the chat open now";
   EXPECT_EQ(ports.find("SendWithMentions"), std::string::npos) << "groups only";
   EXPECT_NE(ports.find("PutTextBack(thread_id, text, DraftPutBack::Append);"), std::string::npos);
-  EXPECT_NE(ports.find("release_pick_(path); // its queue is gone"), std::string::npos);
+  // Its queue is gone: the copy it held is released here, once — a pasted picture (owned) by the folder-bound release,
+  // anything else (the user's own file, a picked copy) as before.
+  EXPECT_NE(ports.find("its queue is gone (sign-out, teardown)"), std::string::npos);
+  EXPECT_NE(ports.find("ReleasePastedFile(path, PastedDir());"), std::string::npos);
+  EXPECT_NE(ports.find("release_pick_(path);"), std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::Update(").find("picture_queue_->Locked();"), std::string::npos);
   EXPECT_NE(Body(source, "void ChatController::OnProfileDataReset(").find("picture_queue_->SignedOut();"),
             std::string::npos);

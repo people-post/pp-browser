@@ -40,13 +40,16 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** Which compact chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). */
+/** Which chrome is frosted (BottomNav: the tab page's nav bar and its tab bar). The Wide* surfaces are the wide
+ *  layout's conversation column: its header strip (top) and its composer strip (bottom). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
   TransientHeader,
+  WidePaneHeader,
+  WideComposer,
 };
 
 /**
@@ -159,6 +162,12 @@ struct PaneSpec {
   bool full_screen = false;
   /** A phone page sheet's first stop (the reaction emoji picker opens at Small, about a third of the screen). */
   SheetDetent sheet_detent = SheetDetent::Large;
+  /**
+   * PushLayer on the desktop: a modal panel. The dimmed scrim covers the whole window (the status bar too, not just the
+   * shell's content area), the panel is centred in the window, and the focus leaves what was under it. Phones and
+   * layers that are page sheets are unchanged.
+   */
+  bool modal = false;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
@@ -188,6 +197,8 @@ struct OverlayEntry {
   SheetDetent sheet_detent = SheetDetent::Large;
   /** PaneSpec::full_screen: edge to edge on phones. */
   bool full_screen = false;
+  /** PaneSpec::modal: the desktop panel that blocks the whole window. */
+  bool modal = false;
 };
 
 struct ToastEntry {
@@ -234,6 +245,10 @@ struct PinGateState {
   /** The link page: the offer as a QR code (SVG content; "" none) and its 4 digits to compare. */
   ui::String link_offer_qr;
   ui::String link_offer_code;
+  /** Small caption under the digits ("Valid for 15 minutes"). */
+  ui::String link_valid;
+  /** The code's side as CSS ("340dp"), set by the shell from the page it is drawn on (QrDisplay.h). */
+  ui::String link_qr_side;
   /** The same offer as text, for "Copy as text" only: never bound to an element (it is over a kilobyte, B166). */
   ui::String link_offer_text;
   /** The link page can read the main device's reply with the camera. */
@@ -603,12 +618,17 @@ struct NavBadgeState {
   int sessions_unread = 0;
   /** Reserved for contacts-tab queues (intro requests, pending invites). Not chat unread; always 0 until those exist. */
   int contacts_unread = 0;
-  bool me_attention = false;
   ui::String sessions_unread_display;
   ui::String contacts_unread_display;
 };
 
 struct ShellState {
+  /** A desktop computer (Platform::IsDesktop; an iPad is not, even full screen, and a narrow desktop window is). Set by
+   *  ShellHost; the link pages use it to put Paste before Scan (a computer's camera cannot read a phone screen). */
+  bool desktop_computer = false;
+  /** The new device's link page on a desktop computer: the window is wide enough for the code beside the steps
+   *  (QrDisplay.h LinkComputerLayoutFor; ShellHost refreshes it when the window is resized). */
+  bool link_two_columns = false;
   LayoutMode layout_mode = LayoutMode::Expanded;
   ui::String layout_mode_str = "expanded";
   NavTab nav_tab = NavTab::Home;
@@ -631,7 +651,7 @@ struct ShellState {
   bool transient_active = false;
 
   /** Expanded layout only: secondary pane width (dp, clamped by ShellLayout) and user collapse. */
-  int sidebar_width_dp = 240;
+  int sidebar_width_dp = 320;
   bool sidebar_collapsed = false;
   /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
   bool large_title_collapsed = false;
@@ -645,6 +665,17 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** Files are being dragged over the chat: the overlay on the chat pane says what dropping would do (ShellHost::SetDropHint). */
+  bool drop_hint_visible = false;
+  ui::String drop_hint_text;
+  /** True: dropping would send (the hint says "drop to send to <name>"); false: a refusal's line, `drop_hint_text` alone. */
+  bool drop_hint_can = false;
+  /** The sentence of the "can drop" state cut at the name, so the name is set in its own weight in any language. */
+  ui::String drop_hint_prefix;
+  ui::String drop_hint_name;
+  ui::String drop_hint_suffix;
+  /** The desktop title strip's text (WindowTitleFor): the product name, and the account's nickname once it has one. */
+  ui::String window_title;
   /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */
   float banner_expires_at_ms = 0.f;
   std::vector<ToastEntry> toasts;
@@ -760,6 +791,8 @@ struct ShellState {
   /** macOS: drawn traffic lights on the leading edge. */
   bool titlebar_traffic_lights = false;
   bool window_maximized = false;
+  /** Windows 11: the system rounds the window's corners (small radius); the 1dp outline follows them. */
+  bool window_corners_small = false;
 
   /**
    * CJK/emoji fallback faces ready for chrome text. False until deferred load when the

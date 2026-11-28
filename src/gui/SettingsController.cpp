@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+#include "gui/QrDisplay.h"
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -265,6 +266,20 @@ void SettingsController::OnProfileReset() {
   ui_state_.profile_avatar_tone = fresh.profile_avatar_tone;
   // The name field's baseline too, so the next load (the new account's) is not taken for an edit of the old name.
   UiEditSession::Instance().OnLoaded(kUiFieldProfileNickname, "");
+  // The wide layout's right pane (a section such as Storage) and what was waiting to be saved belong to the old account
+  // too: nothing is flushed into the new profile, and the next visit to Me opens on the list.
+  dirty_sections_.clear();
+  quiet_sections_.clear();
+  debounce_deadline_ms_ = 0;
+  show_detail_ = false;
+  selected_id_.clear();
+  selected_title_.clear();
+  status_ = "";
+  ResetSecurityPage();
+  storage_manager_.Reset();
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
   PushUiStateToBindings();
   DirtyAll(/*include_profile_nickname=*/true);
 }
@@ -331,13 +346,9 @@ void SettingsController::InitSections() {
   // while the tester switch is on (five taps on the version).
   for (const SettingsPage* page :
        ListedSettingsPages(ui_state_.show_advanced_settings == "on", ui_state_.show_tester_options == "on")) {
-    sections_.push_back({.id = page->id,
-                         .title = Tr(page->title_key).c_str(),
-                         .subtitle = "",
-                         .group = page->home_group,
-                         .attention = false});
+    sections_.push_back(
+        {.id = page->id, .title = Tr(page->title_key).c_str(), .subtitle = "", .group = page->home_group});
   }
-  ApplySectionAttention();
 }
 
 void SettingsController::PullBindingsToUiState() {
@@ -661,7 +672,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("title", &SectionListRow::title);
       section_handle.RegisterMember("subtitle", &SectionListRow::subtitle);
       section_handle.RegisterMember("group", &SectionListRow::group);
-      section_handle.RegisterMember("attention", &SectionListRow::attention);
     }
     if (auto mcp_handle = ctor.RegisterStruct<McpServerRow>()) {
       mcp_handle.RegisterMember("id", &McpServerRow::id);
@@ -1536,6 +1546,9 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
+  if (section_id == "devices") {
+    security_actions_.RefreshLinkCanScan(); // the first camera enumeration: only where the link page can show
+  }
   FlushPending();
   ResetSecurityPage();
 
@@ -1698,7 +1711,16 @@ void SettingsController::RefreshBlockedCount() {
   DataModelHost::Instance().Dirty("settings", "blocked_count");
 }
 
+std::string SettingsController::LinkQrSide() const {
+  return LinkQrDisplayFor(ChromeSnapshot().layout_mode == LayoutMode::Compact, context_,
+                          kLinkQrDesktopSettingsReservedWidthDp)
+      .css;
+}
+
 void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (page == "transfer") {
+    security_actions_.RefreshLinkCanScan();
+  }
   // Phones only: the desktop shows these inline. Devices has the transfer page; Advanced has the pages that hold its
   // free-text fields (the custom endpoint, the integrations, the custom service addresses).
   const bool on_devices = selected_id_ == "devices" && show_detail_;
@@ -2359,34 +2381,6 @@ void SettingsController::ApplyReachability() {
     ui_state_.reachable_without_relay = cfg.reachable_without_relay ? "on" : "off";
   }
   PushUiStateToBindings();
-  ApplySectionAttention();
-}
-
-bool SettingsController::ComputeNetworkAttention() const {
-  if (!ui_state_.show_node_toggle || ui_state_.node_enabled != "on") {
-    return false;
-  }
-  if (!commands_.session_store || !commands_.load_reachability) {
-    return false;
-  }
-  if (!commands_.mesh_ready) {
-    if (!commands_.messaging_ready || !commands_.messaging_ready()) {
-      return false;
-    }
-  } else if (!commands_.mesh_ready()) {
-    return false;
-  }
-  const SettingsReachabilityView view = commands_.load_reachability();
-  const std::string status_key = ReachabilityNudgeStatusKey(view.status);
-  const std::string& acked = commands_.session_store().Snapshot().profile_prefs.reachability_nudge_acked_status;
-  return ReachabilityNudgeActive(true, status_key, acked);
-}
-
-void SettingsController::ApplySectionAttention() {
-  const bool network_attention = ComputeNetworkAttention();
-  for (SectionListRow& section : sections_) {
-    section.attention = section.id == "advanced" && network_attention;
-  }
 }
 
 void SettingsController::SyncReachability() {
@@ -2412,10 +2406,6 @@ void SettingsController::AckReachabilityNudge(const std::string& status_key) {
     ReportFailure(saved.error());
     return;
   }
-  ApplySectionAttention();
-  if (commands_.refresh_nav_badges) {
-    commands_.refresh_nav_badges();
-  }
 }
 
 void SettingsController::ToggleNodeEnabled() {
@@ -2426,9 +2416,6 @@ void SettingsController::ToggleNodeEnabled() {
   PullBindingsToUiState();
   MarkSectionDirty("network", /*show_toast=*/false);
   ApplyReachability();
-  if (commands_.refresh_nav_badges) {
-    commands_.refresh_nav_badges();
-  }
   DirtyAll();
 }
 

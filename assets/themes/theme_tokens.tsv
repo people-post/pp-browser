@@ -65,7 +65,9 @@ x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
 x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Transparency off or under a dialog; Home's tab bar
 x-bar-blur	#f2f2f7c7	#1a1a1cc7	extra: phone bars frosted (78%, with blur 20): Transparency on
 x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
+x-composer-float	#f2f2f79e	#1a1a1c9e	extra: the wide floating composer panel, frosted (Transparency on): the bar colour at 62%, over the blur, so the messages show through; solid it is x-bar
 x-float-shadow	#00000029	#00000099	extra: phone composer: shadow of the floating pill and the round mic / Send button
+x-menu-shadow	#00000005	#00000012	extra: wide floating surfaces (menus, hover bar, popovers): one thin layer of a stacked, blur-free shadow (16 layers, see colors.rcss.tmpl): a blurred shadow on a re-positioned menu was drawn displaced on iOS
 x-jump-glass	#ffffffb8	#2c2c2eb8	extra: phone chat: the round jump-to-latest disc, a translucent glass over the transcript (72%, no blur of its own)
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
@@ -139,3 +141,23 @@ x-vbubble-ink-2	#000000bf	#ffffffe6	extra: the voice bubble's second line (75% /
 x-vbubble-shadow	#0000002e	#0000008c	extra: the voice bubble's soft diffuse shadow (it replaces an edge line)
 x-vbar-armed	#ff3b301a	#ff453a29	extra: the voice bar while the cancel is armed (soft red, 10% / 16%)
 x-vbar-ink-armed	#b3261e	#ff968c	extra: text and icon of the armed voice bar
+x-fwd-card	#ffffff94	#2c2c2e94	extra: wide forward-progress card surface over its backdrop blur (58% white / 58% bg-card-2): frosted glass, the chat shows through; the solid bg-card-2 stands in when transparency is off
+x-fwd-scrim	#00000038	#00000066	extra: the dimming behind the forward-progress card only (22% / 40% black, the shared scrim is 40% / 60%): the chat stays recognisable through the glass
+x-ring-disc	#00000080	#00000080	extra: the small upload ring's disc (the chat upload disc, rgba(0,0,0,128)); the same in both themes, white on it reads on the composer card
+x-ring-track	#ffffff4d	#ffffff4d	extra: the unfilled part of that ring (white 30%)
+x-ring-core	#262626	#262626	extra: the opaque centre disc of that ring
+x-ring-ink	#ffffff	#ffffff	extra: the spinner arc of that ring (white)
+x-tray-solid	#ffffff	#2c2c2e	extra: the wide send-preview tray with Transparency off
+x-tray-glass	#ffffffb8	#2c2c2eb8	extra: the wide send-preview tray frosted (72%, over a 20dp blur): the chat shows through
+x-tray-hair	#3c3c432e	#ffffff24	extra: the tray's hairline (top and sides) and the soft file tile's outline
+x-tray-dim	#00000024	#00000052	extra: the light dim over the conversation column behind the tray (14% / 32%), not the heavy modal scrim
+x-tray-tile	#ffffff9e	#ffffff12	extra: the soft file tile on the tray (white 62% / 7%)
+x-tray-x	#3c3c43d1	#636366e6	extra: the remove badge on a tray thumbnail
+x-kind-txt	#8793ab	#8793ab	extra: file type badge: text (grey-blue)
+x-kind-pdf	#e5484d	#e5484d	extra: file type badge: PDF (red)
+x-kind-zip	#d98a00	#d98a00	extra: file type badge: archives (amber, dark enough for a white label)
+x-kind-xls	#30a46c	#30a46c	extra: file type badge: spreadsheets (green)
+x-drop-tint	#007aff0f	#0a84ff1f	extra: the drop hint's tint over the chat (accent at ~6% / 12%)
+x-drop-ring	#007aff59	#0a84ff59	extra: the drop hint's ring (accent at 35%)
+x-drop-no-tint	#78788012	#7878801f	extra: the drop hint when dropping is refused: a grey tint
+x-drop-no-ring	#78788059	#78788066	extra: the refused drop hint's ring

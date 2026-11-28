@@ -33,7 +33,10 @@ struct BriefAiRequest {
   std::string last_role; // context.last_role: the role that answered the previous turn (omitted when empty)
   std::string app_version, platform, lang; // client.version / platform / lang (omitted when empty)
   std::vector<std::string> capabilities;   // client.capabilities (omitted when empty, and always when image is set)
-  std::optional<BriefAiImage> image;       // null on the wire when nullopt; at most kMaxImageBytes decoded
+  /** client.news_title: a news read's item title, as data (never in `message`); cleaned by CleanNewsTitle, omitted
+   *  when empty. The server only checks the fetched page is about that story. */
+  std::string news_title;
+  std::optional<BriefAiImage> image; // null on the wire when nullopt; at most kMaxImageBytes decoded
 };
 
 struct BriefAiSource {
@@ -48,6 +51,9 @@ struct BriefAiEvent {
   std::string delta;                  // Token
   std::string response, finish;       // Done
   std::string role;                   // Done (empty when absent)
+  std::string answer_kind;            // Done: "news_pick", "news_digest", "news_unavailable" (empty when absent)
+  bool translated = false;            // Done: a news digest translated from the article's language (false: absent)
+  std::string unavailable_kind;       // Done with "news_unavailable": "not_article", "blocked", ... (empty: absent)
   std::vector<BriefAiSource> sources; // Done
   std::string capability;             // Handoff (empty when the server sent null)
   std::string reason;                 // Handoff: "app_action", "user_confirmed", ... (empty when absent)
@@ -76,6 +82,8 @@ public:
   // Error when the image mime is unsupported or its data is empty / above kMaxImageBytes.
   static Roe<void> ValidateImage(const BriefAiRequest& request);
   static std::string BuildRequestJson(const BriefAiRequest& request);
+  /** client.news_title as sent: control characters and URLs removed, spaces folded, trimmed, at most 200 characters. */
+  static std::string CleanNewsTitle(std::string_view title);
   // nullopt: "[DONE]", an unknown type, or not JSON.
   static std::optional<BriefAiEvent> ParseEvent(const std::string& data);
 

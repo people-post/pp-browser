@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/ui/ShellInterruption.h"
 #include "lib/ui/ShellLayout.h"
 #include "lib/ui/ShellTypes.h"
 
@@ -28,14 +29,31 @@ struct ShellChromeSnapshot {
   bool compact_chat_open = false;
   /** A ring or a call screen (any mode, the minimised chip too) is up. */
   bool call_shown = false;
+  /** A call is on (answered or placed): its screen or bar sits in the call chrome, below the full-screen layers. */
+  bool call_in_progress = false;
+  /**
+   * Something is over the chat (or, in a narrow window, the chat waits under a tab's page): a dialog, a pushed page,
+   * a sheet, the PIN gate, a ring, a call's page. Read-only; the chat's own page and a minimised call chip are not it.
+   * Files are not taken into the chat while it is true (AttachState::layer_above).
+   */
+  bool layer_over_chat = false;
 };
 
 /**
  * A send from the AI page's own composer (the PP 助手 list, no conversation open over it) starts a new AI
  * conversation; once one is open over that page, the same tab sends into it (text and pictures alike).
  */
+/**
+ * The wide layout's AI tab with a conversation open in the right column, beside the AI list (there is no phone-style
+ * overlay: `compact_chat_open` is never set there; the open conversation is the primary pane "chat").
+ */
+inline bool AiConversationOpenBesideList(const ShellChromeSnapshot& chrome) {
+  return chrome.layout_mode == LayoutMode::Expanded && chrome.nav_tab == NavTab::Home &&
+         chrome.primary_pane_key == "chat";
+}
+
 inline bool SendStartsHomeConversation(const ShellChromeSnapshot& chrome) {
-  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open;
+  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open && !AiConversationOpenBesideList(chrome);
 }
 
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
@@ -55,6 +73,17 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
   snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
   snap.call_shown = state.call_ring.active || state.call_in_progress.active;
+  snap.call_in_progress = state.call_in_progress.active;
+  InterruptionKind top = ShellInterruption::Top(state);
+  if (top == InterruptionKind::LiveSessionOn && state.call_in_progress.mode == CallChromeMode::Minimized) {
+    // Only the chip: what is over the chat is whatever the call was hiding in the order of layers.
+    ShellState without_call = state;
+    without_call.call_in_progress.active = false;
+    top = ShellInterruption::Top(without_call);
+  }
+  snap.layer_over_chat =
+      (top != InterruptionKind::None && top != InterruptionKind::CompactChatOverlay) ||
+      (state.layout_mode == LayoutMode::Compact && state.compact_chat_open && ShellLayout::HiddenTabShown(state));
   return snap;
 }
 

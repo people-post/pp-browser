@@ -20,9 +20,14 @@ struct BriefTurnSinks {
   std::function<void(const std::string& route)> on_meta;        // optional
   std::function<void(const std::string& text_so_far)> on_delta; // accumulated text after each token
   std::function<void(const std::string& tool, const std::string& phase, const std::string& query)> on_status;
-  /** `role`: the role id that answered (empty when the server sent none). */
+  /**
+   * `role`: the role id that answered (empty when the server sent none). `answer_kind`: done.answer_kind ("news_pick",
+   * "news_digest", "news_unavailable"; empty when absent). `translated`: done.translated (false when absent).
+   * `unavailable_kind`: done.unavailable_kind, why a news read got no digest (empty when absent).
+   */
   std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources,
-                     const std::string& role)>
+                     const std::string& role, const std::string& answer_kind, bool translated,
+                     const std::string& unavailable_kind)>
       on_done;
   /**
    * `capability`: the tool brief_AI handed the turn back for (empty when the server sent none). `reason`: why

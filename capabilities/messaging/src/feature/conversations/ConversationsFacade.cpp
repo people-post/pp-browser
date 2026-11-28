@@ -19,6 +19,7 @@
 #include "domain/registration/RegistrationClient.h"
 #include "feature/conversations/PeopleSearch.h"
 #include "foundation/crypto/RecoveryPhrase.h"
+#include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/ContactCardExchange.h"
@@ -306,6 +307,11 @@ Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, 
 Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
                                                                   const std::string& message_id) {
   return hub_.Store().GetMessage(thread_id, message_id);
+}
+
+Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessagesByGeneration(
+    const std::string& thread_id, const std::vector<std::string>& generations) {
+  return hub_.Store().GetMessagesByGeneration(thread_id, generations);
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -693,6 +699,10 @@ Roe<bool> ConversationsFacade::CanLockPublicToThisDevice(const std::string& thre
 
 void ConversationsFacade::SetSupportAccountId(std::string account_id) {
   hub_.MeshMessaging().SetSupportAccountId(std::move(account_id));
+}
+
+std::string ConversationsFacade::SupportAccountId() {
+  return hub_.MeshMessaging().SupportAccountId();
 }
 
 void ConversationsFacade::RegisterContactDirectEndpoints(const Contact& contact) {
@@ -1289,6 +1299,11 @@ std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttach
   return hub_.PendingOutgoingAttachments(thread_id);
 }
 
+std::optional<std::vector<OutgoingAttachmentRecord>> ConversationsFacade::PendingOutgoingAttachmentsChecked(
+    const std::string& thread_id) {
+  return hub_.PendingOutgoingAttachmentsChecked(thread_id);
+}
+
 void ConversationsFacade::DiscardOutgoingAttachment(const std::string& record_id) {
   hub_.DiscardOutgoingAttachment(record_id);
 }
@@ -1374,6 +1389,23 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
     hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
   }
   return *view;
+}
+
+uint64_t ConversationsFacade::AttachmentStoredBytes(const std::vector<uint8_t>& content_hash) {
+  const std::shared_ptr<CasStore> content = hub_.Content();
+  return content ? AttachmentLocalBytes(*content, content_hash) : 0;
+}
+
+Roe<ByteVector> ConversationsFacade::StoredAttachmentPlaintext(const std::vector<uint8_t>& content_hash) {
+  const std::shared_ptr<CasStore> content = hub_.Content();
+  if (!content) {
+    return Error("No content store");
+  }
+  const ByteVector dek = hub_.Attachments().CopyDek();
+  if (dek.empty()) {
+    return Error("The profile is locked");
+  }
+  return LoadAttachmentPlaintext(*content, content_hash, dek);
 }
 
 std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(const std::string& thread_id,

@@ -32,6 +32,8 @@ public:
   virtual void RequestSyncLayout(const char* reason) = 0;
   /** Saved tool permissions forgotten (Security), and shown so. */
   virtual Roe<void> ForgetToolPermissions() = 0;
+  /** The link page's QR code side as CSS ("340dp"): as large as the page allows (QrDisplay.h LinkQrDisplayFor). */
+  virtual std::string LinkQrSide() const { return "280dp"; }
   /** Takes the user to where the PIN is changed (the Change PIN page on phones; inline on desktop). */
   virtual void OpenChangePin() = 0;
   /** The phrase is shown on a page of its own (phones), not inline (desktop). */

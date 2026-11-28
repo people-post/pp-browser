@@ -297,7 +297,16 @@ Kept by the app but not under `{data_dir}`:
 | Android SharedPreferences `pp_keep_alive` | `last_ms`: when the keep-alive service last ran (Stay connected, P011) | device |
 | iOS | the push device id is `identifierForVendor`, held by the OS | device |
 | iOS `{SDL pref path}/pp-browser-debug.log` (+ `.1.log`) | the iOS debug log, outside `data_dir` | device |
-| The platform cache dir (`{data_dir}/cache` on Linux and iOS, `~/Library/Caches/pp-browser` on macOS, `%LOCALAPPDATA%/pp-browser/cache` on Windows, Android's cache) | made empty at start; nothing writes into it today | device |
+| The platform cache dir (`{data_dir}/cache` on Linux and iOS, `~/Library/Caches/pp-browser` on macOS, `%LOCALAPPDATA%/pp-browser/cache` on Windows, Android's cache) | created at start; the only thing written into it is `pasted/<run-id>/` (next section) | device |
+
+### Pasted pictures: `<cache>/pasted/<run-id>/` (desktop; not encrypted)
+
+Where a screenshot or picture pasted into the chat (Ctrl/Cmd+V) is written as `Pasted image <n>.<ext>` until it is sent or cancelled. `<cache>` is the platform cache dir in the table above; `<run-id>` is a random 16-hex id made once per process, so several running instances (and profiles) on one machine never share a folder.
+
+- **Not encrypted.** This is the one place chat content sits as plain files outside the profile (the picture is the user's own clipboard content, written before it is sent). It is never read back by anything but the picture preview and the send that follows.
+- **Outside the profile and never backed up**: not under `{data_dir}`, not in the account backup, not in the locker, never uploaded as it is (a send encrypts it into the content store like any attachment).
+- **Lifetime**: a file goes when its picture is sent or cancelled (only files inside this run's folder are ever deleted; a link, `..` and anything outside are refused). On a clean exit the app removes this run's whole folder. A crashed or killed run leaves its folder; the next start removes other runs' folders in which nothing was written in the last 24 hours (a run still going has recent files and is left alone). The shared `pasted/` root itself is never removed.
+- Nothing about this location is read from a newer or older version: no format, no index, no migration.
 
 ### Per-backend profiles
 
@@ -407,7 +416,7 @@ refused (`AccountKeyResolver`), so nothing relabels our record.
 | `show_notifications` | `preferences.json` | boolean; alerts ≠ sync |
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |
 | `compact_chrome_frost` | `preferences.json` | boolean, schema v8; default true; dogfood off in JSON |
-| `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
+| `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — the stored reachability ack (still written and cleared; no attention dot shows it any more) |
 | `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
 | `recent_emojis` | `preferences.json` | string array, schema v12 — MRU glyphs for the in-app emoji picker (cap 36) |
 | `sidebar_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 240; shell clamps to 200–480 dp. Expanded-layout secondary pane width |

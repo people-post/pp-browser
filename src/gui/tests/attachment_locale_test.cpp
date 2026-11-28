@@ -18,7 +18,6 @@ struct Key {
 const std::vector<Key>& AttachmentKeys() {
   static const std::vector<Key> keys = {
       {"chat.attach.photo", {}},
-      {"chat.attach.picture", {}},
       {"chat.attach.send_compressed", {}},
       {"chat.attach.send_original", {}},
       {"chat.attach.file", {}},
