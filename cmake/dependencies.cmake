@@ -24,7 +24,7 @@ if(NOT PP_BROWSER_HEADLESS)
   pp_require_vendored(opus)
 endif()
 
-# libp2p deps (zlib, Asio; aliases pp-cpp-crypto's BoringSSL for curl's TLS)
+# libp2p deps (zlib; aliases pp-cpp-crypto's BoringSSL for curl's TLS)
 include(libp2p_dependencies)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)

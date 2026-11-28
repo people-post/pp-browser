@@ -1,153 +1,157 @@
 #include "app/node/StatusHttpServer.h"
 
 #include "common/Logger.h"
+#include "foundation/sockets/TcpSockets.h"
 
-#include <asio/io_context.hpp>
-#include <asio/steady_timer.hpp>
-#include <asio/ip/tcp.hpp>
-#include <asio/write.hpp>
-
-#include <array>
-#include <atomic>
 #include <chrono>
 #include <memory>
-#include <system_error>
+#include <string>
 #include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {
 
-using tcp = asio::ip::tcp;
 constexpr size_t kMaxRequestBytes = 16 * 1024;
 // PB-027: a client that opens connections and sends nothing (or one byte a minute) cannot hold the
 // node's file descriptors: each request must arrive within the deadline, and only so many are open.
 constexpr std::chrono::seconds kRequestDeadline{5};
 constexpr int kMaxOpenConnections = 64;
+// How often the loop looks at deadlines and Stop when nothing happens.
+constexpr int kPollMs = 100;
 
-void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig auth,
-                      StatusHttpServer::SnapshotFn snapshot, StatusHttpActions actions,
-                      std::shared_ptr<std::atomic<int>> open) {
-  auto buf = std::make_shared<std::string>();
-  buf->reserve(1024);
-  auto chunk = std::make_shared<std::array<char, 1024>>();
+using Clock = std::chrono::steady_clock;
 
-  struct Reader : std::enable_shared_from_this<Reader> {
-    std::shared_ptr<tcp::socket> socket;
-    StatusHttpAuthConfig auth;
-    StatusHttpServer::SnapshotFn snapshot;
-    StatusHttpActions actions;
-    std::shared_ptr<std::string> buf;
-    std::shared_ptr<std::array<char, 1024>> chunk;
-    std::shared_ptr<std::atomic<int>> open;
-    std::unique_ptr<asio::steady_timer> deadline;
-
-    ~Reader() { open->fetch_sub(1, std::memory_order_acq_rel); }
-
-    void Start() {
-      deadline = std::make_unique<asio::steady_timer>(socket->get_executor(), kRequestDeadline);
-      // Weak: the timer must not keep a finished connection alive; it only closes a slow one.
-      deadline->async_wait([weak = std::weak_ptr<Reader>(shared_from_this())](const std::error_code& ec) {
-        if (ec) {
-          return; // cancelled: the connection finished first
-        }
-        if (auto self = weak.lock()) {
-          std::error_code ignored;
-          self->socket->close(ignored);
-        }
-      });
-      ReadMore();
-    }
-
-    void ReadMore() {
-      auto self = shared_from_this();
-      socket->async_read_some(asio::buffer(*chunk), [self](const std::error_code& rec, std::size_t n) {
-        if (rec || n == 0) {
-          std::error_code ignored;
-          self->socket->shutdown(tcp::socket::shutdown_both, ignored);
-          self->socket->close(ignored);
-          return;
-        }
-        self->buf->append(self->chunk->data(), n);
-        if (self->buf->size() > kMaxRequestBytes) {
-          std::error_code ignored;
-          self->socket->close(ignored);
-          return;
-        }
-        if (auto req = TryParseStatusHttpRequest(*self->buf)) {
-          StatusHttpSnapshot snap;
-          try {
-            snap = self->snapshot ? self->snapshot() : StatusHttpSnapshot{};
-          } catch (...) {
-            snap = StatusHttpSnapshot{};
-          }
-          StatusHttpResponse response;
-          try {
-            response = HandleStatusHttpRequest(*req, self->auth, snap, self->actions);
-          } catch (...) {
-            response = StatusHttpInternalError(); // never let a request unwind io.run()
-          }
-          if (req->method == "HEAD") {
-            response.body.clear();
-          }
-          auto out = std::make_shared<std::string>(FormatStatusHttpResponse(response));
-          asio::async_write(*self->socket, asio::buffer(*out), [self, out](const std::error_code&, std::size_t) {
-            std::error_code ignored;
-            self->socket->shutdown(tcp::socket::shutdown_both, ignored);
-            self->socket->close(ignored);
-          });
-          return;
-        }
-        self->ReadMore();
-      });
-    }
-  };
-
-  auto reader = std::make_shared<Reader>();
-  reader->socket = std::move(socket);
-  reader->auth = std::move(auth);
-  reader->snapshot = std::move(snapshot);
-  reader->actions = std::move(actions);
-  reader->buf = std::move(buf);
-  reader->chunk = std::move(chunk);
-  reader->open = std::move(open);
-  reader->Start();
-}
+struct Connection {
+  sockets::OwnedSocket socket;
+  Clock::time_point deadline;
+  std::string in;
+  std::string out;
+  size_t sent = 0;
+  bool answering = false;
+};
 
 } // namespace
 
 struct StatusHttpServer::Impl {
-  asio::io_context io;
-  std::unique_ptr<tcp::acceptor> acceptor;
+  sockets::OwnedSocket listener;
   StatusHttpAuthConfig auth;
   SnapshotFn snapshot;
   StatusHttpActions actions;
   std::string bound;
   std::atomic<bool> stopping{false};
-  std::shared_ptr<std::atomic<int>> open = std::make_shared<std::atomic<int>>(0);
 
-  void ScheduleAccept() {
-    if (stopping.load() || !acceptor) {
-      return;
+  /** A complete request answered: what to write back. */
+  std::string Answer(const StatusHttpRequest& request) {
+    StatusHttpSnapshot snap;
+    try {
+      snap = snapshot ? snapshot() : StatusHttpSnapshot{};
+    } catch (...) {
+      snap = StatusHttpSnapshot{};
     }
-    auto socket = std::make_shared<tcp::socket>(io);
-    acceptor->async_accept(*socket, [this, socket](const std::error_code& ec) {
-      if (stopping.load()) {
-        return;
+    StatusHttpResponse response;
+    try {
+      response = HandleStatusHttpRequest(request, auth, snap, actions);
+    } catch (...) {
+      response = StatusHttpInternalError(); // a request never stops the server
+    }
+    if (request.method == "HEAD") {
+      response.body.clear();
+    }
+    return FormatStatusHttpResponse(response);
+  }
+
+  /** Reads what is there; false when the connection is done (closed, too big, failed). */
+  bool ReadFrom(Connection& c) {
+    char chunk[1024];
+    while (true) {
+      const long n = sockets::Recv(c.socket.Get(), chunk, sizeof(chunk));
+      if (n == 0) {
+        return false;
       }
-      if (!ec) {
-        if (open->fetch_add(1, std::memory_order_acq_rel) >= kMaxOpenConnections) {
-          open->fetch_sub(1, std::memory_order_acq_rel);
-          std::error_code ignored;
-          socket->close(ignored); // full: refuse at once rather than queue
-        } else {
-          HandleConnection(socket, auth, snapshot, actions, open);
+      if (n < 0) {
+        return sockets::WouldBlock();
+      }
+      c.in.append(chunk, static_cast<size_t>(n));
+      if (c.in.size() > kMaxRequestBytes) {
+        return false;
+      }
+      if (auto request = TryParseStatusHttpRequest(c.in)) {
+        c.out = Answer(*request);
+        c.answering = true;
+        return true;
+      }
+    }
+  }
+
+  /** Writes what it can; false when the answer is out (or the write failed). */
+  bool WriteTo(Connection& c) {
+    while (c.sent < c.out.size()) {
+      const long n = sockets::Send(c.socket.Get(), c.out.data() + c.sent, c.out.size() - c.sent);
+      if (n < 0) {
+        return sockets::WouldBlock();
+      }
+      c.sent += static_cast<size_t>(n);
+    }
+    sockets::ShutdownBoth(c.socket.Get());
+    return false;
+  }
+
+  void Run() {
+    std::vector<std::unique_ptr<Connection>> connections;
+    while (!stopping.load()) {
+      std::vector<sockets::PollItem> items;
+      items.push_back({.socket = listener.Get(), .want_read = true});
+      for (const auto& c : connections) {
+        items.push_back({.socket = c->socket.Get(), .want_read = !c->answering, .want_write = c->answering});
+      }
+      if (sockets::Poll(items, kPollMs) < 0) {
+        logging::getLogger("pp-node").warning << "status HTTP poll: " << sockets::LastErrorText();
+        continue;
+      }
+      if (items[0].readable) {
+        while (true) {
+          const sockets::Socket accepted = sockets::Accept(listener.Get());
+          if (accepted == sockets::kInvalid) {
+            break;
+          }
+          sockets::OwnedSocket socket(accepted);
+          if (static_cast<int>(connections.size()) >= kMaxOpenConnections) {
+            continue; // full: refuse at once (closed here) rather than queue
+          }
+          sockets::SetNonBlocking(socket.Get(), true);
+          auto c = std::make_unique<Connection>();
+          c->socket = std::move(socket);
+          c->deadline = Clock::now() + kRequestDeadline;
+          connections.push_back(std::move(c));
         }
-      } else if (ec != asio::error::operation_aborted) {
-        logging::getLogger("pp-node").warning << "status HTTP accept: " << ec.message();
       }
-      ScheduleAccept();
-    });
+      const auto now = Clock::now();
+      std::vector<std::unique_ptr<Connection>> kept;
+      kept.reserve(connections.size());
+      for (size_t i = 0; i < connections.size(); ++i) {
+        Connection& c = *connections[i];
+        // An item polled this round (a connection accepted just now was not).
+        const sockets::PollItem* item = i + 1 < items.size() ? &items[i + 1] : nullptr;
+        bool keep = true;
+        if (item && item->socket == c.socket.Get()) {
+          if (!c.answering && (item->readable || item->failed)) {
+            keep = ReadFrom(c);
+          }
+          if (keep && c.answering && (item->writable || item->failed)) {
+            keep = WriteTo(c);
+          }
+        }
+        if (keep && !c.answering && now >= c.deadline) {
+          keep = false; // a request too slow to arrive
+        }
+        if (keep) {
+          kept.push_back(std::move(connections[i]));
+        }
+      }
+      connections = std::move(kept);
+    }
   }
 };
 
@@ -173,50 +177,28 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
     return Error("status HTTP snapshot callback required");
   }
 
+  auto listener = sockets::Listen(bind.host, bind.port);
+  if (!listener) {
+    if (listener.error().message.rfind("not a numeric address", 0) == 0) {
+      return Error("invalid status HTTP bind host: " + bind.host);
+    }
+    return Error("status HTTP " + listener.error().message);
+  }
   auto impl = std::make_unique<Impl>();
+  impl->listener.Reset(listener->socket);
+  sockets::SetNonBlocking(impl->listener.Get(), true);
+  impl->bound = listener->bound;
   impl->auth = std::move(auth);
   impl->snapshot = std::move(snapshot);
   impl->actions = std::move(actions);
-
-  std::error_code ec;
-  const auto address = asio::ip::make_address(bind.host, ec);
-  if (ec) {
-    return Error("invalid status HTTP bind host: " + bind.host);
-  }
-  tcp::endpoint endpoint(address, bind.port);
-  impl->acceptor = std::make_unique<tcp::acceptor>(impl->io);
-  impl->acceptor->open(endpoint.protocol(), ec);
-  if (ec) {
-    return Error("status HTTP open failed: " + ec.message());
-  }
-  impl->acceptor->set_option(tcp::acceptor::reuse_address(true), ec);
-  if (ec) {
-    return Error("status HTTP set_option failed: " + ec.message());
-  }
-  impl->acceptor->bind(endpoint, ec);
-  if (ec) {
-    return Error("status HTTP bind failed: " + ec.message());
-  }
-  impl->acceptor->listen(asio::socket_base::max_listen_connections, ec);
-  if (ec) {
-    return Error("status HTTP listen failed: " + ec.message());
-  }
-
-  const auto local = impl->acceptor->local_endpoint(ec);
-  if (!ec) {
-    impl->bound = local.address().to_string() + ":" + std::to_string(local.port());
-  } else {
-    impl->bound = bind.host + ":" + std::to_string(bind.port);
-  }
 
   impl_ = std::move(impl);
   running_.store(true);
 
   auto* raw = impl_.get();
   thread_ = std::thread([this, raw]() {
-    raw->ScheduleAccept();
     logging::getLogger("pp-node").info << "status HTTP listening on " << raw->bound << " (/healthz, /status, /metrics)";
-    raw->io.run();
+    raw->Run();
     running_.store(false);
   });
 
@@ -228,11 +210,6 @@ void StatusHttpServer::Stop() {
     return;
   }
   impl_->stopping.store(true);
-  std::error_code ec;
-  if (impl_->acceptor) {
-    impl_->acceptor->close(ec);
-  }
-  impl_->io.stop();
   if (thread_.joinable()) {
     thread_.join();
   }

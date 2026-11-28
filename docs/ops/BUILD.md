@@ -41,7 +41,7 @@ curl uses **BoringSSL** from [`pp-cpp-crypto`](https://github.com/people-post/pp
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/), its one home ([third_party/README.md](../../third_party/README.md), manifest [`UPSTREAM.json`](../../third_party/UPSTREAM.json): name, version, licence, upstream for each): curl, SQLite (amalgamation), Opus, qrcodegen, quirc, zlib, Asio, googletest. Never fetched at configure time.
+**Vendored source** under [`third_party/`](../../third_party/), its one home ([third_party/README.md](../../third_party/README.md), manifest [`UPSTREAM.json`](../../third_party/UPSTREAM.json): name, version, licence, upstream for each): curl, SQLite (amalgamation), Opus, qrcodegen, quirc, zlib, googletest. Never fetched at configure time.
 
 **People-post libraries**, each at a release tag of the **pin list** [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) ([below](#pins-and-sibling-builds)): JSON (`Value`/`Object`) and the runtime from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA + BoringSSL from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui); pp-node's ledger role from [`pp-ledger`](https://github.com/people-post/pp-ledger).
 

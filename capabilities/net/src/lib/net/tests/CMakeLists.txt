@@ -8,4 +8,4 @@ pp_browser_add_lib_folder_tests(
   LINK_LIBS
     pp_lib_net_testing
     CURL::libcurl
-    Asio::asio)
+    pp_foundation_sockets)

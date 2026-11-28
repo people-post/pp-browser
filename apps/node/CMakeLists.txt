@@ -63,7 +63,7 @@ target_link_libraries(pp_app_node PUBLIC
   pp_foundation_runtime_core
   pp_foundation_error
   pp_pbr_common
-  Asio::asio
+  pp_foundation_sockets
   Threads::Threads
   sodium
   CURL::libcurl
@@ -117,7 +117,7 @@ if(PP_BROWSER_BUILD_TESTS)
     pp_pbr_common
     pp_foundation_tls
     pp_lib_net
-    Asio::asio
+    pp_foundation_sockets
     Threads::Threads
   )
   pp_browser_apply_warnings(pp_browser_pp_node_test)

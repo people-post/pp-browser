@@ -9,4 +9,4 @@ pp_browser_add_lib_folder_tests(
     PP_ENVELOPE_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/envelope_vectors.json"
     PP_PEER_REQUEST_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/peer_request_vectors.json"
     PP_RELAY_GRANT_VECTORS_PATH="${PP_SPECS_VECTORS_DIR}/relay_grant_vectors.json")
-target_link_libraries(pp_browser_delivery_test PRIVATE pp_lib_delivery_testing Asio::asio)
+target_link_libraries(pp_browser_delivery_test PRIVATE pp_lib_delivery_testing pp_foundation_sockets)
