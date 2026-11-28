@@ -78,6 +78,8 @@ public:
   void SetClockForTest(std::function<int64_t()> now_ms);
   /** Tests only: let a download use a plain-http loopback url. */
   void SetAllowLocalCdnForTest(bool allow) { allow_local_cdn_for_test_ = allow; }
+  /** Tests only: with no runtime running, a peer's answer goes on inline (AttachmentFetchContext). */
+  void SetRunPeerAnswerInlineForTest(bool run_inline) { run_peer_answer_inline_for_test_ = run_inline; }
   /**
    * Whether this sender may start one more download by itself now: false when the store is over the disk cap
    * or the sender is over its count / byte limit for the minute. A yes is recorded against the sender.
@@ -344,6 +346,7 @@ private:
   std::unordered_map<std::string, int> progress_;
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;
+  bool run_peer_answer_inline_for_test_ = false;
   AttachmentLimits limits_ = DefaultAttachmentLimits();
   AutoDownloadBudget budget_;
   AutoDownloadBudget push_budget_;

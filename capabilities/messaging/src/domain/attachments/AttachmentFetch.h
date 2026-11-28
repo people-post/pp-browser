@@ -27,6 +27,11 @@ struct AttachmentFetchContext {
   std::function<bool(uint64_t done, uint64_t total)> progress;
   /** Tests only: allow a plain-http / loopback CDN url (a peer-controlled url is https + public otherwise). */
   bool allow_local_cdn_for_test = false;
+  /**
+   * Tests only: with no runtime running, a peer's answer continues on the answering thread (the server download, the
+   * size check, the decrypt) instead of ending "not ready". The app never sets it: there the answer only posts.
+   */
+  bool run_peer_answer_inline_for_test = false;
 };
 
 /** Where a CDN download is written before it is read back: `{data_dir}/blob_cipher/incoming/<hash>.part`. */
@@ -40,6 +45,13 @@ void CleanIncomingCiphertext(const std::string& profile_data_dir);
  * failure or a timeout waiting for the first answer. Only an answer spends one of a relay file's downloads.
  */
 bool FetchFailureReachedTheServer(const Error& error);
+
+/**
+ * The app was not running when the peer answered (start-up, quit): the fetch is not continued. Nothing was downloaded
+ * and no server was asked, so FetchFailureReachedTheServer is false for it and a later look queues the file again.
+ */
+Error AttachmentFetchNotReadyError();
+bool IsAttachmentFetchNotReady(const Error& error);
 
 /** True when CDN URL, pending ciphertext, or peer fetch path may apply. */
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context);

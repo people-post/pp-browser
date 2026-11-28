@@ -9,6 +9,7 @@
 #include "domain/attachments/RelayFileUrl.h"
 #include "lib/net/HttpClient.h"
 #include "common/Logger.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 
 #include <algorithm>
@@ -170,6 +171,15 @@ bool FetchFailureReachedTheServer(const Error& error) {
   }
 }
 
+Error AttachmentFetchNotReadyError() {
+  return AppError::Network(Err::Network::Unreachable, "Attachment fetch: the app is not running");
+}
+
+bool IsAttachmentFetchNotReady(const Error& error) {
+  const Error not_ready = AttachmentFetchNotReadyError();
+  return error.category == not_ready.category && error.code == not_ready.code && error.message == not_ready.message;
+}
+
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context) {
   if (!fields.url.empty()) {
     return true;
@@ -208,14 +218,29 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
   const bool large_with_url = fields.byte_length > kMaxDirectAttachmentBytes && !fields.url.empty();
   if (!large_with_url && context.peer_client && context.store && context.contacts && context.identity &&
       !context.thread_id.empty()) {
-    FetchAttachmentCiphertextFromPeerAsync(fields, context,
-                                           [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) {
-                                             if (peer_bytes) {
-                                               finish(std::move(peer_bytes));
-                                               return;
-                                             }
-                                             finish(FetchAttachmentCiphertextFromCdn(fields, context));
-                                           });
+    // The peer transport answers on its own thread: the mesh pump, holding the mesh's io lock (B248). There the answer
+    // only posts the rest to a worker: the server download, its progress (which notifies the UI), and on success the
+    // size check, the decrypt and the file work all run on that worker, never on the answering thread.
+    FetchAttachmentCiphertextFromPeerAsync(
+        fields, context, [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) mutable {
+          auto rest = [fields, context, finish, peer_bytes = std::move(peer_bytes)]() mutable {
+            if (peer_bytes) {
+              finish(std::move(peer_bytes));
+              return;
+            }
+            finish(FetchAttachmentCiphertextFromCdn(fields, context));
+          };
+          if (AppRuntime::IsRunning()) {
+            AppRuntime::PostWorkerBackground(std::move(rest)); // one download at a time: one of the pool's threads
+            return;
+          }
+          if (context.run_peer_answer_inline_for_test) {
+            rest();
+            return;
+          }
+          // A post now would be dropped without a word (start-up, quit): end it here, having asked no server.
+          finish(AttachmentFetchNotReadyError());
+        });
     return;
   }
 

@@ -599,9 +599,12 @@ void AttachmentFetchWorkflow::DrainQueue() {
 void AttachmentFetchWorkflow::ContinueDrainOnWorker() {
   if (AppRuntime::IsRunning()) {
     AppRuntime::PostWorkerNormal([this]() { DrainQueue(); });
-  } else {
-    DrainQueue();
+    return;
   }
+  // No runtime (quit): the next job is not started here. This may be the thread a peer answered on (the mesh pump),
+  // and the next job's server download would run on it. The queue starts again with the next enqueue or kick.
+  std::lock_guard lock(mutex_);
+  draining_ = false;
 }
 
 void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done) {
@@ -616,6 +619,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   context.peer_client = peer_client_;
   context.profile_data_dir = profile_dir_;
   context.allow_local_cdn_for_test = allow_local_cdn_for_test_;
+  context.run_peer_answer_inline_for_test = run_peer_answer_inline_for_test_;
   // Percent of the CDN download for the card; a deleted message (no longer active) cancels the transfer.
   context.progress = [this, key](const uint64_t done, const uint64_t total) {
     if (lane_ && lane_->Stopping()) {
