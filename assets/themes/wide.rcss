@@ -668,6 +668,82 @@
   height: 18dp;
 }
 
+/* ---- Scrollbars (desktop): the engine reserves 16dp for a scrollbar that has no slider look, so a long page scrolled with
+   no hint. Transcripts get a 6dp bar (as the composer's), lists and pages a 3dp one; no arrows, no track, and the bar's
+   colour is in colors.rcss.tmpl. The phone keeps its width-0 rules (.shell-layer-compact / .shell-chat-overlay). ---- */
+.shell-body--wide .messages scrollbarvertical {
+  width: 6dp;
+}
+
+.shell-body--wide .messages scrollbarvertical sliderbar {
+  width: 6dp;
+  min-height: 24dp;
+  border-radius: 3dp;
+}
+
+.shell-body--wide .sidebar-sessions scrollbarvertical,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical,
+.shell-body--wide .settings-wide-scroll scrollbarvertical,
+.shell-body--wide .settings-detail-body scrollbarvertical,
+.shell-body--wide .contact-detail-panel scrollbarvertical,
+.shell-body--wide .blocked-page scrollbarvertical,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical,
+.shell-body--wide .people-picker-wide-list scrollbarvertical,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical {
+  width: 3dp;
+}
+
+.shell-body--wide .sidebar-sessions scrollbarvertical sliderbar,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical sliderbar,
+.shell-body--wide .settings-wide-scroll scrollbarvertical sliderbar,
+.shell-body--wide .settings-detail-body scrollbarvertical sliderbar,
+.shell-body--wide .contact-detail-panel scrollbarvertical sliderbar,
+.shell-body--wide .blocked-page scrollbarvertical sliderbar,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical sliderbar,
+.shell-body--wide .people-picker-wide-list scrollbarvertical sliderbar,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical sliderbar {
+  width: 3dp;
+  min-height: 24dp;
+  border-radius: 1.5dp;
+}
+
+.shell-body--wide .messages scrollbarvertical sliderarrowdec,
+.shell-body--wide .sidebar-sessions scrollbarvertical sliderarrowdec,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical sliderarrowdec,
+.shell-body--wide .settings-wide-scroll scrollbarvertical sliderarrowdec,
+.shell-body--wide .settings-detail-body scrollbarvertical sliderarrowdec,
+.shell-body--wide .contact-detail-panel scrollbarvertical sliderarrowdec,
+.shell-body--wide .blocked-page scrollbarvertical sliderarrowdec,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical sliderarrowdec,
+.shell-body--wide .people-picker-wide-list scrollbarvertical sliderarrowdec,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical sliderarrowdec,
+.shell-body--wide .messages scrollbarvertical sliderarrowinc,
+.shell-body--wide .sidebar-sessions scrollbarvertical sliderarrowinc,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical sliderarrowinc,
+.shell-body--wide .settings-wide-scroll scrollbarvertical sliderarrowinc,
+.shell-body--wide .settings-detail-body scrollbarvertical sliderarrowinc,
+.shell-body--wide .contact-detail-panel scrollbarvertical sliderarrowinc,
+.shell-body--wide .blocked-page scrollbarvertical sliderarrowinc,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical sliderarrowinc,
+.shell-body--wide .people-picker-wide-list scrollbarvertical sliderarrowinc,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical sliderarrowinc {
+  width: 0;
+  height: 0;
+}
+
+.shell-body--wide .messages scrollbarvertical slidertrack,
+.shell-body--wide .sidebar-sessions scrollbarvertical slidertrack,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical slidertrack,
+.shell-body--wide .settings-wide-scroll scrollbarvertical slidertrack,
+.shell-body--wide .settings-detail-body scrollbarvertical slidertrack,
+.shell-body--wide .contact-detail-panel scrollbarvertical slidertrack,
+.shell-body--wide .blocked-page scrollbarvertical slidertrack,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical slidertrack,
+.shell-body--wide .people-picker-wide-list scrollbarvertical slidertrack,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical slidertrack {
+  background-color: transparent;
+}
+
 /* ---- Composer ---- */
 /* The composer strip (ShellLayoutRml::PaneSlot) floats over the conversation column's bottom edge, the transcript
    running under it; its first child is the phone bars' material (.bar-material, frosted with Transparency on), the

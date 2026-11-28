@@ -64,6 +64,19 @@ selection {
   background-color: #00000040;
 }
 
+.shell-body--wide .messages scrollbarvertical sliderbar,
+.shell-body--wide .sidebar-sessions scrollbarvertical sliderbar,
+.shell-body--wide .contacts-wide-scroll scrollbarvertical sliderbar,
+.shell-body--wide .settings-wide-scroll scrollbarvertical sliderbar,
+.shell-body--wide .settings-detail-body scrollbarvertical sliderbar,
+.shell-body--wide .contact-detail-panel scrollbarvertical sliderbar,
+.shell-body--wide .blocked-page scrollbarvertical sliderbar,
+.shell-body--wide .news-reader-scroll--wide scrollbarvertical sliderbar,
+.shell-body--wide .people-picker-wide-list scrollbarvertical sliderbar,
+.shell-body--wide .people-picker-wide-preview scrollbarvertical sliderbar {
+  background-color: #00000040;
+}
+
 .chat-form-field selection {
   background-color: #007aff1f;
 }
