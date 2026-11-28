@@ -1,15 +1,16 @@
 # Source layers: common → foundation → lib → domain → feature → gui → app.
 # Convenience INTERFACEs `pp_foundation` and `pp_base` = foundation + Amp + mesh + lib: the app's and its tools'
 # (capabilities name what they link; check_capability_edges.py, CR016).
-# The base (capabilities/base, CR023 step 3), then the app's own common layer and the product's base.
-add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/base ${CMAKE_BINARY_DIR}/capabilities/base)
-# The headless product base both apps use (CR028); the app's own on top of it in foundation/.
-add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/product ${CMAKE_BINARY_DIR}/capabilities/product)
+# The base (pp-cpp-core's capabilities/base, CR023 step 3), then the app's own common layer and the product's base.
+add_subdirectory(${PP_CPP_CORE_DIR}/capabilities/base ${CMAKE_BINARY_DIR}/capabilities/base)
+# The headless product base both apps use (pp-cpp-core, CR028); the app's own on top of it in foundation/.
+add_subdirectory(${PP_CPP_CORE_DIR}/capabilities/product ${CMAKE_BINARY_DIR}/capabilities/product)
 add_subdirectory(common/ui)
 add_subdirectory(foundation)
-# Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.
-add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
-add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
+# Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order: people, net and node from
+# pp-cpp-core (cmake/PpCore.cmake), the rest this tree's.
+add_subdirectory(${PP_CPP_CORE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
+add_subdirectory(${PP_CPP_CORE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/social ${CMAKE_BINARY_DIR}/capabilities/social)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/delivery ${CMAKE_BINARY_DIR}/capabilities/delivery)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/pricing ${CMAKE_BINARY_DIR}/capabilities/pricing)
@@ -17,7 +18,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/media ${CMAKE_BINARY_DIR}/capa
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/messaging ${CMAKE_BINARY_DIR}/capabilities/messaging)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capabilities/calls)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/broadcast ${CMAKE_BINARY_DIR}/capabilities/broadcast)
-add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
+add_subdirectory(${PP_CPP_CORE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/relay ${CMAKE_BINARY_DIR}/capabilities/relay)
 add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/ledger ${CMAKE_BINARY_DIR}/capabilities/ledger)
 add_subdirectory(lib)

@@ -1,7 +1,7 @@
 # The capabilities on their own, without the app (projects/capability-repos CR023 step 4): a configure of chosen
-# capability folders and what is below them, with the pin list's libraries (cmake/PpPins.cmake) and third_party/ —
-# what a capability repo's root will be (CR027). pp-browser's own configure does not read this file: the app adds
-# each folder from src/CMakeLists.txt.
+# capability folders and what is below them (pp-cpp-core's five from its pin, CR027), with the pin list's libraries
+# (cmake/PpPins.cmake) and third_party/. pp-browser's own configure does not read this file: the app adds each folder
+# from src/CMakeLists.txt.
 #
 #   cmake -S capabilities -B build-calls -DPP_CAPABILITIES=calls
 #   cmake --build build-calls --target pp_capability_calls_tests   # calls' tests (and what they link); or everything
@@ -30,7 +30,9 @@ if(WIN32 OR CMAKE_SYSTEM_NAME MATCHES "iOS|Android")
                       "through the app")
 endif()
 
-set(PP_CAPABILITIES_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(PP_APP_ROOT "${_pp_root}") # the assets, relay certificates and commit the product capability reads
 set(PP_CAPABILITIES_DEFAULT "calls")
+include(PpPins)
+include(PpCore) # pp-cpp-core: base, product, people, net, node and cmake/PpCapabilitiesRoot.cmake
+include(PpBrowserCapabilities)
 include(PpCapabilitiesRoot)

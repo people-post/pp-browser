@@ -24,6 +24,11 @@ import pp_app_lab as lab  # noqa: E402
 EVERYTHING = set(S.VOCABULARY)
 
 
+# pp-cpp-core's capabilities (projects/capability-repos CR027): tagged here (the lab's scenarios name them), their
+# folders in pp-cpp-core.
+CORE = {"base", "product", "people", "net", "node"}
+
+
 class CapabilityOrderTest(unittest.TestCase):
     def test_above_follows_the_capability_order(self):
         self.assertEqual(S.above("media"), {"media", "messaging", "calls", "broadcast"})
@@ -35,7 +40,7 @@ class CapabilityOrderTest(unittest.TestCase):
     def test_every_capability_folder_has_a_tag(self):
         folders = {d for d in os.listdir(os.path.join(ROOT, "capabilities"))
                    if os.path.isdir(os.path.join(ROOT, "capabilities", d))}
-        self.assertEqual(folders - {"base"}, set(S.CAPABILITY_TAGS))
+        self.assertEqual(folders | CORE - {"base"}, set(S.CAPABILITY_TAGS))
         self.assertEqual(set(S.BELOW), set(S.CAPABILITY_TAGS))
 
     def test_below_matches_the_ci_capability_filters(self):
@@ -55,9 +60,10 @@ class CapabilityOrderTest(unittest.TestCase):
                 else:
                     yield item
 
+        # pp-cpp-core's folders are not in this tree: a change to them arrives by the pin (cmake/), the base's filter.
         for capability in S.CAPABILITY_TAGS:
             folders = {p.split("/")[1] for p in flat(filters[capability]) if p.startswith("capabilities/")}
-            self.assertEqual(folders - {"base"}, S.below(capability) | {capability}, capability)
+            self.assertEqual(folders, (S.below(capability) | {capability}) - CORE, capability)
 
 
 class PathTableTest(unittest.TestCase):

@@ -1,6 +1,6 @@
 # Capability repos — current state
 
-**Updated:** 2026-11-27  
+**Updated:** 2026-11-28  
 **Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) done; storage in the app (CR024) done; the docs split (CR025) step 1 done; CR012's prerequisites for P4 done in pp-browser (pins, sibling mode, vendored-deps manifest); P4's shape is layered repos (CR027), pp-node repo-ready in place next (CR028)
 
 ## Done
@@ -201,6 +201,13 @@
    - **pp-cpp-core**, created after that: base, product, people, net, node, with their history (`git filter-repo`);
      the vendored curl and zlib move there (Asio is gone: foundation/sockets, 2026-11-28) (CR012's shared home); reviewers as pp-browser's (Hongwei, Kenneth,
      Leo); tag v0.1.0; pp-browser pins it and drops its copies; pp-ledger-apps pins it for the operator app.
+     **Status 2026-11-28:** [people-post/pp-cpp-core](https://github.com/people-post/pp-cpp-core) created (public) with
+     the five folders' history; it builds and tests on its own on Linux, macOS and Windows, with pp-browser's gates for
+     its folders and the narrower code owners. Its #3 lets an app pin it (core's files from core's root, the app's
+     from `PP_APP_ROOT` and `PP_CAPABILITIES_DIR`, `cmake/PpCoreDependencies.cmake`). Here, in review: pp-browser
+     pins it (`cmake/PpCore.cmake`), builds the five from the pin and drops its copies, their cmake helpers and the
+     vendored curl, zlib and googletest; its own capabilities' table for the standalone builds is
+     `cmake/PpBrowserCapabilities.cmake`. Next: pp-ledger-apps pins it for the operator app.
    - Before that note: P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
    node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
    the add-ons, its packaging and release) rather than moving code still being built.

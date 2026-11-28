@@ -70,7 +70,7 @@ DOMAIN_MODULES=(people messaging calls broadcast pricing content posts net media
 
 is_allowed_lib_edge() {
   local edge="$1"
-  printf '%s\n' "$ALLOWED_LIB_EDGES" | grep -qx "$edge"
+  grep -qx -- "$edge" <<<"$ALLOWED_LIB_EDGES" # no pipe: under pipefail, grep -q exiting early fails it
 }
 
 # Scan production sources under a lib/ tree for lib→lib includes.

@@ -10,8 +10,9 @@ Links count too (CR016): every pp-browser target a src/ CMakeLists.txt names (PU
 target_link_libraries) is a link from that folder's capability to the target's, held to the same order;
 the allowlist names those as "link from -> to count".
 
-The standalone build's table (cmake/PpCapabilitiesRoot.cmake, CR023 step 4: what each capability builds on) must match
-the order here.
+The standalone build's table for this tree's capability folders (cmake/PpBrowserCapabilities.cmake, CR023 step 4: what
+each builds on) must match the order here. pp-cpp-core's five (base, product, people, net, node; CR027) are not in this
+tree: its own gate holds them, and includes of their paths from here are classified by GROUPS as before.
 
 Usage: scripts/check/check_capability_edges.py [--list | --lib-edges]
   --list       prints every cross-capability edge (includes, then links)
@@ -278,10 +279,14 @@ def check_against(kind: str, edges: Counter, sites: dict, allowlist: Counter) ->
     return failed
 
 
+# pp-cpp-core's lib peers (CR027): not in this tree, but this tree's lib peers include them.
+CORE_LIB_MODULES = {"people", "net"}
+
+
 def allowed_lib_edges() -> list[str]:
     """lib/<a> may include lib/<b> when they are different capabilities and the order allows it (CR013)."""
-    modules = sorted({child.name for base, _folder in source_roots() if (base / "lib").is_dir()
-                      for child in (base / "lib").iterdir() if child.is_dir()})
+    modules = sorted(CORE_LIB_MODULES | {child.name for base, _folder in source_roots() if (base / "lib").is_dir()
+                                         for child in (base / "lib").iterdir() if child.is_dir()})
     pairs = []
     for source in modules:
         for target in modules:
@@ -291,7 +296,7 @@ def allowed_lib_edges() -> list[str]:
     return pairs
 
 
-STANDALONE = ROOT / "cmake" / "PpCapabilitiesRoot.cmake"  # what capabilities/CMakeLists.txt and apps/node include
+STANDALONE = ROOT / "cmake" / "PpBrowserCapabilities.cmake"  # this tree's capabilities, for capabilities/ and apps/node
 STANDALONE_BELOW = re.compile(r"^set\(PP_CAPABILITY_BELOW_(\w+)([^)]*)\)", re.M)
 
 

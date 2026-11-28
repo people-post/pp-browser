@@ -1,1 +1,0 @@
-pp_browser_add_base_folder_tests(pp_foundation_sockets pp_browser_sockets_test LINK_LIBS Threads::Threads)

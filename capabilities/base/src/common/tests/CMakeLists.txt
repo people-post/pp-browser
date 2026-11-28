@@ -1,3 +1,0 @@
-include(PpBrowserBase)
-
-pp_browser_add_base_folder_tests(pp_pbr_common pp_browser_common_test)

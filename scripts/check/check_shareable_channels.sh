@@ -14,13 +14,9 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-ALLOWED = {
-    "capabilities/base/src/common/Diag.h",
-    "capabilities/base/src/common/Metrics.h",
-    "capabilities/base/src/common/ShareableLine.h",
-    "capabilities/base/src/common/ShareableLine.cpp",
-    "capabilities/base/src/foundation/diagnostics/LogFile.cpp",
-}
+# The channel headers and the log-file installer are pp-cpp-core's (capabilities/base, CR027; its copy of this check
+# allows them): none here.
+ALLOWED: set[str] = set()
 # The channel loggers themselves, or a logger named after a shareable channel.
 FORBIDDEN = re.compile(
     r'\b(?:DiagLog|MetricsLog)\s*\(\s*\)|'

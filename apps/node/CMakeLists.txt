@@ -6,8 +6,8 @@
 #   cmake --build build-node --target pp-node pp-node-plus pp_browser_pp_node_test
 #   ctest --test-dir build-node
 #
-# On its own it builds the capabilities it links from capabilities/ (in pp-node's own repo, from pp-cpp-core, CR027),
-# headless, with the same pins. Linux and macOS.
+# On its own it builds the capabilities it links, headless, with the same pins: product, people, net and node from
+# pp-cpp-core (CR027), relay and ledger from capabilities/. Linux and macOS.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   cmake_minimum_required(VERSION 3.24)
   get_filename_component(_pp_root "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -19,9 +19,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     message(FATAL_ERROR "pp-node builds on its own on Linux and macOS: build ${CMAKE_SYSTEM_NAME} through the app")
   endif()
   set(PP_BROWSER_HEADLESS ON CACHE BOOL "Headless: pp-node only" FORCE)
-  set(PP_CAPABILITIES_DIR "${_pp_root}/capabilities")
   set(PP_APP_ROOT "${_pp_root}") # pp-node's relay certificates and commit are pp-browser's tree's until it moves
   set(PP_CAPABILITIES_DEFAULT "product;node;relay;ledger")
+  include(PpPins)
+  include(PpCore) # pp-cpp-core: base, product, people, net, node and cmake/PpCapabilitiesRoot.cmake
+  include(PpBrowserCapabilities)
   include(PpCapabilitiesRoot)
 endif()
 

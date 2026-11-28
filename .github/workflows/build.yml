@@ -114,11 +114,10 @@ jobs:
               - 'third_party/**'
               - '.github/workflows/build.yml'
             # A moved capability's tests (CTest label capability:<name>) run on a PR only when its folder or
-            # something below it changed: the base (capabilities/base), cmake/, third_party/ and the
-            # capabilities before it (projects/capability-repos CR022). Each filter is the one below it plus its
-            # folder; the Test step lists the folders.
+            # something below it changed: cmake/, third_party/ and the capabilities before it (projects/capability-repos
+            # CR022). Each filter is the one below it plus its folder; the Test step lists the folders. pp-cpp-core's
+            # five (base, product, people, net, node; CR027) have no folder here: they change by the pin, in cmake/.
             base: &capability_base
-              - 'capabilities/base/**'
               - 'src/CMakeLists.txt'
               - 'cmake/**'
               - 'CMakeLists.txt'
@@ -127,13 +126,10 @@ jobs:
             # The headless product base both apps use (CR028); no capability builds on it.
             product:
               - *capability_base
-              - 'capabilities/product/**'
             people: &people
               - *capability_base
-              - 'capabilities/people/**'
             net: &net
               - *people
-              - 'capabilities/net/**'
             social: &social
               - *people
               - 'capabilities/social/**'
@@ -160,7 +156,6 @@ jobs:
               - 'capabilities/broadcast/**'
             node: &node
               - *net
-              - 'capabilities/node/**'
             relay: &relay
               - *net
               - 'capabilities/relay/**'
@@ -173,9 +168,7 @@ jobs:
               - *node
               - *relay
               - *ledger
-              - 'capabilities/product/**'
               - 'apps/node/**'
-              - 'cmake/PpCapabilitiesRoot.cmake'
               - 'src/foundation/**'
               - 'src/common/**'
               - 'packaging/pp-node/**'
@@ -186,7 +179,6 @@ jobs:
             calls_standalone:
               - *calls
               - 'capabilities/CMakeLists.txt'
-              - 'cmake/PpCapabilitiesRoot.cmake'
 
   lint:
     needs: changes

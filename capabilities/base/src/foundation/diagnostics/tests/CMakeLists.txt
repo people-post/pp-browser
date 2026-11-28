@@ -1,4 +1,0 @@
-pp_browser_add_foundation_folder_tests(
-  pp_foundation_diagnostics
-  pp_browser_diagnostics_test
-  LINK_LIBS ZLIB::ZLIB)

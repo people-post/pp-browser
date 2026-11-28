@@ -1,5 +1,8 @@
+# This tree's own vendored code (third_party/), after pp-cpp-core's (curl and zlib, cmake/PpCoreDependencies.cmake).
+include_guard(GLOBAL)
 include(Progress)
-include(PpBrowserCapability) # PP_BROWSER_ROOT
+include(PpCore) # PP_BROWSER_ROOT
+include(PpCoreDependencies)
 
 set(PP_THIRD_PARTY_DIR "${PP_BROWSER_ROOT}/third_party")
 
@@ -17,72 +20,12 @@ endfunction()
 
 # GUI / AI / messaging / A-V — not needed for headless pp-node.
 # FreeType / HarfBuzz / LunaSVG / SDL3 / SDL3_image come from pp-cpp-ui.
-# curl is required for headless too (pp-node mesh directory publish — N027).
-pp_require_vendored(curl)
 pp_require_vendored(sqlite) # headless too: pp-node-plus's relay store (projects/node-relay)
 if(NOT PP_BROWSER_HEADLESS)
   pp_require_vendored(opus)
 endif()
 
-# libp2p deps (zlib; aliases pp-cpp-crypto's BoringSSL for curl's TLS)
-include(libp2p_dependencies)
-
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-# libcurl — headless pp-node + GUI (LLM / Brief HTTP)
-set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_LDAPS ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_TELNET ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_DICT ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_FILE ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_TFTP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_RTSP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_POP3 ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_IMAP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_SMTP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_GOPHER ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_MQTT ON CACHE BOOL "" FORCE)
-set(CURL_USE_LIBSSH2 OFF CACHE BOOL "" FORCE)
-set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
-set(CURL_ZLIB OFF CACHE BOOL "" FORCE)
-set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
-set(CURL_ZSTD OFF CACHE BOOL "" FORCE)
-set(CURL_ENABLE_EXPORT_TARGET OFF CACHE BOOL "" FORCE)
-set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
-# Do not auto-link Homebrew/system nghttp2 (breaks Developer ID / notarized apps).
-set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
-set(USE_NGTCP2 OFF CACHE BOOL "" FORCE)
-set(USE_QUICHE OFF CACHE BOOL "" FORCE)
-set(USE_OPENSSL_QUIC OFF CACHE BOOL "" FORCE)
-# Avoid pkg-config picking Cellar dylibs for optional curl deps.
-set(CURL_USE_PKGCONFIG OFF CACHE BOOL "" FORCE)
-
-if(WIN32)
-  set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
-elseif(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(CURL_USE_SECTRANSP ON CACHE BOOL "" FORCE)
-else()
-  set(CURL_USE_OPENSSL ON CACHE BOOL "" FORCE)
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/modules")
-  set(HAVE_BORINGSSL TRUE CACHE BOOL "" FORCE)
-  set(HAVE_SSL_SET0_WBIO TRUE CACHE BOOL "" FORCE)
-  set(HAVE_OPENSSL_SRP FALSE CACHE BOOL "" FORCE)
-  set(HAVE_ECH FALSE CACHE BOOL "" FORCE)
-  find_package(OpenSSL REQUIRED)
-endif()
-
-if(ANDROID)
-  set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
-  set(CURL_CA_PATH "/system/etc/security/cacerts" CACHE STRING "" FORCE)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  set(CURL_CA_BUNDLE "none" CACHE STRING "" FORCE)
-  set(CURL_CA_PATH "none" CACHE STRING "" FORCE)
-endif()
-
-add_subdirectory("${PP_THIRD_PARTY_DIR}/curl"
-                 "${CMAKE_BINARY_DIR}/third_party/curl" EXCLUDE_FROM_ALL)
 
 # SQLite amalgamation: the app's chat storage (lib/storage) and, headless too, the relay's store (capabilities/relay).
 # EXCLUDE_FROM_ALL: built only for what links it, so the default pp-node never does.
@@ -90,7 +33,7 @@ add_subdirectory("${PP_THIRD_PARTY_DIR}/sqlite"
                  "${CMAKE_BINARY_DIR}/third_party/sqlite" EXCLUDE_FROM_ALL)
 
 if(PP_BROWSER_HEADLESS)
-  pp_configure_status("Headless deps ready (pp-cpp-common, pp-cpp-crypto, libp2p, curl, sqlite); skipping GUI third_party")
+  pp_configure_status("Headless deps ready (pp-cpp-core's curl and zlib, sqlite); skipping GUI third_party")
   return()
 endif()
 
