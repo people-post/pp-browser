@@ -13,7 +13,7 @@
 | Layer | Target path | Role |
 |-------|-------------|------|
 | Common (external) | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp` |
-| **Common (in-tree)** | [`capabilities/base/src/common/`](../../capabilities/base/src/common/) | pp-browser **helpers + contracts**: tiny utilities and shared vocabulary/seams any peer may use without linking another peer (`pp_pbr_common`) |
+| **Common (in-tree)** | [`capabilities/base/src/common/`](https://github.com/people-post/pp-cpp-core/tree/main/capabilities/base/src/common/) | pp-browser **helpers + contracts**: tiny utilities and shared vocabulary/seams any peer may use without linking another peer (`pp_pbr_common`) |
 | Crypto (external) | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers; product wire helpers stay in foundation/lib crypto |
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every lib peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
@@ -177,7 +177,7 @@ Guardrails:
 2. Prefer pure headers for contracts (virtual iface + POD/DTO). No orchestration `.cpp`.
 3. Promote a type to common only when a **second lib peer** must compile against it without linking the owner. Otherwise keep it in the owning foundation/lib module.
 
-See [`capabilities/base/src/common/README.md`](../../capabilities/base/src/common/README.md).
+See [`capabilities/base/src/common/README.md`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/base/src/common/README.md).
 
 ## Foundation vs lib
 
@@ -321,7 +321,7 @@ Cross-controller wiring (tool registration, tab ticks) lives in `src/app/`. Sett
 
 Foundation/lib module tests compile to one executable per folder (e.g. `pp_browser_people_test`). Feature module tests use a `pp_browser_feature_<module>_test` prefix.
 
-Fork product profiles: pp-cpp-ui `PpCppUi.cmake`. Shared `third_party` wiring: `cmake/dependencies.cmake`, `cmake/libp2p_dependencies.cmake`.
+Fork product profiles: pp-cpp-ui `PpCppUi.cmake`. Shared `third_party` wiring: `cmake/dependencies.cmake` (this tree's), after pp-cpp-core's `cmake/PpCoreDependencies.cmake` (curl, zlib).
 
 ## Test placement
 

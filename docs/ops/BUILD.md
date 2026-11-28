@@ -41,9 +41,9 @@ curl uses **BoringSSL** from [`pp-cpp-crypto`](https://github.com/people-post/pp
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/), its one home ([third_party/README.md](../../third_party/README.md), manifest [`UPSTREAM.json`](../../third_party/UPSTREAM.json): name, version, licence, upstream for each): curl, SQLite (amalgamation), Opus, qrcodegen, quirc, zlib, googletest. Never fetched at configure time.
+**Vendored source** under [`third_party/`](../../third_party/) ([third_party/README.md](../../third_party/README.md), manifest [`UPSTREAM.json`](../../third_party/UPSTREAM.json): name, version, licence, upstream for each): SQLite (amalgamation), Opus, qrcodegen, quirc. curl, zlib and googletest are [pp-cpp-core](https://github.com/people-post/pp-cpp-core)'s, vendored there with the capabilities that use them. Never fetched at configure time (pp-cpp-core's come with its pin).
 
-**People-post libraries**, each at a release tag of the **pin list** [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) ([below](#pins-and-sibling-builds)): JSON (`Value`/`Object`) and the runtime from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA + BoringSSL from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui); pp-node's ledger role from [`pp-ledger`](https://github.com/people-post/pp-ledger).
+**People-post libraries**, each at a release tag of the **pin list** [`cmake/PpPins.cmake`](../../cmake/PpPins.cmake) ([below](#pins-and-sibling-builds)): the capabilities base, product, people, net and node, with the cmake helpers they build with, from [`pp-cpp-core`](https://github.com/people-post/pp-cpp-core) (capability-repos CR027; `cmake/PpCore.cmake`); JSON (`Value`/`Object`) and the runtime from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA + BoringSSL from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); Amp links from [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui); pp-node's ledger role from [`pp-ledger`](https://github.com/people-post/pp-ledger).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -57,8 +57,6 @@ Chat/CJK fonts (**Noto Sans CJK Regular OTC** `NotoSansCJK-Regular.ttc` — shar
 ./scripts/vendor/fonts_import_noto.sh
 ```
 
-If libp2p dependency trees are missing, run `./scripts/vendor/libp2p_vendor_import.sh`.
-
 SDL3 + image codecs are vendored in pp-cpp-ui (`third_party/sdl3`, `third_party/sdl3_image`). Bump the pp-cpp-ui pin when updating them (and, for a new SDL version, SDL's Java glue under `android/`: third_party/README.md § Elsewhere in this repo).
 
 ### Pins and sibling builds
@@ -69,13 +67,18 @@ Each pin `<repo>` has cache variables named after it (`pp-cpp-mesh` → `PP_CPP_
 
 | Source | How | When |
 |--------|-----|------|
-| A local checkout of one library | `-DPP_CPP_MESH_SOURCE_DIR=<path>` (any pin: `PP_CPP_COMMON_`, `PP_CPP_CRYPTO_`, `PP_CPP_AMP_`, `PP_CPP_MESH_`, `PP_CPP_UI_`, `PP_LEDGER_SOURCE_DIR`) | Working on that library with the app |
+| A local checkout of one library | `-DPP_CPP_MESH_SOURCE_DIR=<path>` (any pin: `PP_CPP_CORE_`, `PP_CPP_COMMON_`, `PP_CPP_CRYPTO_`, `PP_CPP_AMP_`, `PP_CPP_MESH_`, `PP_CPP_UI_`, `PP_LEDGER_SOURCE_DIR`) | Working on that library with the app |
 | **Sibling mode**: every library from a checkout beside the repo | `-DPP_SIBLINGS_DIR=..` (relative to the repo root, or absolute): `<dir>/pp-cpp-common`, `<dir>/pp-cpp-mesh`, …; a pin with no checkout there is fetched at its tag (warned) | A change across libraries and the app, built together before any release |
 | The pinned tag (FetchContent) | default; `-DPP_CPP_MESH_GIT_TAG=<tag>` tries another tag for one build | CI, releases, everyday builds |
 
 ```bash
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DPP_SIBLINGS_DIR=..   # ../pp-cpp-common, ../pp-cpp-mesh, …
 ```
+
+**pp-cpp-core** is pinned the same way and fetched before anything else (`cmake/PpCore.cmake`): nothing of it is added as
+a project; the app adds its five capability folders itself (`src/CMakeLists.txt`) and its `cmake/` joins the module
+path. A change to those capabilities is made there (its own CI holds them to the same gates), released, and pinned
+here; `-DPP_CPP_CORE_SOURCE_DIR=<checkout>` builds a local core with this tree before that.
 
 **pp-specs** is pinned the same way but only fetched when tests are built, and nothing in it is compiled: it holds the
 shared contracts' frozen vectors, which the tests read from `PP_SPECS_VECTORS_DIR` (`cmake/PpSpecs.cmake`;

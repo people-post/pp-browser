@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/delivery/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients from the backend's table (`ConversationsHub` through [`BackendClientSet`](../../capabilities/delivery/src/lib/delivery/BackendClientSet.cpp); profile-model PM002); [`CreateOrgBackendClients`](../../capabilities/net/src/lib/net/OrgBackendClientFactory.cpp) is used by tests only.
+Relay, directory, and registration share a common resolution pattern. Code calls the ports (`IRelayClient` — messaging's, `lib/delivery/RelayClients.h`; `IDirectoryClient`; `IRegistrationClient`), never an implementation, so other transports can plug in without changing messaging or agent code. The app builds the HTTP clients from the backend's table (`ConversationsHub` through [`BackendClientSet`](../../capabilities/delivery/src/lib/delivery/BackendClientSet.cpp); profile-model PM002); [`CreateOrgBackendClients`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/net/src/lib/net/OrgBackendClientFactory.cpp) is used by tests only.
 
 ## Resolution order
 

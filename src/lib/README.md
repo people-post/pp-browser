@@ -7,9 +7,9 @@ two peers of one capability, or an edge against the order, may not — that cros
 
 | Peer (today) | Path | CMake |
 |--------------|------|-------|
-| people | [`capabilities/people/src/lib/people/`](../../capabilities/people/src/lib/people/) (CR022) | `pp_lib_people` |
+| people | [`capabilities/people/src/lib/people/`](https://github.com/people-post/pp-cpp-core/tree/main/capabilities/people/src/lib/people/) (CR022) | `pp_lib_people` |
 | media | [`capabilities/calls/src/lib/media/`](../../capabilities/calls/src/lib/media/) (CR022) | `pp_lib_media` |
-| net | [`capabilities/net/src/lib/net/`](../../capabilities/net/src/lib/net/) (CR022) | `pp_lib_net` |
+| net | [`capabilities/net/src/lib/net/`](https://github.com/people-post/pp-cpp-core/tree/main/capabilities/net/src/lib/net/) (CR022) | `pp_lib_net` |
 | ui | `lib/ui/` | `pp_lib_ui` (product shell: theme/catalogs/input) |
 | delivery | [`capabilities/delivery/src/lib/delivery/`](../../capabilities/delivery/src/lib/delivery/) (CR020, CR022) | `pp_lib_delivery` |
 | messaging | [`capabilities/messaging/src/lib/messaging/`](../../capabilities/messaging/src/lib/messaging/) (CR022) | `pp_lib_messaging` |

@@ -2,7 +2,7 @@
 
 The **product's base** (CR015, [CR023](../../projects/capability-repos/DECISIONS.md) step 3): what is pp-browser's own
 and the apps read — capabilities never include it. Its headless part both apps use (the build's identity, the platform
-core, the data layout) is [`capabilities/product/`](../../capabilities/product/docs/README.md) (CR028); here is the
+core, the data layout) is [`capabilities/product/`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/product/docs/README.md) (CR028); here is the
 desktop app's, on top of it.
 
 | Folder | Target | Contents |
@@ -13,7 +13,7 @@ desktop app's, on top of it.
 | `data/` | `pp_foundation_data` | The desktop's config (`AppConfig`), its file format, preferences and session, on `pp_product_data` |
 
 The shared base — `common/` and foundation's runtime, TLS, errors, diagnostics, crypto and identity — is
-[`capabilities/base/src/`](../../capabilities/base/src/): every capability uses it, and it uses pp-cpp-* only. Its
+[`capabilities/base/src/`](https://github.com/people-post/pp-cpp-core/tree/main/capabilities/base/src/): every capability uses it, and it uses pp-cpp-* only. Its
 targets keep their names (`pp_pbr_common`, `pp_foundation_runtime_core`, `pp_foundation_crypto`, …) and paths
 (`#include "foundation/crypto/…"`). The aggregate `pp_foundation` (both) is in
 [`src/CMakeLists.txt`](../CMakeLists.txt).

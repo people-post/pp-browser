@@ -274,7 +274,7 @@ relay directory, and accepts it only for that `account_id`. Listed devices are h
   relay's certificate proves for the locator's relay id, as for a card entry's
   ([SERVICE_ENDPOINTS § Sending by the list](SERVICE_ENDPOINTS.md#sending-by-the-list)), and
   the contact page names it. From then on the card's list is the contact's
-  ([`ContactRelays`](../../capabilities/people/src/lib/people/ContactIdentity.h)). A release build leaves out a
+  ([`ContactRelays`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/people/src/lib/people/ContactIdentity.h)). A release build leaves out a
   `relay` outside the public-relay policy above (`IsPublicRelayOrigin`: on this device or a private network): it is
   neither kept nor asked for the card (developer builds take it, for the lab). The person is still added. The relay id
   is only the inviter's word, as a card's is: it names whom the first send is for, never a pin of ours.

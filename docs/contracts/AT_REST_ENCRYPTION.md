@@ -130,7 +130,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsEngine`](../../capabilities/base/src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../capabilities/base/src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore` (whose `SetDek` opens the chat store, step 8), `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
+[`ProfileSecretsEngine`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/base/src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](https://github.com/people-post/pp-cpp-core/blob/main/capabilities/base/src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore` (whose `SetDek` opens the chat store, step 8), `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsEngine::RegisterDekConsumer` during init (typically from the feature that owns the store).
