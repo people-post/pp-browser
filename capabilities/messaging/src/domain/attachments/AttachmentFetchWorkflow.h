@@ -259,6 +259,8 @@ private:
     bool charged = false;
     /** From another of the account's devices, over the minute's limits when queued: charged right before it starts. */
     bool awaits_budget = false;
+    /** Jobs still queued when it started (the `attachment.fetch` metric). */
+    size_t queued_behind = 0;
   };
   /** What the automatic limits say to one more download by itself. */
   enum class BudgetVerdict { Admitted, DiskFull, OverPace };

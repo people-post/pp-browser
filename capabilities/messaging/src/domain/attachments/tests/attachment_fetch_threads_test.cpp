@@ -7,6 +7,7 @@
 #include "domain/attachments/AttachmentFetch.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 
+#include "common/Metrics.h"
 #include "common/Utilities.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/runtime/AppRuntime.h"
@@ -28,6 +29,7 @@
 #include <map>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 namespace pbr {
 namespace {
@@ -46,6 +48,42 @@ bool WaitFor(const std::function<bool()>& done, const std::chrono::milliseconds 
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   return true;
+}
+
+/** `attachment.fetch` metric lines (the Metrics channel keeps its handlers: one capture for the whole binary). */
+struct FetchMetricCapture : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    if (message.find("event=attachment.fetch ") != std::string::npos) {
+      std::lock_guard lock(mutex);
+      lines.push_back(message);
+    }
+  }
+  std::vector<std::string> Take() {
+    std::lock_guard lock(mutex);
+    return std::exchange(lines, {});
+  }
+  std::vector<std::string> Lines() {
+    std::lock_guard lock(mutex);
+    return lines;
+  }
+  std::mutex mutex;
+  std::vector<std::string> lines;
+};
+FetchMetricCapture& FetchMetrics() {
+  static const std::shared_ptr<FetchMetricCapture> capture = [] {
+    auto made = std::make_shared<FetchMetricCapture>();
+    MetricsLog().addHandler(made);
+    return made;
+  }();
+  return *capture;
+}
+bool HasLine(const std::vector<std::string>& lines, const std::string& part1, const std::string& part2) {
+  for (const std::string& line : lines) {
+    if (line.find(part1) != std::string::npos && line.find(part2) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A peer that is always reachable and answers a fetch only when the test hands the answer over. */
@@ -89,6 +127,7 @@ struct OnAnswerThread {
 class FetchThreadsTest : public ::testing::Test {
 protected:
   void SetUp() override {
+    (void)FetchMetrics().Take();
     AppRuntime::Initialize();
     (void)AppRuntime::HasPendingUITasks(); // the UI mailbox exists before a test thread looks at it
     dir_ = std::filesystem::temp_directory_path() / ("pp_fetch_threads_" + util::GenerateUuid());
@@ -286,6 +325,8 @@ TEST_F(FetchThreadsTest, APeerSuccessIsDecryptedOnAWorkerNotOnTheAnswersThread) 
   ASSERT_TRUE(Becomes(fields, State::Ready));
   EXPECT_FALSE(AttachmentPendingCiphertextExists(dir_.string(), "t1", fields.content_hash));
   EXPECT_EQ(Gets("pic"), 0u) << "the peer's bytes, not the server's";
+  ASSERT_TRUE(WaitFor([&] { return HasLine(FetchMetrics().Lines(), " source=peer ", " result=ok "); }))
+      << "attachment.fetch says the peer sent it";
 }
 
 // The runtime stopped before the peer answered (quit): nothing is downloaded, the job fails as "not ready", and it is
@@ -302,6 +343,7 @@ TEST_F(FetchThreadsTest, APeerAnswerAfterTheRuntimeStoppedFailsAsNotReadyAndSpen
   EXPECT_EQ(Gets("pic"), 0u) << "no request reached the server";
   EXPECT_EQ(StateOf(fields), State::Failed);
   EXPECT_FALSE(suppression_->IsSuppressed("t1", fields.content_hash)) << "not held back as a spent download";
+  EXPECT_TRUE(HasLine(FetchMetrics().Take(), " source=peer ", " result=not_ready "));
 }
 
 // The fetch itself, without a workflow: with no runtime the answer is "not ready", which reached no server; with the

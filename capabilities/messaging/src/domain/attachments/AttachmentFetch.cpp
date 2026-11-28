@@ -44,6 +44,12 @@ void LogServerFetchFailed(const ChatAttachmentFields& fields, const Error& why) 
                                              << " failed: " << why.message;
 }
 
+void NoteSource(const AttachmentFetchContext& context, const AttachmentFetchSource source) {
+  if (context.source) {
+    context.source->store(source);
+  }
+}
+
 /** A non-2xx download answer. The relay gives one 404 for expired, used up and deleted alike. */
 Error ServerFetchStatusError(const long status) {
   return AppError::Blob(status == 404 ? Err::Blob::Expired : Err::Blob::Generic,
@@ -208,6 +214,7 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
     if (auto pending =
             LoadPendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
         pending) {
+      NoteSource(context, AttachmentFetchSource::Pushed);
       finish(std::vector<uint8_t>(pending->begin(), pending->end()));
       return;
     }
@@ -225,9 +232,11 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
         fields, context, [fields, context, finish](Roe<std::vector<uint8_t>> peer_bytes) mutable {
           auto rest = [fields, context, finish, peer_bytes = std::move(peer_bytes)]() mutable {
             if (peer_bytes) {
+              NoteSource(context, AttachmentFetchSource::Peer);
               finish(std::move(peer_bytes));
               return;
             }
+            NoteSource(context, AttachmentFetchSource::Server);
             finish(FetchAttachmentCiphertextFromCdn(fields, context));
           };
           if (AppRuntime::IsRunning()) {
@@ -239,11 +248,13 @@ void FetchAttachmentCiphertextAsync(const ChatAttachmentFields& fields, const At
             return;
           }
           // A post now would be dropped without a word (start-up, quit): end it here, having asked no server.
+          NoteSource(context, AttachmentFetchSource::Peer);
           finish(AttachmentFetchNotReadyError());
         });
     return;
   }
 
+  NoteSource(context, AttachmentFetchSource::Server);
   finish(FetchAttachmentCiphertextFromCdn(fields, context));
 }
 

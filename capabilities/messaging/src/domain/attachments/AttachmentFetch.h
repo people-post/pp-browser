@@ -9,12 +9,17 @@
 
 #include "common/Error.h"
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/** Where a fetch's bytes (or its final error) came from: a pushed copy on this device, the peer, or the server. */
+enum class AttachmentFetchSource : int { None, Pushed, Peer, Server };
 
 struct AttachmentFetchContext {
   std::string thread_id;
@@ -32,6 +37,8 @@ struct AttachmentFetchContext {
    * size check, the decrypt) instead of ending "not ready". The app never sets it: there the answer only posts.
    */
   bool run_peer_answer_inline_for_test = false;
+  /** Optional: set to where the result came from (the `attachment.fetch` metric); read once the fetch has finished. */
+  std::shared_ptr<std::atomic<AttachmentFetchSource>> source;
 };
 
 /** Where a CDN download is written before it is read back: `{data_dir}/blob_cipher/incoming/<hash>.part`. */

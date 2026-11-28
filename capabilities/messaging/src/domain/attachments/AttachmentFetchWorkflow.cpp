@@ -1,6 +1,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentMetrics.h"
+#include "common/Metrics.h"
 #include "common/Utilities.h"
 
 #include "common/chat/MessagingLimits.h"
@@ -29,6 +30,38 @@
 
 namespace pbr {
 namespace {
+
+ShareWord FetchSourceWord(const AttachmentFetchSource source) {
+  switch (source) {
+    case AttachmentFetchSource::Pushed:
+      return "pushed";
+    case AttachmentFetchSource::Peer:
+      return "peer";
+    case AttachmentFetchSource::Server:
+      return "server";
+    case AttachmentFetchSource::None:
+    default:
+      return "none";
+  }
+}
+
+/**
+ * `attachment.fetch`: one line per finished download (B248). `source` pushed / peer / server, `ms` from its start to
+ * stored, `bytes` the declared size, `result` ok / failed / not_ready / not_stored / cancelled, `queued` the jobs
+ * still waiting when it started, `own` 1 when another of the account's devices sent it. No ids, names, hashes or
+ * links.
+ */
+void EmitAttachmentFetchMetric(const AttachmentFetchSource source, const int64_t ms, const uint64_t bytes,
+                               const ShareWord result, const size_t queued, const bool own) {
+  MetricsLine("attachment.fetch")
+      .Add("source", FetchSourceWord(source))
+      .Add("ms", ms)
+      .Add("bytes", bytes)
+      .Add("result", result)
+      .Add("queued", queued)
+      .Add("own", own)
+      .Emit();
+}
 
 /** Storage-grid thumbnails and chat previews made at once (one limit for both). */
 constexpr size_t kMaxGridThumbnailJobs = 2;
@@ -638,6 +671,7 @@ void AttachmentFetchWorkflow::DrainQueue() {
         queue_.erase(queued);
         active_.insert(key);
         started = true;
+        job.queued_behind = queue_.size();
         const int tier = TierLocked(job);
         if (tier == 2) {
           ++others_since_own_;
@@ -754,6 +788,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   context.profile_data_dir = profile_dir_;
   context.allow_local_cdn_for_test = allow_local_cdn_for_test_;
   context.run_peer_answer_inline_for_test = run_peer_answer_inline_for_test_;
+  context.source = std::make_shared<std::atomic<AttachmentFetchSource>>(AttachmentFetchSource::None);
   // Percent of the CDN download for the card; a deleted message (no longer active) cancels the transfer.
   context.progress = [this, key](const uint64_t done, const uint64_t total) {
     if (lane_ && lane_->Stopping()) {
@@ -777,14 +812,18 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   auto background = std::make_shared<BackgroundActivity>("attachment download");
   FetchAndDecryptAttachmentAsync(
       fields, context,
-      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms, declared_bytes,
-       background](Roe<std::vector<uint8_t>> plaintext) mutable {
+      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms, declared_bytes, background,
+       source = context.source](Roe<std::vector<uint8_t>> plaintext) mutable {
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
                            plaintext = std::move(plaintext), started_ms, declared_bytes,
-                           background = std::move(background)]() mutable {
+                           background = std::move(background), source = std::move(source)]() mutable {
           // Reported at the end, after the bytes are stored, so the peak covers the whole receive.
           const auto report = [&](const bool ok) {
             EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
+          };
+          const auto fetch_metric = [&](const ShareWord result) {
+            EmitAttachmentFetchMetric(source->load(), util::NowUnixMs() - started_ms, declared_bytes, result,
+                                      job.queued_behind, job.sender == kLocalSelfContactId);
           };
           // First: a message deleted (or history cleared) meanwhile cancelled this job, and a cancelled transfer
           // that came back as an error is not a failure to show; its percent is gone with the job.
@@ -797,6 +836,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
           }
           if (cancelled) {
+            fetch_metric("cancelled");
             if (on_done) {
               on_done();
             }
@@ -812,6 +852,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           };
           if (!plaintext) {
             report(false);
+            fetch_metric(IsAttachmentFetchNotReady(plaintext.error()) ? ShareWord("not_ready") : ShareWord("failed"));
             if (FetchFailureReachedTheServer(plaintext.error())) {
               hold_back_spent_download();
             }
@@ -826,6 +867,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           const std::shared_ptr<CasStore> content = Content();
           if (dek_copy.empty() || !content) {
             report(false);
+            fetch_metric("not_stored");
             hold_back_spent_download(); // the bytes came, so the download was spent
             MarkFailed(key);
             if (on_done) {
@@ -837,6 +879,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
                                                    job.fields.filename, dek_copy);
               !saved) {
             report(false);
+            fetch_metric("not_stored");
             hold_back_spent_download();
             MarkFailed(key);
             if (on_done) {
@@ -862,6 +905,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             cancelled_meanwhile = !active_.contains(key);
           }
           if (cancelled_meanwhile) {
+            fetch_metric("cancelled");
             DeleteFetchedBytes(profile_dir_, *content, job.thread_id, job.fields);
             if (on_done) {
               on_done();
@@ -869,6 +913,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             return;
           }
           report(true);
+          fetch_metric("ok");
           MarkReady(key);
           if (on_done) {
             on_done();
