@@ -6,24 +6,20 @@ one entry per dependency with its `path`, `version`, `license`, upstream (`repos
 `source`) and how it is imported. A capability folder holds no vendored code; one that needs a library links its
 target from here (media: Opus) or from a pinned people-post library (below).
 
-Built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake) and
-[`cmake/libp2p_dependencies.cmake`](../cmake/libp2p_dependencies.cmake) (named after the retired libp2p fork, A017),
-googletest from [`cmake/PpBrowserTesting.cmake`](../cmake/PpBrowserTesting.cmake).
+Built via `add_subdirectory` from [`cmake/dependencies.cmake`](../cmake/dependencies.cmake). curl, zlib and
+googletest are [pp-cpp-core](https://github.com/people-post/pp-cpp-core)'s (CR027): vendored there, beside the
+capabilities that use them, and built from its pin (`cmake/PpCore.cmake`, its `cmake/PpCoreDependencies.cmake`).
 
 ## Here
 
 | Directory | Upstream | Version | License | Used by |
 |-----------|----------|---------|---------|---------|
-| `curl/` | [curl/curl](https://github.com/curl/curl) `curl-8_11_1` | 8.11.1 | curl | HTTP (LLM, Brief, net, pp-node directory publish) |
 | `sqlite/` | [SQLite amalgamation](https://www.sqlite.org/download.html) `3530300` | 3.53.3 | Public domain | The app's storage (`src/lib/storage`) |
 | `opus/` | [xiph/opus](https://github.com/xiph/opus) `v1.5.2` | 1.5.2 | BSD-3-Clause | media (call and voice-message audio) |
 | `qrcodegen/` | [nayuki/QR-Code-generator](https://github.com/nayuki/QR-Code-generator) `v1.8.0` (C++ only) | 1.8.0 | MIT | Invite QR codes |
 | `quirc/` | [dlbeer/quirc](https://github.com/dlbeer/quirc) `v1.2` (`lib/` only) | 1.2 | ISC | QR scanning (`src/lib/scan`) |
-| `zlib/` | [qdrvm/zlib](https://github.com/qdrvm/zlib) `v1.3.0-p1` | 1.3.0-p1 | Zlib | curl, diagnostics archives; pp-cpp-ui's FreeType reuses it |
-| `googletest/` | [google/googletest](https://github.com/google/googletest) `v1.14.0` | 1.14.0 | BSD-3-Clause | Unit tests (`PP_BROWSER_BUILD_TESTS`) |
 
-Imported by [`scripts/vendor/vendor_import.sh`](../scripts/vendor/vendor_import.sh) (curl, SQLite, Opus,
-qrcodegen), [`libp2p_vendor_import.sh`](../scripts/vendor/libp2p_vendor_import.sh) (zlib, googletest) and
+Imported by [`scripts/vendor/vendor_import.sh`](../scripts/vendor/vendor_import.sh) (SQLite, Opus, qrcodegen) and
 [`quirc_import.sh`](../scripts/vendor/quirc_import.sh). The scripts refresh an
 entry's upstream fields in the manifest and keep the rest; bump its `version` with the tag.
 
@@ -42,16 +38,16 @@ linked here by target; their versions and licences are in those repos. Bumping o
 
 | Library | Vendored there, used directly here |
 |---------|------------------------------------|
-| [pp-cpp-crypto](https://github.com/people-post/pp-cpp-crypto) | libsodium (`sodium`: base, people, social, delivery, messaging, calls, broadcast, the app's storage, pp-node); BoringSSL (`crypto` / `ssl` as `OpenSSL::*`: curl's TLS on Linux, Android and iOS, the base's TLS, the platform layer); mlkem-native, mldsa-native (through `pp_crypto`) |
-| [pp-cpp-ui](https://github.com/people-post/pp-cpp-ui) | SDL3 (`PP_BROWSER_SDL3_TARGET`: media, the platform layer) and SDL3_image (the platform layer); FreeType / HarfBuzz / LunaSVG (the app and its GUI tests include `src/font/harfbuzz` from its tree); its SDL version header (the Android check above). Its libpng is built (FreeType's CBDT emoji); its zlib copy is not: FreeType takes zlib from here. |
+| [pp-cpp-crypto](https://github.com/people-post/pp-cpp-crypto) | libsodium (`sodium`: base, people, social, delivery, messaging, calls, broadcast, the app's storage, pp-node); BoringSSL (`crypto` / `ssl` as `OpenSSL::*`: pp-cpp-core's curl's TLS on Linux, Android and iOS, the base's TLS, the platform layer); mlkem-native, mldsa-native (through `pp_crypto`) |
+| [pp-cpp-ui](https://github.com/people-post/pp-cpp-ui) | SDL3 (`PP_BROWSER_SDL3_TARGET`: media, the platform layer) and SDL3_image (the platform layer); FreeType / HarfBuzz / LunaSVG (the app and its GUI tests include `src/font/harfbuzz` from its tree); its SDL version header (the Android check above). Its libpng is built (FreeType's CBDT emoji); its zlib copy is not: FreeType takes pp-cpp-core's. |
 | [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh) | miniupnpc — not built (`PP_MESH_WITH_UPNP` is off) |
 | [pp-cpp-common](https://github.com/people-post/pp-cpp-common) | JSON (`Value` / `Object`) is its own code |
 
-**Removed:** `boringssl/` (moved to pp-cpp-crypto, which builds it for the link AEAD); `lsquic/`, `c-ares/`,
+**Removed:** `curl/`, `zlib/`, `googletest/` (moved to pp-cpp-core, CR027); `boringssl/` (moved to pp-cpp-crypto, which builds it for the link AEAD); `lsquic/`, `c-ares/`,
 `tsl_hat_trie/` (A017: the libp2p host underlay); `yaml-cpp/`, `soralog/`, `qtils/`; `fmt/` and `outcome/` (nothing
 linked them).
 
-**Across repos** (CR012, [DESIGN § Open questions](../projects/capability-repos/DESIGN.md#open-questions) 3): when a
-second repo builds the same vendored code (a capability repo such as pp-cpp-core, CR027), the copy moves to one shared home — a repo of
-its own or pp-cpp-common, not decided — with this manifest's shape, and each repo links it from there. Until then
-pp-browser is the only one, and this folder is that home.
+**Across repos** (CR012, [DESIGN § Open questions](../projects/capability-repos/DESIGN.md#open-questions) 3, CR027):
+vendored code a capability uses lives with that capability's repo. curl, zlib and googletest moved to pp-cpp-core with
+base, people, net and node, with their import scripts; pp-browser builds them from its pin and keeps only what its own
+capabilities and app use.

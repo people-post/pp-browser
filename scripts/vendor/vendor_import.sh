@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Populate third_party/ from upstream git tags. Safe to re-run when bumping versions.
+# Populate third_party/ from upstream git tags: this tree's own vendored code (curl, zlib and googletest are
+# pp-cpp-core's, with its own import scripts). Safe to re-run when bumping versions.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -12,11 +13,10 @@ SQLITE_AMALGAMATION_VERSION="3530300"
 SQLITE_AMALGAMATION_YEAR="2026"
 
 declare -A REPOS=(
-  [curl]="https://github.com/curl/curl.git|curl-8_11_1"
   [opus]="https://github.com/xiph/opus.git|v1.5.2"
 )
 
-DEFAULT_ORDER=(curl opus sqlite qrcodegen)
+DEFAULT_ORDER=(opus sqlite qrcodegen)
 
 # QR Code generator (C++ only: two files and the license, from the tag's tree).
 QRCODEGEN_REPO="https://github.com/nayuki/QR-Code-generator.git"

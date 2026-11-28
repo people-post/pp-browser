@@ -99,12 +99,14 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# The pin list (every library's tag, CR012), then pp-cpp-core (its cmake/ helpers are used from here on), then each
+# library with its options, in dependency order.
+include(PpPins)
+include(PpCore)
 include(ProductBranding)
 include(Platform)
 include(PpBrowserWarnings)
 include(PpBrowserCapability)
-# The pin list (every library's tag, CR012), then each library with its options, in dependency order.
-include(PpPins)
 include(PpCppCommon)
 include(PpCppCrypto)
 include(PpCppAmp)

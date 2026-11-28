@@ -1,13 +1,4 @@
 {
-  "curl": {
-    "path": "third_party/curl",
-    "version": "8.11.1",
-    "license": "curl",
-    "repository": "https://github.com/curl/curl.git",
-    "tag": "curl-8_11_1",
-    "commit": "75a2079d5c28debb2eaa848ca9430f1fe0d7844c",
-    "import": "scripts/vendor/vendor_import.sh"
-  },
   "sqlite": {
     "path": "third_party/sqlite",
     "version": "3.53.3",
@@ -42,22 +33,6 @@
     "tag": "v1.2",
     "commit": "542848dd6b9b0eaa9587bbf25b9bc67bd8a71fca",
     "import": "scripts/vendor/quirc_import.sh"
-  },
-  "zlib": {
-    "path": "third_party/zlib",
-    "version": "1.3.0-p1",
-    "license": "Zlib",
-    "source": "https://github.com/qdrvm/zlib/archive/refs/tags/v1.3.0-p1.tar.gz",
-    "tag": "v1.3.0-p1",
-    "import": "scripts/vendor/libp2p_vendor_import.sh"
-  },
-  "googletest": {
-    "path": "third_party/googletest",
-    "version": "1.14.0",
-    "license": "BSD-3-Clause",
-    "source": "https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz",
-    "tag": "v1.14.0",
-    "import": "scripts/vendor/libp2p_vendor_import.sh"
   },
   "sdl-android-java": {
     "path": "android/app/src/main/java/org/libsdl/app",

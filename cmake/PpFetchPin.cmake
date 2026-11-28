@@ -8,8 +8,9 @@
 #     PP_CPP_COMMON_SOURCE_DIR (a local checkout, overriding the tag).
 #   pp_pin_make_available(pp-cpp-common [FILES_ONLY])
 #     adds the library, from the first of: its *_SOURCE_DIR, ${PP_SIBLINGS_DIR}/<repo> (sibling mode), its tag
-#     (FetchContent). A local checkout whose HEAD is not the pinned tag is warned about. FILES_ONLY: a repo with
-#     nothing to build (pp-specs): its files are fetched or found the same ways, and nothing is added to the build.
+#     (FetchContent). A local checkout whose HEAD is not the pinned tag is warned about. FILES_ONLY: a repo whose
+#     files the build reads (pp-specs' vectors) or adds itself (pp-cpp-core's capability folders and cmake/): they are
+#     fetched or found the same ways, and nothing is added to the build, even when the repo has a root CMakeLists.txt.
 #   pp_pin_source_dir(pp-cpp-common <out>)
 #     the source tree that build used (for a test that reads a library's own files).
 #
@@ -158,8 +159,9 @@ function(pp_pin_make_available name)
     set(_git_config "")
     if(ARG_FILES_ONLY)
       # A files-only repo holds data compared byte for byte (pp-specs' vectors): never let git convert line ends,
-      # whatever the machine's core.autocrlf (Windows runners default to true and turned LF into CRLF).
-      set(_git_config GIT_CONFIG core.autocrlf=false)
+      # whatever the machine's core.autocrlf (Windows runners default to true and turned LF into CRLF). A subdir
+      # that does not exist keeps MakeAvailable from adding the repo's root CMakeLists.txt (pp-cpp-core has one).
+      set(_git_config GIT_CONFIG core.autocrlf=false SOURCE_SUBDIR pp-files-only)
     endif()
     FetchContent_Declare(
       ${_fc}
@@ -167,7 +169,7 @@ function(pp_pin_make_available name)
       GIT_TAG ${_tag}
       ${_git_config}
     )
-    # A repo without a CMakeLists.txt (FILES_ONLY) is only fetched: MakeAvailable adds nothing for it.
+    # FILES_ONLY: only fetched; MakeAvailable adds nothing for it.
     FetchContent_MakeAvailable(${_fc})
     FetchContent_GetProperties(${_fc} SOURCE_DIR _src)
   endif()
