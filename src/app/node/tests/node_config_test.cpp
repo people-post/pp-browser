@@ -1,4 +1,6 @@
 #include "app/node/NodeConfigLoad.h"
+#include "common/ValueJson.h"
+#include "foundation/data/Config.h"
 
 #include <gtest/gtest.h>
 
@@ -79,4 +81,33 @@ TEST(NodeConfigTest, NoFileNamedIsTheDefaults) {
   EXPECT_TRUE(loaded->data_dir.empty());
   EXPECT_TRUE(loaded->node.empty());
   EXPECT_TRUE(pbr::NodeConfigPath(1, argv.data()).empty());
+}
+
+// A file's registration that a built-in backend replaces is said, not silently dropped.
+TEST(NodeConfigTest, AReplacedRegistrationIsSaid) {
+  pbr::AppConfig loaded;
+  loaded.backend.env = "prod";
+  loaded.registration.base_url = "https://api.example.test/api/relay";
+  loaded.registration.relay_id = "relay:prod";
+
+  auto file = pbr::TryParseObject(R"({ "registration": { "base_url": "https://mine.example.test/api/relay" } })");
+  ASSERT_TRUE(file.has_value());
+  const auto note = pbr::IgnoredRegistrationNote(*file, loaded);
+  ASSERT_TRUE(note.has_value());
+  EXPECT_NE(note->find("ignored: backend 'prod' uses its own (https://api.example.test/api/relay)"), std::string::npos);
+  EXPECT_NE(note->find("PP_NODE_REGISTRATION_BASE_URL"), std::string::npos);
+
+  auto id_only = pbr::TryParseObject(R"({ "registration": { "relay_id": "relay:mine" } })");
+  EXPECT_TRUE(pbr::IgnoredRegistrationNote(*id_only, loaded).has_value());
+}
+
+TEST(NodeConfigTest, ARegistrationThatRunsOrNoneIsNotSaid) {
+  pbr::AppConfig loaded;
+  loaded.registration.base_url = "https://mine.example.test/api/relay";
+  auto same = pbr::TryParseObject(R"({ "registration": { "base_url": "https://mine.example.test/api/relay" } })");
+  EXPECT_FALSE(pbr::IgnoredRegistrationNote(*same, loaded).has_value()) << "a custom backend runs the file's";
+  auto none = pbr::TryParseObject(R"({ "mesh": {} })");
+  EXPECT_FALSE(pbr::IgnoredRegistrationNote(*none, loaded).has_value());
+  auto empty = pbr::TryParseObject(R"({ "registration": {} })");
+  EXPECT_FALSE(pbr::IgnoredRegistrationNote(*empty, loaded).has_value());
 }

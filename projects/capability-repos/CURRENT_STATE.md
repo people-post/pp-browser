@@ -185,6 +185,11 @@
    below): `-DPP_CAPABILITIES=net` configures today; a CI job of its own when it leaves.
 4. **pp-node repo-ready in place (CR028), now:** its own config type over the same keys; `capabilities/product`, the
    headless product base both apps use; a standalone pp-node build with its CI job. It moves nothing.
+   - **Stage 1, in review (#809):** pp-node works on `NodeConfig` (`mesh`, `registration`, `data_dir`,
+     `relay.content_sha256`, `node`); `src/app/node/NodeConfigLoad` is the one place it meets `AppConfig`, loading with
+     the app's loader. `node_config_test` pins what the node reads, for stage 2's loader of its own. pp-node now warns
+     when a built-in backend ignores the file's `registration`.
+   - **Stage 2:** `capabilities/product` and the node's own loader; then the standalone build.
 5. P4 (CR027) after node-relay's mailbox works: **pp-cpp-core** first (base, the shared product base, people, net,
    node; the operator app's relay certificate code is its first new use), then the **pp-node** repo (the app, both editions,
    the add-ons, its packaging and release) rather than moving code still being built.
