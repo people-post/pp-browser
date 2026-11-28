@@ -61,7 +61,7 @@
 #include "lib/net/ProfileIconClient.h"
 #include "lib/net/ProfileIconFetch.h"
 #include "domain/registration/RegistrationClient.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/people/ProfileIconCache.h"
 #include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"

@@ -1,7 +1,7 @@
 #include "domain/delivery/RecipientRelays.h"
 
 #include "common/Utilities.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/people/PeerCards.h"
 

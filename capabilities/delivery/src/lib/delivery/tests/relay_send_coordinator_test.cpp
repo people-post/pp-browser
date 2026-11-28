@@ -4,7 +4,7 @@
 #include "foundation/sockets/testing/ScriptedHttpServer.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/HttpRelayClient.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 
 #include "foundation/crypto/TypedBlob.h"
 #include "lib/net/testing/FakeRelaySigner.h"

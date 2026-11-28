@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/net/OurRelaysStore.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
 #include "common/Error.h"
 #include "common/Module.h"

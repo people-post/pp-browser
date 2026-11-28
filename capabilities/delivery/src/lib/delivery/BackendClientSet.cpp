@@ -1,7 +1,7 @@
 #include "lib/delivery/BackendClientSet.h"
 
 #include "foundation/tls/CurlSsl.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/people/RegistrationStatus.h"
 
 #include <algorithm>

@@ -1,7 +1,7 @@
 #include "feature/settings/MyRelays.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 
 #include <map>
 #include <string_view>

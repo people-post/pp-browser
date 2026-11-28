@@ -23,7 +23,7 @@
 #include "foundation/product/AppVersion.h"
 #include "foundation/product/BuildInfo.h"
 #include "foundation/product/DevTools.h"
-#include "lib/net/RelayOrigins.h"
+#include "lib/net/certificate/RelayOrigins.h"
 #include "lib/net/RelayPins.h"
 #include "mesh/reachability/Reachability.h"
 #if defined(PP_NODE_HAS_LEDGER)

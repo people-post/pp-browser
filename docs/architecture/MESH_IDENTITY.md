@@ -27,7 +27,7 @@ written form, the **relay link**, is
 https://host[:port][/api/relay]#relay:<43 base64url characters>
 ```
 
-(`ParseRelayLink`, `RelayLink`, `lib/net/RelayOrigins.h`; `RelayId`, `foundation/crypto/RelayId.h`). The fragment never
+(`ParseRelayLink`, `RelayLink`, `lib/net/certificate/RelayOrigins.h`; `RelayId`, `foundation/crypto/RelayId.h`). The fragment never
 reaches the relay. A fragment that is not a relay id's one spelling — a PeerId (`#Qm…`, a link from before the
 cutover) included — is refused (`relay_origin_bad_relay_id`); no link names a PeerId. The same `{origin, relay_id}`
 is a contact locator's `relay` entry and, from card v5, an account card's relay entry. The PeerId a client signs for is
