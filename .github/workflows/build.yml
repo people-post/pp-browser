@@ -33,7 +33,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Which jobs a PR needs (Kenneth 2026-10-20: every push ran all six jobs and queued behind each other).
@@ -238,6 +238,7 @@ jobs:
   build:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -339,12 +340,14 @@ jobs:
         run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
 
       - name: Restore ccache
+        id: ccache-restore
         if: env.PP_RUN_PLATFORM == 'true'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-
             ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-
             ${{ runner.os }}-ccache-v2-
 
@@ -424,10 +427,19 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
+      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      - name: Save ccache
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' && env.PP_RUN_PLATFORM == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
+
   # Downloadable Linux build of every main push (no tests: the build job runs them). Packaged
   # layout (bin/ + share/pp-browser/assets); no backend URL is compiled in, set PP_BROWSER_ORIGIN at run time.
   linux-package:
     if: github.event_name == 'push'
+    timeout-minutes: 60
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -454,7 +466,7 @@ jobs:
         run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ runner.os }}-ccache-v2-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
@@ -542,11 +554,13 @@ jobs:
         run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        uses: actions/cache@v6
+        id: ccache-restore
+        uses: actions/cache/restore@v6
         with:
           path: .cache/ccache
-          key: ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-
             ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-
             ${{ runner.os }}-ios-ccache-v1-
 
@@ -575,10 +589,19 @@ jobs:
         if: always()
         run: ccache --show-stats || true
 
+      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      - name: Save ccache
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: .cache/ccache
+          key: ${{ runner.os }}-ios-ccache-v1-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}-${{ github.sha }}
+
   android:
     needs: changes
     if: github.event_name != 'pull_request' || (needs.changes.outputs.code == 'true' && (github.base_ref != 'main' || needs.changes.outputs.android == 'true'))
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: write
@@ -645,11 +668,13 @@ jobs:
         run: echo "PP_RUNNER_IMAGE=${ImageOS:-self-hosted}-${ImageVersion:-none}" >> "$GITHUB_ENV"
 
       - name: Restore Android ccache
-        uses: actions/cache@v6
+        id: ccache-restore
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}-
             ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-
             ${{ runner.os }}-android-ccache-v5-
 
@@ -682,6 +707,14 @@ jobs:
       - name: ccache stats (post-build)
         if: always()
         run: ccache --show-stats || true
+
+      # Only main saves, one cache per commit; PRs and other branches read main's latest.
+      - name: Save Android ccache
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache-restore.outcome == 'success' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-android-ccache-v5-${{ env.PP_RUNNER_IMAGE }}-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}-${{ github.sha }}
 
       # An artifact name takes no '/': release/app-1.1 → release-app-1.1.
       - name: Artifact name
