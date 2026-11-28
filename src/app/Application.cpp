@@ -2485,6 +2485,9 @@ bool Application::MountPresenters(ui::Context* context) {
     people_picker_->OpenForResult(std::move(options), std::move(done), std::move(cancel));
   };
   chat_people_picker_notify.close_choose_targets = [this]() { people_picker_->CloseChooseTargets(); };
+  chat_people_picker_notify.update_choose_preview = [this](std::vector<ChoosePreviewItem> items) {
+    people_picker_->UpdateChoosePreviewItems(items);
+  };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
   EmojiPickerNotifyPorts emoji_notify;

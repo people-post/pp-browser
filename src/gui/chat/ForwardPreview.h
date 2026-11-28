@@ -78,6 +78,32 @@ ForwardPreviewContent BuildForwardPreview(const ForwardCheck& check, const std::
                                           const std::function<std::string(size_t count)>& count_text,
                                           const ForwardPreviewPorts& ports);
 
+/** One picture tile that still lacks its thumbnail (the tile's place in the strip, what to read). */
+struct ForwardThumbJob {
+  size_t tile = 0;
+  uint64_t byte_length = 0;
+  std::vector<uint8_t> content_hash;
+};
+
+/** What a job made: the JPEG for the tile. A job that could not be made has no result. */
+struct ForwardThumbResult {
+  size_t tile = 0;
+  std::vector<uint8_t> jpeg;
+};
+
+/**
+ * The picture tiles of `content` (made with `plaintext` / `thumbnail` unset) that may still get a thumbnail from the
+ * stored bytes: shown, held on this device, and not above the size cap. UI thread; reads nothing.
+ */
+std::vector<ForwardThumbJob> ForwardThumbJobsFor(const ForwardCheck& check, const ForwardPreviewContent& content);
+
+/**
+ * Reads, decrypts and thumbnails each job (`ports.plaintext`, `ports.thumbnail`, nothing else). Writes no file and
+ * touches no UI state: it is the part that runs on a worker thread.
+ */
+std::vector<ForwardThumbResult> MakeForwardThumbs(const std::vector<ForwardThumbJob>& jobs,
+                                                  const ForwardPreviewPorts& ports);
+
 /** The line `Send` is off for, in the user's language; empty for no refusal. */
 std::string ForwardRefusalText(const ForwardCheck& check);
 

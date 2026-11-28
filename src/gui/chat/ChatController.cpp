@@ -630,6 +630,27 @@ ChatController::ChatController()
   };
   forward_ports.now_ms = []() { return SteadyNowMs(); };
   forward_ports.preview = MakeForwardPreviewPorts();
+  // The thumbnails of pictures that are not on the page are made on a worker once the picker is open; the worker's
+  // ports hold the facade pointer taken now, never this controller.
+  forward_ports.post_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+  forward_ports.post_ui = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  forward_ports.worker_preview = [this]() {
+    ForwardPreviewPorts ports;
+    ConversationsFacade* const facade = facade_;
+    ports.plaintext = [facade](const std::vector<uint8_t>& hash) -> Roe<ByteVector> {
+      if (!facade) {
+        return Roe<ByteVector>::error(Error("no messaging"));
+      }
+      return facade->StoredAttachmentPlaintext(hash);
+    };
+    ports.thumbnail = [](const ByteVector& bytes, const int max_px) { return MakeImageThumbnailJpeg(bytes, max_px); };
+    return ports;
+  };
+  forward_ports.update_picker_preview = [this](std::vector<ChoosePreviewItem> items) {
+    if (people_picker_notify_.update_choose_preview) {
+      people_picker_notify_.update_choose_preview(std::move(items));
+    }
+  };
   forward_ports.preview_done = [this]() {
     if (forward_preview_files_) {
       forward_preview_files_->RemoveAll(); // the thumbnails made for the page go with it

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -78,6 +79,23 @@ int JpegLongSide(const std::vector<uint8_t>& jpeg) {
     i += 2 + length;
   }
   return 0;
+}
+
+/** The JPEG thumbnail of a stored picture, in memory; empty when it is too big, unreadable or cannot be thumbnailed. */
+std::optional<std::vector<uint8_t>> ThumbnailJpegOf(const ForwardPreviewPorts& ports, const uint64_t byte_length,
+                                                    const std::vector<uint8_t>& content_hash) {
+  if (byte_length > kForwardPreviewMaxBytes || !ports.plaintext || !ports.thumbnail) {
+    return std::nullopt;
+  }
+  auto bytes = ports.plaintext(content_hash);
+  if (!bytes || bytes->size() > kForwardPreviewMaxBytes) {
+    return std::nullopt;
+  }
+  auto jpeg = ports.thumbnail(*bytes, kForwardPreviewThumbPx);
+  if (!jpeg) {
+    return std::nullopt;
+  }
+  return std::move(*jpeg);
 }
 
 } // namespace
@@ -163,12 +181,9 @@ ForwardPreviewContent BuildForwardPreview(const ForwardCheck& check, const std::
         if (ports.bubble_picture) {
           tile.thumb_src = ports.bubble_picture(item.message_id);
         }
-        if (tile.thumb_src.empty() && item.byte_length <= kForwardPreviewMaxBytes && ports.plaintext &&
-            ports.thumbnail && ports.put_file) {
-          if (auto bytes = ports.plaintext(item.content_hash); bytes && bytes->size() <= kForwardPreviewMaxBytes) {
-            if (auto jpeg = ports.thumbnail(*bytes, kForwardPreviewThumbPx)) {
-              tile.thumb_src = ports.put_file(*jpeg, index);
-            }
+        if (tile.thumb_src.empty() && ports.put_file) {
+          if (const auto jpeg = ThumbnailJpegOf(ports, item.byte_length, item.content_hash)) {
+            tile.thumb_src = ports.put_file(*jpeg, index);
           }
         }
       }
@@ -198,6 +213,33 @@ std::string ForwardRefusalText(const ForwardCheck& check) {
       return Tr("chat.forward.too_big_single", {{"n", MegabytesText(check.largest_bytes)}});
   }
   return {};
+}
+
+} // namespace pbr
+
+namespace pbr {
+
+std::vector<ForwardThumbJob> ForwardThumbJobsFor(const ForwardCheck& check, const ForwardPreviewContent& content) {
+  std::vector<ForwardThumbJob> jobs;
+  for (size_t tile = 0; tile < content.items.size() && tile < check.items.size(); ++tile) {
+    const ForwardItemFacts& item = check.items[tile];
+    if (item.kind == ForwardItemKind::Picture && item.has_local_bytes && content.items[tile].thumb_src.empty() &&
+        item.byte_length <= kForwardPreviewMaxBytes) {
+      jobs.push_back({tile, item.byte_length, item.content_hash});
+    }
+  }
+  return jobs;
+}
+
+std::vector<ForwardThumbResult> MakeForwardThumbs(const std::vector<ForwardThumbJob>& jobs,
+                                                  const ForwardPreviewPorts& ports) {
+  std::vector<ForwardThumbResult> results;
+  for (const ForwardThumbJob& job : jobs) {
+    if (auto jpeg = ThumbnailJpegOf(ports, job.byte_length, job.content_hash)) {
+      results.push_back({job.tile, std::move(*jpeg)});
+    }
+  }
+  return results;
 }
 
 } // namespace pbr

@@ -123,6 +123,8 @@ public:
 
   /** Closes the picker when it is in choose-and-return mode (a lock, a sign-out); another mode's picker is left alone. */
   void CloseChooseTargets();
+  /** The open "Forward to" strip gets its items again (thumbnails made after it opened); nothing when it is not open. */
+  void UpdateChoosePreviewItems(const std::vector<ChoosePreviewItem>& items);
 
   void Close();
 

@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 
@@ -38,6 +39,8 @@ struct PeoplePickerNotifyPorts {
       open_choose_targets;
   /** Closes the choose picker if it is open, without running `done` or `cancel` (lock, sign-out, the chat gone). */
   std::function<void()> close_choose_targets;
+  /** The open choose picker's strip gets its items again, with the thumbnails made after it opened. */
+  std::function<void(std::vector<ChoosePreviewItem> items)> update_choose_preview;
 };
 
 } // namespace pbr

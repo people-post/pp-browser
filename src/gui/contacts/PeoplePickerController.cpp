@@ -553,6 +553,18 @@ void PeoplePickerController::CloseChooseTargets() {
   }
 }
 
+void PeoplePickerController::UpdateChoosePreviewItems(const std::vector<ChoosePreviewItem>& items) {
+  if (mode_ != PeoplePickerMode::ChooseTargets || layer_id_ < 0 || !choose_mode_ ||
+      items.size() != preview_items_.size()) {
+    return;
+  }
+  choose_options_.preview_items = items;
+  for (size_t i = 0; i < items.size(); ++i) {
+    preview_items_[i].thumb = items[i].thumb_src.c_str();
+  }
+  DataModelHost::Instance().Dirty("people_picker", "preview_items");
+}
+
 void PeoplePickerController::Close() {
   if (flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();

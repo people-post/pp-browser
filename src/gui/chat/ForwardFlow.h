@@ -5,6 +5,7 @@
 #include "gui/contacts/PeoplePickerChoose.h"
 
 #include <functional>
+#include <memory>
 #include <string>
 
 namespace pbr {
@@ -51,6 +52,19 @@ struct ForwardFlowPorts {
   ForwardPreviewPorts preview;
   /** "Forward to" is over (sent, cancelled, closed by the host): the files `preview.put_file` wrote go. */
   std::function<void()> preview_done;
+
+  // --- Thumbnails made after the picker is open (reading and decrypting a picture can take a while). -------------------
+  /** Runs `task` on a worker thread. Unset: the thumbnails are made on the calling thread, after the picker opened. */
+  std::function<void(std::function<void()> task)> post_worker;
+  /** Runs `task` on the UI thread. Unset (with `post_worker` set) the thumbnails are not delivered. */
+  std::function<void(std::function<void()> task)> post_ui;
+  /**
+   * Called on the UI thread when the picker opens: the ports (only `plaintext` and `thumbnail` are used) the worker runs,
+   * holding nothing that can go away under it (no controller pointer). Unset: `preview` is used.
+   */
+  std::function<ForwardPreviewPorts()> worker_preview;
+  /** The picker that is open gets its strip's items again, now with the thumbnails (`preview.put_file` made their files). */
+  std::function<void(std::vector<ChoosePreviewItem> items)> update_picker_preview;
 };
 
 /**
@@ -129,6 +143,10 @@ private:
   void CloseProgress();
   void ReleaseAwake();
   void PickerClosed();
+  /** Makes the thumbnails the open picker lacks off the UI thread; a late answer for a picker that is gone is dropped. */
+  void StartThumbnails(uint64_t turn, std::vector<ChoosePreviewItem> items, std::vector<ForwardThumbJob> jobs);
+  void OnThumbnails(uint64_t turn, std::vector<ChoosePreviewItem> items,
+                    const std::vector<ForwardThumbResult>& results);
   /** Says what a stopped forward did, once its item under way has answered (or tells that one is still sending). */
   void TryNotice();
 
@@ -145,6 +163,8 @@ private:
   bool awake_ = false;
   /** The "one is still sending" line was said for the notice that is waiting. */
   bool still_sending_said_ = false;
+  /** A thumbnail answer holds a weak copy: once the flow is gone it does nothing. */
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
 };
 
 /**

@@ -182,6 +182,7 @@ struct World {
                                 std::function<void()> cancel) {
       picker_open = true;
       ++pickers_opened;
+      order.push_back("open");
       picker_options = std::move(options);
       picker_done = std::move(done);
       picker_cancel = std::move(cancel);
@@ -201,6 +202,26 @@ struct World {
     screen.keep_awake = [this](const bool on) { awake.push_back(on); };
     screen.now_ms = [this]() { return now; };
     screen.preview_done = [this]() { ++preview_done_calls; };
+    // A fake executor: a worker task runs only when the test says so (with `on_worker` set, as the real one would
+    // be off the UI thread), and so does the UI post that carries its answer back.
+    screen.post_worker = [this](std::function<void()> task) { workers.push_back(std::move(task)); };
+    screen.post_ui = [this](std::function<void()> task) { ui_posts.push_back(std::move(task)); };
+    screen.preview.plaintext = [this](const std::vector<uint8_t>&) -> Roe<ByteVector> {
+      order.push_back(on_worker ? "plaintext:worker" : "plaintext:UI");
+      return ByteVector(10, 1);
+    };
+    screen.preview.thumbnail = [this](const ByteVector&, int) -> Roe<std::vector<uint8_t>> {
+      order.push_back(on_worker ? "thumbnail:worker" : "thumbnail:UI");
+      return std::vector<uint8_t>{0xFF, 0xD8};
+    };
+    screen.preview.put_file = [this](const std::vector<uint8_t>&, const size_t index) {
+      order.push_back(on_worker ? "put_file:worker" : "put_file:UI");
+      files_put.push_back(index);
+      return "/scratch/" + std::to_string(index) + ".jpg";
+    };
+    screen.update_picker_preview = [this](std::vector<ChoosePreviewItem> items) {
+      updates.push_back(std::move(items));
+    };
     flow = std::make_unique<ForwardFlow>(presenter, screen);
   }
 
@@ -218,6 +239,23 @@ struct World {
     store[fields->content_hash] = ByteVector(size, fields->content_hash[0]);
   }
   void Add(const ThreadMessage& row) { rows[row.id] = row; }
+
+  /** Runs the oldest worker task as a worker would (off the UI thread). */
+  void RunWorker() {
+    ASSERT_FALSE(workers.empty());
+    auto task = std::move(workers.front());
+    workers.pop_front();
+    on_worker = true;
+    task();
+    on_worker = false;
+  }
+  /** Runs the oldest post to the UI thread. */
+  void RunUiPost() {
+    ASSERT_FALSE(ui_posts.empty());
+    auto task = std::move(ui_posts.front());
+    ui_posts.pop_front();
+    task();
+  }
 
   void PickerSends(const std::vector<std::string>& keys) {
     std::vector<ForwardTarget> chosen;
@@ -270,6 +308,12 @@ struct World {
   std::vector<std::string> log;
   std::deque<Upload> uploads;
   std::deque<std::function<void()>> posted;
+  std::deque<std::function<void()>> workers;
+  std::deque<std::function<void()>> ui_posts;
+  bool on_worker = false;
+  std::vector<std::string> order;
+  std::vector<size_t> files_put;
+  std::vector<std::vector<ChoosePreviewItem>> updates;
   std::vector<Timer> timers;
   std::vector<std::string> pills;
   std::vector<bool> awake;
@@ -544,6 +588,82 @@ TEST_F(ForwardFilesFlowTest, ThePreviewFilesAreToldToGoWhenThePickerClosesAndOnL
   locked.flow->BeginSingle("p1");
   locked.flow->Stop();
   EXPECT_GE(locked.preview_done_calls, 1);
+}
+
+// ---- The thumbnails are made after the picker opened, off the UI thread ----------------------------------------------
+
+TEST_F(ForwardFilesFlowTest, ThePickerOpensAtOnceWithIconTilesAndNoPortIsCalledBeforeIt) {
+  Hold(Picture("p1", 1, 1));
+  flow->BeginSingle("p1");
+  ASSERT_TRUE(picker_open);
+  EXPECT_EQ(order, (std::vector<std::string>{"open"}))
+      << "nothing was read, decrypted or thumbnailed before the picker";
+  ASSERT_EQ(picker_options.preview_items.size(), 1u);
+  EXPECT_EQ(picker_options.preview_items[0].icon, "photo");
+  EXPECT_TRUE(picker_options.preview_items[0].thumb_src.empty()) << "the icon tile, until the thumbnail is made";
+  EXPECT_EQ(workers.size(), 1u);
+}
+
+TEST_F(ForwardFilesFlowTest, TheThumbnailsAreMadeOnTheWorkerAndFilledInOnTheUiThread) {
+  Hold(Picture("p1", 1, 1));
+  Hold(Picture("p2", 2, 2));
+  flow->BeginSelecting("p1");
+  flow->Tap("p2");
+  flow->Next();
+  ASSERT_TRUE(picker_open);
+  RunWorker();
+  EXPECT_EQ(order, (std::vector<std::string>{"open", "plaintext:worker", "thumbnail:worker", "plaintext:worker",
+                                             "thumbnail:worker"}))
+      << "reading and thumbnailing are on the worker; no file is written there";
+  EXPECT_TRUE(updates.empty()) << "the picker is told on the UI thread only";
+  ASSERT_EQ(ui_posts.size(), 1u);
+  RunUiPost();
+  EXPECT_EQ(order.back(), "put_file:UI");
+  ASSERT_EQ(updates.size(), 1u);
+  ASSERT_EQ(updates[0].size(), 2u);
+  EXPECT_EQ(updates[0][0].thumb_src, "/scratch/0.jpg");
+  EXPECT_EQ(updates[0][1].thumb_src, "/scratch/1.jpg");
+  for (const std::string& entry : order) {
+    EXPECT_EQ(entry.find(":UI") == std::string::npos || entry.rfind("put_file", 0) == 0, true)
+        << entry << ": only the small file write is on the UI thread";
+  }
+}
+
+TEST_F(ForwardFilesFlowTest, AThumbnailThatArrivesAfterThePickerClosedChangesNothingAndLeavesNoFile) {
+  Hold(Picture("p1", 1, 1));
+  flow->BeginSingle("p1");
+  RunWorker();
+  flow->Leave(); // the picker is closed (lock, sign-out and a chat that went end in the same place)
+  ASSERT_EQ(ui_posts.size(), 1u);
+  RunUiPost();
+  EXPECT_TRUE(updates.empty());
+  EXPECT_TRUE(files_put.empty()) << "a dropped answer wrote no file, so there is nothing to delete";
+}
+
+TEST_F(ForwardFilesFlowTest, AThumbnailForAnEarlierPickerDoesNotFillALaterOne) {
+  Hold(Picture("p1", 1, 1));
+  flow->BeginSingle("p1");
+  RunWorker();
+  flow->Stop(); // locked: the picker closes
+  flow->BeginSingle("p1");
+  ASSERT_TRUE(picker_open);
+  ASSERT_EQ(ui_posts.size(), 1u);
+  RunUiPost(); // the first run's answer
+  EXPECT_TRUE(updates.empty());
+  EXPECT_TRUE(files_put.empty());
+  RunWorker();
+  RunUiPost(); // the second run's own answer
+  EXPECT_EQ(updates.size(), 1u);
+}
+
+TEST_F(ForwardFilesFlowTest, AThumbnailAnswerAfterTheFlowIsGoneDoesNothing) {
+  Hold(Picture("p1", 1, 1));
+  flow->BeginSingle("p1");
+  RunWorker();
+  flow.reset();
+  RunUiPost();
+  EXPECT_TRUE(updates.empty());
+  EXPECT_TRUE(files_put.empty());
 }
 
 TEST_F(ForwardFilesFlowTest, TheProgressPageKeepsTheScreenAwakeAndReleasesItOnEveryExit) {

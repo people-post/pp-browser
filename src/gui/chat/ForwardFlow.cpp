@@ -220,8 +220,14 @@ void ForwardFlow::OpenPicker() {
     return Tr("chat.forward.preview_count", {{"n", std::to_string(count)}});
   };
   // What is chosen, before any chat is: the tiles and the note (attachments), the words (text and cards).
-  ForwardPreviewContent content =
-      BuildForwardPreview(presenter_.CheckForward(), presenter_.ForwardPreview(count_text), count_text, ports_.preview);
+  // The picker opens at once: a picture that is not on the page shows its icon until its thumbnail is made off this thread.
+  const ForwardCheck check = presenter_.CheckForward();
+  ForwardPreviewPorts quick = ports_.preview;
+  quick.plaintext = nullptr;
+  quick.thumbnail = nullptr;
+  ForwardPreviewContent content = BuildForwardPreview(check, presenter_.ForwardPreview(count_text), count_text, quick);
+  std::vector<ForwardThumbJob> thumb_jobs = ForwardThumbJobsFor(check, content);
+  std::vector<ChoosePreviewItem> tiles = content.items;
   options.preview = std::move(content.text);
   options.preview_items = std::move(content.items);
   options.preview_note = std::move(content.note);
@@ -252,6 +258,58 @@ void ForwardFlow::OpenPicker() {
           Changed();
         }
       });
+  if (picker_open_ && turn == picker_turn_) { // a picker that was refused at once has nothing to fill
+    StartThumbnails(turn, std::move(tiles), std::move(thumb_jobs));
+  }
+}
+
+void ForwardFlow::StartThumbnails(const uint64_t turn, std::vector<ChoosePreviewItem> items,
+                                  std::vector<ForwardThumbJob> jobs) {
+  if (jobs.empty()) {
+    return;
+  }
+  ForwardPreviewPorts work_ports = ports_.worker_preview ? ports_.worker_preview() : ports_.preview;
+  // Runs on the UI thread. The worker below never touches `this`: it only hands this to `post_ui`.
+  std::function<void(std::vector<ForwardThumbResult>)> deliver =
+      [this, turn, items = std::move(items), alive = std::weak_ptr<int>(alive_)](
+          std::vector<ForwardThumbResult> results) { // NOLINT(performance-unnecessary-value-param)
+        if (alive.lock()) {
+          OnThumbnails(turn, items, results);
+        }
+      };
+  if (!ports_.post_worker) {
+    deliver(MakeForwardThumbs(jobs, work_ports));
+    return;
+  }
+  if (!ports_.post_ui) {
+    return;
+  }
+  ports_.post_worker([jobs = std::move(jobs), work_ports = std::move(work_ports), deliver = std::move(deliver),
+                      post_ui = ports_.post_ui]() mutable {
+    std::vector<ForwardThumbResult> results = MakeForwardThumbs(jobs, work_ports);
+    post_ui([deliver = std::move(deliver), results = std::move(results)]() mutable { deliver(std::move(results)); });
+  });
+}
+
+void ForwardFlow::OnThumbnails(const uint64_t turn, std::vector<ChoosePreviewItem> items,
+                               const std::vector<ForwardThumbResult>& results) {
+  if (!picker_open_ || turn != picker_turn_) {
+    return; // closed, chosen, locked, signed out or opened again since: nothing was written, so nothing is left
+  }
+  bool any = false;
+  for (const ForwardThumbResult& result : results) {
+    if (result.tile >= items.size() || !ports_.preview.put_file) {
+      continue;
+    }
+    std::string path = ports_.preview.put_file(result.jpeg, result.tile);
+    if (!path.empty()) {
+      items[result.tile].thumb_src = std::move(path);
+      any = true;
+    }
+  }
+  if (any && ports_.update_picker_preview) {
+    ports_.update_picker_preview(std::move(items));
+  }
 }
 
 void ForwardFlow::OnChosen(std::vector<ForwardTarget> chosen) {
