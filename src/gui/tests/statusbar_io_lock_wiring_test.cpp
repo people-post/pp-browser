@@ -11,11 +11,15 @@
 namespace pbr {
 namespace {
 
+/** A source file's text with LF line ends: Windows CI checks sources out with CRLF (core.autocrlf), and the body
+ * search below looks for "\n}\n". */
 std::string ReadFile(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   std::ostringstream out;
   out << in.rdbuf();
-  return out.str();
+  std::string text = out.str();
+  std::erase(text, '\r');
+  return text;
 }
 
 TEST(StatusbarIoLockWiringTest, TheStatusbarPortsTakeNoIoLock) {
